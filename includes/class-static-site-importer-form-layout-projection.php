@@ -2387,28 +2387,37 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/**
 	 * State the initial flex-container values a source flex box leaves implicit.
 	 *
-	 * A source box that declares only `display: flex` is a non-wrapping row. The
-	 * producer records declared facts only, so `row`/`nowrap` never reach the
-	 * graph. Jetpack's form element is a wrapping flex layout of its own, so a
-	 * source row transposed onto it would keep that wrap and stack its field and
-	 * submit. A fact the source declares (in `$layout` or in `$declared`, the base
-	 * facts a conditional patch builds on) is never replaced.
+	 * The producer records declared facts only, so a source box that declares
+	 * only `display: flex` reaches the graph without its initial `row`, `nowrap`
+	 * and `align-items: stretch`. Jetpack's form element is a flex layout of its
+	 * own (block.json `layout.default`: wrapping, `verticalAlignment: top`, which
+	 * paints `align-items:flex-start`), so a source flex box transposed onto it
+	 * would keep that wrap and top alignment. A fact the source declares (in
+	 * `$layout` or in `$declared`, the base facts a conditional patch builds on)
+	 * is never replaced.
+	 *
+	 * The row and wrap are stated only when the source box arranged every item
+	 * the provider element holds: Jetpack also renders in-form copy and the
+	 * status output as items of that element, which the source row did not
+	 * arrange, and they keep the provider's wrap.
 	 *
 	 * @param array<string,mixed> $layout
 	 * @param array<string,mixed> $declared
+	 * @param bool                $arranges_every_item Whether the source box arranged every item of the provider element.
 	 * @return array<string,mixed>
 	 */
-	public static function with_flex_container_defaults( array $layout, array $declared = array() ): array {
+	public static function with_flex_container_defaults( array $layout, array $declared = array(), bool $arranges_every_item = true ): array {
 		if ( ! in_array( strtolower( trim( (string) ( $layout['display'] ?? '' ) ) ), array( 'flex', 'inline-flex' ), true ) ) {
 			return $layout;
 		}
-		return $layout + array_diff_key(
-			array(
+		$initial = array( 'align_items' => 'stretch' );
+		if ( $arranges_every_item ) {
+			$initial = array(
 				'direction' => 'row',
 				'wrap'      => 'nowrap',
-			),
-			$declared
-		);
+			) + $initial;
+		}
+		return $layout + array_diff_key( $initial, $declared );
 	}
 
 	/**

@@ -671,8 +671,8 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $overlay_node ) ) {
 				continue;
 			}
-			if ( $form_holds_only_controls && 'form' === ( $overlay_node['id'] ?? null ) && is_array( $overlay_node['layout'] ?? null ) ) {
-				$overlay_node['layout'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_node['layout'] );
+			if ( 'form' === ( $overlay_node['id'] ?? null ) && is_array( $overlay_node['layout'] ?? null ) ) {
+				$overlay_node['layout'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_node['layout'], array(), $form_holds_only_controls );
 				$form_base_layout       = $overlay_node['layout'];
 			}
 			if ( ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) ) {
@@ -693,8 +693,8 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $overlay_variant ) ) {
 				continue;
 			}
-			if ( $form_holds_only_controls && 'form' === ( $overlay_variant['node'] ?? null ) && is_array( $overlay_variant['layout_patch'] ?? null ) ) {
-				$overlay_variant['layout_patch'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_variant['layout_patch'], $form_base_layout );
+			if ( 'form' === ( $overlay_variant['node'] ?? null ) && is_array( $overlay_variant['layout_patch'] ?? null ) ) {
+				$overlay_variant['layout_patch'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_variant['layout_patch'], $form_base_layout, $form_holds_only_controls );
 			}
 			if ( ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_variant['node'] ?? '' ) ) ) {
 				continue;
