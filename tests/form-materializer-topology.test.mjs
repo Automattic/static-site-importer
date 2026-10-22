@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const require = createRequire( import.meta.url );
@@ -41,6 +41,23 @@ test( 'shared-row topology materializes through the PHP provider adapter', { ski
 	} );
 
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );
+} );
+
+test( 'every form materializer suite passes on its own', { skip: !hasWordPressBlockSerialization }, () => {
+	const suites = readdirSync( 'tests' ).filter( ( file ) => /^form-materializer-.+\.inc$/.test( file ) );
+	assert.ok( suites.length > 0 );
+	for ( const file of suites ) {
+		const suite = file.replace( /^form-materializer-|\.inc$/g, '' );
+		const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', `--suite=${ suite }` ], {
+			cwd: process.cwd(),
+			encoding: 'utf8',
+			env: { ...process.env, STATIC_SITE_IMPORTER_WP_ROOT: wpRoot },
+		} );
+		// A suite the runner does not list loads nothing and counts zero assertions;
+		// a suite reading another suite's variable only warns, so warnings fail too.
+		assert.match( output, /PASS form-materializer-smoke\.php \([1-9]\d* assertions\)/, suite );
+		assert.doesNotMatch( output, /\b(?:Warning|Notice|Deprecated):/, suite );
+	}
 } );
 
 test( 'Jetpack runtime preparation reports the missing canonical forms loader', () => {
