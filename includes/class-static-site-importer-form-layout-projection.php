@@ -363,6 +363,77 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return $form;
 	}
 
+	/**
+	 * A proven full-track grid is a stack, not a twelve-column provider row.
+	 * Keep this deliberately narrow: explicit row placement, alignment, auto-flow,
+	 * or responsive changes need their own projection rather than losing facts.
+	 */
+	public static function normalize_full_track_stacks( array $form ): array {
+		$graph = $form['layout_graph'] ?? array();
+		$nodes = $graph['nodes'] ?? array();
+		$children = array();
+		$variants = array_column( $graph['variants'] ?? array(), 'node' );
+		foreach ( $nodes as $index => $node ) {
+			$children[ $node['parent'] ?? '' ][] = $index;
+		}
+		foreach ( $nodes as $index => $node ) {
+			$layout = $node['layout'] ?? array();
+			$id = $node['id'] ?? '';
+			$count = self::equal_track_count( $layout['columns'] ?? '' );
+			if ( ! preg_match( self::WRAPPER_ID_PATTERN, $id ) || 'grid' !== ( $layout['display'] ?? '' ) || null === $count || empty( $children[ $id ] ) || in_array( $id, $variants, true ) || array_diff_key( $layout, array_flip( array( 'display', 'columns', 'gap', 'row_gap', 'column_gap' ) ) ) || ! self::has_unconditional_proven_property( $node, 'display' ) || ! self::has_unconditional_proven_property( $node, 'grid-template-columns' ) ) {
+				continue;
+			}
+			foreach ( $children[ $id ] as $child_index ) {
+				$child = $nodes[ $child_index ];
+				$placement = preg_replace( '/\s+/', '', $child['layout']['column'] ?? '' );
+				if ( ! in_array( $placement, array( '1/-1', 'span' . $count, 'span' . $count . '/span' . $count ), true ) || in_array( $child['id'], $variants, true ) || array_intersect( array_keys( $child['layout'] ?? array() ), array( 'row', 'area', 'order', 'position', 'align_self', 'justify_self', 'flex', 'flex_basis', 'flex_grow', 'flex_shrink' ) ) || ! self::has_unconditional_proven_property( $child, 'grid-column' ) ) {
+					continue 2;
+				}
+			}
+			$gap_property = isset( $layout['row_gap'] ) ? 'row-gap' : 'gap';
+			if ( ( isset( $layout['row_gap'] ) || isset( $layout['gap'] ) ) && ! self::has_unconditional_proven_property( $node, $gap_property ) ) {
+				continue;
+			}
+			$gap = $layout['row_gap'] ?? ( preg_split( '/\s+/', trim( $layout['gap'] ?? '' ) )[0] ?? '' );
+			// Only split simple gap tokens; percentage row gaps and expressions
+			// need a separate proof because flex and grid resolve them differently.
+			if ( '' !== $gap && ! preg_match( '/^(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|vh|vw))$/D', $gap ) ) {
+				continue;
+			}
+			$nodes[ $index ]['layout'] = array( 'display' => 'flex', 'direction' => 'column' );
+			if ( '' !== $gap ) {
+				$nodes[ $index ]['layout']['gap'] = $gap;
+			}
+			foreach ( $nodes[ $index ]['provenance'] as &$fact ) {
+				if ( in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+					$fact['properties'][] = 'flex-direction';
+				}
+				if ( in_array( $gap_property, $fact['properties'] ?? array(), true ) ) {
+					$fact['properties'][] = 'gap';
+				}
+			}
+			unset( $fact );
+			foreach ( $children[ $id ] as $child_index ) {
+				unset( $nodes[ $child_index ]['layout']['column'] );
+			}
+			// The producer may also lift this wrapper's gap onto the form. It is
+			// the same spacing, not a second gap around the sibling submit.
+			foreach ( $nodes as &$candidate ) {
+				if ( 'form' === ( $candidate['id'] ?? '' ) && isset( $layout['gap'] ) && ( $candidate['layout']['gap'] ?? null ) === $layout['gap'] ) {
+					$gap_sources         = static fn( array $facts ): array => array_values( array_unique( array_map( static fn( array $fact ): string => (string) wp_json_encode( array( $fact['source_path'] ?? null, $fact['source_sha256'] ?? null, $fact['selector'] ?? null, $fact['condition'] ?? null ) ), array_filter( $facts, static fn( array $fact ): bool => in_array( 'gap', $fact['properties'] ?? array(), true ) ) ) ) );
+					$form_gap_sources    = $gap_sources( $candidate['provenance'] ?? array() );
+					$wrapper_gap_sources = $gap_sources( $node['provenance'] ?? array() );
+					if ( $form_gap_sources && $form_gap_sources === $wrapper_gap_sources ) {
+						unset( $candidate['layout']['gap'] );
+					}
+				}
+			}
+			unset( $candidate );
+		}
+		$form['layout_graph']['nodes'] = $nodes;
+		return $form;
+	}
+
 	private static function is_unconditional_media_variant( mixed $variant ): bool {
 		return is_array( $variant ) && array(
 			'kind'  => 'media',

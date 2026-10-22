@@ -49,6 +49,7 @@
     { "path": "tests/form-layout-rendered.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-role-box-parity.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
+    { "path": "tests/form-full-width-grid.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-submit-box.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-submit-icon-sides.php", "environment": "standalone-php" },
     { "path": "tests/form-submit-box.test.mjs", "environment": "node" },

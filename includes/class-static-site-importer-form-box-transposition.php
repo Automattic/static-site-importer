@@ -199,6 +199,12 @@ final class Static_Site_Importer_Form_Box_Transposition {
 					$base['display'] = $from_class;
 				}
 			}
+			// A multi-track wrapper with explicit child placement is not a plain
+			// provider field list. Full-track stacks have already been normalized;
+			// other placements must not be flattened into an unrelated form grid.
+			if ( 'grid' === ( $base['display'] ?? '' ) && array_filter( $s->children[ $box_id ] ?? array(), static fn( array $child ): bool => isset( $s->layout_by_node[ $child['id'] ]['column'] ) ) ) {
+				continue;
+			}
 			$box_base    = $merged_base;
 			$box_patches = $merged_patches;
 			$accepted    = true;

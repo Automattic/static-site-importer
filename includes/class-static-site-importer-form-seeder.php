@@ -309,6 +309,7 @@ class Static_Site_Importer_Form_Seeder {
 		$state                      = new Static_Site_Importer_Form_Plan_State();
 		$form                       = Static_Site_Importer_Form_Box_Transposition::separate_source_boxes( $form );
 		$form                       = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
+		$form                       = Static_Site_Importer_Form_Layout_Projection::normalize_full_track_stacks( $form );
 		$controls                   = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form                       = self::project_submit_style_into_presentation_graph( $form, $controls );
 		$state->textareas           = Static_Site_Importer_Form_Textarea_Rows::resolve_form( $form, $controls );
