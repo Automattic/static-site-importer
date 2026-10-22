@@ -2006,16 +2006,25 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 
 			if ( array_key_exists( 'stock_status', $product ) && ! in_array( $product['stock_status'], array( 'instock', 'outofstock' ), true ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.stock_status', 'message' => 'stock_status must be instock or outofstock.' );
+				$errors[] = array(
+'path' => $path_prefix . '.stock_status',
+'message' => 'stock_status must be instock or outofstock.'
+);
 			}
 			if ( array_key_exists( 'images', $product ) ) {
 				$images = $product['images'];
 				if ( ! is_array( $images ) || ! array_is_list( $images ) ) {
-					$errors[] = array( 'path' => $path_prefix . '.images', 'message' => 'images must be a list of {src, alt} objects.' );
+					$errors[] = array(
+'path' => $path_prefix . '.images',
+'message' => 'images must be a list of {src, alt} objects.'
+);
 				} else {
 					foreach ( $images as $entry ) {
 						if ( ! is_array( $entry ) || ! is_string( $entry['src'] ?? null ) || '' === trim( $entry['src'] ) || ! is_string( $entry['alt'] ?? null ) ) {
-							$errors[] = array( 'path' => $path_prefix . '.images', 'message' => 'images must contain {src, alt} strings with non-empty src.' );
+							$errors[] = array(
+'path' => $path_prefix . '.images',
+'message' => 'images must contain {src, alt} strings with non-empty src.'
+);
 						}
 					}
 					if ( ! empty( $images ) && empty( $errors ) ) {
@@ -2028,7 +2037,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$variants = self::manifest_product_variants( $product['variants'] );
 				if ( null === $variants ) {
 					unset( $product['variants'] );
-					$product['losses'][] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'variants' );
+					$product['losses'][] = array(
+'dimension' => 'product',
+'reason_code' => 'unsupported_control_attribute',
+'attribute' => 'variants'
+);
 				} else {
 					$product['variants'] = $variants;
 				}
@@ -2574,11 +2587,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$combination[ $key ] = $attribute['value'];
 			}
 			ksort( $combination );
-			$signature = serialize( $combination );
+			$signature = http_build_query( $combination );
 			if ( isset( $seen[ $signature ] ) ) {
 				return null;
 			}
-			$seen[ $signature ] = true;
+			$seen[ $signature ]    = true;
 			$variant['attributes'] = $attributes;
 		}
 		return $value;

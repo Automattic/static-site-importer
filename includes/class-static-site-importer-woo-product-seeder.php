@@ -307,7 +307,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$failures = array();
 		foreach ( array_reverse( $report['rollback']['created_variations'] ?? array() ) as $variation_id ) {
 			if ( get_post( (int) $variation_id ) && ! wp_delete_post( (int) $variation_id, true ) ) {
-				$failures[] = array( 'product_id' => $variation_id, 'failures' => array( 'variation_delete_failed' ) );
+				$failures[] = array(
+'product_id' => $variation_id,
+'failures' => array( 'variation_delete_failed' )
+);
 			}
 		}
 		foreach ( array_reverse( $report['products'] ?? array() ) as $row ) {
@@ -449,7 +452,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$product->set_stock_quantity( max( 0, (int) $manifest_product['stock_quantity'] ) );
 			}
 
-			$images = $manifest_product['images'] ?? array();
+			$images       = $manifest_product['images'] ?? array();
 			$image_source = $images[0]['src'] ?? self::string_value( $manifest_product, 'image' );
 			if ( '' !== $image_source ) {
 				$attachment_id = self::resolve_product_image_attachment( $image_source, $images[0]['alt'] ?? self::string_value( $manifest_product, 'image_alt' ), $name, $args, $created_attachments );
@@ -471,7 +474,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					if ( $id > 0 ) {
 						$gallery_ids[] = $id;
 					} else {
-						$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'images' );
+						$losses[] = array(
+'dimension' => 'product',
+'reason_code' => 'unsupported_control_attribute',
+'attribute' => 'images'
+);
 					}
 				}
 				$product->set_gallery_image_ids( array_values( array_unique( $gallery_ids ) ) );
@@ -487,6 +494,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					foreach ( $variant['attributes'] as $attribute ) {
 						$taxonomy = wc_attribute_taxonomy_name( wc_sanitize_taxonomy_name( $attribute['key'] ) );
 						if ( ! isset( $attributes[ $taxonomy ] ) ) {
+							// ssi-error-class: operational
 							throw new RuntimeException( 'Variant attribute could not be created.' );
 						}
 						$attributes[ $taxonomy ]->set_variation( true );
@@ -525,14 +533,19 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					if ( ! $term ) {
 						$term = wp_insert_term( $tag, 'product_tag' );
 						if ( is_wp_error( $term ) ) {
+							// ssi-error-class: propagated
 							throw new RuntimeException( $term->get_error_message() );
 						}
-						$created_attributes['terms'][] = array( 'taxonomy' => 'product_tag', 'term_id' => (int) $term['term_id'] );
+						$created_attributes['terms'][] = array(
+'taxonomy' => 'product_tag',
+'term_id' => (int) $term['term_id']
+);
 					}
 					$tag_ids[] = is_array( $term ) ? (int) $term['term_id'] : (int) $term;
 				}
 				$assigned = wp_set_object_terms( $product_id, $tag_ids, 'product_tag' );
 				if ( is_wp_error( $assigned ) || false === $assigned ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'Product tags could not be assigned.' );
 				}
 			}
@@ -555,11 +568,16 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					if ( $id > 0 ) {
 						$variation->set_image_id( $id );
 					} else {
-						$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'variants.image' );
+						$losses[] = array(
+'dimension' => 'product',
+'reason_code' => 'unsupported_control_attribute',
+'attribute' => 'variants.image'
+);
 					}
 				}
 				$id = (int) $variation->save();
 				if ( $id <= 0 ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'WooCommerce did not return a variation ID.' );
 				}
 				$created_variations[] = $id;
@@ -593,9 +611,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 						$variation_failures[] = 'variation_delete_failed';
 					}
 				}
-				$rollback           = self::restore_product( $product_id, $before );
+				$rollback             = self::restore_product( $product_id, $before );
 				$rollback['failures'] = array_merge( $rollback['failures'], $variation_failures );
-				$term_failures      = array_merge(
+				$term_failures        = array_merge(
 					self::cleanup_terms( array_slice( $created_terms, $created_term_offset ) ),
 					self::cleanup_product_attributes(
 						array(
@@ -604,9 +622,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 						)
 					)
 				);
-				$row['id']          = $product_id;
-				$row['compensated'] = empty( $rollback['failures'] ) && empty( $term_failures );
-				$row['rollback']    = array(
+				$row['id']            = $product_id;
+				$row['compensated']   = empty( $rollback['failures'] ) && empty( $term_failures );
+				$row['rollback']      = array(
 					'product_failures'      => $rollback['failures'],
 					'term_cleanup_failures' => $term_failures,
 				);
@@ -627,7 +645,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				throw $exception;
 			}
 			$product->set_sku( '' );
-			$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'sku', 'sku' => $row['sku'] );
+			$losses[] = array(
+'dimension' => 'product',
+'reason_code' => 'unsupported_control_attribute',
+'attribute' => 'sku',
+'sku' => $row['sku']
+);
 		}
 	}
 
@@ -676,7 +699,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$terms = self::assign_product_categories( $product_id, $before['terms'] );
 		if ( is_wp_error( $terms ) ) {
 			$failures[] = 'product_terms_restore_failed'; }
-		foreach ( array( 'product_tag' => 'tags', 'product_type' => 'product_type' ) as $taxonomy => $key ) {
+		foreach ( array(
+'product_tag' => 'tags',
+'product_type' => 'product_type'
+) as $taxonomy => $key ) {
 			if ( taxonomy_exists( $taxonomy ) && is_wp_error( wp_set_object_terms( $product_id, array_map( 'intval', $before[ $key ] ?? array() ), $taxonomy ) ) ) {
 				$failures[] = 'product_terms_restore_failed';
 			}
