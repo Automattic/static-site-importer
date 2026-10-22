@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Turns already-validated store manifest products into simple WooCommerce products.
+ * Turns validated store manifest products into simple or variable WooCommerce products.
  */
 class Static_Site_Importer_Woo_Product_Seeder {
 
@@ -238,6 +238,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$report['status'] = 'completed';
 
 		$report['rollback'] = array(
+			'created_variations'         => array(),
 			'created_terms'              => array(),
 			'created_attachments'        => array(),
 			'created_product_attributes' => array(
@@ -250,7 +251,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$before   = $existing instanceof WP_Post ? self::product_state( (int) $existing->ID ) : null;
 			if ( is_array( $before ) ) {
 				$report['rollback'][ (int) $existing->ID ] = $before; }
-			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'] );
+			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'], $report['rollback']['created_variations'] );
 			$report['products'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -304,6 +305,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/** Restore existing product post/meta/category state or delete products created by this receipt. */
 	public static function rollback( array $report ): array {
 		$failures = array();
+		foreach ( array_reverse( $report['rollback']['created_variations'] ?? array() ) as $variation_id ) {
+			if ( get_post( (int) $variation_id ) && ! wp_delete_post( (int) $variation_id, true ) ) {
+				$failures[] = array( 'product_id' => $variation_id, 'failures' => array( 'variation_delete_failed' ) );
+			}
+		}
 		foreach ( array_reverse( $report['products'] ?? array() ) as $row ) {
 			$id = (int) ( $row['id'] ?? 0 );
 			if ( $id <= 0 || ! empty( $row['compensated'] ) ) {
@@ -388,7 +394,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @param array<string, array>  $created_attributes   Global attributes and attribute terms created so far this run, by reference.
 	 * @return array<string, mixed>
 	 */
-	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array(), array &$created_attributes = array() ): array {
+	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array(), array &$created_attributes = array(), array &$created_variations = array() ): array {
 		$slug = sanitize_title( self::string_value( $manifest_product, 'slug' ) );
 		$name = self::string_value( $manifest_product, 'name' );
 
@@ -410,15 +416,21 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$status  = 'updated';
 		}
 
-		if ( ! $product instanceof WC_Product_Simple ) {
-			$product = new WC_Product_Simple();
+		$variants = $manifest_product['variants'] ?? array();
+		$variable = ! empty( $variants );
+		if ( $variable && ! $product instanceof WC_Product_Variable ) {
+			$product = new WC_Product_Variable( $existing instanceof WP_Post ? $existing->ID : 0 );
+		} elseif ( ! $variable && ! $product instanceof WC_Product_Simple ) {
+			$product = new WC_Product_Simple( $existing instanceof WP_Post ? $existing->ID : 0 );
 		}
 
 		$product_id          = 0;
 		$created_term_offset = count( $created_terms );
 		$attribute_offsets   = array( count( $created_attributes['attributes'] ?? array() ), count( $created_attributes['terms'] ?? array() ) );
-		$losses              = array();
+		$losses              = $manifest_product['losses'] ?? array();
+		$variation_offset    = count( $created_variations );
 		try {
+			self::apply_sku( $product, $manifest_product, $losses );
 			$product->set_name( $name );
 			$product->set_slug( $slug );
 			$product->set_status( self::post_status( $manifest_product ) );
@@ -437,9 +449,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$product->set_stock_quantity( max( 0, (int) $manifest_product['stock_quantity'] ) );
 			}
 
-			$image_source = self::string_value( $manifest_product, 'image' );
+			$images = $manifest_product['images'] ?? array();
+			$image_source = $images[0]['src'] ?? self::string_value( $manifest_product, 'image' );
 			if ( '' !== $image_source ) {
-				$attachment_id = self::resolve_product_image_attachment( $image_source, self::string_value( $manifest_product, 'image_alt' ), $name, $args, $created_attachments );
+				$attachment_id = self::resolve_product_image_attachment( $image_source, $images[0]['alt'] ?? self::string_value( $manifest_product, 'image_alt' ), $name, $args, $created_attachments );
 				if ( $attachment_id > 0 ) {
 					$product->set_image_id( $attachment_id );
 				} else {
@@ -451,8 +464,35 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				}
 			}
 
-			if ( isset( $manifest_product['attributes'] ) && is_array( $manifest_product['attributes'] ) ) {
-				$product->set_attributes( self::product_attributes( $manifest_product['attributes'], $created_attributes, $losses ) );
+			if ( ! empty( $images ) ) {
+				$gallery_ids = array();
+				foreach ( array_slice( $images, 1 ) as $image ) {
+					$id = self::resolve_product_image_attachment( $image['src'], $image['alt'], $name, $args, $created_attachments );
+					if ( $id > 0 ) {
+						$gallery_ids[] = $id;
+					} else {
+						$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'images' );
+					}
+				}
+				$product->set_gallery_image_ids( array_values( array_unique( $gallery_ids ) ) );
+			}
+
+			$attribute_rows = $manifest_product['attributes'] ?? array();
+			foreach ( $variants as $variant ) {
+				$attribute_rows = array_merge( $attribute_rows, $variant['attributes'] );
+			}
+			if ( $variable || isset( $manifest_product['attributes'] ) ) {
+				$attributes = self::product_attributes( $attribute_rows, $created_attributes, $losses );
+				foreach ( $variants as $variant ) {
+					foreach ( $variant['attributes'] as $attribute ) {
+						$taxonomy = wc_attribute_taxonomy_name( wc_sanitize_taxonomy_name( $attribute['key'] ) );
+						if ( ! isset( $attributes[ $taxonomy ] ) ) {
+							throw new RuntimeException( 'Variant attribute could not be created.' );
+						}
+						$attributes[ $taxonomy ]->set_variation( true );
+					}
+				}
+				$product->set_attributes( $attributes );
 			}
 
 			$product_id = (int) $product->save();
@@ -478,6 +518,56 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				}
 			}
 
+			if ( isset( $manifest_product['tags'] ) ) {
+				$tag_ids = array();
+				foreach ( $manifest_product['tags'] as $tag ) {
+					$term = term_exists( $tag, 'product_tag' );
+					if ( ! $term ) {
+						$term = wp_insert_term( $tag, 'product_tag' );
+						if ( is_wp_error( $term ) ) {
+							throw new RuntimeException( $term->get_error_message() );
+						}
+						$created_attributes['terms'][] = array( 'taxonomy' => 'product_tag', 'term_id' => (int) $term['term_id'] );
+					}
+					$tag_ids[] = is_array( $term ) ? (int) $term['term_id'] : (int) $term;
+				}
+				$assigned = wp_set_object_terms( $product_id, $tag_ids, 'product_tag' );
+				if ( is_wp_error( $assigned ) || false === $assigned ) {
+					throw new RuntimeException( 'Product tags could not be assigned.' );
+				}
+			}
+			foreach ( $variants as $variant ) {
+				$variation = new WC_Product_Variation();
+				$variation->set_parent_id( $product_id );
+				$variation->set_status( 'publish' );
+				$variation_attributes = array();
+				foreach ( $variant['attributes'] as $attribute ) {
+					$variation_attributes[ wc_attribute_taxonomy_name( wc_sanitize_taxonomy_name( $attribute['key'] ) ) ] = sanitize_title( $attribute['value'] );
+				}
+				$variation->set_attributes( $variation_attributes );
+				$variation->set_regular_price( self::price_value( $variant, 'regular_price' ) );
+				$variation->set_sale_price( self::price_value( $variant, 'sale_price' ) );
+				$variation->set_stock_status( $variant['stock_status'] );
+				self::apply_sku( $variation, $variant, $losses );
+				$source = $variant['image'] ?? '';
+				if ( '' !== $source && $source !== $image_source ) {
+					$id = self::resolve_product_image_attachment( $source, '', $name, $args, $created_attachments );
+					if ( $id > 0 ) {
+						$variation->set_image_id( $id );
+					} else {
+						$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'variants.image' );
+					}
+				}
+				$id = (int) $variation->save();
+				if ( $id <= 0 ) {
+					throw new RuntimeException( 'WooCommerce did not return a variation ID.' );
+				}
+				$created_variations[] = $id;
+			}
+			if ( $variable ) {
+				WC_Product_Variable::sync( $product_id );
+			}
+
 			$row = array(
 				'id'           => $product_id,
 				'slug'         => $slug,
@@ -497,7 +587,14 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				'error'  => $exception->getMessage(),
 			);
 			if ( $product_id > 0 ) {
+				$variation_failures = array();
+				foreach ( array_reverse( array_slice( $created_variations, $variation_offset ) ) as $id ) {
+					if ( ! wp_delete_post( $id, true ) ) {
+						$variation_failures[] = 'variation_delete_failed';
+					}
+				}
 				$rollback           = self::restore_product( $product_id, $before );
+				$rollback['failures'] = array_merge( $rollback['failures'], $variation_failures );
 				$term_failures      = array_merge(
 					self::cleanup_terms( array_slice( $created_terms, $created_term_offset ) ),
 					self::cleanup_product_attributes(
@@ -518,6 +615,22 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 	}
 
+	/** A duplicate merchant SKU is a field loss, not a failed product. */
+	private static function apply_sku( object $product, array $row, array &$losses ): void {
+		if ( ! array_key_exists( 'sku', $row ) ) {
+			return;
+		}
+		try {
+			$product->set_sku( $row['sku'] );
+		} catch ( WC_Data_Exception $exception ) {
+			if ( 'product_invalid_sku' !== $exception->getErrorCode() ) {
+				throw $exception;
+			}
+			$product->set_sku( '' );
+			$losses[] = array( 'dimension' => 'product', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'sku', 'sku' => $row['sku'] );
+		}
+	}
+
 	/** Capture state before an existing product can be changed. */
 	private static function product_state( int $product_id ): array {
 		$attribute_terms = array();
@@ -529,6 +642,8 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			'meta'            => get_post_meta( $product_id ),
 			'terms'           => wp_get_object_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) ),
 			'attribute_terms' => $attribute_terms,
+			'tags'            => taxonomy_exists( 'product_tag' ) ? wp_get_object_terms( $product_id, 'product_tag', array( 'fields' => 'ids' ) ) : array(),
+			'product_type'    => taxonomy_exists( 'product_type' ) ? wp_get_object_terms( $product_id, 'product_type', array( 'fields' => 'ids' ) ) : array(),
 		);
 	}
 
@@ -561,6 +676,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$terms = self::assign_product_categories( $product_id, $before['terms'] );
 		if ( is_wp_error( $terms ) ) {
 			$failures[] = 'product_terms_restore_failed'; }
+		foreach ( array( 'product_tag' => 'tags', 'product_type' => 'product_type' ) as $taxonomy => $key ) {
+			if ( taxonomy_exists( $taxonomy ) && is_wp_error( wp_set_object_terms( $product_id, array_map( 'intval', $before[ $key ] ?? array() ), $taxonomy ) ) ) {
+				$failures[] = 'product_terms_restore_failed';
+			}
+		}
 		foreach ( self::attribute_taxonomies() as $taxonomy ) {
 			$restored = wp_set_object_terms( $product_id, array_map( 'intval', (array) ( $before['attribute_terms'][ $taxonomy ] ?? array() ) ), $taxonomy );
 			if ( is_wp_error( $restored ) ) {

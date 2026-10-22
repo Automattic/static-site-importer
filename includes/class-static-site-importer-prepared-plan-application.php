@@ -366,8 +366,18 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$collection = (string) ( $prepared_entity['adapter']['entity_collection'] ?? '' );
 			$products   = is_array( $prepared_entity['manifest'][ $collection ] ?? null ) ? $prepared_entity['manifest'][ $collection ] : array();
 			foreach ( $products as $product ) {
-				if ( is_array( $product ) && isset( $product['image'] ) && is_string( $product['image'] ) && '' !== $product['image'] ) {
-					$sources[ $product['image'] ] = true;
+				if ( ! is_array( $product ) ) {
+					continue;
+				}
+				$image_sources = array_merge(
+					array( $product['image'] ?? '' ),
+					array_column( $product['images'] ?? array(), 'src' ),
+					array_column( $product['variants'] ?? array(), 'image' )
+				);
+				foreach ( $image_sources as $source ) {
+					if ( is_string( $source ) && '' !== $source ) {
+						$sources[ $source ] = true;
+					}
 				}
 			}
 		}
