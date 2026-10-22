@@ -208,6 +208,7 @@
           "tests/smoke-form-submit-colors.php",
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-placeholder-colors.php",
+          "tests/smoke-form-linked-placeholder-colors.php",
           "tests/provider-adapter-runtime-smoke.php",
           "tests/provider-field-list-order.php",
           "tests/smoke-ability-error-report-summary.php",

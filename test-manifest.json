@@ -56,6 +56,8 @@
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
     { "path": "tests/form-native-select.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-linked-placeholder-colors.php", "environment": "standalone-php" },
+    { "path": "tests/form-linked-placeholder-colors.test.mjs", "environment": "operator-only", "reason": "Chromium linked stylesheet placeholder colour regression." },
     { "path": "tests/form-placeholder-colors.test.mjs", "environment": "operator-only", "reason": "Chromium placeholder colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-submit-colors.test.mjs", "environment": "operator-only", "reason": "Chromium submit colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },

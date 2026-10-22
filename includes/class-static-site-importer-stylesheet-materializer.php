@@ -83,7 +83,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param array<int,array<string,mixed>> $overlays Provider overlays.
 	 * @return string
 	 */
-	private static function preserve_form_placeholders( string $css, array $overlays ): string {
+	public static function preserve_form_placeholders( string $css, array $overlays ): string {
 		if ( ! str_contains( $css, '::placeholder' ) ) {
 			return $css;
 		}

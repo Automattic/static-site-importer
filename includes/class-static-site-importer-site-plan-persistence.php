@@ -1195,6 +1195,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		$stylesheets = array();
+		$asset_css   = array();
 		$source_css  = '';
 		$functions   = null;
 		foreach ( $state['resolved']['writes'] as $write ) {
@@ -1205,6 +1206,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			if ( in_array( $target, array( 'style.css', 'assets/css/editor-style.css' ), true ) ) {
 				$stylesheets[ $state['theme_dir'] . '/' . $target ] = $css;
+			} elseif ( str_ends_with( $target, '.css' ) ) {
+				// Linked source assets (including editor twins) need the same
+				// selector preservation, but not another copy of provider chrome.
+				$preserved = Static_Site_Importer_Stylesheet_Materializer::preserve_form_placeholders( $css, $overlays );
+				if ( $preserved !== $css ) {
+					$asset_css[ $state['theme_dir'] . '/' . $target ] = $preserved;
+				}
 			}
 			if ( 'functions.php' === $target ) {
 				$functions = $css;
@@ -1221,6 +1229,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
+		$writes = array_merge( $writes, $asset_css );
+
 		$bootstrap                                        = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
 		$writes[ $state['theme_dir'] . '/functions.php' ] = str_contains( $functions, $bootstrap ) ? $functions : $functions . $bootstrap;
 		return $writes;
