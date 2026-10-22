@@ -31,8 +31,8 @@ sha256: f0e8e47c9835f158ebc9f774b4cf6381b8b8dec5d9df4bbfb1431a68f22da3ca
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 8b79a8ff949cb7b6c09d358d06186d9adc90ff22f34e20e411ec7c6e8e99341e
-/* Static Site Importer editor control chrome: 6325569c54a4 */
+sha256: 032ae79f34419aa5dfcec9517d8d77581fcd84ab423595699bddf9b06a9b7330
+/* Static Site Importer editor control chrome: 9915b56b2b1b */
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology > div.jetpack-contact-form{flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap;align-items:stretch}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{width:100%}
@@ -54,9 +54,6 @@ sha256: 8b79a8ff949cb7b6c09d358d06186d9adc90ff22f34e20e411ec7c6e8e99341e
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-758bcd0d5ff1{display:block;margin-bottom:4px}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4.ssi-native-form-topology > div.jetpack-contact-form{display:flex;flex-direction:column;gap:20px}
 .editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
-.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form), .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form.submission-success{display:none}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology :where(.wp-block-button.form-button-submit) > .wp-block-button__link{width:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell-wrap, .editor-styles-wrapper .ssi-form-d095fee786e4 .wp-block-button.form-button-submit, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell{display:contents}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology{padding:0;border:0}

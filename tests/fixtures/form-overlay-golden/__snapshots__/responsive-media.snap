@@ -35,8 +35,8 @@ sha256: 2026c4338337753b01a01d65c9ca9cdf430cc6631bf43d4575785956c29f434e
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: e14680876d3f288a539f5b1a30e6e8a64486f2e75cd3efd4a3c7006fc232e2f9
-/* Static Site Importer editor control chrome: b24328dcb991 */
+sha256: c4657ea21146b5eac877966f59a573234ada0073765504a332a684e940c8fda1
+/* Static Site Importer editor control chrome: 9a284140ab51 */
 .editor-styles-wrapper .ssi-form-d095fee786e4{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start}
 .editor-styles-wrapper .ssi-form-d095fee786e4{gap:1.5rem}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:calc(50% - 0.75rem);flex-grow:0;flex-shrink:0;flex-basis:calc(50% - 0.75rem);margin-block-start:0!important}
@@ -59,7 +59,6 @@ sha256: e14680876d3f288a539f5b1a30e6e8a64486f2e75cd3efd4a3c7006fc232e2f9
   .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-d7ee2e041692-destination-primary{font-size:16px!important;padding:12px!important}
 }
 .editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
-.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
 
 === block_markup ===

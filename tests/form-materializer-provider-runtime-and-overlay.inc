@@ -373,6 +373,25 @@
 	$assert( in_array( 'provider_wrapper_layout_unrepresentable', array_column( $structural_selector_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'ancestor-dependent-class-selector-does-not-survive-wrapper-flattening' );
 	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
 	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
+	// A control container with no provider destination is the same loss on either
+	// surface, named for neither (#2281).
+	$unplaced_container = array(
+		'control_containers' => array(
+			array(
+				'index'  => 7,
+				'styles' => array( 'background_color' => '#fff' ),
+			),
+		),
+	);
+	$unplaced_codes     = array();
+	foreach ( array( Static_Site_Importer_Provider_Layout_Overlay::SURFACE_FRONT_END, Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR ) as $unplaced_surface ) {
+		$unplaced_codes[ $unplaced_surface ] = array_column( Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map, $unplaced_container, array(), $unplaced_surface )['losses'], 'reason_code' );
+	}
+	$assert(
+		array( array( 'control_container_unsupported' ), array( 'control_container_unsupported' ) ) === array_values( array_map( static fn( array $codes ): array => array_values( array_filter( $codes, static fn( string $code ): bool => str_contains( $code, 'control_container' ) ) ), $unplaced_codes ) ),
+		'unplaced-control-container-loss-names-no-surface',
+		(string) wp_json_encode( $unplaced_codes )
+	);
 	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form, .ssi-form-123456789abc:not(:has(> form.jetpack-contact-form__form)){display:flex;flex-direction:row;gap:1rem}' ) && str_contains( $root_overlay['css'], '.ssi-form-123456789abc{position:relative;z-index:1;pointer-events:auto}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $root_overlay['operations'][1]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form-with-an-interaction-carrier' );
 	$calc_graph   = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'column', 'gap' => 'calc(32 * 1px)' ), 'form' ) ) );
 	$calc_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $calc_graph, $root_map );
