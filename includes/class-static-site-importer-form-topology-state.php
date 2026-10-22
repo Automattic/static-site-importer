@@ -84,4 +84,20 @@ final class Static_Site_Importer_Form_Topology_State {
 	public function mapped_branch( array $node ): array {
 		return array_values( array_filter( ( $this->collect_controls )( $node ), fn ( int $index ): bool => isset( $this->field_blocks[ $index ] ) ) );
 	}
+
+	/**
+	 * Record one projection operation in the receipt.
+	 *
+	 * @param string              $dimension Receipt dimension: layout, topology, or semantic.
+	 * @param string              $strategy  Projection strategy name.
+	 * @param string              $target    Source identity, hashed into `target_hash`.
+	 * @param array<string,mixed> $details   Strategy-specific fields after the target hash.
+	 */
+	public function record( string $dimension, string $strategy, string $target, array $details = array() ): void {
+		$this->operations[] = array(
+			'dimension'   => $dimension,
+			'strategy'    => $strategy,
+			'target_hash' => hash( 'sha256', $target ),
+		) + $details;
+	}
 }

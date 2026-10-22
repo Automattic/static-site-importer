@@ -330,11 +330,7 @@ final class Static_Site_Importer_Form_Box_Transposition {
 			}
 			foreach ( $merged_boxes as $box_id ) {
 				$s->overlay_represented_nodes[] = $box_id;
-				$s->operations[]                = array(
-					'dimension'   => 'layout',
-					'strategy'    => 'provider_form_box_transposition',
-					'target_hash' => hash( 'sha256', $box_id ),
-				);
+				$s->record( 'layout', 'provider_form_box_transposition', $box_id );
 			}
 			// The gap cancel this replaced only ever applied to a sibling submit,
 			// and a sibling submit is exactly what puts the fields in their own
@@ -381,11 +377,7 @@ final class Static_Site_Importer_Form_Box_Transposition {
 			}
 			$s->provider_layout_targets[ $node_id ] = $hook;
 			$s->overlay_represented_nodes[]         = $node_id;
-			$s->operations[]                        = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_source_box_transposition',
-				'target_hash' => hash( 'sha256', $node_id ),
-			);
+			$s->record( 'layout', 'provider_source_box_transposition', $node_id );
 		}
 		$represented = array_fill_keys( array_merge( $s->represented_layout_nodes, $s->overlay_represented_nodes ), true );
 		foreach ( $s->layout_by_node as $node_id => $layout ) {
