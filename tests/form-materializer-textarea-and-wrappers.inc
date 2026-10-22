@@ -316,14 +316,19 @@
 	// The initial values are stated only for a flex container that leaves them implicit.
 	$assert(
 		method_exists( Static_Site_Importer_Form_Layout_Projection::class, 'with_flex_container_defaults' )
-			&& array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ) )
-			&& array( 'display' => 'flex', 'wrap' => 'wrap', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'wrap' => 'wrap' ) )
-			&& array( 'display' => 'flex', 'direction' => 'column', 'wrap' => 'nowrap' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'direction' => 'column' ) )
+			&& array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap', 'align_items' => 'stretch' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ) )
+			&& array( 'display' => 'flex', 'wrap' => 'wrap', 'direction' => 'row', 'align_items' => 'stretch' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'wrap' => 'wrap' ) )
+			&& array( 'display' => 'flex', 'direction' => 'column', 'wrap' => 'nowrap', 'align_items' => 'stretch' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'direction' => 'column' ) )
+			&& array( 'display' => 'flex', 'align_items' => 'center', 'direction' => 'row', 'wrap' => 'nowrap' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'align_items' => 'center' ) )
 			&& array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ) )
 			&& array( 'gap' => '1rem' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'gap' => '1rem' ) )
-			// A conditional patch keeps the wrap its base rule declares.
-			&& array( 'display' => 'flex', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array( 'display' => 'block', 'wrap' => 'wrap' ) ),
-		'transposed-flex-container-states-only-the-implicit-initial-direction-and-wrap'
+			// A conditional patch keeps the wrap and alignment its base rule declares.
+			&& array( 'display' => 'flex', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array( 'display' => 'block', 'wrap' => 'wrap', 'align_items' => 'stretch' ) )
+			// A patch that first makes the box flex states the alignment its block base never declared.
+			&& array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap', 'align_items' => 'stretch' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array( 'display' => 'block' ) )
+			// In-form copy keeps the provider's wrap, but not its top alignment.
+			&& array( 'display' => 'flex', 'align_items' => 'stretch' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array(), false ),
+		'transposed-flex-container-states-only-the-implicit-initial-direction-wrap-and-alignment'
 	);
 	// A child of a source flex container (or a box that declares a grow or
 	// shrink) keeps the initial `flex: 0 1 auto` for what it leaves implicit,
