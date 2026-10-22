@@ -582,9 +582,9 @@ class Static_Site_Importer_Form_Seeder {
 				'target_hash' => hash( 'sha256', 'control-' . $trigger . ':control-' . $carrier ),
 			);
 		}
-		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $state->released_operations, $state->radio_groups['operations'], $choice_operations, $topology['operations'], $state->host['operations'] ) );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $state->host['losses'] );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $state->control_attribute_losses );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $state->released_operations, $state->radio_groups['operations'], $choice_operations, $topology['operations'], $state->host['operations'] ) );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $layout['receipt'], 'losses', $state->host['losses'] );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $layout['receipt'], 'losses', $state->control_attribute_losses );
 		$state->layout = $layout;
 	}
 
@@ -624,7 +624,7 @@ class Static_Site_Importer_Form_Seeder {
 					'layout' => $layout_patch,
 				)
 			);
-			self::append_receipt_entries(
+			Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries(
 				$state->layout['receipt'],
 				'operations',
 				array(
@@ -880,10 +880,10 @@ class Static_Site_Importer_Form_Seeder {
 		$front_presentation = Static_Site_Importer_Form_Layout_Projection::without_class_carried_submit_colors( $presentation_graph, $state->controls );
 		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $front_presentation, $container_presentation, $context_fallbacks, $presentation_graph );
 		$overlay            = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $state->scope, $state->mapped_types );
-		self::append_receipt_entries( $state->layout['receipt'], 'operations', $overlay['operations'] );
-		self::append_receipt_entries( $state->layout['receipt'], 'operations', $state->layout_intent['operations'] );
-		self::append_receipt_entries( $state->layout['receipt'], 'losses', $overlay['losses'] );
-		self::append_receipt_entries( $state->layout['receipt'], 'losses', $source_losses );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $state->layout['receipt'], 'operations', $overlay['operations'] );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $state->layout['receipt'], 'operations', $state->layout_intent['operations'] );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $state->layout['receipt'], 'losses', $overlay['losses'] );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $state->layout['receipt'], 'losses', $source_losses );
 		$state->layout['receipt']['status'] = 0 < $state->layout['receipt']['operations_total'] ? 'applied' : ( 0 < $state->layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
 		return $overlay;
 	}
@@ -1472,30 +1472,5 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		return $flat;
-	}
-
-	/** Append bounded receipt entries without discarding pre-existing overflow totals. */
-	private static function append_receipt_entries( array &$receipt, string $key, array $entries ): void {
-		$total_key             = 'operations' === $key ? 'operations_total' : 'losses_total';
-		$count_key             = 'operations' === $key ? 'operation_count' : 'loss_count';
-		$receipt[ $key ]       = isset( $receipt[ $key ] ) && is_array( $receipt[ $key ] ) ? $receipt[ $key ] : array();
-		$receipt[ $total_key ] = isset( $receipt[ $total_key ] ) ? (int) $receipt[ $total_key ] : count( $receipt[ $key ] );
-		foreach ( $entries as $entry ) {
-			if ( ! is_array( $entry ) ) {
-				continue;
-			}
-			++$receipt[ $total_key ];
-			if ( count( $receipt[ $key ] ) < 32 ) {
-				$receipt[ $key ][] = $entry;
-			} elseif ( 'losses' === $key && Static_Site_Importer_Form_Mapping_Decision::requires_gate( $entry ) ) {
-				$receipt['gate_required_loss_overflow_count'] = (int) ( $receipt['gate_required_loss_overflow_count'] ?? 0 ) + 1;
-				$receipt['gate_required_loss_overflow_hash']  = hash( 'sha256', (string) ( $receipt['gate_required_loss_overflow_hash'] ?? '' ) . wp_json_encode( $entry ) );
-				if ( ! array_filter( $receipt[ $key ], array( Static_Site_Importer_Form_Mapping_Decision::class, 'requires_gate' ) ) ) {
-					$receipt[ $key ][31] = $entry;
-				}
-			}
-		}
-		$receipt[ $count_key ] = min( 32, $receipt[ $total_key ] );
-		$receipt['truncated']  = ! empty( $receipt['truncated'] ) || (int) ( $receipt['operations_total'] ?? 0 ) > 32 || (int) ( $receipt['losses_total'] ?? 0 ) > 32;
 	}
 }

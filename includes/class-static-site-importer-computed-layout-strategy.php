@@ -114,18 +114,20 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	}
 
 	private static function bound_receipt( array $receipt ): array {
-		$receipt['operations_total'] = count( $receipt['operations'] );
-		$receipt['losses_total']     = count( $receipt['losses'] );
-		$gate_overflow               = array_values( array_filter( array_slice( $receipt['losses'], 32 ), array( Static_Site_Importer_Form_Mapping_Decision::class, 'requires_gate' ) ) );
-		if ( ! empty( $gate_overflow ) ) {
-			$receipt['gate_required_loss_overflow_count'] = count( $gate_overflow );
-			$receipt['gate_required_loss_overflow_hash']  = self::json_hash( $gate_overflow );
+		$entries                     = array(
+			'operations' => $receipt['operations'],
+			'losses'     => $receipt['losses'],
+		);
+		$receipt['operations']       = array();
+		$receipt['losses']           = array();
+		$receipt['operations_total'] = 0;
+		$receipt['losses_total']     = 0;
+		$receipt['operation_count']  = 0;
+		$receipt['loss_count']       = 0;
+		$receipt['truncated']        = false;
+		foreach ( $entries as $key => $list ) {
+			Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, $key, $list );
 		}
-		$receipt['operation_count'] = min( 32, $receipt['operations_total'] );
-		$receipt['loss_count']      = min( 32, $receipt['losses_total'] );
-		$receipt['truncated']       = $receipt['operations_total'] > 32 || $receipt['losses_total'] > 32;
-		$receipt['operations']      = array_slice( $receipt['operations'], 0, 32 );
-		$receipt['losses']          = array_slice( $receipt['losses'], 0, 32 );
 		return $receipt;
 	}
 
