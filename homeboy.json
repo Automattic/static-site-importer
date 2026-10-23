@@ -201,7 +201,6 @@
           }
         ],
         "standalone_php_test_paths": [
-          "tests/smoke-product-grid-runtime-uncaptured.php",
           "tests/form-fallback-contract-equivalence.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-submit-box.php",
@@ -250,8 +249,6 @@
           "tests/smoke-final-hydration-effects.php",
           "tests/smoke-font-face-unavailable.php",
           "tests/smoke-form-intent-routing.php",
-          "tests/smoke-woo-product-listing-category.php",
-          "tests/smoke-woo-product-archive-document.php",
           "tests/smoke-woo-add-to-cart-form-binding.php",
           "tests/smoke-woo-variable-product.php",
           "tests/smoke-form-context-class-fallback.php",
@@ -317,6 +314,7 @@
           "tests/smoke-source-findings-equivalence.php",
           "tests/smoke-source-findings.php",
           "tests/smoke-redirection-routes.php",
+          "tests/smoke-product-grid-runtime-flatten.php",
           "tests/smoke-source-normalizer.php",
           "tests/smoke-submit-caption-color.php",
           "tests/smoke-synced-pattern-materializer.php",

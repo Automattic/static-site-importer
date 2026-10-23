@@ -158,6 +158,19 @@ final class Static_Site_Importer_Redirection_Materializer {
 
 	/** Bind typed source paths to the actual destination, never to guessed slugs. */
 	public static function routes( array $receipt, array $args ) {
+		// switch_theme() changes the active theme but does not load its PHP in
+		// this request. Resolve URLs with the same theme filters as the next
+		// public request, not core's pre-activation permalink defaults.
+		foreach ( $receipt['completed']['operations'] ?? array() as $operation ) {
+			if ( 'activate_theme' === ( $operation['kind'] ?? '' ) && function_exists( 'wp_get_active_and_valid_themes' ) && get_stylesheet() === ( $operation['theme_slug'] ?? '' ) ) {
+				foreach ( wp_get_active_and_valid_themes() as $theme_directory ) {
+					if ( is_readable( $theme_directory . '/functions.php' ) ) {
+						require_once $theme_directory . '/functions.php';
+					}
+				}
+				break;
+			}
+		}
 		$pages       = $receipt['plan']['pages'] ?? array();
 		$ids         = $receipt['completed']['pages'] ?? array();
 		$aliases     = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $args['source_route_aliases'] ?? array(), array_column( $pages, 'source_path' ) );
