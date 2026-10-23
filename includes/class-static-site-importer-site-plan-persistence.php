@@ -761,11 +761,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$post['meta_input'] = wp_slash( $fields );
 		}
 		if ( ! empty( $page['metadata']['detected_date'] ) ) {
-			// The classifier emits UTC. post_date_gmt stores that absolute value;
-			// wp_insert_post derives the site-local post_date from it using the
-			// configured timezone, so writing it here would double-shift display
-			// on non-UTC sites. Only dated documents set the date at all.
+			// The classifier emits UTC; post_date_gmt stores that absolute value.
+			// When the source stated the same instant with its own offset, that
+			// wall-clock time is the post_date its permalinks use. Otherwise
+			// wp_insert_post derives post_date from the configured timezone.
+			// Only dated documents set the date at all.
 			$post['post_date_gmt'] = (string) $page['metadata']['detected_date'];
+			$local_date            = Static_Site_Importer_Document_Type_Classifier::local_date( $page, $post['post_date_gmt'] );
+			if ( null !== $local_date ) {
+				$post['post_date'] = $local_date;
+			}
 		}
 		$id = wp_insert_post( $post, true );
 		if ( is_wp_error( $id ) ) {

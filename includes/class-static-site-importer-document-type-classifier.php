@@ -107,6 +107,32 @@ final class Static_Site_Importer_Document_Type_Classifier {
 	}
 
 	/**
+	 * The source's local wall-clock time for a detected UTC publish date.
+	 *
+	 * The producer's `publication_local_time` states the publication instant
+	 * with the source's own UTC offset. WordPress permalinks and displayed
+	 * dates use the local post_date, so a source in UTC+2 that published at
+	 * 00:04 local keeps that day instead of shifting to the previous one. It
+	 * applies only when it names the same instant as the detected date.
+	 *
+	 * @param array<string,mixed> $page    Plan page row.
+	 * @param string              $utc_date MySQL UTC datetime (post_date_gmt).
+	 * @return string|null MySQL local datetime, or null when the row has none.
+	 */
+	public static function local_date( array $page, string $utc_date ): ?string {
+		$local = $page['publication_local_time'] ?? null;
+		if ( ! is_string( $local ) || 1 !== preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/', $local ) ) {
+			return null;
+		}
+		$date = DateTimeImmutable::createFromFormat( '!Y-m-d\TH:i:sP', $local );
+		// Round-trip rejects calendar overflow (2025-02-30 is not March 2).
+		if ( false === $date || $date->format( 'Y-m-d\\TH:i:sP' ) !== $local || $date->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' ) !== $utc_date ) {
+			return null;
+		}
+		return $date->format( 'Y-m-d H:i:s' );
+	}
+
+	/**
 	 * Prefer the producer publication timestamp, then consumer dated-meta parse.
 	 *
 	 * @param array<string,mixed> $page Plan page row.
