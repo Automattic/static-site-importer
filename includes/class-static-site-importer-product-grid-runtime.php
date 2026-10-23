@@ -37,9 +37,44 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			return;
 		}
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
+		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/**
+	 * Resolve the archive's portable source identity against the imported page records.
+	 *
+	 * @param mixed $id Default document ID.
+	 */
+	public static function archive_document_id( mixed $id ): mixed {
+		if ( ! function_exists( 'is_shop' ) || ! function_exists( 'is_product_taxonomy' ) || ! ( is_shop() || is_product_taxonomy() ) || ! function_exists( 'get_theme_file_path' ) ) {
+			return $id;
+		}
+		$path = get_theme_file_path( 'templates/archive-product.html' );
+		if ( ! is_readable( $path ) ) {
+			return $id;
+		}
+		$markup = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read the active theme's portable archive identity.
+		if ( ! is_string( $markup ) || ! preg_match( '/<!-- ssi-product-archive-document (.*?) -->/', $markup, $match ) ) {
+			return $id;
+		}
+		$document = json_decode( $match[1], true );
+		if ( ! is_array( $document ) || empty( $document['source_path'] ) || ! is_string( $document['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $document['reconciliation_identity'] ) ) {
+			return $id;
+		}
+		$pages = get_posts(
+			array(
+				'post_type'      => 'page',
+				'post_status'    => 'publish',
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+				'meta_key'       => '_blocks_engine_reconciliation_identity', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Imported document identity lookup.
+				'meta_value'     => $document['reconciliation_identity'], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Imported document identity lookup.
+			)
+		);
+		return empty( $pages ) ? $id : (int) $pages[0];
 	}
 
 	/**

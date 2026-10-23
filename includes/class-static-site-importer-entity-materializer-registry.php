@@ -1358,6 +1358,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						$record = self::block_binding_record( $declaration_id, $member['binding'], $replacement, $entity, $prepared['adapter'] );
 						if ( 'woocommerce_product_listing' === ( $prepared['adapter']['id'] ?? '' ) && 'commerce_listing' === ( $member['binding']['role'] ?? '' ) ) {
 							$record['archive_replacement_block_markup'] = Static_Site_Importer_Woo_Product_Listing_Materializer::archive_block_markup( $entity );
+							$record['archive_product_count']            = count( $entity['grid']['items'] ?? array() );
 						}
 						$bindings[] = $record;
 					}

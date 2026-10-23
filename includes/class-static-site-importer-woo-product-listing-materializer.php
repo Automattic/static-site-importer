@@ -525,7 +525,6 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	public static function register(): void {
-		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ) );
 		add_filter( 'loop_shop_per_page', array( self::class, 'archive_per_page' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_control' ), 10, 2 );
 	}
@@ -733,15 +732,4 @@ JS;
 		return self::theme_designs_product_archive() ? -1 : $per_page;
 	}
 
-	/**
-	 * The archive template holds the shop page's imported listing, so the
-	 * archive takes that page's document styles.
-	 */
-	public static function archive_document_id( mixed $id ): mixed {
-		if ( ! empty( $id ) || ! function_exists( 'is_shop' ) || ! function_exists( 'wc_get_page_id' ) || ! ( is_shop() || is_product_taxonomy() ) || ! self::theme_designs_product_archive() ) {
-			return $id;
-		}
-		$page = (int) wc_get_page_id( 'shop' );
-		return $page > 0 ? $page : $id;
-	}
 }
