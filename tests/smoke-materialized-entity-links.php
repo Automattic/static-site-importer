@@ -89,23 +89,41 @@ $assert( 42 === ( $seeded['products'][0]['id'] ?? 0 ), 'Product materializes.' )
 $assert( '/products/field-kit' === ( $GLOBALS['seeded_product_meta']['_static_site_importer_source_route'] ?? '' ), 'Seeded product stores source route metadata.' );
 $GLOBALS['entity_link_content'] = file_get_contents( __DIR__ . '/fixtures/materialized-entity-links.html' );
 $state                          = array(
-	'ordered_pages' => array(
+	'ordered_pages'         => array(
 		array(
 			'source_path' => 'collections/tools/index.html',
 			'route'       => array( 'path' => '/collections/tools' ),
 		),
 	),
-	'source_ids'    => array( 'collections/tools/index.html' => 10 ),
-	'args'          => array(
+	'source_ids'            => array( 'collections/tools/index.html' => 10 ),
+	'args'                  => array(
 		'source_metadata'             => array( 'source_path' => 'https://source.example/' ),
 		'materialized_entity_reports' => array(
 			'catalog' => $seeded,
 		),
 	),
-	'applied'       => array( 'runtime_declarations' => array( 'entity_bindings' => array() ) ),
-	'resolved'      => array( 'pages' => array() ),
+	'applied'               => array( 'runtime_declarations' => array( 'entity_bindings' => array() ) ),
+	'resolved'              => array(
+		'pages'  => array(),
+		'writes' => array(
+			array(
+				'kind'         => 'theme_template',
+				'target_path'  => 'templates/archive.html',
+				'payload'      => array(
+					'encoding' => 'utf8',
+					'data'     => '<a href="https://source.example/collections/tools">Tools</a>',
+				),
+				'payload_hash' => 'declared',
+			),
+		),
+	),
+	'theme_dir'             => '/theme',
+	'composed_theme_writes' => array( '/theme/templates/archive.html' => '<title>Overlay</title><a href="https://source.example/collections/tools">Tools</a>' ),
 );
 $assert( true === Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state ), 'Rewrite completes.' );
+$template = $state['resolved']['writes'][0];
+$assert( '<title>Overlay</title><a href="/?page_id=10">Tools</a>' === $template['payload']['data'] && ! isset( $template['payload_hash'] ), 'A composed template is rewritten from its overlaid text and its stale hash dropped.' );
+$assert( $template['payload']['data'] === $state['composed_theme_writes']['/theme/templates/archive.html'], 'The composed copy matches the rewritten write, so the write is not skipped.' );
 $stored = $GLOBALS['entity_link_content'];
 $assert( 2 === substr_count( $stored, 'href="/?p=42"' ), 'Scoped card and bare nav resolve to the seeded product.' );
 $assert( str_contains( $stored, 'href="/?page_id=10"' ), 'Category listing retains its imported page identity.' );
@@ -121,6 +139,8 @@ $assert( str_contains( $rendered, '?s=field%20kit&post_type=product' ), 'Search 
 $assert( null === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/products/not-field-kit', array( '/products/field-kit' => '/?p=42' ) ), 'Other handles do not match.' );
 $unresolved = array();
 $relative   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="../../products/field-kit?ref=nav#details">Relative</a>', array( '/products/field-kit' => '/?p=42' ), $unresolved, 'https://source.example/', array(), '/collections/tools/index.html' );
+$nested     = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '{"html":"\\u005cu003ca href=\\u005cu0022https://source.example/products/field-kit\\u005cu0022\\u005cu003e"}', array(), $unresolved, 'https://source.example/', array( '/products/field-kit' => '/?p=42' ) );
+$assert( str_contains( $nested, 'href=\\u005cu0022/?p=42\\u005cu0022' ), 'HTML escaped twice inside block attributes is rewritten.' );
 $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative routes preserve query and fragment.' );
 $assert( '/?p=42' === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/groups/tools/items/field-kit', array( '/items/field-kit' => '/?p=42' ) ), 'Scoped matching keys on the product route resource segment, not a platform.' );
 $assert( ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( 'https://source.example:444/products/field-kit', 'https://source.example/' ), 'Other ports are cross-origin.' );

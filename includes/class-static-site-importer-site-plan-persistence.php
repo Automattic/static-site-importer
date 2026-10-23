@@ -908,9 +908,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! in_array( $write['kind'] ?? '', array( 'theme_template', 'theme_template_part' ), true ) || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) || ! is_string( $write['payload']['data'] ?? null ) ) {
 				continue;
 			}
+			// Composed theme files already carry their overlays and were written
+			// at preparation; rewrite that text so the changed bytes are written.
+			$path       = $state['theme_dir'] . '/' . $write['target_path'];
+			$source     = is_string( $state['composed_theme_writes'][ $path ] ?? null ) ? $state['composed_theme_writes'][ $path ] : $write['payload']['data'];
 			$unresolved = array();
-			$state['resolved']['writes'][ $index ]['payload']['data'] = self::rewrite_route_references( $write['payload']['data'], $routes, $unresolved, $source_url, $product_routes );
+			$rewritten  = self::rewrite_route_references( $source, $routes, $unresolved, $source_url, $product_routes );
 			self::count_unresolved_routes( $state, $unresolved );
+			if ( $rewritten === $source ) {
+				continue;
+			}
+			$state['resolved']['writes'][ $index ]['payload']['data'] = $rewritten;
+			unset( $state['resolved']['writes'][ $index ]['payload_hash'] );
+			if ( isset( $state['composed_theme_writes'][ $path ] ) ) {
+				$state['composed_theme_writes'][ $path ] = $rewritten;
+			}
 		}
 		// Synced patterns are page content too; an owner-edited one is left alone.
 		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
@@ -1005,6 +1017,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
 			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
 		) as $pattern ) {
 			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
