@@ -375,6 +375,27 @@ $adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_produ
 $owned   = $adopted['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array();
 $assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 7 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
 $assert( array() === ( $adopted['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? null ), 'grid-anchor-inside-the-listing-is-absorbed' );
+// Listing membership reaches the product seeder as a category, so the
+// seeder assigns it whichever entity materializes first.
+$with_products                        = $lifecycle;
+$with_products['entities']['catalog'] = array(
+	'adapter'  => array( 'entity_collection' => 'products' ),
+	'manifest' => array(
+		'products' => array(
+			array(
+				'slug'       => 'zeta-item',
+				'categories' => array( 'Existing' ),
+			),
+			array( 'slug' => 'unlisted-item' ),
+		),
+	),
+);
+$titled                               = $plan;
+$titled['pages'][0]['title']          = 'Shop';
+$titled['pages'][0]['slug']           = 'shop';
+$members                              = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $with_products, $titled );
+$category                             = (string) ( $members['entities'][ $list_id ]['manifest']['product_listings'][0]['category']['name'] ?? '' );
+$assert( 'Shop' === $category && array( 'Existing', 'Shop' ) === ( $members['entities']['catalog']['manifest']['products'][0]['categories'] ?? null ) && ! isset( $members['entities']['catalog']['manifest']['products'][1]['categories'] ), 'listed-products-carry-the-listing-category-to-the-seeder', (string) json_encode( $members['entities']['catalog']['manifest']['products'] ) );
 $elsewhere = $plan;
 $elsewhere['runtime_declarations'][2]['payload']['entities'][0]['grid_selector'] = 'main > ul';
 $unowned = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $elsewhere, array() ), $elsewhere );
@@ -463,7 +484,6 @@ $assert(
 		''
 	),
 	'a-count-without-a-number-falls-back-to-the-woocommerce-block'
-
 );
 $assert(
 	array(

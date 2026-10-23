@@ -147,7 +147,11 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	private static function materialize_category( array $listing ): array {
 		$category = $listing['category'];
 		$term     = get_term_by( 'slug', (string) $category['slug'], 'product_cat' );
-		$created  = false;
+		if ( ! $term instanceof WP_Term ) {
+			// The product seeder names the same category after the listing.
+			$term = get_term_by( 'name', (string) $category['name'], 'product_cat' );
+		}
+		$created = false;
 		if ( $term instanceof WP_Term ) {
 			$term_id = (int) $term->term_id;
 		} else {

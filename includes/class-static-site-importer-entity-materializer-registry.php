@@ -1926,13 +1926,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function with_adopted_product_regions( array $lifecycle, array $plan ): array {
 		$pages      = array();
 		$categories = array();
+		$members    = array();
 		foreach ( Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $plan ) as $source_path => $document ) {
-			$page                       = $plan[ $document['group'] ][ $document['index'] ];
-			$categories[ $source_path ] = array(
-				'name' => (string) ( $page['title'] ?? '' ),
-				'slug' => (string) ( $page['slug'] ?? '' ),
-			);
-			$pages[ $source_path ]      = (string) ( $page['resolved_block_markup'] ?? '' );
+			$page                  = $plan[ $document['group'] ][ $document['index'] ];
+			$pages[ $source_path ] = (string) ( $page['resolved_block_markup'] ?? '' );
+			// A listing page is its product category; a template listing is
+			// the catalog archive itself.
+			if ( 'pages' === $document['group'] ) {
+				$categories[ $source_path ] = array(
+					'name' => (string) ( $page['title'] ?? '' ),
+					'slug' => (string) ( $page['slug'] ?? '' ),
+				);
+			}
 		}
 		$range   = static function ( array $binding ) use ( $pages ): ?array {
 			$content = $pages[ (string) ( $binding['source_path'] ?? '' ) ] ?? '';
@@ -1996,6 +2001,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$adopted[] = array( $claim, (string) $id );
 				}
 				$lifecycle['entities'][ $id ]['manifest']['product_listings'][ $index ] = $listing;
+				foreach ( is_array( $owned['items'] ?? null ) && '' !== $listing['category']['name'] ? $owned['items'] : array() as $item ) {
+					$slug = is_array( $item ) ? sanitize_title( (string) ( $item['product'] ?? '' ) ) : '';
+					if ( '' !== $slug ) {
+						$members[ $slug ][] = $listing['category']['name'];
+					}
+				}
+			}
+		}
+		// Listing membership is product data: the seeder assigns each product's
+		// categories in one pass, whichever entity materializes first.
+		foreach ( $members as $slug => $names ) {
+			foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
+					continue;
+				}
+				foreach ( $prepared['manifest']['products'] ?? array() as $index => $product ) {
+					if ( is_array( $product ) && sanitize_title( (string) ( $product['slug'] ?? '' ) ) === $slug ) {
+						$categories = is_array( $product['categories'] ?? null ) ? $product['categories'] : array();
+						$lifecycle['entities'][ $id ]['manifest']['products'][ $index ]['categories'] = array_values( array_unique( array_merge( $categories, $names ) ) );
+					}
+				}
 			}
 		}
 		if ( empty( $adopted ) ) {
