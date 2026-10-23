@@ -28,9 +28,9 @@ defined( 'ABSPATH' ) || exit;
  *   without the source's "all" option, so the source controls are what keep
  *   the source design.
  *
- * Any other control keeps its source block unchanged. The page
- * keeps the result, and the theme serves it as the `archive-product`
- * template, which WooCommerce renders at the shop page's URL.
+ * Any other control keeps its source block unchanged. The theme serves this
+ * archive markup as `archive-product`. The page instead uses a hand-picked
+ * collection of its grid's seeded products and keeps all source controls.
  */
 final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	/** Theme template WooCommerce renders for the shop page and product taxonomies. */
@@ -183,7 +183,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	public static function binding_block_markup( array $entity, array $result ): string {
-		return 'mapped' === ( $result['status'] ?? '' ) ? self::archive_block_markup( $entity ) : '';
+		return 'mapped' === ( $result['status'] ?? '' ) ? self::collection_block_markup( $entity, true ) : '';
 	}
 
 	/** Classic themes keep the source listing; WooCommerce's classic archive has no imported design. */
@@ -197,11 +197,24 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	 * listing the archive's products and each control a WooCommerce block.
 	 */
 	public static function archive_block_markup( array $entity ): string {
-		$region = '';
+		return self::collection_block_markup( $entity, false );
+	}
+
+	/**
+	 * Build the page's hand-picked collection or the archive's inheriting collection.
+	 *
+	 * @param array<string,mixed> $entity Listing with its adopted grid.
+	 * @param bool                $page   Whether to use the page query and source controls.
+	 * @return string
+	 */
+	private static function collection_block_markup( array $entity, bool $page ): string {
+		$grid        = is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array();
+		$product_ids = $page ? array_keys( Static_Site_Importer_Woo_Product_Grid_Materializer::product_ids( $grid ) ) : array();
+		$page        = $page && array() !== $product_ids;
+		$region      = '';
 		foreach ( is_array( $entity['bindings'] ?? null ) ? $entity['bindings'] : array() as $binding ) {
 			$region = is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ? (string) ( $binding['search_block_markup'] ?? '' ) : $region;
 		}
-		$grid        = is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array();
 		$grid_anchor = (string) ( $grid['bindings'][0]['search_block_markup'] ?? '' );
 		$grid_markup = array() === $grid ? '' : Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $grid );
 		if ( '' === $region || '' === $grid_markup || 1 !== substr_count( $region, $grid_anchor ) ) {
@@ -215,7 +228,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				$controls[ (string) ( $control['id'] ?? '' ) ] = $control;
 			}
 		}
-		foreach ( is_array( $entity['control_bindings'] ?? null ) ? $entity['control_bindings'] : array() as $binding ) {
+		foreach ( ! $page && is_array( $entity['control_bindings'] ?? null ) ? $entity['control_bindings'] : array() as $binding ) {
 			$search      = is_array( $binding ) ? (string) ( $binding['search_block_markup'] ?? '' ) : '';
 			$replacement = self::control_block_markup( $controls[ (string) ( $binding['control'] ?? '' ) ] ?? array(), $search );
 			// A control WooCommerce cannot express, or one the listing does not
@@ -254,7 +267,15 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			'collection' => 'woocommerce/product-collection/product-catalog',
 			'className'  => Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS,
 		);
-		$json  = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
+		if ( $page ) {
+			$attrs['query']['inherit']                       = false;
+			$attrs['query']['woocommerceHandPickedProducts'] = $product_ids;
+			$attrs['query']['orderBy']                       = 'post__in';
+			$attrs['query']['perPage']                       = count( $product_ids );
+			$attrs['query']['pages']                         = 1;
+			$attrs['collection']                             = 'woocommerce/product-collection/hand-picked';
+		}
+		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 		if ( ! is_string( $json ) ) {
 			return '';
 		}
