@@ -291,6 +291,7 @@
           "tests/smoke-portable-source-manifest.php",
           "tests/smoke-post-meta-rollback.php",
           "tests/smoke-producer-neutrality.php",
+          "tests/smoke-product-form-binding-placement.php",
           "tests/smoke-product-grid-quality-reconciliation.php",
           "tests/smoke-product-handoff-contract.php",
           "tests/smoke-provider-entity-decline.php",
