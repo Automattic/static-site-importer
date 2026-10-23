@@ -38,6 +38,7 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 			'id'                       => 'woocommerce_product_grid',
 			'entity_type'              => 'product_grid',
 			'entity_collection'        => 'product_grids',
+			'rejected_rows_degrade'    => true,
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
 			'label'                    => 'WooCommerce product grid',

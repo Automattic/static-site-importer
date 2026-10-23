@@ -457,8 +457,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! empty( $validation['errors'] ) ) {
 				// Entity validators report per row: an unmappable row is rejected
 				// without discarding the rows that did validate, so partial feature
-				// parity is still materialized. A rejected form row keeps the page's
-				// converted source form, so a forms declaration with no usable row
+				// parity is still materialized. An opted-in region row keeps the page's
+				// converted source markup, so a declaration with no usable row
 				// is skipped the same way instead of failing the import (#2054).
 				// Other collections with no usable row, and an error about the
 				// manifest itself rather than one of its rows, are rejected
@@ -466,7 +466,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// alongside the errors themselves, because the user-facing gate
 				// message is built from this data and "failed validation" without
 				// the facts is not actionable (#1785).
-				if ( empty( $accepted ) && ( 'form' !== $capability || ! self::errors_are_row_scoped( $validation['errors'], $collection ) ) ) {
+				if ( ! self::errors_are_row_scoped( $validation['errors'], $collection ) || ( empty( $accepted ) && empty( $adapter['rejected_rows_degrade'] ) ) ) {
 					return new WP_Error(
 						'static_site_importer_runtime_entity_invalid',
 						'Runtime entity declaration failed SSI provider validation.',
@@ -586,7 +586,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * Entity validators are per row by contract, so the declaration is still
 	 * materialized from the rows that validated (`runtime_entity_rows_rejected`),
-	 * and a forms declaration with no valid row is dropped whole
+	 * and an opted-in region declaration with no valid row is dropped whole
 	 * (`runtime_declaration_rejected`, a degraded unit and an accepted, reported
 	 * loss). The rejected rows keep the converted source markup already on the
 	 * page and their bindings are ignored. The finding names the first rejected
@@ -827,10 +827,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
-				// A resolved forms row the validator rejects degrades the same way an
+				// An opted-in region row the validator rejects degrades the same way an
 				// inline one does: the rejected rows keep their converted source
 				// markup, and a declaration with no valid row is dropped whole.
-				if ( 'form' !== ( $prepared['adapter']['capability'] ?? null ) || ! self::errors_are_row_scoped( $validation['errors'], $key ) ) {
+				if ( empty( $prepared['adapter']['rejected_rows_degrade'] ) || ! self::errors_are_row_scoped( $validation['errors'], $key ) ) {
 					return new WP_Error(
 						'static_site_importer_runtime_entity_resolution_invalid',
 						'Resolver-expanded runtime entities failed SSI provider validation.',
