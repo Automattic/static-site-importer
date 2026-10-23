@@ -101,7 +101,7 @@ $empty_grid = array(
 	),
 );
 $validated  = Static_Site_Importer_Entity_Materializer_Registry::validate_product_grids_manifest( array( 'product_grids' => array( $empty_grid ) ) );
-$assert( array() === $validated["errors"] && 1 === count( $validated["product_grids"] ), wp_json_encode( $validated["errors"] ) . 'An empty grid declared with no items and no template is valid.' );
+$assert( array() === $validated['errors'] && 1 === count( $validated['product_grids'] ), wp_json_encode( $validated['errors'] ) . 'An empty grid declared with no items and no template is valid.' );
 $plan      = array(
 	'pages'   => array(
 		array(
@@ -221,6 +221,13 @@ $nested_region = str_replace( $form, $nested_form, $region );
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $nested_region;
 $plan['pages'][0]['resolved_block_markup']                         = $nested_region;
 $plan['quality']['fallbacks'][0]['binding']['search_block_markup'] = $nested_form;
+// The theme places the sort form beside the grid, outside the listing region.
+$beside_plan                                      = $plan;
+$beside_plan['pages'][0]['resolved_block_markup'] = $nested_form . $empty;
+$beside_lifecycle                                 = $lifecycle;
+$beside_lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $empty;
+$beside = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan )['entities'][0]['manifest']['product_listings'][0];
+$assert( ! empty( $beside['replaced_fallback_identities'] ), 'A sort form placed beside the listing region reconciles when its control is bound.' );
 $prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
 $nested   = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $nested['replaced_fallback_identities'] ), 'A sort select inside its single-select form reconciles the form.' );

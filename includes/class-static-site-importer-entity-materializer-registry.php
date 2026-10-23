@@ -1908,15 +1908,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/**
 	 * Form fallbacks a bound sort control fully replaces: a filter/sort form
-	 * on the listing's page whose resolved block holds the control's one
-	 * placement inside the listing region, and whose only control is that sort.
+	 * placed once on the listing's page (themes often put it beside the grid,
+	 * not inside it) whose resolved block holds the sort control's placement,
+	 * and whose only control is that sort.
 	 *
 	 * @param array<string,mixed> $listing Product listing.
-	 * @param string              $region Listing region markup.
+	 * @param string              $page Listing page resolved markup.
 	 * @param array<int,mixed>    $fallbacks Plan quality fallbacks.
 	 * @return array<int,string>
 	 */
-	private static function sort_form_fallback_identities( array $listing, string $region, array $fallbacks ): array {
+	private static function sort_form_fallback_identities( array $listing, string $page, array $fallbacks ): array {
 		$sorts = array();
 		foreach ( is_array( $listing['controls'] ?? null ) ? $listing['controls'] : array() as $control ) {
 			if ( is_array( $control ) && 'sort' === ( $control['kind'] ?? '' ) && null !== Static_Site_Importer_Woo_Product_Listing_Materializer::sort_parameter( $control ) ) {
@@ -1926,7 +1927,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$identities = array();
 		foreach ( array() === $sorts ? array() : $fallbacks as $fallback ) {
 			$form = is_array( $fallback ) ? (string) ( $fallback['binding']['search_block_markup'] ?? '' ) : '';
-			if ( '' === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || 1 !== (int) ( $fallback['control_count'] ?? 0 ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) || 1 !== substr_count( $region, $form ) ) {
+			if ( '' === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || 1 !== (int) ( $fallback['control_count'] ?? 0 ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) || 1 !== substr_count( $page, $form ) ) {
 				continue;
 			}
 			foreach ( $listing['control_bindings'] as $binding ) {
@@ -2046,7 +2047,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$listing['grid']                         = $empty ? null : $owned;
 				$listing['control_bindings']             = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing_control' === ( $binding['role'] ?? '' ) ) );
-				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, (string) ( $region[0]['search_block_markup'] ?? '' ), $plan['quality']['fallbacks'] ?? array() );
+				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, $pages[ (string) ( $listing['source_path'] ?? '' ) ] ?? '', $plan['quality']['fallbacks'] ?? array() );
 				$listing['bindings']                     = null !== $owned ? $region : array();
 				if ( null !== $owned ) {
 					$adopted[] = array( $claim, (string) $id );
