@@ -211,6 +211,7 @@
     { "path": "tests/smoke-product-grid-runtime-uncaptured.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-grid-template.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-listing-category.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-woo-product-listing-phase-two.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-listing-archive.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-archive-document.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-artifact-run-primitives.php", "environment": "standalone-php" },

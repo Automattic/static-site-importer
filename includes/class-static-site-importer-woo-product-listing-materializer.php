@@ -29,8 +29,10 @@ defined( 'ABSPATH' ) || exit;
  *   the source design.
  *
  * Any other control keeps its source block unchanged. The theme serves this
- * archive markup as `archive-product`. The page instead uses a hand-picked
- * collection of its grid's seeded products and keeps all source controls.
+ * archive markup as `archive-product`. Pages query their category, retaining
+ * hand-picked source order when populated. Empty grids become no-results
+ * content beside a live product template. Page sort selects use catalog ordering;
+ * other page controls retain their source markup.
  */
 final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	/** Theme template WooCommerce renders for the shop page and product taxonomies. */
@@ -38,6 +40,18 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 
 	/** Block metadata naming the archive query parameter a source control sets. */
 	public const CONTROL_KEY = 'staticSiteImporterListingControl';
+
+	/** Semantic meanings shared by producer sort options and catalog ordering. */
+	private const SORT_ORDERS = array(
+		'default'    => 'menu_order',
+		'newest'     => 'date',
+		'price_asc'  => 'price',
+		'price_desc' => 'price-desc',
+		'name_asc'   => 'title-asc',
+		'name_desc'  => 'title-desc',
+		'popularity' => 'popularity',
+		'rating'     => 'rating',
+	);
 
 	/** Script handle that turns a wired source control's change into the archive URL. */
 	private const CONTROL_SCRIPT = 'static-site-importer-listing-controls';
@@ -90,8 +104,8 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	/**
-	 * Map every listing that adopted its grid; the others keep their source
-	 * controls. The first mapped listing's grid sets the archive's default
+	 * Map adopted grids and verified empty listing regions. The others keep
+	 * their source controls. The first populated listing sets the archive's default
 	 * order: WooCommerce sorts its catalog by menu order, then title.
 	 */
 	public static function materialize( array $manifest, array $args = array() ): array {
@@ -108,7 +122,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		foreach ( $listings as $listing ) {
 			$reason = $available ? '' : 'woocommerce_inactive';
-			if ( '' === $reason && ( ! is_array( $listing['grid'] ?? null ) || empty( $listing['bindings'] ) ) ) {
+			if ( '' === $reason && ( ( ! is_array( $listing['grid'] ?? null ) && empty( $listing['empty_listing'] ) ) || empty( $listing['bindings'] ) ) ) {
 				$reason = 'listing_grid_not_adopted';
 			}
 			$status = '' === $reason ? 'mapped' : 'skipped';
@@ -129,9 +143,18 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 					$report['status'] = 'error';
 				}
 			}
+			$row['controls'] = array();
+			foreach ( $listing['controls'] ?? array() as $control ) {
+				if ( 'sort' === ( $control['kind'] ?? '' ) ) {
+					$row['controls'][] = array(
+						'id'     => (string) ( $control['id'] ?? '' ),
+						'reason' => null === self::sort_parameter( $control ) ? 'sort_options_unmappable' : '',
+					);
+				}
+			}
 			$report['product_listings'][] = $row;
 			++$report['counts'][ $status ];
-			if ( 'mapped' === $status && array() === $report['rollback']['menu_order'] ) {
+			if ( 'mapped' === $status && is_array( $listing['grid'] ?? null ) && array() === $report['rollback']['menu_order'] ) {
 				$report['rollback']['menu_order'] = self::apply_source_order( $listing['grid'] );
 			}
 		}
@@ -256,6 +279,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	public static function binding_block_markup( array $entity, array $result ): string {
+		$entity['term_id'] = (int) ( $result['term_id'] ?? 0 );
 		return 'mapped' === ( $result['status'] ?? '' ) ? self::collection_block_markup( $entity, true ) : '';
 	}
 
@@ -283,13 +307,21 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	private static function collection_block_markup( array $entity, bool $page ): string {
 		$grid        = is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array();
 		$product_ids = $page ? array_keys( Static_Site_Importer_Woo_Product_Grid_Materializer::product_ids( $grid ) ) : array();
-		$page        = $page && array() !== $product_ids;
+		$page        = $page && ( array() !== $product_ids || ! empty( $entity['empty_listing'] ) );
 		$region      = '';
 		foreach ( is_array( $entity['bindings'] ?? null ) ? $entity['bindings'] : array() as $binding ) {
 			$region = is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ? (string) ( $binding['search_block_markup'] ?? '' ) : $region;
 		}
 		$grid_anchor = (string) ( $grid['bindings'][0]['search_block_markup'] ?? '' );
 		$grid_markup = array() === $grid ? '' : Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $grid );
+		if ( ! empty( $entity['empty_listing'] ) ) {
+			$grid_anchor = (string) ( $entity['empty_grid_markup'] ?? '' );
+			if ( '' === $grid_anchor ) {
+				return '';
+			}
+			$grid_markup = '<!-- wp:group --><div class="wp-block-group"><!-- wp:woocommerce/product-template --><!-- wp:woocommerce/product-image /--><!-- wp:post-title {"isLink":true} /--><!-- wp:woocommerce/product-price /--><!-- wp:woocommerce/product-button /--><!-- /wp:woocommerce/product-template -->'
+				. '<!-- wp:woocommerce/product-collection-no-results -->' . $grid_anchor . '<!-- /wp:woocommerce/product-collection-no-results --></div><!-- /wp:group -->';
+		}
 		if ( '' === $region || '' === $grid_markup || 1 !== substr_count( $region, $grid_anchor ) ) {
 			return '';
 		}
@@ -301,9 +333,10 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				$controls[ (string) ( $control['id'] ?? '' ) ] = $control;
 			}
 		}
-		foreach ( ! $page && is_array( $entity['control_bindings'] ?? null ) ? $entity['control_bindings'] : array() as $binding ) {
+		foreach ( is_array( $entity['control_bindings'] ?? null ) ? $entity['control_bindings'] : array() as $binding ) {
 			$search      = is_array( $binding ) ? (string) ( $binding['search_block_markup'] ?? '' ) : '';
-			$replacement = self::control_block_markup( $controls[ (string) ( $binding['control'] ?? '' ) ] ?? array(), $search );
+			$control     = $controls[ (string) ( $binding['control'] ?? '' ) ] ?? array();
+			$replacement = $page && 'sort' !== ( $control['kind'] ?? '' ) ? '' : self::control_block_markup( $control, $search );
 			// A control WooCommerce cannot express, or one the listing does not
 			// hold exactly once, keeps its source block.
 			if ( '' !== $replacement && '' !== $search && 1 === substr_count( $region, $search ) ) {
@@ -340,13 +373,21 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			'collection' => 'woocommerce/product-collection/product-catalog',
 			'className'  => Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS,
 		);
-		if ( $page ) {
+		if ( $page && array() !== $product_ids ) {
 			$attrs['query']['inherit']                       = false;
 			$attrs['query']['woocommerceHandPickedProducts'] = $product_ids;
 			$attrs['query']['orderBy']                       = 'post__in';
 			$attrs['query']['perPage']                       = count( $product_ids );
 			$attrs['query']['pages']                         = 1;
 			$attrs['collection']                             = 'woocommerce/product-collection/hand-picked';
+		}
+		if ( $page ) {
+			$term                       = function_exists( 'get_term_by' ) ? get_term_by( 'slug', (string) ( $entity['category']['slug'] ?? '' ), 'product_cat' ) : null;
+			$attrs['query']['inherit']  = false;
+			$term_id                    = (int) ( $entity['term_id'] ?? 0 );
+			$term_id                    = $term_id > 0 ? $term_id : ( $term instanceof WP_Term ? (int) $term->term_id : 0 );
+			$attrs['query']['taxQuery'] = $term_id > 0 ? array( 'product_cat' => array( $term_id ) ) : array();
+			$attrs['query']['staticSiteImporterListingQuery'] = true;
 		}
 		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 		if ( ! is_string( $json ) ) {
@@ -355,6 +396,56 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		return '<!-- wp:woocommerce/product-collection ' . $json . ' --><div class="wp-block-woocommerce-product-collection ' . Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS . '">'
 			. serialize_block( $listing )
 			. '</div><!-- /wp:woocommerce/product-collection -->';
+	}
+
+	/**
+	 * Resolve one exact block root against the producer's structural selector.
+	 *
+	 * @param string $markup Full source document blocks.
+	 * @param string $selector Producer selector.
+	 * @return string Exact serialized block, or empty when ambiguous.
+	 */
+	public static function region_anchor( string $markup, string $selector ): string {
+		$anchors  = array();
+		$mark     = static function ( array $blocks ) use ( &$mark, &$anchors ): string {
+			$output = '';
+			foreach ( $blocks as $block ) {
+				$id        = count( $anchors );
+				$anchors[] = serialize_block( $block );
+				$index     = 0;
+				$root      = true;
+				foreach ( $block['innerContent'] as $chunk ) {
+					if ( null === $chunk ) {
+						$output .= $mark( array( $block['innerBlocks'][ $index++ ] ) );
+					} else {
+						if ( $root ) {
+							$tags = new WP_HTML_Tag_Processor( $chunk );
+							if ( $tags->next_tag() ) {
+								$tags->set_attribute( 'data-ssi-anchor', (string) $id );
+								$chunk = $tags->get_updated_html();
+								$root  = false;
+							}
+						}
+						$output .= $chunk;
+					}
+				}
+			}
+			return $output;
+		};
+		$html     = $mark( parse_blocks( $markup ) );
+		$dom      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$dom->loadHTML( '<!doctype html><html><body>' . $html . '</body></html>' );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$parsed  = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::parse( $selector );
+		$matches = array();
+		foreach ( $dom->getElementsByTagName( '*' ) as $element ) {
+			if ( $element->hasAttribute( 'data-ssi-anchor' ) && \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::matches( $element, $parsed )['matches'] ) {
+				$matches[] = $anchors[ (int) $element->getAttribute( 'data-ssi-anchor' ) ];
+			}
+		}
+		return 1 === count( $matches ) ? $matches[0] : '';
 	}
 
 	/**
@@ -368,7 +459,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			return self::wired_source_markup( $source, $wired );
 		}
 		if ( 'sort' === $kind ) {
-			return '<!-- wp:woocommerce/catalog-sorting /-->';
+			return '';
 		}
 		return 'result_count' === $kind ? '<!-- wp:woocommerce/product-results-count /-->' : '';
 	}
@@ -434,30 +525,19 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	/**
 	 * The source sort select wired to WooCommerce's `orderby`, each option
 	 * mapped to the catalog order it names; null when an option names an order
-	 * WooCommerce cannot run, so the control falls back to `catalog-sorting`.
+	 * WooCommerce cannot run. Options without a known producer order are disabled.
 	 *
+	 * @param array<string,mixed> $control Producer sort control.
 	 * @return array<string,mixed>|null
 	 */
-	private static function sort_parameter( array $control ): ?array {
-		$orders = array(
-			'default'    => '',
-			'newest'     => 'date',
-			'price_asc'  => 'price',
-			'price_desc' => 'price-desc',
-			'name_asc'   => 'title-asc',
-			'name_desc'  => 'title-desc',
-			'popularity' => 'popularity',
-			'rating'     => 'rating',
-		);
+	public static function sort_parameter( array $control ): ?array {
+		$orders = self::SORT_ORDERS;
 		$values = array();
 		foreach ( is_array( $control['options'] ?? null ) ? $control['options'] : array() as $option ) {
 			$order = is_array( $option ) && is_string( $option['order'] ?? null ) ? $option['order'] : '';
-			if ( ! array_key_exists( $order, $orders ) ) {
-				return null;
-			}
-			$values[] = $orders[ $order ];
+			$values[] = $orders[ $order ] ?? null;
 		}
-		return array() === $values ? null : array(
+		return array() === array_filter( $values, 'is_string' ) ? null : array(
 			'param'  => 'orderby',
 			'shape'  => 'select',
 			'values' => $values,
@@ -525,8 +605,33 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	public static function register(): void {
+		if ( defined( 'STATIC_SITE_IMPORTER_LISTING_RUNTIME_REGISTERED' ) ) {
+			return;
+		}
+		define( 'STATIC_SITE_IMPORTER_LISTING_RUNTIME_REGISTERED', true );
 		add_filter( 'loop_shop_per_page', array( self::class, 'archive_per_page' ), 20 );
+		add_filter( 'query_loop_block_query_vars', array( self::class, 'page_ordering' ), 100, 2 );
 		add_filter( 'render_block', array( self::class, 'render_control' ), 10, 2 );
+	}
+
+	/**
+	 * Honour catalog ordering only on imported, non-inheriting listing collections.
+	 *
+	 * @param array<string,mixed> $query Query variables.
+	 * @param WP_Block            $block Product template with collection query context.
+	 * @return array<string,mixed>
+	 */
+	public static function page_ordering( array $query, WP_Block $block ): array {
+		if ( empty( $block->context['query']['staticSiteImporterListingQuery'] ) || ! empty( $block->context['query']['inherit'] ) ) {
+			return $query;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public catalog ordering.
+		$order = isset( $_GET['orderby'] ) && is_string( $_GET['orderby'] ) ? sanitize_text_field( wp_unslash( $_GET['orderby'] ) ) : '';
+		if ( ! in_array( $order, array( 'menu_order', 'popularity', 'date', 'price', 'price-desc', 'title-asc', 'title-desc' ), true ) || ! function_exists( 'WC' ) ) {
+			return $query;
+		}
+		$catalog = WC()->query->get_catalog_ordering_args( $order );
+		return array_merge( $query, $catalog );
 	}
 
 	/**
@@ -545,7 +650,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- A public archive filter, read like WooCommerce reads it.
 		$requested = isset( $_GET[ $param ] ) && is_string( $_GET[ $param ] ) ? sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) : '';
 		$shape     = (string) ( $wired['shape'] ?? '' );
-		$values    = is_array( $wired['values'] ?? null ) ? array_map( 'strval', array_values( $wired['values'] ) ) : array();
+		$values    = is_array( $wired['values'] ?? null ) ? array_values( $wired['values'] ) : array();
 		if ( 'buttons' === $shape && 'categories' === $param ) {
 			list( $content, $values ) = self::live_category_buttons( $content, $values, (string) ( $wired['state_class'] ?? '' ) );
 		}
@@ -568,8 +673,14 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		$tags->set_attribute( 'data-ssi-listing-param', $param );
 		$tags->set_attribute( 'data-ssi-listing-clear', '' );
+		if ( 'select' === $shape ) {
+			$tags->set_attribute( 'name', $param );
+		}
 		// WooCommerce reads a comma list; a single-choice control shows its first value.
 		$chosen = explode( ',', $requested )[0];
+		if ( '' === $chosen && 'orderby' === $param && in_array( 'menu_order', $values, true ) ) {
+			$chosen = 'menu_order';
+		}
 		if ( ! in_array( $chosen, $values, true ) ) {
 			// Nothing this control offers is requested: keep the source state.
 			$chosen = null;
@@ -582,6 +693,11 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				continue;
 			}
 			$value = $values[ $index++ ];
+			if ( null === $value ) {
+				$tags->set_attribute( 'disabled', true );
+				$tags->remove_attribute( 'selected' );
+				continue;
+			}
 			if ( 'buttons' === $shape ) {
 				$tags->set_attribute( 'data-ssi-listing-value', $value );
 			} else {
@@ -692,7 +808,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		if ( ! function_exists( 'wp_register_script' ) || wp_script_is( self::CONTROL_SCRIPT, 'enqueued' ) ) {
 			return;
 		}
-		wp_register_script( self::CONTROL_SCRIPT, false, array(), STATIC_SITE_IMPORTER_VERSION, array( 'in_footer' => true ) );
+		wp_register_script( self::CONTROL_SCRIPT, false, array(), '1', array( 'in_footer' => true ) );
 		wp_add_inline_script( self::CONTROL_SCRIPT, self::control_script() );
 		wp_enqueue_script( self::CONTROL_SCRIPT );
 	}
@@ -712,6 +828,13 @@ function ssiListingLoad(control, value) {
 	}
 	window.location.assign(url.toString());
 }
+document.addEventListener('submit', function (event) {
+	var form = event.target;
+	var control = form instanceof HTMLFormElement ? form.querySelector('select[data-ssi-listing-param="orderby"]') : null;
+	if (!control) return;
+	event.preventDefault();
+	ssiListingLoad(control, control.value);
+});
 document.addEventListener('change', function (event) {
 	var target = event.target instanceof Element ? event.target : null;
 	var control = target ? target.closest('[data-ssi-listing-param]') : null;

@@ -489,14 +489,18 @@ $assert(
 	array(
 		'param'  => 'orderby',
 		'shape'  => 'select',
-		'values' => array( '', 'date', 'price', 'price-desc', 'title-asc' ),
+		'values' => array( 'menu_order', 'date', 'price', 'price-desc', 'title-asc' ),
 	) === $wire( $toolbar_blocks[1] ) && str_contains( (string) ( $toolbar_blocks[1]['innerHTML'] ?? '' ), 'data-sort' ),
 	'sort-keeps-its-source-select-wired-to-the-catalog-order',
 	(string) json_encode( $wire( $toolbar_blocks[1] ) )
 );
 $sort_parameter = new ReflectionMethod( Static_Site_Importer_Woo_Product_Listing_Materializer::class, 'sort_parameter' );
 $assert(
-	null === $sort_parameter->invoke(
+	array(
+		'param'  => 'orderby',
+		'shape'  => 'select',
+		'values' => array( 'menu_order', null ),
+	) === $sort_parameter->invoke(
 		null,
 		array(
 			'kind'    => 'sort',
@@ -506,7 +510,7 @@ $assert(
 			),
 		)
 	),
-	'a-sort-naming-an-order-woocommerce-cannot-run-falls-back-to-catalog-sorting'
+	'an-unknown-sort-option-is-not-bound-to-a-guessed-order'
 );
 $assert( 'grid' === ( $results['innerBlocks'][1]['attrs']['className'] ?? '' ) && str_contains( $markup, '<!-- wp:woocommerce/product-template' ) && ! str_contains( $markup, 'woocommerceHandPickedProducts' ) && ! str_contains( $markup, 'data-grid' ), 'grid-lists-the-archives-products-with-the-card' );
 $assert( 1 === substr_count( $markup, '<!-- wp:woocommerce/product-collection' ), 'grid-shares-the-archive-collection' );
@@ -559,8 +563,8 @@ $GLOBALS['ssi_listing_terms'] = array();
 $untouched_sort  = $render( $toolbar_blocks[1] );
 $_GET['orderby'] = 'price-desc';
 $sort_html       = $render( $toolbar_blocks[1] );
-$assert( str_contains( $untouched_sort, 'data-ssi-listing-param="orderby"' ) && str_contains( $untouched_sort, '<option selected value="">Featured</option>' ), 'unsorted-archive-selects-the-default-order', $untouched_sort );
-$assert( str_contains( $sort_html, '<option selected value="price-desc">Price: high to low</option>' ) && ! str_contains( $sort_html, 'selected value="">Featured' ), 'sort-shows-the-requested-catalog-order', $sort_html );
+$assert( str_contains( $untouched_sort, 'data-ssi-listing-param="orderby"' ) && str_contains( $untouched_sort, '<option selected value="menu_order">Featured</option>' ), 'unsorted-archive-selects-the-default-order', $untouched_sort );
+$assert( str_contains( $sort_html, '<option selected value="price-desc">Price: high to low</option>' ) && ! str_contains( $sort_html, 'selected value="menu_order">Featured' ), 'sort-shows-the-requested-catalog-order', $sort_html );
 $count_without_query = $render( $toolbar_blocks[0] );
 $GLOBALS['wp_query'] = new WP_Query( 14 ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The archive's main query, set for the render.
 $count_html          = $render( $toolbar_blocks[0] );

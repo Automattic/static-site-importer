@@ -314,7 +314,7 @@ final class Static_Site_Importer_Quality_Gates {
 	public static function is_form_fallback_diagnostic( array $diagnostic ): bool {
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
 			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
-				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic );
+				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || in_array( Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ), array( 'commerce_add_to_cart', 'filter_sort' ), true );
 			}
 		}
 
