@@ -100,7 +100,12 @@ class WP_Post {
 }
 /** Seeded product resolution. */
 function get_page_by_path( string $slug, mixed $output, string $type ): ?WP_Post {
-	return new WP_Post( 'alpha' === $slug ? 11 : 12 );
+	return new WP_Post(
+		array(
+			'alpha' => 11,
+			'beta'  => 12,
+		)[ $slug ] ?? 13
+	);
 }
 /** Render globally registered dynamic card fixtures and structural wrappers. */
 function ssi_render_fixture( array $block ): string {
@@ -225,6 +230,25 @@ $output                         = Static_Site_Importer_Product_Grid_Runtime::ren
 $assert( str_contains( $output, 'href="/products/beta/"' ) && ! str_contains( $output, 'store.example' ), 'dynamic uncaptured permalink comes from rendered template' );
 $assert( str_contains( $output, '$2,345.75' ) && ! str_contains( $output, '$1,234.50' ), 'dynamic uncaptured price preserves source format' );
 $assert( str_contains( $output, '12 payments of $102.88' ), 'derived instalment text remains untouched' );
+// A card whose markup carries a class the archive's own cards never render
+// would be unstyled on the archive, so it is not pooled.
+$GLOBALS['ssi_dynamic_cards']['neutral/list-three'] = str_replace( 'blocks-engine-source-card', 'blocks-engine-source-card blocks-engine-source-badge', $dynamic_beta );
+$unstyled                       = $own_grid;
+$unstyled['captured_grids']     = array( $make_grid( 'list-three', 'beta', 'other-card' ) );
+$unstyled_card                  = parse_blocks( Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $unstyled ) )[0]['innerBlocks'][0]['innerBlocks'][0];
+$GLOBALS['ssi_current_product'] = 12;
+$assert( ! str_contains( Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $unstyled_card ), 'blocks-engine-source-badge' ), 'card with classes absent from the archive cards is not pooled' );
+// The other listing's template card is on sale (an extra badge), but this
+// product's own captured card renders only classes the archive already styles.
+$sale_listing            = $make_grid( 'list-three', 'gamma', 'other-card' );
+$sale_listing['items'][] = array(
+	'product' => 'beta',
+	'slots'   => array( 'other-card' => array( 'markup' => '<!-- wp:neutral/list-two /-->' ) ),
+);
+$mixed                   = $own_grid;
+$mixed['captured_grids'] = array( $sale_listing );
+$mixed_card              = parse_blocks( Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $mixed ) )[0]['innerBlocks'][0]['innerBlocks'][0];
+$assert( Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $mixed_card ) === $dynamic_beta, 'styled card pooled from a listing whose template card differs' );
 $price_method = method_exists( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) ? new ReflectionMethod( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) : null;
 $assert( null !== $price_method && '2.345,75 €' === $price_method->invoke( null, '1.234,50 €', '1234.50', '2345.75' ), 'decimal comma and trailing currency preserved' );
 if ( $failures ) {
