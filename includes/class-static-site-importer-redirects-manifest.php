@@ -12,8 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-source-route-redirect.php';
+if ( ! class_exists( 'Static_Site_Importer_Source_Route' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-route.php';
 }
 
 final class Static_Site_Importer_Redirects_Manifest {
@@ -87,8 +87,8 @@ final class Static_Site_Importer_Redirects_Manifest {
 			if ( ! in_array( $status, array( '301', '302' ), true ) || ! self::is_same_site_path( $from ) || ! self::is_same_site_path( $to ) ) {
 				continue;
 			}
-			$from_route = Static_Site_Importer_Source_Route_Redirect::public_source_route( $from );
-			$to_route   = Static_Site_Importer_Source_Route_Redirect::public_source_route( $to );
+			$from_route = Static_Site_Importer_Source_Route::public_source_route( $from );
+			$to_route   = Static_Site_Importer_Source_Route::public_source_route( $to );
 			if ( '' === $from_route || '' === $to_route || $from_route === $to_route || isset( $seen_from[ $from_route ] ) ) {
 				continue;
 			}
@@ -114,7 +114,7 @@ final class Static_Site_Importer_Redirects_Manifest {
 			if ( '' === $source_path ) {
 				continue;
 			}
-			$public = Static_Site_Importer_Source_Route_Redirect::public_source_route( $source_path );
+			$public = Static_Site_Importer_Source_Route::public_source_route( $source_path );
 			if ( '' === $public ) {
 				continue;
 			}
@@ -133,7 +133,7 @@ final class Static_Site_Importer_Redirects_Manifest {
 				continue;
 			}
 			$source_path = $targets[ $to ];
-			if ( Static_Site_Importer_Source_Route_Redirect::public_source_route( $source_path ) === $from ) {
+			if ( Static_Site_Importer_Source_Route::public_source_route( $source_path ) === $from ) {
 				continue;
 			}
 			$aliases[ $source_path ][] = $from;

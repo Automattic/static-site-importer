@@ -42,7 +42,9 @@ final class Static_Site_Importer_Redirection_Materializer {
 		if ( ! empty( $args['source_route_aliases'] ) ) {
 			return true; }
 		foreach ( $plan['pages'] ?? array() as $page ) {
-			if ( ! empty( $page['whole_page_candidates'] ) ) {
+			// Native destinations are known only after commitment. Every source
+			// document can need continuity, not just provider-owned candidates.
+			if ( ! empty( $page['source_path'] ) ) {
 				return true; }
 		}
 		$owned = function_exists( 'get_option' ) ? get_option( self::OWNERSHIP_OPTION, array() ) : array();
@@ -167,10 +169,18 @@ final class Static_Site_Importer_Redirection_Materializer {
 				return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed source document has no native destination URL.' );
 			}
 			$target_path = wp_parse_url( $target, PHP_URL_PATH );
-			$sources     = array_merge( array( $page['route']['path'] ?? '' ), $aliases[ $source ] ?? array() );
+			$public      = Static_Site_Importer_Source_Route::public_source_route( $source );
+			$directory   = 'index.html' === $public ? '/' : ( str_ends_with( $public, '/index.html' ) ? substr( $public, 0, -strlen( '/index.html' ) ) : '' );
+			$sources     = array_merge(
+				array( $page['route']['path'] ?? '', $public, $directory ),
+				$aliases[ $source ] ?? array()
+			);
 			foreach ( $sources as $from ) {
+				if ( '' === (string) $from ) {
+					continue;
+				}
 				$from = '/' . ltrim( (string) $from, '/' );
-				if ( '/' === $from || trim( $from, '/' ) === trim( (string) $target_path, '/' ) ) {
+				if ( trim( $from, '/' ) === trim( (string) $target_path, '/' ) ) {
 					continue; }
 				if ( isset( $routes[ $from ] ) && $routes[ $from ] !== $target ) {
 					return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
@@ -602,17 +612,6 @@ final class Static_Site_Importer_Redirection_Materializer {
 			);
 		}
 		return array( 'status' => 'rolled_back' );
-	}
-
-	public static function owns_route( string $route ): bool {
-		$owned = function_exists( 'get_option' ) ? get_option( self::OWNERSHIP_OPTION, array() ) : array();
-		if ( ! is_array( $owned ) ) {
-			return false; }
-		foreach ( $owned as $scope ) {
-			if ( isset( $scope['rules'][ '/' . ltrim( $route, '/' ) ] ) ) {
-				return true; }
-		}
-		return false;
 	}
 
 	/** Export active native rules bound to actual portable destination documents. */

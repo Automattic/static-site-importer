@@ -24,7 +24,7 @@ docker volume create "$volume" >/dev/null
 # Synchronous I/O keeps this disposable proof independent of shared-host AIO quotas.
 docker run --detach --name "${project}_db" --network "$network" --network-alias mysql -e MYSQL_DATABASE=wordpress -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 --innodb-use-native-aio=0 >/dev/null
 docker run --detach --name "${project}_wordpress" --network "$network" --publish "127.0.0.1:$port:80" -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:beta-php8.3-apache >/dev/null
-wp_operator=(timeout 900 docker run --rm --network "$network" --user 33:33 -e SSI_REDIRECTION_DISPOSABLE=1 -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:cli-php8.3 wp --allow-root)
+wp_operator=(timeout 900 docker run --rm --network "$network" --user 33:33 -e SSI_REDIRECTION_DISPOSABLE=1 -e SSI_REDIRECTION_HTTP_ORIGIN="http://${project}_wordpress" -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:cli-php8.3 wp --allow-root)
 wp=("${wp_operator[@]}" --user=admin)
 ready=0
 for attempt in $(seq 1 60); do

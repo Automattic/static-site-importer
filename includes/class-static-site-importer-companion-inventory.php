@@ -86,13 +86,13 @@ final class Static_Site_Importer_Companion_Inventory {
 		if ( ! empty( $inventory['forms']['carried'] ?? false ) ) {
 			$parts[] = 'imported form field presentation';
 		}
-		$parts[] = 'source-route redirects and internal-link rewriting';
+		$parts[] = 'internal-link rewriting';
 		$site    = self::header_value( (string) ( $inventory['site_name'] ?? '' ) );
 
 		return sprintf(
 			'theme' === ( $inventory['owner'] ?? '' )
-				? 'Houses %1$s for the %2$s site. Switching away from or deleting the theme removes their registrations, runtime scripts and old-source redirects.'
-				: 'Houses %1$s for the %2$s site. Deactivating or deleting it removes their registrations, runtime scripts and old-source redirects.',
+				? 'Houses %1$s for the %2$s site. Switching away from or deleting the theme removes their registrations and runtime scripts.'
+				: 'Houses %1$s for the %2$s site. Deactivating or deleting it removes their registrations and runtime scripts.',
 			implode( ', ', $parts ),
 			'' !== $site ? $site : 'imported'
 		);
@@ -186,7 +186,6 @@ final class Static_Site_Importer_Companion_Inventory {
 				'status'  => self::STATUS_REBUILT,
 			),
 			'routes'           => array(
-				'redirects'      => array( 'status' => self::STATUS_REBUILT ),
 				'internal_links' => array( 'status' => self::STATUS_REBUILT ),
 			),
 			'content'          => array(
@@ -229,8 +228,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		foreach ( $blocks as $block ) {
 			$lines[] = '- `' . (string) ( $block['name'] ?? '' ) . '` — ' . (string) ( $block['title'] ?? '' ) . ' is registered as a native WordPress block. Owned files: ' . implode( ', ', array_map( static fn ( string $path ): string => '`' . $path . '`', is_array( $block['assets'] ?? null ) ? $block['assets'] : array() ) ) . '.';
 		}
-		$lines[] = '- Source-route redirects: a request for an old source route (for example `/page.html`) 301-redirects to the imported page\'s WordPress permalink.';
-		$lines[] = '- Internal-link rewriting: imported internal links keep resolving to the imported pages.';
+		$lines[] = '- Internal-link rewriting: imported internal links resolve to native WordPress permalinks. Old-source redirects are managed separately by Redirection, not this package.';
 		$lines[] = '- Imported product cards: a WooCommerce product loop that repeats an imported card fills that card for each product and keeps the source grid layout.';
 		if ( ! empty( $forms['carried'] ?? false ) ) {
 			$lines[] = '- Imported form field presentation: ' . (int) ( $forms['count'] ?? 0 ) . ' captured form field visual state' . ( 1 === (int) ( $forms['count'] ?? 0 ) ? '' : 's' ) . ' project onto the WordPress (Jetpack Forms) contact-form rendering this ' . $owner . ' registers.';
@@ -304,7 +302,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = '';
 		$lines[] = '- unregisters the imported blocks; saved static markup may remain, while dynamic rendering and editor support can be lost;';
 		$lines[] = '- stops the preserved source scripts from loading, breaking the interactive behavior they provide;';
-		$lines[] = '- stops source-route redirects, so old source routes begin to 404;';
 		$lines[] = '- stops filling imported product cards, so product loops repeat one static card outside the source grid layout;';
 		$lines[] = '- stops the imported form field presentation and its WordPress form rendering hooks.';
 		if ( ! empty( $forms['carried'] ?? false ) ) {
@@ -321,7 +318,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		if ( array() !== $scripts ) {
 			$lines[] = '- Preserved scripts: view the page source on the owning route and confirm each script listed above is enqueued.';
 		}
-		$lines[] = '- Redirects: request an old source route such as `/page.html` and confirm a 301 to the imported permalink.';
 		$lines[] = '- Snapshot content: compare a page against the source capture; imported numbers do not update.';
 		if ( ! empty( $forms['carried'] ?? false ) ) {
 			$lines[] = '- Forms: submit an imported form and confirm the normal WordPress form confirmation.';

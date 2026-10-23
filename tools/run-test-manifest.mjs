@@ -87,6 +87,8 @@ export function validateManifest(candidate = manifest) {
   const executable = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "tests", "tools"], { cwd: root, encoding: "utf8" })
     .trim().split("\n").filter(Boolean)
     .filter(isExecutableTest)
+    // Index entries deleted from the working tree are not executable tests.
+    .filter((path) => existsSync(resolve(root, path)))
   const exclusions = Object.keys(candidate.exclusions || {})
   for (const path of executable) {
     if (!declared.has(path) && !exclusions.some((pattern) => matches(pattern, path))) fail(`undeclared executable test: ${path}`)

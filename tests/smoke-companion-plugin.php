@@ -694,17 +694,16 @@ if ( is_array( $descriptor ) ) {
 
 	$files = $descriptor['files'];
 	$main  = $files['ssi-example-site/ssi-example-site.php'] ?? '';
+	$assert( ! isset( $files['ssi-example-site/includes/source-route-redirect.php'] ) && ! str_contains( implode( '', $files ), 'Source_Route_Redirect' ), 'companions-carry-no-source-route-runtime' );
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
 	$assert( str_contains( $main, 'Requires at least: 7.1' ), 'generated-plugin-requires-wordpress-7-1' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/internal-link-runtime.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Internal_Link_Runtime::register();' ), 'main-file-registers-companion-internal-link-runtime' );
-	$assert( str_contains( $main, "require_once __DIR__ . '/includes/source-route-redirect.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Source_Route_Redirect::register();' ), 'main-file-registers-companion-source-route-redirect' );
 	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
 	$assert( isset( $files['ssi-example-site/includes/internal-link-runtime.php'] ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'], 'final class SSI_EXAMPLE_SITE_Internal_Link_Runtime' ), 'internal-link-runtime-is-emitted-under-companion-namespace' );
 	$assert( 1 !== preg_match( '/Static_Site_Importer_Capture_Evidence::[A-Z]/', $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '' ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '', var_export( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN, true ) ), 'companion-internal-link-runtime-inlines-capture-evidence-names' );
-	$assert( isset( $files['ssi-example-site/includes/source-route-redirect.php'] ) && str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'final class SSI_EXAMPLE_SITE_Source_Route_Redirect' ) && ! str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'Static_Site_Importer_Source_Route_Redirect' ), 'source-route-redirect-is-emitted-under-companion-namespace' );
 	$grid_runtime = $files['ssi-example-site/includes/product-grid-runtime.php'] ?? '';
 	$assert( str_contains( $grid_runtime, 'final class SSI_EXAMPLE_SITE_Product_Grid_Runtime' ) && ! str_contains( $grid_runtime, 'Static_Site_Importer_' ), 'product-grid-runtime-is-emitted-under-companion-namespace' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/product-grid-runtime.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Product_Grid_Runtime::register();' ), 'main-file-registers-companion-product-grid-runtime' );
@@ -1336,10 +1335,8 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/inde
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/internal-link-runtime.php' ), 'install-writes-companion-internal-link-runtime' );
-$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/source-route-redirect.php' ), 'install-writes-companion-source-route-redirect' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_jetpack/contact-form'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['the_content'] ), 'installed-companion-registers-internal-link-runtime' );
-$assert( isset( $GLOBALS['ssi_companion_actions']['template_redirect'] ), 'installed-companion-registers-source-route-redirect' );
 $submit_filter    = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
 	$submit_filter,
