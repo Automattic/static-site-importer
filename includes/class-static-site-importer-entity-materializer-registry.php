@@ -683,21 +683,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function with_form_source_html( array $entities, array $plan ): array {
 		$sources = array();
 		foreach ( $plan['quality']['fallbacks'] ?? array() as $fallback ) {
-			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) && is_string( $fallback['html'] ?? null ) ) {
+			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
 				$key             = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) . "\n" . (string) ( $fallback['selector'] ?? '' );
-				$sources[ $key ] = $fallback['html'];
+				$sources[ $key ] = $fallback;
 			}
 		}
 		foreach ( $entities as &$entity ) {
 			if ( is_array( $entity ) ) {
 				$key = (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				if ( ! isset( $entity['html'] ) && isset( $sources[ $key ] ) ) {
-					$entity['html'] = $sources[ $key ];
+				if ( isset( $sources[ $key ] ) ) {
+					$entity['form_intent'] = Static_Site_Importer_Form_Fallback_Contract::intent( $sources[ $key ] );
+					if ( ! isset( $entity['html'] ) && is_string( $sources[ $key ]['html'] ?? null ) ) {
+						$entity['html'] = $sources[ $key ]['html'];
+					}
 				}
 			}
 		}
 		unset( $entity );
-		return $entities;
+		return array_values( array_filter( $entities, static fn( $entity ): bool => ! is_array( $entity ) || 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $entity ) ) );
 	}
 
 	/** Copy producer presentation facts onto the form entity without re-parsing source HTML. */
@@ -1092,6 +1095,112 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return false;
 	}
 
+	/**
+	 * Attach producer add-to-cart form anchors to an already seeded product.
+	 * Matching is deliberately independent of labels, titles and button text.
+	 *
+	 * @param array<string,mixed> $lifecycle Validated entity lifecycle.
+	 * @param array<string,mixed> $reports Seeded provider reports, extended with binding results.
+	 * @param array<int,mixed>    $fallbacks Producer fallback diagnostics.
+	 * @return array<string,mixed> Lifecycle including form-only product bindings.
+	 */
+	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks ): array {
+		foreach ( $fallbacks as $fallback ) {
+			if ( ! is_array( $fallback ) || 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) {
+				continue;
+			}
+			$source  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$matches = array( array(), array() );
+			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
+					continue;
+				}
+				foreach ( $prepared['manifest']['products'] ?? array() as $product ) {
+					$result = array();
+					foreach ( $reports[ $declaration_id ]['products'] ?? array() as $row ) {
+						if ( ( $row['slug'] ?? '' ) === ( $product['slug'] ?? '' ) && in_array( $row['status'] ?? '', array( 'created', 'updated' ), true ) && (int) ( $row['id'] ?? 0 ) > 0 ) {
+							$result = $row;
+						}
+					}
+					if ( empty( $result ) ) {
+						continue;
+					}
+					$candidate = array( $prepared['adapter'], $result );
+					foreach ( array( 'source_page', 'source_path', 'url' ) as $field ) {
+						// Card/grid occurrences share the page source, not its product identity.
+						if ( empty( $product['selector'] ) && empty( $product['bindings'] ) && is_string( $product[ $field ] ?? null ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( $product[ $field ] ) ) {
+							$matches[0][] = $candidate;
+							break;
+						}
+					}
+					foreach ( $fallback['controls'] ?? array() as $control ) {
+						if ( ! is_array( $control ) || 'hidden' !== ( $control['type'] ?? '' ) || 'id' !== ( $control['name'] ?? '' ) || '' === (string) ( $control['value'] ?? '' ) ) {
+							continue;
+						}
+						foreach ( $product['variants'] ?? array() as $variant ) {
+							foreach ( array( 'source_id', 'id', 'sku' ) as $field ) {
+								if ( (string) ( $variant[ $field ] ?? '' ) === (string) $control['value'] ) {
+									$matches[1][ (string) $result['id'] ] = $candidate;
+								}
+							}
+						}
+					}
+				}
+			}
+			if ( 1 < count( $matches[0] ) ) {
+				$id             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+				$reports[ $id ] = array( 'product_form_binding_reason' => 'ambiguous_page_product' );
+				continue;
+			}
+			$match = empty( $matches[0] ) ? $matches[1] : $matches[0];
+			if ( 1 !== count( $match ) ) {
+				continue;
+			}
+			list( $adapter, $result ) = array_values( $match )[0];
+			$anchors                  = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array();
+			if ( empty( $anchors ) ) {
+				$region = Static_Site_Importer_Product_Finding_Materializer::serialize_readable_graft_anchor( $fallback['readable_blocks'] ?? array() );
+				if ( '' !== $region ) {
+					$anchors[] = array(
+						'source_path'         => $source,
+						'search_block_markup' => $region,
+						'occurrence'          => 1,
+					);
+				}
+			}
+			if ( empty( $anchors ) ) {
+				continue;
+			}
+			foreach ( $anchors as &$anchor ) {
+				$anchor['role'] = 'commerce_add_to_cart_form';
+			}
+			unset( $anchor );
+			$entity                       = $fallback;
+			$entity['entity_kind']        = 'add_to_cart_form';
+			$entity['slug']               = $result['slug'];
+			$entity['bindings']           = $anchors;
+			$id                           = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+			$lifecycle['entities'][ $id ] = array(
+				'adapter'  => $adapter,
+				'manifest' => array( 'products' => array( $entity ) ),
+			);
+			$reports[ $id ]               = array( 'products' => array( $result ) );
+		}
+		return $lifecycle;
+	}
+
+	/**
+	 * Canonical route comparison, never basename-only matching across products.
+	 *
+	 * @param string $path Producer URL or source filename.
+	 * @return string
+	 */
+	private static function product_page_key( string $path ): string {
+		$path = (string) parse_url( $path, PHP_URL_PATH ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Also used before WordPress loads.
+		$path = preg_replace( '#^(?:/?website/)|(?:/index\\.html$)|(?:\\.html$)#', '', $path );
+		return trim( (string) $path, '/' );
+	}
+
 	/** Build exact provider-owned block replacements without consulting diagnostics. */
 	public static function block_bindings( array $lifecycle, array $reports ) {
 		$bindings = array();
@@ -1216,7 +1325,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// receipt carries the same form fallback reconciliation identity and hash
 		// a form binding does.
 		$is_grid          = in_array( $binding['role'], array( 'commerce_collection', 'commerce_product_grid' ), true );
-		$is_form_contract = in_array( $binding['role'], array( 'form', 'order_lookup' ), true );
+		$is_form_contract = in_array( $binding['role'], array( 'form', 'order_lookup', 'commerce_add_to_cart_form' ), true );
 		// A canonical product-grid binding records the grid's own source selector so
 		// quality reconciliation can join the detected grid finding to this receipt
 		// by the one evidence both sides carry, instead of a preserved-region hash
@@ -1920,8 +2029,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'sale_price must be a decimal string such as "15.00" when provided.',
 				);
 			}
-			foreach ( array( 'description', 'short_description', 'status', 'stock_status' ) as $field ) {
-				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
+			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'sku', 'sale_price' ) as $field ) {
+				if ( array_key_exists( $field, $product ) && ! is_string( $product[ $field ] ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be a string when provided.',
@@ -1955,12 +2064,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// keep `image` a bare source path (e.g. the product-finding bridge).
 				$image['alt'] = trim( $product['image_alt'] );
 			}
-			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
-				if ( ! isset( $product[ $field ] ) ) {
+			foreach ( array( 'categories', 'source_selectors', 'tags' ) as $field ) {
+				if ( ! array_key_exists( $field, $product ) ) {
 					continue;
 				}
 				$values = self::manifest_string_collection( $product[ $field ] );
-				if ( null === $values ) {
+				if ( null === $values || ( 'tags' === $field && ! array_is_list( $values ) ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be an array of strings when provided.',
@@ -2005,12 +2114,54 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 			}
 
+			if ( array_key_exists( 'stock_status', $product ) && ! in_array( $product['stock_status'], array( 'instock', 'outofstock' ), true ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.stock_status',
+					'message' => 'stock_status must be instock or outofstock.',
+				);
+			}
+			if ( array_key_exists( 'images', $product ) ) {
+				$images = $product['images'];
+				if ( ! is_array( $images ) || ! array_is_list( $images ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.images',
+						'message' => 'images must be a list of {src, alt} objects.',
+					);
+				} else {
+					foreach ( $images as $entry ) {
+						if ( ! is_array( $entry ) || ! is_string( $entry['src'] ?? null ) || '' === trim( $entry['src'] ) || ! is_string( $entry['alt'] ?? null ) ) {
+							$errors[] = array(
+								'path'    => $path_prefix . '.images',
+								'message' => 'images must contain {src, alt} strings with non-empty src.',
+							);
+						}
+					}
+					if ( ! empty( $images ) && empty( $errors ) ) {
+						$image = $images[0];
+					}
+				}
+			}
+			unset( $product['losses'] );
+			if ( array_key_exists( 'variants', $product ) ) {
+				$variants = self::manifest_product_variants( $product['variants'] );
+				if ( null === $variants ) {
+					unset( $product['variants'] );
+					$product['losses'][] = array(
+						'dimension'   => 'product',
+						'reason_code' => 'unsupported_control_attribute',
+						'attribute'   => 'variants',
+					);
+				} else {
+					$product['variants'] = $variants;
+				}
+			}
+
 			$summary = array(
 				'name'          => $name,
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors', 'sku', 'images', 'tags', 'variants', 'losses', 'source_page', 'source_path', 'url' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
@@ -2096,6 +2247,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
+			if ( 'form' !== Static_Site_Importer_Form_Fallback_Contract::route( $form ) ) {
+				continue; // Non-contact intents retain their commerce or preserved runtime route.
+			}
+
 			$controls = isset( $form['controls'] ) && is_array( $form['controls'] ) ? array_values( array_filter( $form['controls'], 'is_array' ) ) : array();
 			$mappable = array_filter(
 				$controls,
@@ -2119,6 +2274,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
+				'form_intent' => Static_Site_Importer_Form_Fallback_Contract::intent( $form ),
 			);
 			// Source HTML is inspected, never rendered, to retain description classes
 			// that older producers omit from control metadata.
@@ -2450,7 +2606,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(
@@ -2517,10 +2673,46 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $normalized;
 	}
 
+	/** Normalize variants atomically: partial option sets must never be seeded. */
+	private static function manifest_product_variants( mixed $value ): ?array {
+		if ( ! is_array( $value ) || ! array_is_list( $value ) ) {
+			return null;
+		}
+		$seen = array();
+		foreach ( $value as &$variant ) {
+			if ( ! is_array( $variant ) || ! is_string( $variant['regular_price'] ?? null ) || ! self::is_manifest_price( $variant['regular_price'] ) || ! in_array( $variant['stock_status'] ?? null, array( 'instock', 'outofstock' ), true ) ) {
+				return null;
+			}
+			foreach ( array( 'sku', 'image', 'sale_price' ) as $field ) {
+				if ( array_key_exists( $field, $variant ) && ( ! is_string( $variant[ $field ] ) || ( 'sale_price' === $field && ! self::is_manifest_price( $variant[ $field ] ) ) ) ) {
+					return null;
+				}
+			}
+			$attributes = self::manifest_product_attributes( $variant['attributes'] ?? null );
+			if ( empty( $attributes ) ) {
+				return null;
+			}
+			$combination = array();
+			foreach ( $attributes as $attribute ) {
+				$key = $attribute['key'];
+				if ( ! preg_match( '/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $key ) || ! preg_match( '/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $attribute['value'] ) || isset( $combination[ $key ] ) ) {
+					return null;
+				}
+				$combination[ $key ] = $attribute['value'];
+			}
+			ksort( $combination );
+			$signature = http_build_query( $combination );
+			if ( isset( $seen[ $signature ] ) ) {
+				return null;
+			}
+			$seen[ $signature ]    = true;
+			$variant['attributes'] = $attributes;
+		}
+		return $value;
+	}
+
 	/**
-	 * Normalize a product's attribute values: each names the attribute
-	 * (`key`, `label`) and the product's value of it (`value`, and the
-	 * shopper-facing `value_label`).
+	 * Normalize shopper-facing global attribute values.
 	 *
 	 * @param mixed $value Candidate attribute list.
 	 * @return array<int,array{key:string,label:string,value:string,value_label:string}>|null Null when malformed.

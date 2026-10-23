@@ -314,7 +314,7 @@ final class Static_Site_Importer_Quality_Gates {
 	public static function is_form_fallback_diagnostic( array $diagnostic ): bool {
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
 			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
-				return true;
+				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic );
 			}
 		}
 
@@ -346,7 +346,7 @@ final class Static_Site_Importer_Quality_Gates {
 	/** Identify a commerce add-to-cart/quantity controls fallback finding. */
 	public static function is_commerce_controls_fallback_diagnostic( array $diagnostic ): bool {
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
-			if ( 'html_commerce_controls_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
+			if ( 'html_commerce_controls_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) || ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) && 'commerce' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) ) ) {
 				return true;
 			}
 		}
@@ -599,7 +599,7 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
 			foreach ( $bindings as $binding ) {
-				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'order_lookup' ), true ) ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'order_lookup', 'commerce_add_to_cart_form' ), true ) ) {
 					continue;
 				}
 				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart' ), true ) ) {
@@ -688,6 +688,16 @@ final class Static_Site_Importer_Quality_Gates {
 		$resolved    = 0;
 		$resolutions = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
+			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) {
+				// These handlers have no contact-form equivalent. Keep the source
+				// and report the runtime requirement, not a form-provider decline.
+				$diagnostic['recoverability']         = 'recoverable_with_runtime_mapping';
+				$diagnostic['materialization_target'] = array();
+				$diagnostic['actionability']          = 'map_form_runtime_or_preserve_handler';
+				$diagnostic['suggested_repair_class'] = 'preserve_runtime_island';
+				$diagnostic['materialization_hint']   = 'preserve_form_runtime_source_until_controls_can_be_mapped';
+				$report->replace_diagnostic( $index, $diagnostic );
+			}
 			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
@@ -699,7 +709,7 @@ final class Static_Site_Importer_Quality_Gates {
 			if ( empty( $receipt ) && ! self::has_form_fallback_identity( $diagnostic ) ) {
 				// Recover a missing producer identity only from one exact persisted form.
 				$candidate_receipt = $receipts_by_source_hash[ $source_path . "\n" . $fallback_hash ] ?? array();
-				if ( is_array( $candidate_receipt ) ) {
+				if ( is_array( $candidate_receipt ) && 'commerce_add_to_cart_form' !== ( $candidate_receipt['role'] ?? '' ) ) {
 					$producer_identity = $candidate_receipt['fallback_reconciliation_identity'] ?? '';
 					if ( is_string( $producer_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $producer_identity ) ) {
 						$diagnostic['source_fallback_identity'] = $producer_identity;
@@ -708,13 +718,22 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
+			if ( 'commerce_add_to_cart_form' === ( $receipt['role'] ?? '' ) && 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) ) {
+				$receipt = array();
+			}
 			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
+			$reason               = ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) ? ( empty( $receipt ) ? 'no_seeded_product_for_page' : 'provider_replacement_not_persisted' ) : '';
+			$binding_reason       = $report['materialization_receipt']['completed']['runtime_declarations']['entities'][ $identity ]['product_form_binding_reason'] ?? '';
+			if ( ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) && 'ambiguous_page_product' === $binding_reason ) {
+				$reason = $binding_reason;
+			}
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
 			$diagnostic['fallback_resolution']              = array(
 				'source_state' => 'detected',
 				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
 			$report->replace_diagnostic( $index, $diagnostic );
@@ -725,6 +744,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'fallback_reconciliation_identity' => $identity,
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'                           => $reason,
 				'receipt'                          => $receipt,
 			);
 		}
@@ -778,7 +798,7 @@ final class Static_Site_Importer_Quality_Gates {
 		// page with no materialized grid, or outside every resolved grid, stay
 		// unresolved and still report a resolution row.
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_commerce_controls_fallback_diagnostic( $diagnostic ) ) {
+			if ( ! is_array( $diagnostic ) || ! self::is_commerce_controls_fallback_diagnostic( $diagnostic ) || self::is_form_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
 			$source_path = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );

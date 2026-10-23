@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,front_end_form_dom:bool,form_box_initials:array<string,string>,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  * A compile pass accumulates one surface's declared surface, scope, targets,
  * presentation targets, rules, chrome, operations, losses and context CSS.
  *
@@ -63,6 +63,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *   grammar `validate_overlay()` admits for it.
 	 * - `control_container_chrome`: whether each control container's authored
 	 *   declarations are emitted again, unreset, ahead of the structural rules.
+	 * - `front_end_form_dom`: whether the surface renders Jetpack's front-end
+	 *   form DOM, the `.jetpack-contact-form-container` wrapper around a
+	 *   `form.jetpack-contact-form__form` that takes `.submission-success` once
+	 *   sent. Only the PHP render and `view.ts` produce it; the editor renders
+	 *   the block wrapper and its inner-blocks container instead, so rules that
+	 *   address that DOM match nothing there and are not emitted.
+	 * - `form_box_initials`: CSS initial values the element receiving the source
+	 *   form's box overrides on this surface, restated unless the source
+	 *   declares the property. Jetpack's editor styles set
+	 *   `.wp-block-jetpack-contact-form{box-sizing:border-box}` (blocks
+	 *   contact-form `editor.scss`), so a source box's width and max-width
+	 *   would otherwise swallow its padding and border there; the front-end
+	 *   container keeps the initial `content-box`. The native topology paints
+	 *   the box on its own form target instead, so they do not apply there.
 	 * - `native_passthrough`: scope-suffix rules added on the native topology
 	 *   (the editor's control shell and its form box carry no box of their own).
 	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
@@ -101,6 +115,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'rule'  => 'compiled',
 			),
 			'control_container_chrome' => false,
+			'front_end_form_dom'       => true,
+			'form_box_initials'        => array(),
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
 			'form_layout_host'         => null,
@@ -126,6 +142,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'rule'  => 'context',
 			),
 			'control_container_chrome' => true,
+			'front_end_form_dom'       => false,
+			'form_box_initials'        => array( 'box_sizing' => 'content-box' ),
 			'native_passthrough'       => array(
 				' .ssi-native-control-shell' => 'display:contents',
 				'.ssi-native-form-topology'  => 'padding:0;border:0',
@@ -570,7 +588,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$index        = $control_container['index'] ?? null;
 			$destinations = self::destinations_for( $pass, $index, 'control_container' );
 			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $control_container['styles'] ?? null ) ) {
-				$pass['losses'][] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+				$pass['losses'][] = self::presentation_loss( 'control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
 			$styles = self::resolve_presentation_cascade( $control_container['styles'], $control_container['provenance'] ?? array() );
@@ -667,7 +685,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( 'control_container' === $role ) {
 				$destinations = self::destinations_for( $pass, $index, 'control_container' );
 				if ( ! is_int( $index ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
-					$pass['losses'][] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+					$pass['losses'][] = self::presentation_loss( 'control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
@@ -699,12 +717,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return;
 		}
 		$scope       = $pass['scope'];
+		$native      = str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' );
+		$box         = $pass['declared']['front_end_form_dom'] ? $scope . '.jetpack-contact-form-container' : $scope;
 		$destination = array(
 			'role'       => 'control',
-			'selector'   => str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $pass['targets']['form']['selector'] : $scope . '.jetpack-contact-form-container',
+			'selector'   => $native ? $pass['targets']['form']['selector'] : $box,
 			'properties' => array_keys( self::presentation_property_map() ),
 		);
-		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
+		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() ) + ( $native ? array() : $pass['declared']['form_box_initials'] );
 		self::present( $pass, array( $destination ), $styles, 0, 'control', null );
 		foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 			if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
@@ -734,7 +754,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// provider form must still receive clicks and typing (#2005).
 			self::emit_scoped( $pass, '', 'pointer-events:auto', 'interaction', 'provider_pointer_events_carrier' );
 		}
-		if ( ! empty( $pass['rules'] ) ) {
+		if ( ! empty( $pass['rules'] ) && $pass['declared']['front_end_form_dom'] ) {
 			// Jetpack paints `.jetpack-contact-form-container` with an unauthored
 			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
 			// block-child margin). Reset at two classes so it beats those selectors
@@ -755,12 +775,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$scope        = $pass['scope'];
 		$native_scope = $scope . '.ssi-native-form-topology';
-		$native       = array(
+		$native       = ! $pass['declared']['front_end_form_dom'] ? array() : array(
 			$native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)' => 'display:contents',
 			$native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' => 'display:contents',
 			// The provider's success state removes its real form from layout.
 			// Source display facts must not resurrect those submitted controls.
 			$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
+		);
+		$native      += array(
 			// The passthrough submit wrapper has no box, so its link stands in for the
 			// source button. Jetpack sizes that link `width:100%` of its wrapper, which
 			// now resolves against the source container: give it the source button's

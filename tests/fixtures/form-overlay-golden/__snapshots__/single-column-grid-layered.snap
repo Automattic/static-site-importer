@@ -33,8 +33,8 @@ sha256: 1ae66d438732f703263c418673e563be5155d03a972a30080f7fca0c12bbb483
 .ssi-form-6371992b9ea7 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 6fff990fb2992f03d38e9c57ec5b893fd294a523e7fd61ee4adea1bcb94e92d1
-/* Static Site Importer editor control chrome: 2e642a3aa87b */
+sha256: 048b82d45393b4c8dcef1ad7c992429928629b1ead5d4ba9dc7145baf355be15
+/* Static Site Importer editor control chrome: fcd18df088f8 */
 .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2{border:0 solid;box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{gap:calc(0.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -54,9 +54,8 @@ sha256: 6fff990fb2992f03d38e9c57ec5b893fd294a523e7fd61ee4adea1bcb94e92d1
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder, .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
-.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7.jetpack-contact-form-container{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
+.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{position:relative;z-index:1;pointer-events:auto}
-.editor-styles-wrapper .ssi-form-6371992b9ea7.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .editor-styles-wrapper .ssi-form-6371992b9ea7 > div.jetpack-contact-form{display:contents}
 
 === block_markup ===

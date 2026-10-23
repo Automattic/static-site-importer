@@ -25,8 +25,8 @@ sha256: ec634c7688fbc51cd422c0cae4d109006a16832ef57276e96f170a3235a8a815
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 5e8997f20f6619a9fd7b29cd62626ae0e95c5ab9854e7b139a0b9ae06b0a5efa
-/* Static Site Importer editor control chrome: 155a70d15a2d */
+sha256: d0b4b4c2a5cc17bbbc2a7ce260131eabd228b22d8e3be831da02f81ea82915d3
+/* Static Site Importer editor control chrome: 1923e9087d61 */
 .editor-styles-wrapper .ssi-form-d095fee786e4{grid-template-columns:repeat(2,minmax(0,1fr));display:grid}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-97b0fb7d822d, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8066eba2930b{width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-765c1a6a1f05{grid-column:span 2}
@@ -51,9 +51,8 @@ sha256: 5e8997f20f6619a9fd7b29cd62626ae0e95c5ab9854e7b139a0b9ae06b0a5efa
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-87dba3966929{min-height:0;height:calc(3lh + 10px + 10px + 1px + 1px)}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-111acf7a2709 > label{margin:0;font-weight:inherit;padding:0;display:block;font-size:14px}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-111acf7a2709{display:block;margin-bottom:6px}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4.jetpack-contact-form-container{display:grid;gap:16px 24px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4{display:grid;gap:16px 24px;box-sizing:content-box}
 .editor-styles-wrapper .ssi-form-d095fee786e4{pointer-events:auto}
-.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
 
 === block_markup ===

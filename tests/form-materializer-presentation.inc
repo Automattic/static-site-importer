@@ -535,7 +535,12 @@
 	$editor_manifest = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $editor_form );
 	$editor_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $editor_manifest['forms'] ) )['forms'][0];
 	$editor_css = $editor_row['provider_layout_overlay_css']['editor_css'] ?? '';
-	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $editor_row['provider_layout_overlay_css'] ) && str_contains( $editor_css, 'max-width:500px;margin:0 auto;text-align:left' ) && str_contains( $editor_css, ' > label{' ) && str_contains( $editor_css, 'font:-webkit-small-control;' ), 'editor-maps-source-form-box-labels-and-native-button-typography-through-validated-overlay', $editor_css );
+	// The form box is painted on Jetpack's front-end form container. The editor
+	// renders no such element, so it paints the box on the block wrapper (#2281,
+	// #2321): a `form{}` source rule cannot reach that `<div>` itself. Jetpack's
+	// editor styles make that wrapper `border-box`, so the source's initial
+	// `content-box` is restated with it.
+	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $editor_row['provider_layout_overlay_css'] ) && str_contains( $editor_row['provider_layout_overlay_css']['css'] ?? '', '.jetpack-contact-form-container{max-width:500px;margin:0 auto;text-align:left}' ) && ! str_contains( $editor_css, 'jetpack-contact-form-container' ) && 1 === preg_match( '/\.editor-styles-wrapper (\.ssi-form-[a-f0-9]{12})\1\{max-width:500px;margin:0 auto;text-align:left;box-sizing:content-box\}/', $editor_css ) && str_contains( $editor_css, ' > label{' ) && str_contains( $editor_css, 'font:-webkit-small-control;' ), 'editor-paints-the-source-form-box-on-the-block-wrapper-with-labels-and-native-button-typography', $editor_css );
 	// The captured form box's own padding is the same kind of bounded source-CSS-cascade
 	// evidence every other captured control already carries. It must reach the rendered
 	// page, not only editor chrome, and it must still resolve when a captured field

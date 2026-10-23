@@ -603,6 +603,16 @@ npm run test:validation -- --json
 
 PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
+Running every `tests/form-*.php` and `tests/smoke-form-*.php` also includes the real-provider rendering test, `smoke-form-repeated-instance-ids.php`. Its WordPress runtime must have Jetpack installed, active, and its Forms module enabled (installing the plugin alone is insufficient):
+
+```bash
+wp --path="$STATIC_SITE_IMPORTER_WP_ROOT" plugin install jetpack --activate
+wp --path="$STATIC_SITE_IMPORTER_WP_ROOT" jetpack module activate contact-form
+for t in tests/form-*.php tests/smoke-form-*.php; do php "$t" || exit 1; done
+```
+
+Use a disposable test WordPress installation; these setup commands change its installed plugins and active modules.
+
 ### Error Classification
 
 Every `new WP_Error(` and `throw new` in `includes/*.php` is classified in `tests/fixtures/error-classification.json`, and `php tests/smoke-error-classification.php` fails on any site that is not. Classes are `integrity` (paths, containment, permissions, digests, identity, producer contracts), `operational` (size, time, memory, runtime availability), `representability` (source content this layer cannot express, with a `unit` of `item`, `block`, `page`, `route` or `asset`), `propagated` (an error from another layer passed through) and `programmer`.

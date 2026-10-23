@@ -26,8 +26,8 @@ sha256: 2582c1951c3fb912c220c876d7cae1c8482460de9d75ba395d6a3ab826f9617f
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 87e7d7cd91394197e556ab45212c3c3e73d2d33224725b95caf0577f015c7bf9
-/* Static Site Importer editor control chrome: d7cdb6a059ec */
+sha256: afcfc056ac41082b1c3efade47ef7b873aef6eed6ad4e93c02883448ac588882
+/* Static Site Importer editor control chrome: 10577583adb4 */
 .editor-styles-wrapper .ssi-form-d095fee786e4{flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap;align-items:stretch}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
@@ -37,9 +37,8 @@ sha256: 87e7d7cd91394197e556ab45212c3c3e73d2d33224725b95caf0577f015c7bf9
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00 > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{--jetpack--contact-form--input-height:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder, .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder{color:revert;opacity:revert}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4.jetpack-contact-form-container{display:flex;flex-direction:column;gap:12px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4{display:flex;flex-direction:column;gap:12px;box-sizing:content-box}
 .editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
-.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
 
 === block_markup ===

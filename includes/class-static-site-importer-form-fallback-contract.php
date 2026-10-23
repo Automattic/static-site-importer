@@ -14,6 +14,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Form_Fallback_Contract {
 
+	/** Read the producer's intent; older findings retain the unknown route. */
+	public static function intent( array $finding ): string {
+		$intent = $finding['form_intent'] ?? null;
+		return is_string( $intent ) && '' !== $intent ? $intent : 'unknown';
+	}
+
+	/** The owning provider boundary for a form fallback or its declared entity. */
+	public static function route( array $finding ): string {
+		return match ( self::intent( $finding ) ) {
+			'contact', 'newsletter', 'unknown' => 'form',
+			'commerce_add_to_cart' => 'commerce',
+			default => 'runtime',
+		};
+	}
+
 	/**
 	 * Project bounded presentation facts from producer form metadata.
 	 *

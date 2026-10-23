@@ -55,11 +55,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 				'id'     => $node['id'],
 				'layout' => $control_layout['layout'],
 			);
-			$s->operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_fullspan_grid_child',
-				'target_hash' => hash( 'sha256', $node['id'] ),
-			);
+			$s->record( 'layout', 'provider_fullspan_grid_child', $node['id'] );
 		}
 	}
 
@@ -111,11 +107,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 				}
 				$s->provider_layout_targets[ $grid_id ]  = $s->wrapper_hooks[ $grid_id ];
 				$s->provider_layout_targets[ $child_id ] = $s->wrapper_hooks[ $child_id ];
-				$s->operations[]                         = array(
-					'dimension'   => 'layout',
-					'strategy'    => 'provider_fullspan_grid_branch',
-					'target_hash' => hash( 'sha256', $child_id ),
-				);
+				$s->record( 'layout', 'provider_fullspan_grid_branch', $child_id );
 				break;
 			}
 		}
@@ -169,11 +161,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 			if ( array() === array_diff_key( $layout_node['layout'] ?? array(), array_flip( array( 'column', 'row', 'area' ) ) ) ) {
 				$s->represented_layout_nodes[] = $id;
 			}
-			$s->operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_grid_span_submit',
-				'target_hash' => hash( 'sha256', $id ),
-			);
+			$s->record( 'layout', 'provider_grid_span_submit', $id );
 		}
 		foreach ( array_keys( $s->grid_span_submit_parents ) as $submit_parent ) {
 			$saw_submit_control = false;
@@ -228,11 +216,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 					'flex'  => '0 1 auto',
 				),
 			);
-			$s->operations[]           = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_grid_track_control_width',
-				'target_hash' => hash( 'sha256', $id ),
-			);
+			$s->record( 'layout', 'provider_grid_track_control_width', $id );
 		}
 	}
 
@@ -346,12 +330,14 @@ final class Static_Site_Importer_Form_Grid_Placement {
 				}
 				$s->represented_layout_nodes            = array_merge( $s->represented_layout_nodes, $branches );
 				$s->percentage_width_parents[ $parent ] = true;
-				$s->operations[]                        = array(
-					'dimension'   => 'layout',
-					'strategy'    => 'provider_percentage_width_fields',
-					'target_hash' => hash( 'sha256', $parent ),
-					'field_count' => count( $indexes ),
-					'widths_hash' => hash( 'sha256', (string) wp_json_encode( $widths ) ),
+				$s->record(
+					'layout',
+					'provider_percentage_width_fields',
+					$parent,
+					array(
+						'field_count' => count( $indexes ),
+						'widths_hash' => hash( 'sha256', (string) wp_json_encode( $widths ) ),
+					)
 				);
 
 				$table_chain  = array( $parent );
@@ -397,12 +383,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 			}
 			$s->represented_layout_nodes[]   = $id;
 			$s->represented_topology_nodes[] = $id;
-			$s->operations[]                 = array(
-				'dimension'     => 'topology',
-				'strategy'      => 'provider_omitted_runtime_controls',
-				'target_hash'   => hash( 'sha256', $id ),
-				'control_count' => count( $omitted_controls ),
-			);
+			$s->record( 'topology', 'provider_omitted_runtime_controls', $id, array( 'control_count' => count( $omitted_controls ) ) );
 		}
 	}
 

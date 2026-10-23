@@ -265,6 +265,7 @@
           "tests/smoke-import-permission-filter.php",
           "tests/smoke-import-report-loss-ledger.php",
           "tests/smoke-import-report-size.php",
+          "tests/smoke-import-report-compact-json.php",
           "tests/smoke-import-report.php",
           "tests/smoke-import-runtime-memory.php",
           "tests/smoke-intake-admission.php",
