@@ -56,6 +56,8 @@ foreach ( array( array( $large, $small ), array( $small, $large ) ) as $ordered 
 	$data     = $archives[0]['payload']['data'];
 	$assert( 'large.html' === $archives[0]['source_path'], 'largest-listing-independent-of-order' );
 	$assert( ! str_contains( $data, '{{wordpress-site-plan:asset:' ) && str_contains( $data, $url ), 'archive-assets-resolved-like-source-page' );
+	$first = parse_blocks( $data )[0] ?? array();
+	$assert( 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ) ) && ! str_contains( $data, '<!-- ssi-' ), 'archive-identity-is-first-block-metadata-not-freeform-markup' );
 	$assert( $fixture['pages'][0]['resolved_block_markup'] === $prepared['pages'][0]['resolved_block_markup'] && $fixture['writes'][0] === $prepared['writes'][0], 'source-content-and-other-template-unchanged' );
 }
 

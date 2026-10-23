@@ -1152,13 +1152,23 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
 		}
-		// This portable identity travels with the template, not a destination-specific post ID.
-		$document = array(
-			'source_path'             => (string) $page['source_path'],
-			'reconciliation_identity' => (string) ( $page['reconciliation_identity'] ?? '' ),
-		);
-		$markup   = '<!-- ssi-product-archive-document ' . wp_json_encode( $document, JSON_HEX_TAG | JSON_HEX_AMP ) . ' -->' . "\n" . $markup;
-		$write    = array(
+		// The source page's portable identity travels with the template as block
+		// metadata on its first block, never a destination-specific post ID.
+		$identity = (string) ( $page['reconciliation_identity'] ?? '' );
+		if ( 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+			$markup = (string) preg_replace_callback(
+				'/<!-- wp:([a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)?)(?:\s+(\{.*?\}))?\s+(\/)?-->/s',
+				static function ( array $match ) use ( $identity ): string {
+					$attrs = '' !== ( $match[2] ?? '' ) ? json_decode( $match[2], true ) : array();
+					$attrs = is_array( $attrs ) ? $attrs : array();
+					$attrs['metadata'][ Static_Site_Importer_Product_Grid_Runtime::ARCHIVE_DOCUMENT_KEY ] = $identity;
+					return '<!-- wp:' . $match[1] . ' ' . serialize_block_attributes( $attrs ) . ' ' . ( $match[3] ?? '' ) . '-->';
+				},
+				$markup,
+				1
+			);
+		}
+		$write = array(
 			'kind'                    => 'theme_template',
 			'source_path'             => (string) $page['source_path'],
 			'target_path'             => Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE,
