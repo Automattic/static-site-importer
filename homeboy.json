@@ -339,6 +339,8 @@
           "tests/smoke-woo-store-visibility.php",
           "tests/smoke-woo-cart-binding.php",
           "tests/smoke-woo-order-lookup-binding.php",
+          "tests/smoke-region-binding-row-degradation.php",
+          "tests/source-local-post-date.php",
           "tests/smoke-wordpress-site-plan-materializer.php"
         ]
       }
