@@ -28,21 +28,33 @@ $semantic_orders = Static_Site_Importer_Woo_Product_Listing_Materializer::sort_p
 );
 $assert( array( 'menu_order', 'popularity', 'date', 'price', 'price-desc', 'title-asc', 'title-desc', null ) === $semantic_orders['values'], 'Producer sort orders map to catalog ordering; an option without one stays unbound.' );
 
-$source                  = 'collections/quiet.html';
-$empty                   = '<!-- wp:html --><div id="items"><p>No items yet.</p></div><!-- /wp:html -->';
-$form                    = '<!-- wp:html --><form id="ordering"><select name="sort_by"><option value="manual">Featured</option><option value="price-ascending">Lowest price</option><option value="surprise">Surprise me</option></select></form><!-- /wp:html -->';
-$region                  = '<!-- wp:group --><div class="wp-block-group">' . $form . $empty . '</div><!-- /wp:group -->';
-$binding                 = static fn( string $markup, string $role ): array => array(
+$source         = 'collections/quiet.html';
+$empty          = '<!-- wp:html --><div id="items"><p>No items yet.</p></div><!-- /wp:html -->';
+$form           = '<!-- wp:html --><form id="ordering"><select name="sort_by"><option value="manual">Featured</option><option value="price-ascending">Lowest price</option><option value="surprise">Surprise me</option></select></form><!-- /wp:html -->';
+$region         = '<!-- wp:group --><div class="wp-block-group">' . $form . $empty . '</div><!-- /wp:group -->';
+$binding        = static fn( string $markup, string $role ): array => array(
 	'schema'              => 'generic/block-binding/v1',
 	'source_path'         => $source,
 	'search_block_markup' => $markup,
 	'occurrence'          => 1,
 	'role'                => $role,
 );
-$region_binding          = $binding( $region, 'commerce_listing' );
-$sort_binding            = $binding( $form, 'commerce_listing_control' );
-$sort_binding['control'] = 'ordering';
-$listing                 = array(
+$region_binding = $binding( $region, 'commerce_listing' );
+// Producer spans in the pre-projection source document.
+$span                             = static fn( string $page, string $markup ): array => array(
+	'schema' => 'blocks-engine/runtime-binding-position/v1',
+	'offset' => (int) strpos( $page, $markup ),
+	'length' => strlen( $markup ),
+);
+$anchor                           = static fn( string $page, string $markup ): array => array(
+	'schema'            => 'blocks-engine/projected-binding-anchor/v2',
+	'source_block_hash' => hash( 'sha256', $markup ),
+	'source_position'   => $span( $page, $markup ),
+);
+$sort_binding                     = $binding( $form, 'commerce_listing_control' );
+$sort_binding['control']          = 'ordering';
+$sort_binding['projected_anchor'] = $anchor( $region, $form );
+$listing                          = array(
 	'source_path'   => $source,
 	'selector'      => 'div.wp-block-group',
 	'grid_selector' => '#items',
@@ -81,6 +93,7 @@ $fallback = array(
 		'search_block_markup' => $form,
 		'occurrence'          => 1,
 		'role'                => 'form',
+		'position'            => $span( $region, $form ),
 	),
 	'source_html_preview' => '<form id="ordering"><select name="sort_by"></select></form>',
 );
@@ -220,15 +233,29 @@ $lifecycle['entities'][0]['manifest']['product_listings'][0]['controls'][0]['opt
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1]['search_block_markup'] = $select;
 $nested_region = str_replace( $form, $nested_form, $region );
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $nested_region;
+$lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1]['projected_anchor']    = $anchor( $nested_region, $select );
 $plan['pages'][0]['resolved_block_markup']      = $nested_region;
 $fallbacks[0]['binding']['search_block_markup'] = $nested_form;
+$fallbacks[0]['binding']['position']            = $span( $nested_region, $nested_form );
 // The theme places the sort form beside the grid, outside the listing region.
+$beside_page                                      = $nested_form . $empty;
 $beside_plan                                      = $plan;
-$beside_plan['pages'][0]['resolved_block_markup'] = $nested_form . $empty;
+$beside_plan['pages'][0]['resolved_block_markup'] = $beside_page;
 $beside_lifecycle                                 = $lifecycle;
 $beside_lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $empty;
-$beside = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan, $fallbacks )['entities'][0]['manifest']['product_listings'][0];
+$beside_lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1]['projected_anchor']    = $anchor( $beside_page, $select );
+$beside_fallbacks                           = $fallbacks;
+$beside_fallbacks[0]['binding']['position'] = $span( $beside_page, $nested_form );
+$beside                                     = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan, $beside_fallbacks )['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $beside['replaced_fallback_identities'] ), 'A sort form placed beside the listing region reconciles when its control is bound.' );
+// An identical form elsewhere on the page holds no bound control; it stays a fallback.
+$elsewhere_fallbacks                                      = $beside_fallbacks;
+$elsewhere_fallbacks[0]['binding']['position']['offset'] += strlen( $beside_page );
+$elsewhere = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan, $elsewhere_fallbacks )['entities'][0]['manifest']['product_listings'][0];
+$assert( empty( $elsewhere['replaced_fallback_identities'] ), 'A sort form whose span holds no bound control stays unresolved.' );
+$normalize  = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'normalize_block_binding' );
+$normalized = $normalize->invoke( null, $beside_lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1] );
+$assert( $span( $beside_page, $select )['offset'] === ( $normalized['projected_anchor']['source_position']['offset'] ?? null ), 'Normalization keeps the control span the producer declared.' );
 $prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, $fallbacks );
 $nested   = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $nested['replaced_fallback_identities'] ), 'A sort select inside its single-select form reconciles the form.' );

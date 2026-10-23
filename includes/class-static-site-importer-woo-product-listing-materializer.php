@@ -484,7 +484,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		$orders = self::SORT_ORDERS;
 		$values = array();
 		foreach ( is_array( $control['options'] ?? null ) ? $control['options'] : array() as $option ) {
-			$order = is_array( $option ) && is_string( $option['order'] ?? null ) ? $option['order'] : '';
+			$order    = is_array( $option ) && is_string( $option['order'] ?? null ) ? $option['order'] : '';
 			$values[] = $orders[ $order ] ?? null;
 		}
 		return array() === array_filter( $values, 'is_string' ) ? null : array(

@@ -1908,37 +1908,56 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/**
 	 * Form fallbacks a bound sort control fully replaces: a filter/sort form
-	 * placed once on the listing's page (themes often put it beside the grid,
-	 * not inside it) whose resolved block holds the sort control's placement,
-	 * and whose only control is that sort.
+	 * on the listing's page whose only control is that sort, and whose
+	 * producer anchor span contains the sort control's own pre-projection
+	 * span. Both spans are the producer's coordinates in the same source
+	 * document, so the form may sit inside or beside the listing region.
 	 *
-	 * @param array<string,mixed> $listing Product listing.
-	 * @param string              $page Listing page resolved markup.
-	 * @param array<int,mixed>    $fallbacks Plan quality fallbacks.
+	 * @param array<string,mixed> $listing   Product listing.
+	 * @param array<int,mixed>    $fallbacks Source plan quality fallbacks.
 	 * @return array<int,string>
 	 */
-	private static function sort_form_fallback_identities( array $listing, string $page, array $fallbacks ): array {
+	private static function sort_form_fallback_identities( array $listing, array $fallbacks ): array {
 		$sorts = array();
 		foreach ( is_array( $listing['controls'] ?? null ) ? $listing['controls'] : array() as $control ) {
 			if ( is_array( $control ) && 'sort' === ( $control['kind'] ?? '' ) && null !== Static_Site_Importer_Woo_Product_Listing_Materializer::sort_parameter( $control ) ) {
 				$sorts[ (string) ( $control['id'] ?? '' ) ] = true;
 			}
 		}
+		$spans = array();
+		foreach ( array() === $sorts ? array() : $listing['control_bindings'] as $binding ) {
+			$span = self::source_span( $binding['projected_anchor']['source_position'] ?? null );
+			if ( isset( $sorts[ (string) ( $binding['control'] ?? '' ) ] ) && null !== $span ) {
+				$spans[] = $span;
+			}
+		}
 		$identities = array();
-		foreach ( array() === $sorts ? array() : $fallbacks as $fallback ) {
-			$form = is_array( $fallback ) ? (string) ( $fallback['binding']['search_block_markup'] ?? '' ) : '';
-			if ( '' === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || 1 !== (int) ( $fallback['control_count'] ?? 0 ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) || 1 !== substr_count( $page, $form ) ) {
+		foreach ( array() === $spans ? array() : $fallbacks as $fallback ) {
+			$form = is_array( $fallback ) ? self::source_span( $fallback['binding']['position'] ?? null ) : null;
+			if ( null === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || 1 !== (int) ( $fallback['control_count'] ?? 0 ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) ) {
 				continue;
 			}
-			foreach ( $listing['control_bindings'] as $binding ) {
-				$search = (string) ( $binding['search_block_markup'] ?? '' );
-				if ( isset( $sorts[ (string) ( $binding['control'] ?? '' ) ] ) && '' !== $search && 1 === substr_count( $form, $search ) ) {
+			foreach ( $spans as $span ) {
+				if ( $form[0] <= $span[0] && $span[1] <= $form[1] ) {
 					$identities[] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
 					break;
 				}
 			}
 		}
 		return array_values( array_unique( $identities ) );
+	}
+
+	/**
+	 * A producer runtime-binding position as a [start, end) byte span.
+	 *
+	 * @param mixed $position Producer position.
+	 * @return array{0:int,1:int}|null
+	 */
+	private static function source_span( mixed $position ): ?array {
+		if ( ! is_array( $position ) || ! is_int( $position['offset'] ?? null ) || ! is_int( $position['length'] ?? null ) || $position['offset'] < 0 || $position['length'] < 1 ) {
+			return null;
+		}
+		return array( $position['offset'], $position['offset'] + $position['length'] );
 	}
 
 	/**
@@ -2038,9 +2057,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// The region anchor is the listing's one binding; its controls
 				// are replaced inside that region. An owned grid with no items
 				// is the empty state a category query replaces.
-				$empty                                   = null !== $owned && array() === ( $owned['items'] ?? array() ) && '' !== $listing['category']['slug'];
-				$listing['empty_listing']                = $empty;
-				$listing['empty_grid_markup']            = $empty ? (string) ( $owned['bindings'][0]['search_block_markup'] ?? '' ) : '';
+				$empty                        = null !== $owned && array() === ( $owned['items'] ?? array() ) && '' !== $listing['category']['slug'];
+				$listing['empty_listing']     = $empty;
+				$listing['empty_grid_markup'] = $empty ? (string) ( $owned['bindings'][0]['search_block_markup'] ?? '' ) : '';
 				if ( null !== $owned && ! $empty ) {
 					// Archive queries can include products captured on another adopted
 					// listing. Carry those grids without changing category membership.
@@ -2048,7 +2067,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$listing['grid']                         = $empty ? null : $owned;
 				$listing['control_bindings']             = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing_control' === ( $binding['role'] ?? '' ) ) );
-				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, $pages[ (string) ( $listing['source_path'] ?? '' ) ] ?? '', $fallbacks );
+				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, $fallbacks );
 				$listing['bindings']                     = null !== $owned ? $region : array();
 				if ( null !== $owned ) {
 					$adopted[] = array( $claim, (string) $id );
@@ -2804,6 +2823,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$source_block_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
 		if ( is_string( $source_block_hash ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $source_block_hash ) ) {
 			$normalized['projected_anchor'] = array( 'source_block_hash' => $source_block_hash );
+			// Its span in the source document places the control inside its form.
+			$source_span = self::source_span( $binding['projected_anchor']['source_position'] ?? null );
+			if ( null !== $source_span ) {
+				$normalized['projected_anchor']['source_position'] = array(
+					'offset' => $source_span[0],
+					'length' => $source_span[1] - $source_span[0],
+				);
+			}
 		}
 		if ( isset( $binding['superseded_runtime_selectors'] ) ) {
 			if ( ! is_array( $binding['superseded_runtime_selectors'] ) || array() === $binding['superseded_runtime_selectors'] ) {
