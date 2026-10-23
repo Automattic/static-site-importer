@@ -833,6 +833,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			}
+			if ( array_key_exists( 'archive_replacement_block_markup', $binding ) && ( ! is_string( $binding['archive_replacement_block_markup'] ) || '' === trim( $binding['archive_replacement_block_markup'] ) ) ) {
+				// phpcs:ignore Squiz.Commenting.InlineComment.InvalidEndChar -- Machine-readable error classification.
+				// ssi-error-class: representability:block
+				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
+			}
 			$selectors = array_values( array_unique( $selectors ) );
 			foreach ( $selectors as $selector ) {
 				if ( ! is_string( $selector ) || '' === trim( $selector ) || strlen( $selector ) > 1024 ) {
@@ -859,6 +864,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( in_array( $group, array( 'templates', 'template_parts' ), true ) ) {
 				$part_patches[ $binding['source_path'] ][] = $patch;
 			} else {
+				$patch['replacement']                      = $binding['archive_replacement_block_markup'] ?? $patch['replacement'];
 				$page_patches[ $binding['source_path'] ][] = $patch;
 			}
 			if ( 'pages' === $group && 'commerce_listing' === ( $binding['role'] ?? '' ) ) {
@@ -1119,7 +1125,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
 		} catch ( InvalidArgumentException $mismatch ) {
 			unset( $mismatch );
-			$content = (string) ( $page['materialized_block_markup'] ?? '' );
+			$resolved = (string) ( $page['resolved_block_markup'] ?? '' );
+			$content  = self::splice_canonical_markup( $resolved, $resolved, $patches );
 		}
 		$count  = 0;
 		$markup = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
@@ -1152,7 +1159,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @return void
 	 */
 	public static function validate_runtime_entity_binding_fragment( array $binding, array &$diagnostics ): void {
-		if ( ! self::is_complete_block_document( (string) $binding['replacement_block_markup'] ) ) {
+		if ( ! self::is_complete_block_document( (string) $binding['replacement_block_markup'] ) || ( array_key_exists( 'archive_replacement_block_markup', $binding ) && ( ! is_string( $binding['archive_replacement_block_markup'] ) || ! self::is_complete_block_document( $binding['archive_replacement_block_markup'] ) ) ) ) {
 			$diagnostics[] = array(
 				'reason_code'             => 'runtime_entity_binding_replacement_invalid',
 				'source_path'             => $binding['source_path'],

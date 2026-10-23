@@ -14,25 +14,48 @@
  * on rollback), and the archive lists every product on one page with the shop
  * page's document styles.
  *
- * Run: STATIC_SITE_IMPORTER_WP_ROOT=/path/to/wordpress php tests/smoke-woo-product-listing-archive.php
+ * Run: php tests/smoke-woo-product-listing-archive.php
+ * Uses STATIC_SITE_IMPORTER_WP_ROOT or HOMEBOY_WORDPRESS_CORE_ROOT when set;
+ * otherwise provisions the pinned source-only Core fixture (curl and tar required).
  *
  * @package StaticSiteImporter
  */
 
+// phpcs:disable WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone diagnostic serialization.
 // phpcs:disable Universal.Files.SeparateFunctionsFromOO.Mixed, Generic.Files.OneObjectStructurePerFile.MultipleFound -- A standalone smoke test stubs the WordPress and WooCommerce APIs it exercises.
 
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
-define( 'ABSPATH', dirname( __DIR__ ) . '/' );
+// Use the same source-only Core fixture as the manifest runner, including when
+// this harness is invoked directly without a configured WordPress installation.
+$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+if ( ! $wp_root ) {
+	$wp_root = getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
+}
+if ( ! $wp_root ) {
+	$wp_root = dirname( __DIR__ ) . '/vendor/wordpress-core';
+	if ( ! is_readable( $wp_root . '/wp-includes/blocks.php' ) ) {
+		passthru( 'bash ' . escapeshellarg( dirname( __DIR__ ) . '/tools/prepare-wordpress-core-fixture.sh' ), $fixture_status ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_passthru -- Standalone CLI test provisions the pinned source-only fixture.
+		if ( 0 !== $fixture_status ) {
+			exit( 1 );
+		}
+	}
+}
+define( 'ABSPATH', rtrim( $wp_root, '/\\' ) . '/' );
+define( 'WPINC', 'wp-includes' );
 define( 'OBJECT', 'OBJECT' );
 
 // Block parsing/serialization and the HTML API come from WordPress Core.
-$wp_includes = rtrim( (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ), '/\\' ) . '/wp-includes/';
+$wp_includes = ABSPATH . WPINC . '/';
 if ( ! is_readable( $wp_includes . 'blocks.php' ) ) {
 	fwrite( STDERR, "FAIL: WordPress Core is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Standalone CLI failure report.
 	exit( 1 );
 }
-foreach ( array( 'plugin.php', 'utf8.php', 'compat-utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
+foreach ( array( 'plugin.php', 'compat.php', 'functions.php', 'utf8.php', 'compat-utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
+	// These UTF-8 helpers were split out of compat.php after the pinned 6.8 fixture.
+	if ( in_array( $wp_file, array( 'utf8.php', 'compat-utf8.php' ), true ) && ! is_readable( $wp_includes . $wp_file ) ) {
+		continue;
+	}
 	require_once $wp_includes . $wp_file;
 }
 
@@ -47,26 +70,17 @@ class WP_Error {
 }
 // As WordPress's default filters slug a title.
 add_filter( 'sanitize_title', 'sanitize_title_with_dashes', 10, 3 );
-function mbstring_binary_safe_encoding(): void {}
-function reset_mbstring_encoding(): void {}
-function _canonical_charset( string $charset ): string {
-	return $charset; }
-function get_option( string $name, mixed $fallback = false ): mixed {
-	return 'blog_charset' === $name ? 'UTF-8' : $fallback; }
+add_filter( 'pre_option', static fn( mixed $value, string $name ): mixed => 'blog_charset' === $name ? 'UTF-8' : array(), 10, 2 );
 function is_wp_error( mixed $value ): bool {
 	return $value instanceof WP_Error; }
-function _doing_it_wrong(): void {}
-function is_utf8_charset(): bool {
-	return true; }
-function wp_json_encode( mixed $value ): string|false {
-	return json_encode( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
-}
 
 // Seeded products resolve by slug and keep a menu order.
 class WP_Post {
 	public function __construct( public int $ID, public int $menu_order = 0 ) {}
 }
-class WC_Product {}
+/** Availability marker only; no WooCommerce product behavior is stubbed. */
+class SSI_Listing_Product_Availability {}
+class_alias( SSI_Listing_Product_Availability::class, 'WC_Product' );
 $GLOBALS['ssi_listing_products'] = array(
 	'zeta-item'  => array( 21, 0 ),
 	'alpha-item' => array( 22, 7 ),
@@ -350,16 +364,16 @@ $plan         = array(
 $adapter = Static_Site_Importer_Entity_Materializer_Registry::adapter_for_capability( 'shop', 'product_listings' );
 $assert( 'woocommerce_product_listing' === ( $adapter['id'] ?? '' ), 'product-listings-resolve-to-the-woo-archive-adapter', (string) ( $adapter['id'] ?? '' ) );
 $lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $plan, array() );
-$assert( ! is_wp_error( $lifecycle ) && 1 === count( $lifecycle['entities'][ $list_id ]['manifest']['product_listings'] ?? array() ), 'listing-declaration-plans-and-validates', is_wp_error( $lifecycle ) ? $lifecycle->get_error_message() . ' ' . wp_json_encode( $lifecycle->get_error_data() ) : '' );
+$assert( ! is_wp_error( $lifecycle ) && 1 === count( $lifecycle['entities'][ $list_id ]['manifest']['product_listings'] ?? array() ), 'listing-declaration-plans-and-validates', is_wp_error( $lifecycle ) ? $lifecycle->get_error_message() . ' ' . json_encode( $lifecycle->get_error_data() ) : '' );
 $unnamed                           = $listing;
 $unnamed['bindings'][1]['control'] = 'facet:missing';
 $validated                         = Static_Site_Importer_Entity_Materializer_Registry::validate_product_listings_manifest( array( 'product_listings' => array( $unnamed, $listing ) ) );
-$assert( 1 === count( $validated['product_listings'] ) && '$.product_listings[0]' === ( $validated['errors'][0]['path'] ?? '' ), 'validator-rejects-a-control-anchor-naming-no-control', (string) wp_json_encode( $validated['errors'] ) );
+$assert( 1 === count( $validated['product_listings'] ) && '$.product_listings[0]' === ( $validated['errors'][0]['path'] ?? '' ), 'validator-rejects-a-control-anchor-naming-no-control', (string) json_encode( $validated['errors'] ) );
 
 // --- 2. The listing adopts its grid; the grid's own anchor is absorbed.
 $adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
 $owned   = $adopted['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array();
-$assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 7 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) wp_json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
+$assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 7 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
 $assert( array() === ( $adopted['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? null ), 'grid-anchor-inside-the-listing-is-absorbed' );
 $elsewhere = $plan;
 $elsewhere['runtime_declarations'][2]['payload']['entities'][0]['grid_selector'] = 'main > ul';
@@ -376,27 +390,27 @@ $counted['runtime_declarations'][2]['payload']['entities'][0]['controls'] = arra
 );
 $counted['runtime_declarations'][2]['payload']['entities'][0]['bindings'] = array( $anchor( $region, 'commerce_listing' ), $anchor( $count, 'commerce_listing_control', 'result_count' ) );
 $count_only = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $counted, array() ), $counted );
-$assert( null === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] ?? null ) && 1 === count( $count_only['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? array() ), 'count-only-listing-leaves-its-grid-its-own-collection', (string) wp_json_encode( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array() ) );
+$assert( null === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] ?? null ) && 1 === count( $count_only['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? array() ), 'count-only-listing-leaves-its-grid-its-own-collection', (string) json_encode( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array() ) );
 
 // --- 3. Materializing orders the catalog by the grid's source order.
 $report = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $adopted['entities'][ $list_id ]['manifest'] );
-$assert( 'mapped' === ( $report['product_listings'][0]['status'] ?? '' ), 'adopted-listing-maps', (string) wp_json_encode( $report ) );
-$assert( array( 1, 2 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'products-take-the-grids-source-order-as-menu-order', (string) wp_json_encode( $GLOBALS['ssi_listing_products'] ) );
+$assert( 'mapped' === ( $report['product_listings'][0]['status'] ?? '' ), 'adopted-listing-maps', (string) json_encode( $report ) );
+$assert( array( 1, 2 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'products-take-the-grids-source-order-as-menu-order', (string) json_encode( $GLOBALS['ssi_listing_products'] ) );
 $unmapped = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $unowned['entities'][ $list_id ]['manifest'] );
 $assert( 'listing_grid_not_adopted' === ( $unmapped['product_listings'][0]['reason'] ?? '' ), 'listing-without-its-grid-is-skipped' );
 
 // --- 4. The region becomes an archive collection of WooCommerce blocks.
 $bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( array( 'entities' => array( $list_id => $adopted['entities'][ $list_id ] ) ), array( $list_id => $report ) );
 $record   = is_array( $bindings ) ? ( $bindings[0] ?? array() ) : array();
-$markup   = (string) ( $record['replacement_block_markup'] ?? '' );
-$assert( 1 === count( (array) $bindings ) && ( $record['search_block_markup'] ?? '' ) === $region && 'commerce_listing' === ( $record['role'] ?? '' ), 'listing-binding-replaces-the-whole-region', is_wp_error( $bindings ) ? $bindings->get_error_message() : (string) wp_json_encode( $bindings ) );
+$markup   = (string) ( $record['archive_replacement_block_markup'] ?? $record['replacement_block_markup'] ?? '' );
+$assert( 1 === count( (array) $bindings ) && ( $record['search_block_markup'] ?? '' ) === $region && 'commerce_listing' === ( $record['role'] ?? '' ), 'listing-binding-replaces-the-whole-region', is_wp_error( $bindings ) ? $bindings->get_error_message() : (string) json_encode( $bindings ) );
 $outer = parse_blocks( $markup )[0] ?? array();
-$assert( 'woocommerce/product-collection' === ( $outer['blockName'] ?? '' ) && true === ( $outer['attrs']['query']['inherit'] ?? null ) && 'shop-layout' === ( $outer['innerBlocks'][0]['attrs']['className'] ?? '' ), 'region-becomes-an-archive-collection-around-the-source-layout', (string) wp_json_encode( $outer['attrs'] ?? null ) );
+$assert( 'woocommerce/product-collection' === ( $outer['blockName'] ?? '' ) && true === ( $outer['attrs']['query']['inherit'] ?? null ) && 'shop-layout' === ( $outer['innerBlocks'][0]['attrs']['className'] ?? '' ), 'region-becomes-an-archive-collection-around-the-source-layout', (string) json_encode( $outer['attrs'] ?? null ) );
 $aside        = $outer['innerBlocks'][0]['innerBlocks'][0] ?? array();
 $filters      = $aside['innerBlocks'] ?? array();
 $filter_names = array_column( $filters, 'blockName' );
 $wire         = static fn( mixed $block ): mixed => ( is_array( $block ) ? $block : array() )['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ] ?? null;
-$assert( 'filters' === ( $aside['attrs']['className'] ?? '' ) && array( 'core/heading', 'core/html', 'custom/authored-input', 'custom/authored-select', 'core/html', 'core/html' ) === $filter_names && ! str_contains( $markup, 'product-filter' ), 'filters-keep-their-source-blocks-in-place', (string) wp_json_encode( $filter_names ) );
+$assert( 'filters' === ( $aside['attrs']['className'] ?? '' ) && array( 'core/heading', 'core/html', 'custom/authored-input', 'custom/authored-select', 'core/html', 'core/html' ) === $filter_names && ! str_contains( $markup, 'product-filter' ), 'filters-keep-their-source-blocks-in-place', (string) json_encode( $filter_names ) );
 $assert(
 	array(
 		'param'       => 'categories',
@@ -405,7 +419,7 @@ $assert(
 		'state_class' => 'on',
 	) === $wire( $filters[1] ),
 	'category-buttons-keep-their-source-order-and-all-option-wired-to-the-category-filter',
-	(string) wp_json_encode( $wire( $filters[1] ) )
+	(string) json_encode( $wire( $filters[1] ) )
 );
 $assert(
 	array(
@@ -414,7 +428,7 @@ $assert(
 		'clear' => '100',
 	) === $wire( $filters[2] ) && str_contains( (string) ( $filters[2]['innerHTML'] ?? '' ), 'data-price-max' ),
 	'price-range-keeps-its-source-input-wired-to-max-price',
-	(string) wp_json_encode( $wire( $filters[2] ) )
+	(string) json_encode( $wire( $filters[2] ) )
 );
 $assert(
 	array(
@@ -423,7 +437,7 @@ $assert(
 		'values' => array( '', 'Deep', 'pale' ),
 	) === $wire( $filters[3] ),
 	'select-facet-keeps-its-source-select-wired-to-the-attribute-filter',
-	(string) wp_json_encode( $wire( $filters[3] ) )
+	(string) json_encode( $wire( $filters[3] ) )
 );
 $assert(
 	array(
@@ -432,12 +446,12 @@ $assert(
 		'values' => array( 'warm', 'cool' ),
 	) === $wire( $filters[4] ),
 	'radio-facet-keeps-its-source-radios-wired-to-the-attribute-filter',
-	(string) wp_json_encode( $wire( $filters[4] ) )
+	(string) json_encode( $wire( $filters[4] ) )
 );
 $assert( null === $wire( $filters[5] ) && str_contains( (string) ( $filters[5]['innerHTML'] ?? '' ), 'data-swatch' ), 'unseeded-attribute-facet-keeps-its-source-block-unwired' );
 $results        = $outer['innerBlocks'][0]['innerBlocks'][1] ?? array();
 $toolbar_blocks = $results['innerBlocks'][0]['innerBlocks'] ?? array();
-$assert( 'core/paragraph' === ( $toolbar_blocks[0]['blockName'] ?? '' ) && 2 === count( $toolbar_blocks ) && array( 'shape' => 'count' ) === $wire( $toolbar_blocks[0] ) && str_contains( (string) ( $toolbar_blocks[0]['innerHTML'] ?? '' ), 'data-count' ), 'count-keeps-its-source-wording-in-the-toolbar', (string) wp_json_encode( array_column( $toolbar_blocks, 'blockName' ) ) );
+$assert( 'core/paragraph' === ( $toolbar_blocks[0]['blockName'] ?? '' ) && 2 === count( $toolbar_blocks ) && array( 'shape' => 'count' ) === $wire( $toolbar_blocks[0] ) && str_contains( (string) ( $toolbar_blocks[0]['innerHTML'] ?? '' ), 'data-count' ), 'count-keeps-its-source-wording-in-the-toolbar', (string) json_encode( array_column( $toolbar_blocks, 'blockName' ) ) );
 $unnumbered = new ReflectionMethod( Static_Site_Importer_Woo_Product_Listing_Materializer::class, 'control_parameter' );
 $assert(
 	null === $unnumbered->invoke(
@@ -458,7 +472,7 @@ $assert(
 		'values' => array( '', 'date', 'price', 'price-desc', 'title-asc' ),
 	) === $wire( $toolbar_blocks[1] ) && str_contains( (string) ( $toolbar_blocks[1]['innerHTML'] ?? '' ), 'data-sort' ),
 	'sort-keeps-its-source-select-wired-to-the-catalog-order',
-	(string) wp_json_encode( $wire( $toolbar_blocks[1] ) )
+	(string) json_encode( $wire( $toolbar_blocks[1] ) )
 );
 $sort_parameter = new ReflectionMethod( Static_Site_Importer_Woo_Product_Listing_Materializer::class, 'sort_parameter' );
 $assert(
@@ -538,7 +552,7 @@ $assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Listing_Materializer::r
 
 // --- 9. Rollback restores the previous menu order.
 $rolled = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $report );
-$assert( 'rolled_back' === ( $rolled['status'] ?? '' ) && array( 0, 7 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'rollback-restores-the-previous-menu-order', (string) wp_json_encode( $GLOBALS['ssi_listing_products'] ) );
+$assert( 'rolled_back' === ( $rolled['status'] ?? '' ) && array( 0, 7 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'rollback-restores-the-previous-menu-order', (string) json_encode( $GLOBALS['ssi_listing_products'] ) );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Standalone CLI failure report.
