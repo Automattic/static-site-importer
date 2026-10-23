@@ -1412,7 +1412,9 @@ $css = implode( '', $GLOBALS['styles'] ?? array() );
 echo json_encode( array(
 	'filters' => count( $GLOBALS['filters']['render_block'] ?? array() ),
 	'slot'    => is_callable( $render ) ? $render( '<p>Template</p>', $slot ) : null,
-	'layout'  => str_contains( $css, '.ssi-item-template-loop.ssi-item-template-loop .wc-block-product-template' ) && str_contains( $css, 'display:contents' ),
+	// Loop wrappers are unwrapped at render time by the companion's own copy,
+	// so the layout CSS keeps only the loop root as a contents box.
+	'layout'  => 1 === count( $GLOBALS['filters']['render_block_woocommerce/product-collection'] ?? array() ) && str_contains( $css, 'display:contents' ) && ! str_contains( $css, '.wc-block-product-template' ),
 ) );
 PHP;
 $grid_runtime_file = WP_PLUGIN_DIR . '/ssi-example-site/includes/product-grid-runtime.php';
