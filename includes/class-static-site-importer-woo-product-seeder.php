@@ -793,7 +793,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * A product's attribute values as global WooCommerce attributes: each
 	 * attribute key becomes a `pa_<key>` attribute named by its label, and each
 	 * value a term of it named by its shopper-facing label, so WooCommerce's
-	 * attribute filters can list and filter by them. A key WooCommerce cannot
+	 * attribute filters can list and filter by them. A term this run creates
+	 * also receives an `order` term meta — the position WooCommerce's
+	 * `menu_order` term ordering reads — one past the taxonomy's existing
+	 * terms, so its values present in first-seen source order instead of name
+	 * order; reused terms keep their stored order. A key WooCommerce cannot
 	 * use as an attribute slug is reported as a loss.
 	 *
 	 * @param array<int,array<string,string>> $rows    Validated attribute rows.
@@ -846,7 +850,8 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			if ( is_array( $existing ) ) {
 				$term_id = (int) $existing['term_id'];
 			} else {
-				$term = wp_insert_term( (string) $row['value_label'], $taxonomy, array( 'slug' => $term_slug ) );
+				$order = self::next_attribute_term_order( $taxonomy );
+				$term  = wp_insert_term( (string) $row['value_label'], $taxonomy, array( 'slug' => $term_slug ) );
 				if ( is_wp_error( $term ) ) {
 					// ssi-error-class: propagated
 					throw new RuntimeException( esc_html( $term->get_error_message() ) );
@@ -856,6 +861,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					'taxonomy' => $taxonomy,
 					'term_id'  => $term_id,
 				);
+				update_term_meta( $term_id, 'order', $order );
 			}
 			if ( ! isset( $attributes[ $taxonomy ] ) ) {
 				$attributes[ $taxonomy ] = new WC_Product_Attribute();
@@ -868,6 +874,37 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$attributes[ $taxonomy ]->set_options( array_values( array_unique( array_merge( $attributes[ $taxonomy ]->get_options(), array( $term_id ) ) ) ) );
 		}
 		return $attributes;
+	}
+
+	/**
+	 * The next first-seen position for a created attribute term: one past the
+	 * taxonomy's current highest `order` term meta, or its existing term count
+	 * when no term carries one yet. Existing terms are only read, never
+	 * written, so a term WooCommerce or an earlier run ordered stays ordered.
+	 *
+	 * @param string $taxonomy Attribute taxonomy name.
+	 * @return int
+	 */
+	private static function next_attribute_term_order( string $taxonomy ): int {
+		$term_ids = get_terms(
+			array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => false,
+				'fields'     => 'ids',
+			)
+		);
+		if ( ! is_array( $term_ids ) ) {
+			return 0;
+		}
+		$highest = null;
+		foreach ( $term_ids as $term_id ) {
+			$order = get_term_meta( (int) $term_id, 'order', true );
+			if ( is_numeric( $order ) ) {
+				$highest = null === $highest ? (int) $order : max( $highest, (int) $order );
+			}
+		}
+
+		return null === $highest ? count( $term_ids ) : $highest + 1;
 	}
 
 	/** Remove attachments created by this run, in reverse creation order. */

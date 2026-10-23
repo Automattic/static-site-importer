@@ -88,6 +88,13 @@ function get_terms( array $args ): array {
 function wp_delete_term( int $id ): bool {
 	unset( $GLOBALS['terms'][ $id ] );
 	return true; }
+// Term meta lives inside the stub term row, so wp_delete_term() removes it
+// with the term, the way WordPress deletes term meta.
+function update_term_meta( int $term_id, string $meta_key, mixed $meta_value ): bool {
+	$GLOBALS['terms'][ $term_id ]['meta'][ $meta_key ] = $meta_value;
+	return true; }
+function get_term_meta( int $term_id, string $meta_key, bool $single = true ): mixed {
+	return $GLOBALS['terms'][ $term_id ]['meta'][ $meta_key ] ?? ''; }
 function wp_get_object_terms( int $id, string $taxonomy = 'product_cat' ): array {
 	return $GLOBALS['relations'][ $id ][ $taxonomy ] ?? array(); }
 function wp_set_object_terms( int $id, array $terms, string $taxonomy = 'product_cat' ): array {
