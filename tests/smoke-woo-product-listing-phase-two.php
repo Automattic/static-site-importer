@@ -102,8 +102,10 @@ $empty_grid = array(
 );
 $validated  = Static_Site_Importer_Entity_Materializer_Registry::validate_product_grids_manifest( array( 'product_grids' => array( $empty_grid ) ) );
 $assert( array() === $validated['errors'] && 1 === count( $validated['product_grids'] ), wp_json_encode( $validated['errors'] ) . 'An empty grid declared with no items and no template is valid.' );
+// The resolved plan carries no quality findings; fallbacks come from the source plan.
+$fallbacks = array( $fallback );
 $plan      = array(
-	'pages'   => array(
+	'pages' => array(
 		array(
 			'source_path'           => $source,
 			'title'                 => 'Quiet collection',
@@ -111,7 +113,6 @@ $plan      = array(
 			'resolved_block_markup' => $region,
 		),
 	),
-	'quality' => array( 'fallbacks' => array( $fallback ) ),
 );
 $lifecycle = array(
 	'entities' => array(
@@ -125,13 +126,13 @@ $lifecycle = array(
 		),
 	),
 );
-$prepared  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$prepared  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, $fallbacks );
 $assert( array() === $prepared['entities'][1]['manifest']['product_grids'], 'An empty grid is owned by its listing, never materialized as a card grid.' );
 $entity = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $entity['empty_listing'] ) && array( $region_binding ) === $entity['bindings'], 'Empty region is adopted even without products.' );
 $undeclared = $lifecycle;
 unset( $undeclared['entities'][1] );
-$not_empty = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $undeclared, $plan );
+$not_empty = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $undeclared, $plan, $fallbacks );
 $assert( empty( $not_empty['entities'][0]['manifest']['product_listings'][0]['bindings'] ), 'Without a declared empty grid the listing is not adopted.' );
 $report = Static_Site_Importer_Woo_Product_Listing_Materializer::materialize( array( 'product_listings' => array( $entity ) ) );
 $assert( 'mapped' === $report['product_listings'][0]['status'], 'Empty listing materializes.' );
@@ -186,7 +187,7 @@ $lifecycle['entities'][0]['manifest']['product_listings'][0]['controls'][0]['opt
 		'label' => 'Surprise me',
 	),
 );
-$prepared       = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$prepared       = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, $fallbacks );
 $unknown        = $prepared['entities'][0]['manifest']['product_listings'][0];
 $unknown_markup = Static_Site_Importer_Woo_Product_Listing_Materializer::binding_block_markup( $unknown, array( 'status' => 'mapped' ) );
 $unknown_report = Static_Site_Importer_Woo_Product_Listing_Materializer::materialize( array( 'product_listings' => array( $unknown ) ) );
@@ -219,16 +220,16 @@ $lifecycle['entities'][0]['manifest']['product_listings'][0]['controls'][0]['opt
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1]['search_block_markup'] = $select;
 $nested_region = str_replace( $form, $nested_form, $region );
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $nested_region;
-$plan['pages'][0]['resolved_block_markup']                         = $nested_region;
-$plan['quality']['fallbacks'][0]['binding']['search_block_markup'] = $nested_form;
+$plan['pages'][0]['resolved_block_markup']      = $nested_region;
+$fallbacks[0]['binding']['search_block_markup'] = $nested_form;
 // The theme places the sort form beside the grid, outside the listing region.
 $beside_plan                                      = $plan;
 $beside_plan['pages'][0]['resolved_block_markup'] = $nested_form . $empty;
 $beside_lifecycle                                 = $lifecycle;
 $beside_lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $empty;
-$beside = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan )['entities'][0]['manifest']['product_listings'][0];
+$beside = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $beside_lifecycle, $beside_plan, $fallbacks )['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $beside['replaced_fallback_identities'] ), 'A sort form placed beside the listing region reconciles when its control is bound.' );
-$prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, $fallbacks );
 $nested   = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $nested['replaced_fallback_identities'] ), 'A sort select inside its single-select form reconciles the form.' );
 

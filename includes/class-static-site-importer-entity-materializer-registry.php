@@ -1960,9 +1960,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
 	 * @param array<string,mixed> $plan      Resolved site plan.
+	 * @param array<int,mixed>    $fallbacks Source plan quality fallbacks; the resolved plan carries none.
 	 * @return array<string,mixed>
 	 */
-	public static function with_adopted_product_regions( array $lifecycle, array $plan ): array {
+	public static function with_adopted_product_regions( array $lifecycle, array $plan, array $fallbacks ): array {
 		$pages      = array();
 		$categories = array();
 		$members    = array();
@@ -2047,7 +2048,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$listing['grid']                         = $empty ? null : $owned;
 				$listing['control_bindings']             = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing_control' === ( $binding['role'] ?? '' ) ) );
-				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, $pages[ (string) ( $listing['source_path'] ?? '' ) ] ?? '', $plan['quality']['fallbacks'] ?? array() );
+				$listing['replaced_fallback_identities'] = null === $owned ? array() : self::sort_form_fallback_identities( $listing, $pages[ (string) ( $listing['source_path'] ?? '' ) ] ?? '', $fallbacks );
 				$listing['bindings']                     = null !== $owned ? $region : array();
 				if ( null !== $owned ) {
 					$adopted[] = array( $claim, (string) $id );

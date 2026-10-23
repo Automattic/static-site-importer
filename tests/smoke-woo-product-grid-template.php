@@ -214,7 +214,7 @@ $lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lif
 $assert( ! is_wp_error( $lifecycle ) && 1 === count( $lifecycle['entities'][ $grid_id ]['manifest']['product_grids'] ?? array() ), 'grid-declaration-plans-and-validates', is_wp_error( $lifecycle ) ? $lifecycle->get_error_message() . ' ' . wp_json_encode( $lifecycle->get_error_data() ) : '' );
 
 // --- 2. The grid supersedes the card controls inside it, not the one outside.
-$adopted  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$adopted  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, array() );
 $products = $adopted['entities'][ $prod_id ]['manifest']['products'] ?? array();
 $assert( array( 2 ) === array_column( $products[0]['bindings'] ?? array(), 'occurrence' ), 'control-inside-the-grid-is-superseded-and-the-outside-one-kept', (string) wp_json_encode( $products[0]['bindings'] ?? null ) );
 $assert( array() === ( $products[1]['bindings'] ?? null ), 'every-card-control-inside-the-grid-is-superseded' );
@@ -283,7 +283,7 @@ $assert( '<p>x</p>' === Static_Site_Importer_Product_Grid_Runtime::render_slot( 
 $class_hook = $plan;
 $class_hook['runtime_declarations'][2]['payload']['entities'][0]['bindings'][0]['superseded_runtime_selectors'] = array( '.grid' );
 $kept = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $class_hook, array() );
-$kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $kept, $class_hook );
+$kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $kept, $class_hook, array() );
 $assert( array() === $kept['entities'][ $grid_id ]['manifest']['product_grids'] && 2 === count( $kept['entities'][ $prod_id ]['manifest']['products'][0]['bindings'] ), 'class-hooked-grid-adopts-nothing-and-keeps-card-controls' );
 
 // --- 6. A server-rendered grid has no script hook to retire, so it validates
@@ -293,7 +293,7 @@ $neutral = $plan;
 unset( $neutral['runtime_declarations'][2]['payload']['entities'][0]['bindings'][0]['superseded_runtime_selectors'] );
 $neutral_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $neutral, array() );
 $assert( ! is_wp_error( $neutral_lifecycle ) && 1 === count( $neutral_lifecycle['entities'][ $grid_id ]['manifest']['product_grids'] ?? array() ), 'scriptless-grid-declaration-validates', is_wp_error( $neutral_lifecycle ) ? $neutral_lifecycle->get_error_message() : '' );
-$neutral_kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $neutral_lifecycle, $neutral );
+$neutral_kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $neutral_lifecycle, $neutral, array() );
 $assert( 1 === count( $neutral_kept['entities'][ $grid_id ]['manifest']['product_grids'] ) && 1 === count( $neutral_kept['entities'][ $prod_id ]['manifest']['products'][0]['bindings'] ) && 0 === count( $neutral_kept['entities'][ $prod_id ]['manifest']['products'][1]['bindings'] ), 'scriptless-grid-is-adopted-and-supersedes-in-grid-controls' );
 
 // --- 7. The validator requires an item template and one grid anchor.

@@ -371,7 +371,7 @@ $validated                         = Static_Site_Importer_Entity_Materializer_Re
 $assert( 1 === count( $validated['product_listings'] ) && '$.product_listings[0]' === ( $validated['errors'][0]['path'] ?? '' ), 'validator-rejects-a-control-anchor-naming-no-control', (string) json_encode( $validated['errors'] ) );
 
 // --- 2. The listing adopts its grid; the grid's own anchor is absorbed.
-$adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan, array() );
 $owned   = $adopted['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array();
 $assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 7 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
 $assert( array() === ( $adopted['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? null ), 'grid-anchor-inside-the-listing-is-absorbed' );
@@ -393,12 +393,12 @@ $with_products['entities']['catalog'] = array(
 $titled                               = $plan;
 $titled['pages'][0]['title']          = 'Shop';
 $titled['pages'][0]['slug']           = 'shop';
-$members                              = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $with_products, $titled );
+$members                              = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $with_products, $titled, array() );
 $category                             = (string) ( $members['entities'][ $list_id ]['manifest']['product_listings'][0]['category']['name'] ?? '' );
 $assert( 'Shop' === $category && array( 'Existing', 'Shop' ) === ( $members['entities']['catalog']['manifest']['products'][0]['categories'] ?? null ) && ! isset( $members['entities']['catalog']['manifest']['products'][1]['categories'] ), 'listed-products-carry-the-listing-category-to-the-seeder', (string) json_encode( $members['entities']['catalog']['manifest']['products'] ) );
 $elsewhere = $plan;
 $elsewhere['runtime_declarations'][2]['payload']['entities'][0]['grid_selector'] = 'main > ul';
-$unowned = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $elsewhere, array() ), $elsewhere );
+$unowned = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $elsewhere, array() ), $elsewhere, array() );
 $assert( null === ( $unowned['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === $unowned['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] && 1 === count( $unowned['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ), 'listing-without-its-grid-keeps-the-source-controls-and-grid' );
 // A listing whose only control is a result count changes nothing the archive
 // query would, so it adopts nothing: the grid keeps its own collection.
@@ -410,7 +410,7 @@ $counted['runtime_declarations'][2]['payload']['entities'][0]['controls'] = arra
 	),
 );
 $counted['runtime_declarations'][2]['payload']['entities'][0]['bindings'] = array( $anchor( $region, 'commerce_listing' ), $anchor( $count, 'commerce_listing_control', 'result_count' ) );
-$count_only = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $counted, array() ), $counted );
+$count_only = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $counted, array() ), $counted, array() );
 $assert( null === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] ?? null ) && 1 === count( $count_only['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? array() ), 'count-only-listing-leaves-its-grid-its-own-collection', (string) json_encode( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array() ) );
 
 // --- 3. Materializing orders the catalog by the grid's source order.

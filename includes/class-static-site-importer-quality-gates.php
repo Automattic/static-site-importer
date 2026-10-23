@@ -314,7 +314,7 @@ final class Static_Site_Importer_Quality_Gates {
 	public static function is_form_fallback_diagnostic( array $diagnostic ): bool {
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
 			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
-				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || in_array( Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ), array( 'commerce_add_to_cart', 'filter_sort' ), true );
+				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic );
 			}
 		}
 
@@ -341,6 +341,21 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Whether a runtime-routed form (a listing's sort form) is claimed by name
+	 * in a completed product listing receipt. Such a form never takes a form
+	 * provider decision; it resolves only through that listing's own proof.
+	 *
+	 * @param array<string,mixed>      $diagnostic           Fallback diagnostic.
+	 * @param array<string,mixed|bool> $receipts_by_fallback Receipts by replaced fallback identity.
+	 */
+	private static function is_listing_owned_form( array $diagnostic, array $receipts_by_fallback ): bool {
+		$receipt = $receipts_by_fallback[ Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic ) ] ?? null;
+		return 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic )
+			&& in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true )
+			&& is_array( $receipt ) && ! empty( $receipt['absorbed_by_surface'] ) && 'commerce_listing' === ( $receipt['role'] ?? '' );
 	}
 
 	/** Identify a commerce add-to-cart/quantity controls fallback finding. */
@@ -613,6 +628,7 @@ final class Static_Site_Importer_Quality_Gates {
 					$receipts[] = array(
 						'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
 						'status'                           => 'completed',
+						'role'                             => $binding['role'],
 						'fallback_reconciliation_identity' => $grid_identity,
 						'source_path'                      => $binding['source_path'] ?? '',
 						'selector'                         => $binding['selector'] ?? '',
@@ -698,7 +714,7 @@ final class Static_Site_Importer_Quality_Gates {
 				$diagnostic['materialization_hint']   = 'preserve_form_runtime_source_until_controls_can_be_mapped';
 				$report->replace_diagnostic( $index, $diagnostic );
 			}
-			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
+			if ( ! is_array( $diagnostic ) || ! ( self::is_form_fallback_diagnostic( $diagnostic ) || self::is_listing_owned_form( $diagnostic, $receipts_by_fallback ) ) ) {
 				continue;
 			}
 			$fallback_hash     = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
