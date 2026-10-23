@@ -234,6 +234,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/**
 	 * A single stretched column item has block-like flow; its gap has no used value.
+	 * With one item there is one flex line, which `align-content: normal` stretches,
+	 * so wrapping changes nothing. Without a definite block size the column has no
+	 * free main-axis space, so `justify-content` places nothing either.
 	 *
 	 * @param Static_Site_Importer_Form_Topology_State $s Source topology and projection state.
 	 * @param array<string,mixed>                      $node Source layout graph container.
@@ -244,8 +247,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 'container' === ( $node['kind'] ?? '' )
 			&& 'flex' === ( $layout['display'] ?? '' )
 			&& 'column' === ( $layout['direction'] ?? '' )
-			&& 'nowrap' === ( $layout['wrap'] ?? 'nowrap' )
+			&& in_array( $layout['wrap'] ?? 'nowrap', array( 'nowrap', 'wrap' ), true )
 			&& in_array( $layout['align_items'] ?? 'normal', array( 'normal', 'stretch' ), true )
+			&& in_array( $layout['align_content'] ?? 'normal', array( 'normal', 'stretch' ), true )
+			&& array() === array_intersect_key( $layout, array_flip( array( 'height', 'min_height', 'max_height', 'flex', 'flex_grow', 'flex_basis', 'align_self' ) ) )
 			&& 1 === ( $node['in_flow_children'] ?? null )
 			&& empty( $s->variants_by_node[ $node['id'] ] );
 	}
@@ -291,7 +296,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// included, so it is the plain block box its topology tag describes.
 			$node = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? array( 'source' => array( 'tag' => (string) ( $wrapper['tag'] ?? 'div' ) ) );
 			if ( self::submit_column_box( $s, $node ) ) {
-				$properties                                = array( 'display', 'direction', 'align_items', 'wrap', 'gap', 'row_gap', 'column_gap' );
+				$properties                                = array( 'display', 'direction', 'align_items', 'align_content', 'justify_content', 'wrap', 'gap', 'row_gap', 'column_gap' );
 				$columns[ $node['id'] ]                    = $properties;
 				$node['layout']                            = array_diff_key( $node['layout'], array_flip( $properties ) );
 				$node['presentation']['styles']['display'] = 'block';

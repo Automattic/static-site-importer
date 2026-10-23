@@ -385,6 +385,8 @@
 		'text-note'      => array( str_replace( '<div class="actions">', '<div class="actions">A note', $column_submit_html ), false ),
 		'hidden-sibling' => array( str_replace( '<div class="actions">', '<div class="actions"><div style="display:none">Hidden note</div>', $column_submit_html ), true ),
 		'count-absent'   => array( $column_submit_html, false ),
+		'wrap-justify'   => array( str_replace( 'gap:10px;', 'gap:10px;flex-wrap:wrap;justify-content:flex-end;', $column_submit_html ), true ),
+		'definite-size'  => array( str_replace( 'gap:10px;', 'gap:10px;justify-content:flex-end;height:200px;', $column_submit_html ), false ),
 	) as $case => list( $html, $mapped ) ) {
 		$source = ( ( new $artifact_compiler() )->compile(
 			array(
