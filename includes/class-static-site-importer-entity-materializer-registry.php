@@ -1111,20 +1111,30 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $fallback ) || 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) {
 				continue;
 			}
-			$source   = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
-			$declared = false;
+			$source        = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$declared      = false;
+			$anchor_hashes = self::fallback_anchor_hashes( $fallback );
 			// Canonical producer anchors own this page region. Carry the form
 			// diagnostic with each binding so its receipt joins the same fallback.
+			// A binding naming its own pre-projection anchor hash joins only the
+			// fallback whose own anchor hashes to it, so two placements of one
+			// purchase form on a page each keep their own fallback instead of the
+			// page's last one overwriting every placement.
 			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
 				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
 					continue;
 				}
 				foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
 					foreach ( $product['bindings'] ?? array() as $binding_index => $binding ) {
-						if ( 'commerce_add_to_cart_form' === ( $binding['role'] ?? '' ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
-							$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
-							$declared = true;
+						if ( 'commerce_add_to_cart_form' !== ( $binding['role'] ?? '' ) || '' === $source || self::product_page_key( $source ) !== self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
+							continue;
 						}
+						$projected_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
+						if ( is_string( $projected_hash ) && ! in_array( $projected_hash, $anchor_hashes, true ) ) {
+							continue;
+						}
+						$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+						$declared = true;
 					}
 				}
 			}
@@ -1223,6 +1233,29 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $id ]               = array( 'products' => array( $result ) );
 		}
 		return $lifecycle;
+	}
+
+	/**
+	 * The pre-projection anchor hashes one fallback stands for: its single
+	 * binding anchor, or every anchor in its binding list.
+	 *
+	 * @param array<string,mixed> $fallback Producer fallback diagnostics.
+	 * @return array<int,string>
+	 */
+	private static function fallback_anchor_hashes( array $fallback ): array {
+		$hashes         = array();
+		$single_markup  = is_array( $fallback['binding'] ?? null ) ? ( $fallback['binding']['search_block_markup'] ?? null ) : null;
+		$anchor_markups = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array();
+		if ( is_string( $single_markup ) && '' !== $single_markup ) {
+			$hashes[] = hash( 'sha256', $single_markup );
+		}
+		foreach ( $anchor_markups as $anchor ) {
+			$markup = is_array( $anchor ) ? ( $anchor['search_block_markup'] ?? null ) : null;
+			if ( is_string( $markup ) && '' !== $markup ) {
+				$hashes[] = hash( 'sha256', $markup );
+			}
+		}
+		return $hashes;
 	}
 
 	/**
@@ -2658,6 +2691,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 		if ( isset( $binding['control'] ) ) {
 			$normalized['control'] = $binding['control'];
+		}
+		// The producer's pre-projection anchor hash names which source fallback
+		// this placement replaces, so keep it through normalization.
+		$source_block_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
+		if ( is_string( $source_block_hash ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $source_block_hash ) ) {
+			$normalized['projected_anchor'] = array( 'source_block_hash' => $source_block_hash );
 		}
 		if ( isset( $binding['superseded_runtime_selectors'] ) ) {
 			if ( ! is_array( $binding['superseded_runtime_selectors'] ) || array() === $binding['superseded_runtime_selectors'] ) {
