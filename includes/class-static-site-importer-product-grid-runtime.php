@@ -97,9 +97,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		if ( 'field' === $role ) {
 			$markup = $slot['values'][ (string) $product->get_id() ] ?? null;
 			if ( ! is_string( $markup ) ) {
-				// A product added after import has no source value: an
-				// optional slot stays empty, a required one keeps the template.
-				return empty( $slot['optional'] ) ? $content : '';
+				return empty( $slot['optional'] ) ? self::render_uncaptured( $content, $slot['template'] ?? array(), $product ) : '';
 			}
 			$blocks = array_values( array_filter( parse_blocks( $markup ), static fn( array $item ): bool => is_string( $item['blockName'] ?? null ) ) );
 			return 1 === count( $blocks ) ? render_block( $blocks[0] ) : '';
@@ -129,6 +127,151 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			}
 		}
 		return $content;
+	}
+
+	/**
+	 * Capture source values, rather than relying on mutable catalog data later.
+	 *
+	 * @param int    $product_id Template product id.
+	 * @param string $markup Source slot markup.
+	 * @param string $role Slot role.
+	 * @return array<string,mixed> Portable source values for the companion runtime.
+	 */
+	public static function template_values( int $product_id, string $markup, string $role ): array {
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product( $product_id ) : null;
+		$source  = array(
+			'product_id' => $product_id,
+			'name'       => $product instanceof WC_Product ? $product->get_name() : '',
+			'price'      => $product instanceof WC_Product ? $product->get_price() : '',
+			'permalink'  => '',
+			'images'     => array(),
+		);
+		$tags    = new WP_HTML_Tag_Processor( $markup );
+		while ( $tags->next_tag() ) {
+			if ( 'A' === $tags->get_tag() && '' === $source['permalink'] ) {
+				$source['permalink'] = (string) $tags->get_attribute( 'href' );
+			}
+			if ( 'IMG' === $tags->get_tag() ) {
+				$image = array();
+				foreach ( array( 'src', 'srcset', 'sizes', 'alt', 'width', 'height' ) as $attribute ) {
+					$image[ $attribute ] = (string) $tags->get_attribute( $attribute );
+				}
+				$source['images'][] = $image;
+			}
+		}
+		if ( 'name' === $role ) {
+			$source['name'] = trim( html_entity_decode( wp_strip_all_tags( $markup ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+		}
+		return $source;
+	}
+
+	/**
+	 * Fill an uncaptured required slot without replacing bytes inside HTML syntax.
+	 *
+	 * @param string              $content Rendered template slot.
+	 * @param array<string,mixed> $source Recorded template values.
+	 * @param WC_Product          $product Current product.
+	 */
+	private static function render_uncaptured( string $content, array $source, WC_Product $product ): string {
+		if ( empty( $source ) ) {
+			// Legacy markers have no source identity to map safely.
+			return $content;
+		}
+		$rendered = self::template_values( (int) ( $source['product_id'] ?? 0 ), $content, 'field' );
+		foreach ( array( 'permalink', 'images', 'price' ) as $key ) {
+			if ( empty( $source[ $key ] ) ) {
+				$source[ $key ] = $rendered[ $key ];
+			}
+		}
+		$ids   = array_values( array_filter( array_merge( array( $product->get_image_id() ), $product->get_gallery_image_ids() ) ) );
+		$index = 0;
+		$tags  = new WP_HTML_Tag_Processor( $content );
+		while ( $tags->next_token() ) {
+			if ( '#text' === $tags->get_token_type() && ! in_array( $tags->get_tag(), array( 'SCRIPT', 'STYLE' ), true ) && ! empty( $source['name'] ) ) {
+				$text = $tags->get_modifiable_text();
+				$text = self::replace_price_figure( $text, (string) ( $source['price'] ?? '' ), $product->get_price() );
+				$tags->set_modifiable_text( str_replace( $source['name'], $product->get_name(), $text ) );
+				continue;
+			}
+			foreach ( array( 'href', 'title', 'aria-label' ) as $attribute ) {
+				$value = $tags->get_attribute( $attribute );
+				if ( ! is_string( $value ) ) {
+					continue;
+				}
+				$replacements = array();
+				if ( ! empty( $source['permalink'] ) ) {
+					$replacements[ $source['permalink'] ] = $product->get_permalink();
+				}
+				if ( ! empty( $source['name'] ) ) {
+					$replacements[ $source['name'] ] = $product->get_name();
+				}
+				$tags->set_attribute( $attribute, strtr( $value, $replacements ) );
+			}
+			if ( 'IMG' !== $tags->get_tag() ) {
+				continue;
+			}
+			$image_index = $index;
+			foreach ( $source['images'] ?? array() as $source_index => $source_image ) {
+				if ( $tags->get_attribute( 'src' ) === $source_image['src'] ) {
+					$image_index = $source_index;
+					break;
+				}
+			}
+			$image_id = $ids[ $image_index ] ?? 0;
+			$original = $source['images'][ $image_index ] ?? array();
+			++$index;
+			// Ask for the source dimensions when available; Core selects the matching size.
+			$size   = ! empty( $original['width'] ) && ! empty( $original['height'] ) ? array( (int) $original['width'], (int) $original['height'] ) : 'full';
+			$image  = $image_id ? wp_get_attachment_image_src( $image_id, $size ) : false;
+			$srcset = $image ? wp_get_attachment_image_srcset( $image_id, $size ) : false;
+			$sizes  = $srcset ? wp_get_attachment_image_sizes( $image_id, $size ) : false;
+			$tags->set_attribute( 'src', $image ? $image[0] : wc_placeholder_img_src() );
+			$tags->set_attribute( 'alt', $image ? (string) get_post_meta( $image_id, '_wp_attachment_image_alt', true ) : $product->get_name() );
+			foreach ( array(
+				'srcset' => $srcset,
+				'sizes'  => $sizes,
+			) as $attribute => $value ) {
+				if ( $value ) {
+					$tags->set_attribute( $attribute, $value );
+				} else {
+					$tags->remove_attribute( $attribute );
+				}
+			}
+		}
+		return $tags->get_updated_html();
+	}
+
+	/**
+	 * Replace only a complete price figure, preserving source currency placement.
+	 * Derived amounts such as instalments are not recomputed.
+	 *
+	 * @param string $text Source text token.
+	 * @param string $source Template product price.
+	 * @param string $price Current product price.
+	 */
+	private static function replace_price_figure( string $text, string $source, string $price ): string {
+		if ( ! is_numeric( $source ) || ! is_numeric( $price ) ) {
+			return $text;
+		}
+		return (string) preg_replace_callback(
+			'/[0-9]+(?:[.,\x{00a0}\x{202f}\x{0020}\x{0027}][0-9]+)*/u',
+			static function ( array $figure ) use ( $source, $price ): string {
+				foreach ( array( '.', ',' ) as $decimal ) {
+					foreach ( array( '', '.', ',', ' ', "\u{00a0}", "\u{202f}", "'" ) as $thousands ) {
+						if ( $decimal === $thousands ) {
+							continue;
+						}
+						for ( $places = 0; $places <= 4; ++$places ) {
+							if ( number_format( (float) $source, $places, $decimal, $thousands ) === $figure[0] ) {
+								return number_format( (float) $price, $places, $decimal, $thousands );
+							}
+						}
+					}
+				}
+				return $figure[0];
+			},
+			$text
+		);
 	}
 
 	/**

@@ -1995,6 +1995,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				// The region anchor is the listing's one binding; its controls
 				// are replaced inside that region.
+				if ( null !== $owned ) {
+					// Archive queries can include products captured on another adopted
+					// listing. Carry those grids without changing category membership.
+					$owned['captured_grids'] = array_column( $grids, 1 );
+				}
 				$listing['grid']             = $owned;
 				$listing['control_bindings'] = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing_control' === ( $binding['role'] ?? '' ) ) );
 				$listing['bindings']         = null === $owned ? array() : $region;

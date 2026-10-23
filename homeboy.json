@@ -201,6 +201,7 @@
           }
         ],
         "standalone_php_test_paths": [
+          "tests/smoke-product-grid-runtime-uncaptured.php",
           "tests/form-fallback-contract-equivalence.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-submit-box.php",

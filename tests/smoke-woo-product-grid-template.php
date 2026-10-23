@@ -23,14 +23,20 @@ if ( ! defined( 'OBJECT' ) ) {
 }
 
 // Block parsing/serialization and the HTML API come from WordPress Core.
-$wp_includes = rtrim( (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ), '/\\' ) . '/wp-includes/';
+$wp_root     = require __DIR__ . '/fixtures/wordpress-core-root.php';
+$wp_includes = $wp_root . '/wp-includes/';
 if ( ! is_readable( $wp_includes . 'blocks.php' ) ) {
 	fwrite( STDERR, "FAIL: WordPress Core is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 	exit( 1 );
 }
-foreach ( array( 'plugin.php', 'utf8.php', 'compat-utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
+foreach ( array( 'plugin.php', 'compat.php', 'utf8.php', 'compat-utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
+	// These UTF-8 helpers were split out after the pinned Core fixture.
+	if ( in_array( $wp_file, array( 'utf8.php', 'compat-utf8.php' ), true ) && ! is_readable( $wp_includes . $wp_file ) ) {
+		continue;
+	}
 	require_once $wp_includes . $wp_file;
 }
+require_once __DIR__ . '/fixtures/core-charset.php';
 
 class WP_Error {
 	public function __construct( private string $code, private string $message = '', private mixed $data = null ) {}
@@ -238,6 +244,12 @@ $assert( 'field' === ( $field['role'] ?? '' ) && array( '11', '12' ) === array_m
 // --- 4. Render time: the add control joins WooCommerce's add-to-cart.
 class WC_Product {
 	public function __construct( private int $id ) {}
+	/** Catalog price fixture. */
+	public function get_price(): string {
+		return '19.95';
+	}
+	public function get_name(): string {
+		return 11 === $this->id ? 'Alpha Item' : 'Beta Item'; }
 	public function get_id(): int {
 		return $this->id; }
 	public function is_purchasable(): bool {
