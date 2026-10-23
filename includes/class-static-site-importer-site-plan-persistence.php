@@ -846,7 +846,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		// Products own their canonical identity even when a captured page shares it.
 		$routes     = array_replace( $routes, $product_routes );
-		$source_url = (string) ( $state['args']['artifact_provenance']['source_url'] ?? $state['plan']['source']['provenance'][0]['source_url'] ?? '' );
+		$source_url = self::source_origin_url( $state );
 		$state['applied']['unresolved_same_origin_links'] = array();
 
 		foreach ( $state['ordered_pages'] as $page ) {
@@ -1027,6 +1027,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The source site's URL: producer provenance when carried, else the import
+	 * request's own http(s) source path, which every URL import records.
+	 *
+	 * @param array<string,mixed> $state Import state.
+	 */
+	public static function source_origin_url( array $state ): string {
+		foreach ( array( $state['args']['artifact_provenance']['source_url'] ?? null, $state['plan']['source']['provenance'][0]['source_url'] ?? null, $state['args']['source_metadata']['source_path'] ?? null ) as $candidate ) {
+			if ( is_string( $candidate ) && preg_match( '~^https?://[^/]+~i', $candidate ) ) {
+				return $candidate;
+			}
+		}
+		return '';
 	}
 
 	/**

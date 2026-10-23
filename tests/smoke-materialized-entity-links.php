@@ -97,7 +97,7 @@ $state                          = array(
 	),
 	'source_ids'    => array( 'collections/tools/index.html' => 10 ),
 	'args'          => array(
-		'artifact_provenance'         => array( 'source_url' => 'https://source.example/' ),
+		'source_metadata'             => array( 'source_path' => 'https://source.example/' ),
 		'materialized_entity_reports' => array(
 			'catalog' => $seeded,
 		),
