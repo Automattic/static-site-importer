@@ -730,4 +730,5 @@ JS;
 	/** A source listing shows every product at once, so its archive has one page. */
 	public static function archive_per_page( mixed $per_page ): mixed {
 		return self::theme_designs_product_archive() ? -1 : $per_page;
-	}}
+	}
+}

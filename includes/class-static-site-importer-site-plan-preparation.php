@@ -1158,11 +1158,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		if ( 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
 			$markup = (string) preg_replace_callback(
 				'/<!-- wp:([a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)?)(?:\s+(\{.*?\}))?\s+(\/)?-->/s',
-				static function ( array $match ) use ( $identity ): string {
-					$attrs = '' !== ( $match[2] ?? '' ) ? json_decode( $match[2], true ) : array();
+				static function ( array $matches ) use ( $identity ): string {
+					$attrs = '' !== ( $matches[2] ?? '' ) ? json_decode( $matches[2], true ) : array();
 					$attrs = is_array( $attrs ) ? $attrs : array();
 					$attrs['metadata'][ Static_Site_Importer_Product_Grid_Runtime::ARCHIVE_DOCUMENT_KEY ] = $identity;
-					return '<!-- wp:' . $match[1] . ' ' . serialize_block_attributes( $attrs ) . ' ' . ( $match[3] ?? '' ) . '-->';
+					return '<!-- wp:' . $matches[1] . ' ' . serialize_block_attributes( $attrs ) . ' ' . ( $matches[3] ?? '' ) . '-->';
 				},
 				$markup,
 				1
