@@ -38,6 +38,7 @@ require_once ABSPATH . 'includes/class-static-site-importer-woo-product-seeder.p
 require_once ABSPATH . 'includes/class-static-site-importer-product-finding-materializer.php';
 require_once ABSPATH . 'includes/class-static-site-importer-import-report.php';
 require_once ABSPATH . 'includes/class-static-site-importer-quality-gates.php';
+require_once ABSPATH . 'includes/class-static-site-importer-site-plan-preparation.php';
 /**
  * Fail this standalone regression with a useful message.
  *
@@ -137,7 +138,19 @@ foreach ( array( true, false ) as $seeded ) {
 			) : array(),
 		),
 	);
-	$bound    = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $lifecycle, $reports, array( $fallback, $contact ) );
+	$bound    = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings(
+		$lifecycle,
+		$reports,
+		array( $fallback, $contact ),
+		array(
+			'pages' => array(
+				array(
+					'source_path'           => 'products/shirt.html',
+					'resolved_block_markup' => $form,
+				),
+			),
+		)
+	);
 	$bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $bound, $reports );
 	check( count( $bindings ) === ( $seeded ? 1 : 0 ), 'Only matching commerce form binds' );
 	$original = '<h1>Shirt</h1><p>20</p><img src="shirt.jpg">' . $form . '<form class="contact">Contact</form>';
@@ -237,7 +250,19 @@ foreach ( array( false, true ) as $ambiguous ) {
 	$card_lifecycle = $lifecycle;
 	$card_lifecycle['entities']['catalog']['manifest']['products'] = $products;
 	$card_reports = array( 'catalog' => array( 'products' => $rows ) );
-	$bound        = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $card_lifecycle, $card_reports, array( $readable_fallback ) );
+	$bound        = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings(
+		$card_lifecycle,
+		$card_reports,
+		array( $readable_fallback ),
+		array(
+			'pages' => array(
+				array(
+					'source_path'           => 'products/shirt.html',
+					'resolved_block_markup' => $readable_form,
+				),
+			),
+		)
+	);
 	$identity     = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $readable_fallback );
 	check( isset( $bound['entities'][ $identity ] ) === ! $ambiguous, 'Only a unique page-level product binds despite related cards' );
 	$form_bindings = array();
@@ -282,6 +307,81 @@ $reports = array(
 		),
 	),
 );
-$bound   = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $lifecycle, $reports, array( $fallback ) );
+$bound   = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings(
+	$lifecycle,
+	$reports,
+	array( $fallback ),
+	array(
+		'pages' => array(
+			array(
+				'source_path'           => 'products/shirt.html',
+				'resolved_block_markup' => $form,
+			),
+		),
+	)
+);
 check( 2 === count( $bound['entities'] ), 'Variant evidence fallback' );
+
+// Canonical producer bindings take precedence over stale quality anchors.
+$fallback['source_path']                        = 'products/shirt.html';
+$raw_anchor                                     = '<!-- wp:group {"style":{"spacing":{"padding":{"right":"30px"}}}} --><div>Form</div><!-- /wp:group -->';
+$canonical_anchor                               = str_replace( '30px', 'var:preset|spacing|100', $raw_anchor );
+$fallback['bindings'][0]['search_block_markup'] = $raw_anchor;
+$resolved                                       = array(
+	'pages' => array(
+		array(
+			'source_path'           => 'products/shirt.html',
+			'resolved_block_markup' => $canonical_anchor,
+		),
+	),
+);
+$seeded_reports                                 = $reports;
+$identity                                       = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+foreach ( array( false, true ) as $verbatim ) {
+	$test_fallback = $fallback;
+	if ( $verbatim ) {
+		$test_fallback['bindings'][0]['search_block_markup'] = $canonical_anchor;
+	}
+	$test_reports = $seeded_reports;
+	$bound        = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $lifecycle, $test_reports, array( $test_fallback ), $resolved );
+	$bindings     = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $bound, $test_reports );
+	check( count( $bindings ) === ( $verbatim ? 1 : 0 ), 'Only verbatim resolved anchors bind' );
+	if ( ! $verbatim ) {
+		check( ! isset( $bound['entities'][ $identity ] ) && 'anchor_not_in_page' === $test_reports[ $identity ]['product_form_binding_reason'], 'Stale anchor is reported without adding an entity' );
+		$applied     = $resolved;
+		$receipts    = array();
+		$diagnostics = array();
+		Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $applied, $bindings, $receipts, $diagnostics );
+		check( $resolved === $applied, 'Stale anchor leaves converted markup unchanged without throwing' );
+		$report                            = Static_Site_Importer_Import_Report::from_array( array() );
+		$report['diagnostics']             = array( $test_fallback );
+		$report['materialization_receipt'] = array(
+			'completed' => array(
+				'runtime_declarations' => array(
+					'entities'        => $test_reports,
+					'entity_bindings' => $bindings,
+				),
+			),
+		);
+		Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $report );
+		$resolution = $report['fallback_reconciliation']['resolutions'][0];
+		check( 'unresolved' === $resolution['state'] && 'anchor_not_in_page' === $resolution['reason'], 'Stale fallback stays unresolved with its reason' );
+	}
+}
+
+$declared_lifecycle = $lifecycle;
+$declared_lifecycle['entities']['catalog']['manifest']['products'][0]['bindings'] = array(
+	array(
+		'source_path'         => 'products/shirt.html',
+		'search_block_markup' => $canonical_anchor,
+		'occurrence'          => 1,
+		'role'                => 'commerce_add_to_cart_form',
+	),
+);
+$test_reports = $seeded_reports;
+$bound        = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $declared_lifecycle, $test_reports, array( $fallback ), $resolved );
+$bindings     = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $bound, $test_reports );
+check( 1 === count( $bindings ) && 1 === count( $bound['entities'] ), 'Declared page binding suppresses fallback synthesis' );
+check( str_contains( $bindings[0]['replacement_block_markup'], 'woocommerce/add-to-cart-form' ) && str_contains( $bindings[0]['replacement_block_markup'], 'woocommerce/single-product' ), 'Declared product form renders native Woo blocks' );
+check( $identity === $bindings[0]['fallback_reconciliation_identity'] && Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ) === $bindings[0]['fallback_hash'], 'Declared binding carries matching form fallback identity and hash' );
 echo "Woo add-to-cart form binding passed.\n";

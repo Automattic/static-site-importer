@@ -115,7 +115,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			return self::lifecycle_failure( $entity_result['error'], $lifecycle, $dependencies, $entities, 'entity_materialization' );
 		}
 		if ( ! $page_ready ) {
-			$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $lifecycle, $entities, $prepared['plan']['quality']['fallbacks'] ?? array() );
+			$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $lifecycle, $entities, $prepared['plan']['quality']['fallbacks'] ?? array(), $prepared['resolved'] );
 		}
 		$bindings = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {

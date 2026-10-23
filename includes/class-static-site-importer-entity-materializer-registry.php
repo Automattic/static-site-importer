@@ -1102,14 +1102,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @param array<string,mixed> $lifecycle Validated entity lifecycle.
 	 * @param array<string,mixed> $reports Seeded provider reports, extended with binding results.
 	 * @param array<int,mixed>    $fallbacks Producer fallback diagnostics.
+	 * @param array<string,mixed> $resolved Resolved plan containing the binding target documents.
 	 * @return array<string,mixed> Lifecycle including form-only product bindings.
 	 */
-	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks ): array {
+	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks, array $resolved ): array {
+		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $resolved );
 		foreach ( $fallbacks as $fallback ) {
 			if ( ! is_array( $fallback ) || 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) {
 				continue;
 			}
-			$source  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$source   = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$declared = false;
+			// Canonical producer anchors own this page region. Carry the form
+			// diagnostic with each binding so its receipt joins the same fallback.
+			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
+					continue;
+				}
+				foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
+					foreach ( $product['bindings'] ?? array() as $binding_index => $binding ) {
+						if ( 'commerce_add_to_cart_form' === ( $binding['role'] ?? '' ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
+							$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+							$declared = true;
+						}
+					}
+				}
+			}
+			if ( $declared ) {
+				continue;
+			}
 			$matches = array( array(), array() );
 			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
 				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
@@ -1168,7 +1189,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 				}
 			}
+			$anchors = array_values(
+				array_filter(
+					$anchors,
+					static function ( $anchor ) use ( $documents, $resolved ): bool {
+						if ( ! is_array( $anchor ) || ! is_string( $anchor['search_block_markup'] ?? null ) || '' === trim( $anchor['search_block_markup'] ) || ! is_int( $anchor['occurrence'] ?? null ) || $anchor['occurrence'] < 1 ) {
+							return false;
+						}
+						$document = $documents[ $anchor['source_path'] ?? '' ] ?? null;
+						$markup   = null === $document ? '' : (string) ( $resolved[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ?? '' );
+						return substr_count( $markup, $anchor['search_block_markup'] ) >= $anchor['occurrence'];
+					}
+				)
+			);
 			if ( empty( $anchors ) ) {
+				$id             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+				$reports[ $id ] = array( 'product_form_binding_reason' => 'anchor_not_in_page' );
 				continue;
 			}
 			foreach ( $anchors as &$anchor ) {
@@ -1270,7 +1306,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$members = $groups[ $group_key ];
 				if ( 1 === count( $members ) || ! str_starts_with( $group_key, 'collection:' ) ) {
 					foreach ( $members as $member ) {
-						$entity      = $member['entity'];
+						$entity = $member['entity'];
+						if ( 'products' === $entity_key && 'commerce_add_to_cart_form' === ( $member['binding']['role'] ?? '' ) ) {
+							$entity                = array_merge( $entity, $member['binding']['product_form_fallback'] ?? array() );
+							$entity['entity_kind'] = 'add_to_cart_form';
+						}
 						$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $member['result'] );
 						if ( '' === $replacement ) {
 							return new WP_Error(
