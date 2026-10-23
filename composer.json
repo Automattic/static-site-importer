@@ -53,5 +53,8 @@
       "php": "8.2.0"
     },
     "sort-packages": true
+  },
+  "require-dev": {
+    "johnpbloch/wordpress-core": "6.9.1"
   }
 }

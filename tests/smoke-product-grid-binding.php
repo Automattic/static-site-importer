@@ -58,7 +58,8 @@ if ( ! class_exists( 'WP_Error' ) ) {
 // The grid anchor and quality-gate reconciliation both serialize a readable
 // fallback block tree through WordPress Core, exactly like the proven
 // single-product-graft path already does.
-$wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+$wp_root = false !== $wp_root && '' !== $wp_root ? $wp_root : dirname( __DIR__ ) . '/vendor/johnpbloch/wordpress-core';
 $parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
 $blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
 if ( is_readable( $parser ) && is_readable( $blocks ) ) {
@@ -66,7 +67,7 @@ if ( is_readable( $parser ) && is_readable( $blocks ) ) {
 	require_once $blocks;
 }
 if ( ! function_exists( 'serialize_blocks' ) ) {
-	fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+	fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Run composer install or set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 	exit( 1 );
 }
 

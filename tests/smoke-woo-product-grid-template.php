@@ -12,7 +12,7 @@
  * it, and retires the script hook that used to redraw the cards. A grid whose
  * hook is not an attribute or id selector keeps its per-card bindings.
  *
- * Run: STATIC_SITE_IMPORTER_WP_ROOT=/path/to/wordpress php tests/smoke-woo-product-grid-template.php
+ * Run: composer install && php tests/smoke-woo-product-grid-template.php
  *
  * @package StaticSiteImporter
  */
@@ -23,12 +23,14 @@ if ( ! defined( 'OBJECT' ) ) {
 }
 
 // Block parsing/serialization and the HTML API come from WordPress Core.
-$wp_includes = rtrim( (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ), '/\\' ) . '/wp-includes/';
+$wp_root     = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+$wp_root     = false !== $wp_root && '' !== $wp_root ? $wp_root : dirname( __DIR__ ) . '/vendor/johnpbloch/wordpress-core';
+$wp_includes = rtrim( $wp_root, '/\\' ) . '/wp-includes/';
 if ( ! is_readable( $wp_includes . 'blocks.php' ) ) {
-	fwrite( STDERR, "FAIL: WordPress Core is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+	fwrite( STDERR, "FAIL: WordPress Core is unavailable. Run composer install or set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 	exit( 1 );
 }
-foreach ( array( 'plugin.php', 'utf8.php', 'compat-utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
+foreach ( array( 'plugin.php', 'compat-utf8.php', 'compat.php', 'utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
 	require_once $wp_includes . $wp_file;
 }
 
