@@ -1148,8 +1148,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		try {
 			$markup = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $markup, $references );
 		} catch ( InvalidArgumentException $error ) {
-			// phpcs:ignore Squiz.Commenting.InlineComment.InvalidEndChar -- Machine-readable error classification.
-			// ssi-error-class: representability:block
+			// The plan's own reference table must cover every token it emitted.
+			// ssi-error-class: integrity
 			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
 		}
 		// The source page's portable identity travels with the template as block
