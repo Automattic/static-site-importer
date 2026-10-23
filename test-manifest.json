@@ -204,6 +204,7 @@
     { "path": "tests/smoke-woo-cart-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-order-lookup-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-grid-template.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-woo-product-listing-category.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-listing-archive.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-artifact-run-primitives.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-destination.php", "environment": "standalone-php" },

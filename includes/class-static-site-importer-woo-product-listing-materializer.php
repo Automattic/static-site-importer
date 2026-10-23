@@ -111,8 +111,8 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			if ( '' === $reason && ( ! is_array( $listing['grid'] ?? null ) || empty( $listing['bindings'] ) ) ) {
 				$reason = 'listing_grid_not_adopted';
 			}
-			$status                       = '' === $reason ? 'mapped' : 'skipped';
-			$report['product_listings'][] = array_filter(
+			$status = '' === $reason ? 'mapped' : 'skipped';
+			$row    = array_filter(
 				array(
 					'source_path' => (string) ( $listing['source_path'] ?? '' ),
 					'selector'    => (string) ( $listing['selector'] ?? '' ),
@@ -121,12 +121,67 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				),
 				static fn( string $value ): bool => '' !== $value
 			);
+			if ( $available && ! empty( $listing['category']['name'] ) && ! empty( $listing['category']['slug'] ) ) {
+				$row = array_merge( $row, self::materialize_category( $listing ) );
+				if ( isset( $row['error'] ) ) {
+					$status           = 'error';
+					$row['status']    = $status;
+					$report['status'] = 'error';
+				}
+			}
+			$report['product_listings'][] = $row;
 			++$report['counts'][ $status ];
 			if ( 'mapped' === $status && array() === $report['rollback']['menu_order'] ) {
 				$report['rollback']['menu_order'] = self::apply_source_order( $listing['grid'] );
 			}
 		}
 		return $report;
+	}
+
+	/**
+	 * Ensure the listing category and append grid membership, retaining a rollback receipt.
+	 *
+	 * @param array<string,mixed> $listing Prepared listing.
+	 * @return array<string,mixed> Category receipt, including any partial assignments on error.
+	 */
+	private static function materialize_category( array $listing ): array {
+		$category = $listing['category'];
+		$term     = get_term_by( 'slug', (string) $category['slug'], 'product_cat' );
+		if ( ! $term instanceof WP_Term ) {
+			// The product seeder names the same category after the listing.
+			$term = get_term_by( 'name', (string) $category['name'], 'product_cat' );
+		}
+		$created = false;
+		if ( $term instanceof WP_Term ) {
+			$term_id = (int) $term->term_id;
+		} else {
+			$inserted = wp_insert_term( (string) $category['name'], 'product_cat', array( 'slug' => (string) $category['slug'] ) );
+			if ( is_wp_error( $inserted ) ) {
+				return array( 'error' => $inserted->get_error_message() );
+			}
+			$term_id = (int) $inserted['term_id'];
+			$created = true;
+		}
+		$row = array(
+			'term_id'              => $term_id,
+			'term_created'         => $created,
+			'assigned_product_ids' => array(),
+			'added_product_ids'    => array(),
+		);
+		$ids = is_array( $listing['grid'] ?? null ) ? Static_Site_Importer_Woo_Product_Grid_Materializer::product_ids( $listing['grid'] ) : array();
+		foreach ( array_keys( $ids ) as $id ) {
+			$existing = has_term( $term_id, 'product_cat', $id );
+			$assigned = wp_set_object_terms( $id, $term_id, 'product_cat', true );
+			if ( is_wp_error( $assigned ) ) {
+				$row['error'] = $assigned->get_error_message();
+				break;
+			}
+			$row['assigned_product_ids'][] = $id;
+			if ( ! $existing ) {
+				$row['added_product_ids'][] = $id;
+			}
+		}
+		return $row;
 	}
 
 	/**
@@ -157,9 +212,27 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		return $previous;
 	}
 
-	/** Restore the menu order of every product the listing reordered. */
+	/** Restore product ordering and remove only category data added by this receipt. */
 	public static function rollback( array $report ): array {
 		$failures = array();
+		foreach ( $report['product_listings'] ?? array() as $row ) {
+			$term_id = (int) ( $row['term_id'] ?? 0 );
+			foreach ( $row['added_product_ids'] ?? array() as $id ) {
+				$removed = wp_remove_object_terms( (int) $id, $term_id, 'product_cat' );
+				if ( is_wp_error( $removed ) || false === $removed ) {
+					$failures[] = (int) $id;
+				}
+			}
+		}
+		foreach ( $report['product_listings'] ?? array() as $row ) {
+			$term_id = (int) ( $row['term_id'] ?? 0 );
+			if ( ! empty( $row['term_created'] ) ) {
+				$deleted = wp_delete_term( $term_id, 'product_cat' );
+				if ( is_wp_error( $deleted ) || false === $deleted ) {
+					$failures[] = $term_id;
+				}
+			}
+		}
 		foreach ( is_array( $report['rollback']['menu_order'] ?? null ) ? $report['rollback']['menu_order'] : array() as $id => $menu_order ) {
 			$product = get_post( (int) $id );
 			if ( ! $product instanceof WP_Post || (int) $product->menu_order === (int) $menu_order ) {
