@@ -1924,9 +1924,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @return array<string,mixed>
 	 */
 	public static function with_adopted_product_regions( array $lifecycle, array $plan ): array {
-		$pages = array();
+		$pages      = array();
+		$categories = array();
 		foreach ( Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $plan ) as $source_path => $document ) {
-			$pages[ $source_path ] = (string) ( $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ?? '' );
+			$page                       = $plan[ $document['group'] ][ $document['index'] ];
+			$categories[ $source_path ] = array(
+				'name' => (string) ( $page['title'] ?? '' ),
+				'slug' => (string) ( $page['slug'] ?? '' ),
+			);
+			$pages[ $source_path ]      = (string) ( $page['resolved_block_markup'] ?? '' );
 		}
 		$range   = static function ( array $binding ) use ( $pages ): ?array {
 			$content = $pages[ (string) ( $binding['source_path'] ?? '' ) ] ?? '';
@@ -1964,7 +1970,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 			foreach ( $prepared['manifest']['product_listings'] ?? array() as $index => $listing ) {
-				$region = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ) );
+				$listing['category'] = $categories[ (string) ( $listing['source_path'] ?? '' ) ] ?? array(
+					'name' => '',
+					'slug' => '',
+				);
+				$region              = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ) );
 				// A listing becomes WooCommerce's archive only for a control that
 				// changes what the archive query shows. A result count alone
 				// is already true of the source grid, which keeps its own
