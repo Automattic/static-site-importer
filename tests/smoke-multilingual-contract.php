@@ -10,6 +10,10 @@ function is_wp_error( mixed $value ): bool {
 function get_option( string $key, mixed $default = false ): mixed {
 	return $default; }
 function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed {
+	// Isolate the multilingual contract from the independent route provider.
+	if ( 'static_site_importer_entity_materializers' === $hook ) {
+		unset( $value['redirection_routes'] );
+	}
 	return $value; }
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';

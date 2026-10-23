@@ -8,7 +8,7 @@
 if ( ! defined( 'ABSPATH' ) || ! function_exists( 'wc_get_page_permalink' ) ) {
 	throw new RuntimeException( 'Requires WordPress and active WooCommerce.' );
 }
-if ( class_exists( 'Static_Site_Importer' ) || class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) ) {
+if ( class_exists( 'Static_Site_Importer' ) || class_exists( 'Static_Site_Importer_Source_Route' ) ) {
 	throw new RuntimeException( 'Run with SSI inactive (or --skip-plugins=static-site-importer).' );
 }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-generated-runtime-package.php';
@@ -43,7 +43,7 @@ try {
 	wp_clean_themes_cache();
 	switch_theme( $slug );
 	require $dir . '/ssi-runtime/runtime.php';
-	$assert( ! class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) && ! class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ), 'Importer runtime must not be loaded.' );
+	$assert( ! class_exists( 'Static_Site_Importer_Source_Route' ) && ! class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ), 'Importer runtime must not be loaded.' );
 	add_theme_support( 'woocommerce' );
 	// WP-CLI does not initialize the frontend template loader.
 	WC_Template_Loader::init();

@@ -673,7 +673,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			: ( is_array( $state['args']['theme_runtime_payload'] ?? null )
 				? array(
 					'status' => 'skipped',
-					'reason' => 'theme_runtime_package_owns_routes',
+					'reason' => 'theme_runtime_package_owns_internal_links',
 					'writes' => array(),
 				)
 				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );

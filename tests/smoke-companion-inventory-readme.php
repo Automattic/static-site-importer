@@ -215,8 +215,6 @@ if ( is_array( $descriptor ) ) {
 		$assert( str_contains( $readme, 'Unknown evidence' ), 'readme-labels-unknown-status' );
 
 		// Routes and redirects are owned behavior with spot-check actions.
-		$assert( str_contains( $readme, 'redirect' ), 'readme-explains-source-route-redirects' );
-		$assert( str_contains( $readme, '301' ), 'readme-explains-redirect-status-code' );
 		$assert( str_contains( $readme, 'Spot-check' ) || str_contains( $readme, 'spot-check' ), 'readme-includes-spot-check-actions' );
 
 		// Deactivation/removal consequences and dependency statement.

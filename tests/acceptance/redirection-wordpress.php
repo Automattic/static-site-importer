@@ -9,7 +9,7 @@ $assert = static function ( bool $condition, string $message ): void {
 };
 // Studio and other hosts run the canonical CLI as the identity-less site operator.
 $assert( 0 === get_current_user_id(), 'The acceptance process runs as the identity-less CLI operator.' );
-$import     = static function ( array $request, string $user = '' ): array {
+$import                       = static function ( array $request, string $user = '' ): array {
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	$file = wp_tempnam( 'ssi-redirection-request.json' );
 	file_put_contents( $file, wp_json_encode( $request ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Operator-owned temporary request fixture.
@@ -33,8 +33,8 @@ $import     = static function ( array $request, string $user = '' ): array {
 	} finally {
 		wp_delete_file( $file ); }
 };
-$scope_name = 'redirection-acceptance-with-a-long-stable-source-identity';
-$request    = array(
+$scope_name                   = 'redirection-acceptance-with-a-long-stable-source-identity';
+$request                      = array(
 	'operation' => 'apply',
 	'slug'      => $scope_name,
 	'activate'  => true,
@@ -54,9 +54,17 @@ $request    = array(
 		),
 	),
 );
-$plain      = $import( $request );
+$request['source']['files'][] = array(
+	'path'    => 'website/notes/deep/index.html',
+	'content' => '<html><head><title>Nested document</title></head><body><main><h1>Nested native document</h1></main></body></html>',
+);
+$request['source']['files'][] = array(
+	'path'    => 'website/tag/topic/page/1/index.html',
+	'content' => '<html><head><title>Numeric nested route</title></head><body><main><h1>Native numeric document</h1></main></body></html>',
+);
+$plain                        = $import( $request );
 $assert( true === ( $plain['success'] ?? false ), 'Ordinary import completes.' );
-$assert( ! is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Exact source routes without redirect intent install no redirect plugin.' );
+$assert( is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Ordinary source documents install their sole continuity provider.' );
 $request['source']['files'][] = array(
 	'path'    => 'website/_redirects',
 	'content' => "/old /destination.html 301\n",
@@ -75,6 +83,9 @@ $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::availabl
 $groups       = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'group', array( 'per_page' => 200 ) );
 $native_group = array_values( array_filter( $groups['items'] ?? array(), static fn( array $group ): bool => (int) $group['id'] === (int) $scope['group_id'] ) );
 $assert( 1 === count( $native_group ) && 50 === strlen( $native_group[0]['name'] ) && 'Imported source routes: ' . substr( hash( 'sha256', $scope_name ), 0, 26 ) === $native_group[0]['name'], 'Long scope identity is preserved within the native provider name bound.' );
+$assert( isset( $scope['rules']['/destination.html'], $scope['rules']['/tag/topic/page/1'] ), 'Served HTML and differing nested routes are native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
+$assert( ! isset( $scope['rules']['/index.html'] ) && ! isset( $scope['rules']['/notes/deep/index.html'] ) && ! isset( $scope['rules']['/tag/topic/page/1/index.html'] ), 'Capture index filenames do not create public aliases.' );
+$assert( ! is_file( get_stylesheet_directory() . '/portable-source-routes.php' ) && ! is_file( get_stylesheet_directory() . '/ssi-runtime/includes/source-route-redirect.php' ), 'Generated themes contain no source-route runtime.' );
 $again = $import( $request, 'admin' );
 $assert( true === ( $again['success'] ?? false ) && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'An authenticated administrator reimport retains exact native IDs and configuration.' );
 // The operator grant is scoped to SSI's own provider dispatch: a direct anonymous call stays refused.
@@ -83,7 +94,7 @@ $anonymous = rest_do_request( new WP_REST_Request( 'GET', '/redirection/v1/redir
 $assert( $anonymous->is_error() && in_array( $anonymous->get_status(), array( 401, 403 ), true ), 'A direct provider REST call without a user is still refused: ' . $anonymous->get_status() );
 $destination = get_page_by_path( 'destination', OBJECT, 'page' );
 $assert( $destination instanceof WP_Post, 'Native destination page exists.' );
-$receipt   = array(
+$receipt = array(
 	'theme'     => array( 'slug' => $scope_name ),
 	'plan'      => array(
 		'pages' => array(
@@ -95,6 +106,19 @@ $receipt   = array(
 	),
 	'completed' => array( 'pages' => array( 'website/destination.html' => (int) $destination->ID ) ),
 );
+// Keep the full committed document inventory during fault injection, so a
+// retried failed deletion has not already replayed unrelated retirement rows.
+foreach ( array( 'website/index.html', 'website/notes/deep/index.html', 'website/tag/topic/page/1/index.html' ) as $source_path ) {
+	$source_posts = get_posts( array(
+		'post_type'   => 'page',
+		'meta_key'    => Static_Site_Importer_Source_Route::META_KEY,
+		'meta_value'  => Static_Site_Importer_Source_Route::public_source_route( $source_path ),
+		'numberposts' => 1,
+	) );
+	$assert( 1 === count( $source_posts ), 'Committed fixture document exists: ' . $source_path );
+	$receipt['plan']['pages'][]                    = array( 'source_path' => $source_path );
+	$receipt['completed']['pages'][ $source_path ] = $source_posts[0]->ID;
+}
 $temporary = Static_Site_Importer_Redirection_Materializer::materialize(
 	array( 'redirects' => array() ),
 	array(
@@ -123,7 +147,7 @@ try {
 }
 $assert( 'failed' === $unproven_restore['status'] && 'native_redirect_restore_unproven' === $unproven_restore['reason'], 'A successful API response without a native deletion never claims rollback success.' );
 $rolled_back = Static_Site_Importer_Redirection_Materializer::rollback( $temporary );
-$assert( 'rolled_back' === $rolled_back['status'] && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'Compensation removes temporary rules and restores ownership.' );
+$assert( 'rolled_back' === $rolled_back['status'] && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'Compensation removes temporary rules and restores ownership: ' . wp_json_encode( $rolled_back ) );
 $retired = Static_Site_Importer_Redirection_Materializer::materialize(
 	array( 'redirects' => array() ),
 	array(
@@ -220,7 +244,6 @@ $conflicting_request['source']['files'][1]['content'] = '<html><body><main><h1>U
 $conflict = $import( $conflicting_request );
 $assert( false === ( $conflict['success'] ?? true ), 'Reimport protects an owner-edited native rule.' );
 $assert( get_post_field( 'post_content', $destination->ID ) === $before_content, 'A late native provider failure restores preexisting page content.' );
-$assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '/old' ), 'SSI cannot override native provider ownership with a stale fallback redirect.' );
 if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 	require_once dirname( __DIR__, 2 ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 }
@@ -236,7 +259,7 @@ $assert( ! is_wp_error( $restored_edit ), 'Owner query behavior is restored befo
 $exported = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => $scope_name ) );
 $assert( ! is_wp_error( $exported ), 'The full current site exports native rules and their actual target documents: ' . ( is_wp_error( $exported ) ? $exported->get_error_message() : '' ) );
 $artifact = $exported['website_artifact'];
-$assert( 1 === ( $artifact['report']['redirect_count'] ?? 0 ) && 'redirects' === ( $artifact['metadata']['runtime_declarations'][0]['capability'] ?? '' ), 'Export retains native rule inventory and provider dependency intent.' );
+$assert( count( $scope['rules'] ) === ( $artifact['report']['redirect_count'] ?? 0 ) && 'redirects' === ( $artifact['metadata']['runtime_declarations'][0]['capability'] ?? '' ), 'Export retains native rule inventory and provider dependency intent.' );
 $evidence = dirname( __DIR__, 2 ) . '/artifacts/redirection';
 file_put_contents( $evidence . '/export.json', wp_json_encode( $artifact ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable proof artifact.
 $transport_files = array_map(
@@ -266,6 +289,34 @@ file_put_contents(
 		)
 	)
 );
+// Prove each committed old path over HTTP, independent of the generated theme.
+$check_routes = static function () use ( $assert, $scope_name ): void {
+	$ownership = get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() );
+	foreach ( $ownership[ $scope_name ]['rules'] as $from => $rule ) {
+		$native = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'redirect', array( 'filterBy' => array( 'id' => (string) $rule['id'] ) ) );
+		$target = $native['items'][0]['action_data']['url'] ?? null;
+		foreach ( array( 'GET', 'HEAD' ) as $method ) {
+			$origin   = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
+			$origin   = $origin ? $origin : home_url();
+			$host     = wp_parse_url( home_url(), PHP_URL_HOST );
+			$port     = wp_parse_url( home_url(), PHP_URL_PORT );
+			$response = wp_remote_request( $origin . $from, array(
+				'method'      => $method,
+				'redirection' => 0,
+				'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),
+			) );
+			$assert( ! is_wp_error( $response ) && 301 === wp_remote_retrieve_response_code( $response ) && wp_remote_retrieve_header( $response, 'location' ) === $target, $method . ' reaches the native destination for ' . $from );
+		}
+	}
+};
+$check_routes();
+$imported_theme = get_stylesheet();
+$stock_themes   = array_filter( wp_get_themes(), static fn( WP_Theme $theme ): bool => str_starts_with( $theme->get_stylesheet(), 'twenty' ) );
+$assert( array() !== $stock_themes, 'A stock theme is available for continuity proof.' );
+switch_theme( reset( $stock_themes )->get_stylesheet() );
+$check_routes();
+switch_theme( $imported_theme );
+
 $event_request = array(
 	'operation' => 'apply',
 	'slug'      => 'native-event-redirect',
@@ -273,9 +324,12 @@ $event_request = array(
 	'overwrite' => true,
 	'source'    => array(
 		'type'       => 'files',
-		'entrypoint' => 'website/index.html',
+		'entrypoint' => 'website/event-home.html',
 		'files'      => array(
-			$request['source']['files'][0],
+			array(
+				'path'    => 'website/event-home.html',
+				'content' => '<html><head><title>Event home</title></head><body><main><h1>Event home</h1></main></body></html>',
+			),
 			array(
 				'path'     => 'website/event-detail.html',
 				'content'  => '<html><head><title>Native route gathering</title><script type="application/ld+json">{"@context":"https://schema.org","@type":"Event","name":"Native route gathering","startDate":"2027-04-03T18:00:00Z","endDate":"2027-04-03T20:00:00Z"}</script></head><body><main><h1>Native route gathering</h1><p>Committed provider-owned event content.</p></main></body></html>',
@@ -290,13 +344,16 @@ $event_owned = get_option( Static_Site_Importer_Redirection_Materializer::OWNERS
 $assert( ! empty( $event_owned['native-event-redirect']['rules']['/event-detail']['id'] ), 'A provider-owned CPT source route has a real native redirect rule.' );
 echo wp_json_encode(
 	array(
-		'status'           => 'passed',
-		'wordpress'        => get_bloginfo( 'version' ),
-		'provider_version' => REDIRECTION_VERSION,
-		'rule_id'          => $rule_id,
-		'reimport'         => 'idempotent',
-		'rollback'         => 'restored',
-		'retirement'       => 'reversible',
-		'owner_route'      => get_permalink( $owner_page ),
+		'status'             => 'passed',
+		'wordpress'          => get_bloginfo( 'version' ),
+		'provider_version'   => REDIRECTION_VERSION,
+		'rule_id'            => $rule_id,
+		'reimport'           => 'idempotent',
+		'rollback'           => 'restored',
+		'retirement'         => 'reversible',
+		'owner_route'        => get_permalink( $owner_page ),
+		'source_routes'      => array_keys( $scope['rules'] ),
+		'http_methods'       => array( 'GET', 'HEAD' ),
+		'stock_theme_switch' => 'passed',
 	)
 ) . "\n";

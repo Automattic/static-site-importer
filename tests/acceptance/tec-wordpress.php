@@ -202,7 +202,12 @@ foreach ( array(
 	'notes/future' => $future,
 	'notes/past'   => $past,
 ) as $route => $route_post_id ) {
-	$target = Static_Site_Importer_Source_Route_Redirect::target_url( '/' . $route );
+	$ownership        = get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() );
+	$redirect_targets = array();
+	foreach ( $ownership as $redirect_scope ) {
+		$redirect_targets += $redirect_scope['rules'];
+	}
+	$target = $redirect_targets[ '/' . $route ]['config']['action_data']['url'] ?? null;
 	ssi_tec_assert( get_permalink( $route_post_id ) === $target, 'The original source route reaches its native event.' );
 }
 $published_pages = get_posts(
@@ -248,7 +253,12 @@ $lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lif
 $failure   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle( $prepared, $lifecycle, null, array(), array( 'strategy' => 'block' ) );
 ssi_tec_assert( is_wp_error( $failure ), 'A late injected failure rejects the migration through the trusted materialization seam.' );
 ssi_tec_assert( get_post_field( 'post_content', $future ) === $before['content'] && get_post_field( 'post_title', $future ) === $before['title'] && get_post_meta( $future, '_EventStartDateUTC', true ) === $before['start'] && (int) get_post_thumbnail_id( $future ) === $before['thumbnail'], 'Provider compensation restores content, dates, title and image after a late failure.' );
-ssi_tec_assert( get_permalink( $future ) === Static_Site_Importer_Source_Route_Redirect::target_url( '/notes/future' ), 'Rollback restores source route ownership.' );
+$ownership        = get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() );
+$redirect_targets = array();
+foreach ( $ownership as $redirect_scope ) {
+	$redirect_targets += $redirect_scope['rules'];
+}
+ssi_tec_assert( get_permalink( $future ) === ( $redirect_targets['/notes/future']['config']['action_data']['url'] ?? null ), 'Rollback restores native Redirection ownership.' );
 $notes          = get_page_by_path( 'notes' );
 $retired_source = get_page_by_path( 'notes/future' );
 if ( $retired_source && 'draft' === $retired_source->post_status ) {

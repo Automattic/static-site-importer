@@ -131,22 +131,6 @@ foreach ( $published_pages as $candidate_page ) {
 		break;
 	}
 }
-$route_target = null;
-if ( null !== $entry ) {
-	$redirect_source = '';
-	$source_files    = glob( $runtime_root . '/includes/source-route-redirect.php' );
-	foreach ( is_array( $source_files ) ? $source_files : array() as $source_file ) {
-		$source = (string) file_get_contents( $source_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated companion code in the disposable acceptance runtime.
-		if ( 1 === preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $match ) ) {
-			$redirect_source = $match[1];
-			break;
-		}
-	}
-	if ( '' !== $redirect_source && class_exists( $redirect_source ) ) {
-		$route_target = $redirect_source::target_url( 'index.html', '' );
-	}
-}
-
 $export_envelope      = is_file( '/work/output/export-envelope.json' ) ? json_decode( (string) file_get_contents( '/work/output/export-envelope.json' ), true ) : array(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the retained canonical export in the disposable acceptance runtime.
 $export_artifact      = is_array( $export_envelope['website_artifact'] ?? null ) ? $export_envelope['website_artifact'] : array();
 $theme_dir            = get_theme_root( get_stylesheet() ) . '/' . get_stylesheet();
@@ -199,7 +183,6 @@ $result = array(
 	'registered_blocks'        => $registered,
 	'owned_assets'             => $assets,
 	'route_source_path'        => null !== $entry ? get_post_meta( $entry->ID, '_static_site_importer_source_route', true ) : '',
-	'route_redirect_target'    => $route_target,
 	'page_id'                  => null !== $entry ? (int) $entry->ID : 0,
 	'permalink'                => null !== $entry ? get_permalink( $entry ) : '',
 	'page_content'             => null !== $entry ? (string) $entry->post_content : '',
@@ -218,7 +201,6 @@ $verification_failed    = $importer_state_invalid
 	|| empty( $registered )
 	|| empty( $assets )
 	|| false === $asset_paths_match_readme
-	|| null === $route_target
 	|| null === $entry
 	|| 'index.html' !== $result['route_source_path']
 	|| false === $result['source_provenance_truth'];
