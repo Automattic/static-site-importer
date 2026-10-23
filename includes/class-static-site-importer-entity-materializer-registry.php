@@ -2692,6 +2692,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( isset( $binding['control'] ) ) {
 			$normalized['control'] = $binding['control'];
 		}
+		// The producer's pre-projection anchor hash names which source fallback
+		// this placement replaces, so keep it through normalization.
+		$source_block_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
+		if ( is_string( $source_block_hash ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $source_block_hash ) ) {
+			$normalized['projected_anchor'] = array( 'source_block_hash' => $source_block_hash );
+		}
 		if ( isset( $binding['superseded_runtime_selectors'] ) ) {
 			if ( ! is_array( $binding['superseded_runtime_selectors'] ) || array() === $binding['superseded_runtime_selectors'] ) {
 				return null;

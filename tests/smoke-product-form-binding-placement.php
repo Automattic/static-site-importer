@@ -120,6 +120,14 @@ $lifecycle  = array(
 		),
 	),
 );
+// Producer bindings reach this join only through manifest normalization,
+// which must keep each placement's pre-projection anchor hash.
+$normalize = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'normalize_block_binding' );
+foreach ( $lifecycle['entities']['catalog']['manifest']['products'][0]['bindings'] as $binding_index => $binding ) {
+	$normalized = $normalize->invoke( null, array( 'schema' => 'generic/block-binding/v1' ) + $binding );
+	check( is_array( $normalized ) && ( $normalized['projected_anchor']['source_block_hash'] ?? null ) === $binding['projected_anchor']['source_block_hash'], 'Normalization keeps placement ' . $binding_index . ' anchor hash' );
+	$lifecycle['entities']['catalog']['manifest']['products'][0]['bindings'][ $binding_index ] = $normalized;
+}
 $reports    = array(
 	'catalog' => array(
 		'products' => array(
