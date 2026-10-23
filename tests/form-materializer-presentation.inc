@@ -378,6 +378,43 @@
 			wp_json_encode( $centered_submit_row )
 		);
 	}
+	$column_submit_html = str_replace( '<style>', '<style>.actions{display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:0 5px;border:2px solid transparent}', $centered_submit_html );
+	foreach ( array(
+		'single-child'   => array( $column_submit_html, true ),
+		'long-form'      => array( str_replace( '<div class="actions">', '<textarea name="message" data-padding="' . str_repeat( 'x', 2500 ) . '"></textarea><div class="actions">', $column_submit_html ), true ),
+		'text-note'      => array( str_replace( '<div class="actions">', '<div class="actions">A note', $column_submit_html ), false ),
+		'hidden-sibling' => array( str_replace( '<div class="actions">', '<div class="actions"><div style="display:none">Hidden note</div>', $column_submit_html ), true ),
+		'count-absent'   => array( $column_submit_html, false ),
+	) as $case => list( $html, $mapped ) ) {
+		$source = ( ( new $artifact_compiler() )->compile(
+			array(
+				'entrypoint' => 'contact.html',
+				'files'      => array( 'contact.html' => $html ),
+			)
+		) )->toArray()['fallbacks'][0] ?? array();
+		if ( 'long-form' === $case ) {
+			$assert( ! str_contains( $source['html'] ?? '', 'class="actions"' ), 'compiled-submit-column-wrapper-is-beyond-html-excerpt' );
+		}
+		if ( 'count-absent' === $case ) {
+			foreach ( $source['layout_graph']['nodes'] as &$node ) {
+				unset( $node['in_flow_children'] );
+			}
+			unset( $node );
+		}
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $source ) ) );
+		$row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		$has_loss   = str_contains( wp_json_encode( $row ), 'provider_wrapper_layout_unrepresentable' );
+		$css        = (string) ( $row['provider_layout_overlay_css']['css'] ?? '' );
+		$is_mapped  = 'mapped' === ( $row['status'] ?? '' );
+		$assert(
+			empty( $validation['errors'] )
+				&& $mapped === $is_mapped
+				&& $mapped !== $has_loss
+				&& ( ! $mapped || ( empty( $row['form_receipt_unaccepted_losses'] ) && str_contains( $css, 'justify-content:center' ) ) ),
+			'compiled-submit-column-wrapper-' . $case,
+			wp_json_encode( $row )
+		);
+	}
 	foreach ( array(
 		'inline-flex' => array( 'display:inline-flex;justify-content:space-around;align-items:center;min-height:50px', true, 'justify-content:center' ),
 		'end' => array( 'display:flex;flex-direction:row;justify-content:end', true, 'justify-content:flex-end' ),

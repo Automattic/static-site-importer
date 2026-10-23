@@ -2659,6 +2659,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$clean['presentation'] = $presentation['presentation'];
 			}
+			if ( array_key_exists( 'in_flow_children', $node ) ) {
+				$clean['in_flow_children'] = $node['in_flow_children'];
+			}
 			if ( is_array( $node['sizing'] ?? null ) ) {
 				$clean['sizing'] = $node['sizing'];
 			}
