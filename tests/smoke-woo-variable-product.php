@@ -127,4 +127,57 @@ $report = Static_Site_Importer_Woo_Product_Seeder::seed( $validate( $simple_row 
 $assert( array( $original_tag ) === $report['rollback'][7]['tags'], 'prior tags captured' );
 $rollback = Static_Site_Importer_Woo_Product_Seeder::rollback( $report );
 $assert( 'rolled_back' === $rollback['status'] && array( $original_tag ) === wp_get_object_terms( 7, 'product_tag' ) && 1 === count( $GLOBALS['terms'] ), 'rollback restores original tags and deletes only created tags' );
+
+// Created attribute terms carry an `order` term meta — the position
+// WooCommerce's menu_order term ordering reads — in first-seen source order,
+// so variation options present as S, M, L, XL instead of alphabetically.
+$reset();
+$tee    = array(
+	'name'          => 'Tee',
+	'slug'          => 'tee',
+	'regular_price' => '20.00',
+	'sku'           => 'TEE',
+	'variants'      => array(
+		array( 'sku' => 'TEE-S', 'regular_price' => '20.00', 'stock_status' => 'instock', 'attributes' => array( $size( 's' ) ) ),
+		array( 'sku' => 'TEE-M', 'regular_price' => '20.00', 'stock_status' => 'instock', 'attributes' => array( $size( 'm' ) ) ),
+		array( 'sku' => 'TEE-L', 'regular_price' => '25.00', 'stock_status' => 'instock', 'attributes' => array( $size( 'l' ) ) ),
+		array( 'sku' => 'TEE-XL', 'regular_price' => '25.00', 'stock_status' => 'instock', 'attributes' => array( $size( 'xl' ) ) ),
+	),
+);
+$hoodie = array(
+	'name'          => 'Hoodie',
+	'slug'          => 'hoodie',
+	'regular_price' => '40.00',
+	'sku'           => 'HOODIE',
+	'variants'      => array(
+		array( 'sku' => 'HOODIE-M', 'regular_price' => '40.00', 'stock_status' => 'instock', 'attributes' => array( $size( 'm' ) ) ),
+		array( 'sku' => 'HOODIE-XXL', 'regular_price' => '45.00', 'stock_status' => 'instock', 'attributes' => array( $size( 'xxl' ) ) ),
+	),
+);
+$report = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => array( $tee, $hoodie ) ) );
+$assert( 2 === $report['counts']['created'], 'both sized products created', $report );
+$size_orders = array();
+foreach ( $GLOBALS['terms'] as $term_row ) {
+	if ( 'pa_size' === $term_row['taxonomy'] ) {
+		$size_orders[ $term_row['slug'] ] = $term_row['meta']['order'];
+	}
+}
+$assert( array( 's' => 0, 'm' => 1, 'l' => 2, 'xl' => 3, 'xxl' => 4 ) === $size_orders, 'created terms carry order meta 0..4 in first-seen source order', $size_orders );
+$rollback = Static_Site_Importer_Woo_Product_Seeder::rollback( $report );
+$assert( 'rolled_back' === $rollback['status'] && empty( $GLOBALS['terms'] ), 'rollback removes the created terms with their order meta', $rollback );
+
+// A term that already exists keeps its stored order; a created term follows
+// the taxonomy's current maximum, and rollback needs no separate meta cleanup.
+$reset();
+$GLOBALS['attributes'][1]         = array( 'id' => 1, 'name' => 'Size', 'slug' => 'size' );
+$GLOBALS['taxonomies']['pa_size'] = true;
+$GLOBALS['next_attribute_id']     = 1;
+$existing_m                       = wp_insert_term( 'M', 'pa_size', array( 'slug' => 'm' ) )['term_id'];
+update_term_meta( $existing_m, 'order', 3 );
+$report = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => array( $tee ) ) );
+$assert( 1 === $report['counts']['created'], 'product seeded against the existing size', $report );
+$created_s = (int) term_exists( 's', 'pa_size' )['term_id'];
+$assert( 3 === get_term_meta( $existing_m, 'order', true ) && 4 === get_term_meta( $created_s, 'order', true ), 'a pre-existing term keeps its order while the created one follows the taxonomy maximum', array( $existing_m => get_term_meta( $existing_m, 'order', true ), $created_s => get_term_meta( $created_s, 'order', true ) ) );
+$rollback = Static_Site_Importer_Woo_Product_Seeder::rollback( $report );
+$assert( 'rolled_back' === $rollback['status'] && array( $existing_m ) === array_keys( $GLOBALS['terms'] ) && 3 === get_term_meta( $existing_m, 'order', true ), 'rollback removes only the created term, leaving the pre-existing order untouched', $rollback );
 print "Woo variable product smoke passed\n";
