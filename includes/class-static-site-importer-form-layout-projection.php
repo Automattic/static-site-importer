@@ -246,10 +246,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// Shared ancestors are not in the single-control chain. They must also
 		// be block boxes: a submit inside a shared flex/grid row is not its own row.
 		$outer = $layout_nodes_by_id[ (string) ( $chain[0]['id'] ?? '' ) ] ?? null;
-		for ( $depth = 0; $depth < 16 && is_array( $outer ) && 'form' !== ( $outer['parent'] ?? null ); ++$depth ) {
+		for ( $depth = 0; $depth < 16; ++$depth ) {
+			if ( ! is_array( $outer ) || 'form' === ( $outer['parent'] ?? null ) ) {
+				break;
+			}
 			$outer = $layout_nodes_by_id[ (string) ( $outer['parent'] ?? '' ) ] ?? null;
 			if ( is_array( $outer ) ) {
-				array_unshift( $chain, array( 'id' => $outer['id'], 'tag' => $outer['source']['tag'] ?? '' ) );
+				array_unshift(
+					$chain,
+					array(
+						'id'  => $outer['id'],
+						'tag' => $outer['source']['tag'] ?? '',
+					)
+				);
 			}
 		}
 		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
@@ -293,13 +302,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** Project a single-item flex row through the existing submit-row placement. */
 	private static function submit_flex_row( Static_Site_Importer_Form_Topology_State $s, array $chain, string $target ): ?array {
-		$inner = $chain[ count( $chain ) - 1 ];
-		$id    = $inner['id'];
-		$base  = $s->layout_by_node[ $id ] ?? array();
+		$inner      = $chain[ count( $chain ) - 1 ];
+		$id         = $inner['id'];
+		$base       = $s->layout_by_node[ $id ] ?? array();
 		$properties = array( 'display', 'direction', 'justify_content', 'align_items' );
-		$nodes = $s->layout_nodes_by_id;
-		$rows  = array();
-		$variants = $s->variants_by_node[ $id ] ?? array();
+		$nodes      = $s->layout_nodes_by_id;
+		$rows       = array();
+		$variants   = $s->variants_by_node[ $id ] ?? array();
 		// A different wrapper's conditional flow cannot be collapsed onto this row.
 		foreach ( $chain as $wrapper ) {
 			if ( $wrapper['id'] !== $id && ! empty( $s->variants_by_node[ $wrapper['id'] ] ) ) {
@@ -307,16 +316,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		foreach ( array_merge( array( null ), $variants ) as $variant ) {
-			$layout = null === $variant ? $base : array_replace( $base, self::layout_patch( $variant ) );
+			$layout     = null === $variant ? $base : array_replace( $base, self::layout_patch( $variant ) );
 			$provenance = null === $variant ? ( $nodes[ $id ]['provenance'] ?? array() ) : ( $variant['provenance'] ?? array() );
 			if ( ! self::layout_facts_proven( $provenance, $variant['condition'] ?? null, null === $variant ? $base : self::layout_patch( $variant ) ) ) {
 				return null;
 			}
 			$align = array(
-				'flex-start' => 'left', 'start' => 'left', 'left' => 'left',
-				'flex-end' => 'right', 'end' => 'right', 'right' => 'right',
-				'center' => 'center', 'space-between' => 'left',
-				'space-around' => 'center', 'space-evenly' => 'center',
+				'flex-start'    => 'left',
+				'start'         => 'left',
+				'left'          => 'left',
+				'flex-end'      => 'right',
+				'end'           => 'right',
+				'right'         => 'right',
+				'center'        => 'center',
+				'space-between' => 'left',
+				'space-around'  => 'center',
+				'space-evenly'  => 'center',
 			)[ $layout['justify_content'] ?? '' ] ?? null;
 			if ( ! in_array( $layout['display'] ?? '', array( 'flex', 'inline-flex' ), true )
 				|| 'row' !== ( $layout['direction'] ?? 'row' ) || null === $align
@@ -324,8 +339,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			) {
 				return null;
 			}
-			$nodes[ $id ]['layout'] = array_diff_key( $layout, array_flip( $properties ) );
-			$nodes[ $id ]['presentation']['styles']['display'] = 'block';
+			$nodes[ $id ]['layout']                               = array_diff_key( $layout, array_flip( $properties ) );
+			$nodes[ $id ]['presentation']['styles']['display']    = 'block';
 			$nodes[ $id ]['presentation']['styles']['text_align'] = $align;
 			$row = self::submit_block_row( $chain, $nodes );
 			if ( null === $row ) {
@@ -334,9 +349,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$rows[] = $row;
 		}
 		$s->suppressed_layout_properties[ $id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $id ] ?? array(), $properties ) ) );
-		$s->class_carried_variants[ $id ] = array_merge( $s->class_carried_variants[ $id ] ?? array(), $properties );
+		$s->class_carried_variants[ $id ]       = array_merge( $s->class_carried_variants[ $id ] ?? array(), $properties );
 		foreach ( $variants as $index => $variant ) {
-			$s->responsive_variant_targets[] = array( 'node' => $target, 'condition' => $variant['condition'], 'layout_patch' => $rows[ $index + 1 ] );
+			$s->responsive_variant_targets[] = array(
+				'node'         => $target,
+				'condition'    => $variant['condition'],
+				'layout_patch' => $rows[ $index + 1 ],
+			);
 		}
 		return $rows[0];
 	}
