@@ -819,7 +819,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$post_type = 'page';
 			}
 			if ( '' !== $route && $post_id > 0 ) {
-				$routes[ $route ] = self::portable_internal_reference( $post_id, $post_type );
+				$reference        = self::portable_internal_reference( $post_id, $post_type );
+				$routes[ $route ] = $reference;
+				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
+					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
+				}
 			}
 		}
 		foreach ( $state['applied']['taxonomy_entities'] ?? array() as $entity ) {
@@ -830,9 +834,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$routes[ $source_route ] = $source_route;
 			}
 		}
-		if ( array() === $routes ) {
-			return true;
+		$product_routes = array();
+		foreach ( $state['args']['materialized_entity_reports'] ?? array() as $report ) {
+			foreach ( $report['products'] ?? array() as $product ) {
+				$id    = (int) ( $product['id'] ?? 0 );
+				$route = self::normalized_route_path( (string) ( $product['source_route'] ?? '' ) );
+				if ( $id > 0 && '' !== $route ) {
+					$product_routes[ $route ] = self::portable_internal_reference( $id, 'product' );
+				}
+			}
 		}
+		// Products own their canonical identity even when a captured page shares it.
+		$routes     = array_replace( $routes, $product_routes );
+		$source_url = (string) ( $state['args']['artifact_provenance']['source_url'] ?? $state['plan']['source']['provenance'][0]['source_url'] ?? '' );
+		$state['applied']['unresolved_same_origin_links'] = array();
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
@@ -845,8 +860,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
 			}
 			$unresolved = array();
-			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved );
-			foreach ( array_values( array_unique( $unresolved ) ) as $route ) {
+			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . $source_path );
+			self::count_unresolved_routes( $state, $unresolved );
+			foreach ( array_unique( $unresolved ) as $route ) {
 				$state['diagnostics'][] = array(
 					'type'        => 'unresolved_internal_link',
 					'reason_code' => 'unresolved_internal_link',
@@ -887,10 +903,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $resolved_page );
 		}
+		// Navigation and shared shell links also live in declared template files.
+		foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+			if ( ! in_array( $write['kind'] ?? '', array( 'theme_template', 'theme_template_part' ), true ) || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) || ! is_string( $write['payload']['data'] ?? null ) ) {
+				continue;
+			}
+			$unresolved = array();
+			$state['resolved']['writes'][ $index ]['payload']['data'] = self::rewrite_route_references( $write['payload']['data'], $routes, $unresolved, $source_url, $product_routes );
+			self::count_unresolved_routes( $state, $unresolved );
+		}
 		// Synced patterns are page content too; an owner-edited one is left alone.
 		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
-			$content = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
-			$rewrite = is_string( $content ) ? self::rewrite_route_references( $content, $routes ) : null;
+			$content    = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
+			$unresolved = array();
+			$rewrite    = is_string( $content ) ? self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . (string) $pattern['source_path'] ) : null;
+			self::count_unresolved_routes( $state, $unresolved );
 			if ( null === $rewrite || $rewrite === $content ) {
 				continue;
 			}
@@ -932,21 +959,42 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return 'page' === $post_type ? '/?page_id=' . $post_id : '/?p=' . $post_id;
 	}
 
-	/** @param array<string,string> $routes @param array<int,string>|null $unresolved */
-	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null ): string {
-		$replace = static function ( array $matches ) use ( $routes, &$unresolved ): string {
-			$value = (string) $matches[2];
-			if ( '' === $value || preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//|#|\?)~i', $value ) ) {
+	/**
+	 * Rewrite portable identities in HTML attributes and serialized block attributes.
+	 *
+	 * @param string                 $content Document markup.
+	 * @param array<string,string>   $routes Route references.
+	 * @param array<int,string>|null $unresolved Unresolved targets.
+	 * @param string                 $source_url Source origin URL.
+	 * @param array<string,string>   $product_routes Canonical product references.
+	 * @param string                 $document_path Current document path.
+	 */
+	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/' ): string {
+		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path ): string {
+			$value = html_entity_decode( str_replace( '\\/', '/', (string) $matches[2] ), ENT_QUOTES, 'UTF-8' );
+			if ( '' === $value || preg_match( '~^(?:#|\?)~', $value ) ) {
 				return $matches[0];
+			}
+			if ( preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//)~i', $value ) ) {
+				if ( ! self::same_source_origin( $value, $source_url ) ) {
+					return $matches[0];
+				}
+				$value = (string) preg_replace( '~^(?:https?:)?//[^/]+~i', '', $value );
+			} elseif ( ! str_starts_with( $value, '/' ) ) {
+				$value = rtrim( dirname( $document_path ), '/' ) . '/' . $value;
 			}
 			$suffix = '';
 			if ( preg_match( '/^([^?#]*)(.*)$/', $value, $parts ) ) {
 				$value  = $parts[1];
 				$suffix = $parts[2];
 			}
-			$route = self::normalized_route_path( $value );
-			if ( isset( $routes[ $route ] ) ) {
-				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $routes[ $route ], $suffix ) . $matches[3];
+			$route  = self::normalized_route_path( $value );
+			$target = $routes[ $route ] ?? self::scoped_product_reference( $route, $product_routes );
+			if ( null !== $target ) {
+				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+			}
+			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
+				return $matches[1] . '/?ssi_store_route=' . substr( $route, 1 ) . ( '' !== $suffix ? '&' . ltrim( $suffix, '?' ) : '' ) . $matches[3];
 			}
 			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
 				$unresolved[] = $route;
@@ -965,6 +1013,51 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return $content;
 	}
 
+	/**
+	 * Match only a trailing canonical product path, using its own resource segment.
+	 *
+	 * @param string               $route Target path.
+	 * @param array<string,string> $product_routes Canonical product references.
+	 */
+	public static function scoped_product_reference( string $route, array $product_routes ): ?string {
+		foreach ( $product_routes as $product_route => $reference ) {
+			$segments = explode( '/', trim( $product_route, '/' ) );
+			if ( count( $segments ) >= 2 && str_ends_with( $route, '/' . implode( '/', array_slice( $segments, -2 ) ) ) ) {
+				return $reference;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Compare scheme, host and effective port; paths never establish origin.
+	 *
+	 * @param string $url Target URL.
+	 * @param string $source_url Import source URL.
+	 */
+	public static function same_source_origin( string $url, string $source_url ): bool {
+		$source = wp_parse_url( $source_url );
+		$target = wp_parse_url( str_starts_with( $url, '//' ) ? ( $source['scheme'] ?? 'https' ) . ':' . $url : $url );
+		if ( ! is_array( $source ) || ! is_array( $target ) || empty( $source['host'] ) || empty( $target['host'] ) ) {
+			return false;
+		}
+		$port = static fn( array $parts ): int => (int) ( $parts['port'] ?? ( 'https' === ( $parts['scheme'] ?? '' ) ? 443 : 80 ) );
+		return strtolower( $source['host'] ) === strtolower( $target['host'] ) && ( $source['scheme'] ?? '' ) === ( $target['scheme'] ?? '' ) && $port( $source ) === $port( $target );
+	}
+
+	/**
+	 * Count occurrences, not unique targets, for measurable receipt coverage.
+	 *
+	 * @param array<string,mixed> $state Import state.
+	 * @param array<int,string>   $routes Unresolved paths.
+	 */
+	private static function count_unresolved_routes( array &$state, array $routes ): void {
+		foreach ( $routes as $route ) {
+			$class = explode( '/', trim( $route, '/' ) )[0];
+			$state['applied']['unresolved_same_origin_links'][ $class ] = (int) ( $state['applied']['unresolved_same_origin_links'][ $class ] ?? 0 ) + 1;
+		}
+	}
+
 	public static function is_document_route( string $route ): bool {
 		if ( '' === $route || '/' === $route || str_starts_with( $route, '/?' ) ) {
 			return false;
@@ -977,7 +1070,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' === $path || ! str_starts_with( $path, '/' ) ) {
 			return '';
 		}
-		$normalized = '/' . trim( $path, '/' );
+		$segments = array();
+		foreach ( explode( '/', $path ) as $segment ) {
+			if ( '..' === $segment ) {
+				array_pop( $segments );
+			} elseif ( '' !== $segment && '.' !== $segment ) {
+				$segments[] = $segment;
+			}
+		}
+		$normalized = '/' . implode( '/', $segments );
 		$normalized = preg_replace( '#/index\.html?$#i', '', $normalized ) ?? $normalized;
 		$normalized = '' === $normalized ? '/' : $normalized;
 		return '/' === $path ? '/' : $normalized;

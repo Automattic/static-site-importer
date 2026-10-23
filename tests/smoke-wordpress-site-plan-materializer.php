@@ -357,6 +357,20 @@ function flush_rewrite_rules( bool $hard = true ): void {
 }
 class WC_Product_Simple {
 	private array $data = array();
+	/**
+	 * Metadata queued by WooCommerce until save.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $meta = array();
+	/**
+	 * Queue importer-owned metadata for the product data store.
+	 *
+	 * @param string $key Metadata key.
+	 * @param mixed  $value Metadata value.
+	 */
+	public function update_meta_data( string $key, mixed $value ): void {
+		$this->meta[ $key ] = $value; }
 	public function set_name( string $value ): void {
 		$this->data['post_title'] = $value; }
 	public function set_slug( string $value ): void {
@@ -381,6 +395,9 @@ class WC_Product_Simple {
 		$id                               = 9000 + count( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'product' === ( $post['post_type'] ?? '' ) ) );
 		$this->data['post_type']          = 'product';
 		$GLOBALS['ssi_plan_posts'][ $id ] = $this->data;
+		foreach ( $this->meta as $key => $value ) {
+			update_post_meta( $id, $key, $value );
+		}
 		return $id; }
 }
 class WP_Post_Type {

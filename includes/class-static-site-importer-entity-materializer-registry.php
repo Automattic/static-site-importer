@@ -2315,6 +2315,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 				}
 			}
+			// Older producers carry a URL or a slug, but not a canonical route.
+			$route = self::manifest_string( $product, 'source_route', false );
+			if ( '' === $route ) {
+				$url_path = parse_url( self::manifest_string( $product, 'url', false ), PHP_URL_PATH ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Manifest validation also runs before WordPress loads.
+				$route    = is_string( $url_path ) && '' !== $url_path ? $url_path : '/products/' . $slug;
+			}
+			if ( ! preg_match( '~^/(?!/)[^?#\s]+$~', $route ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.source_route',
+					'message' => 'source_route must be a root-relative path.',
+				);
+			} else {
+				$summary['source_route'] = '/' . trim( $route, '/' );
+			}
 			$products[] = $summary;
 		}
 

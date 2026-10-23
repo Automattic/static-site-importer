@@ -262,6 +262,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			if ( is_array( $before ) ) {
 				$report['rollback'][ (int) $existing->ID ] = $before; }
 			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'], $report['rollback']['created_variations'] );
+			$row['source_route']  = (string) ( $product['source_route'] ?? '/products/' . self::string_value( $product, 'slug' ) );
 			$report['products'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -519,6 +520,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$product->set_attributes( $attributes );
 			}
 
+			$product->update_meta_data( '_static_site_importer_source_route', (string) ( $manifest_product['source_route'] ?? '/products/' . $slug ) );
 			$product_id = (int) $product->save();
 			if ( $product_id <= 0 ) {
 				return array(
