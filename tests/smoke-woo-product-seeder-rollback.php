@@ -11,7 +11,7 @@ class WP_Error {
 		return $this->message; }
 }
 class WP_Post {
-	public function __construct( public int $ID ) {}
+	public function __construct( public int $ID, public string $post_type = 'product' ) {}
 }
 function is_wp_error( mixed $value ): bool {
 	return $value instanceof WP_Error; }
@@ -23,8 +23,8 @@ function post_type_exists( string $type ): bool {
 	return 'product' === $type; }
 function taxonomy_exists( string $type ): bool {
 	return 'product_cat' === $type; }
-function get_page_by_path( string $slug ): ?WP_Post {
-	return isset( $GLOBALS['products_by_slug'][ $slug ] ) ? new WP_Post( $GLOBALS['products_by_slug'][ $slug ] ) : null; }
+function get_page_by_path( string $slug, mixed $output = OBJECT, string $post_type = 'post' ): ?WP_Post {
+	return isset( $GLOBALS['products_by_slug'][ $slug ] ) ? new WP_Post( $GLOBALS['products_by_slug'][ $slug ], 'product' ) : null; }
 function get_post( int $id, string $output = OBJECT ): array|WP_Post|null {
 	return $GLOBALS['products'][ $id ] ?? null; }
 function get_post_meta( int $id ): array {
