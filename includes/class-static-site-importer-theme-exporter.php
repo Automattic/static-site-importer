@@ -1075,7 +1075,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return string
 	 */
 	private static function export_page_artifact_path( object $page, string $root ): string {
-		$slug         = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
+		$slug = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
 		if ( 'page' === ( $page->post_type ?? '' ) && function_exists( 'get_page_uri' ) ) {
 			$page_uri = get_page_uri( $page );
 			if ( is_string( $page_uri ) && '' !== trim( $page_uri ) ) {

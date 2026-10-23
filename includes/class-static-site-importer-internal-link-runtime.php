@@ -277,9 +277,9 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		// The theme copy gets a theme-scoped class name, so it can never
 		// collide with this plugin class or with another generated theme, and
 		// carries the capture-evidence names it reads as literals.
-		$class        = self::theme_runtime_class( $theme_slug );
-		$marker       = '/* Static Site Importer portable internal links. */';
-		$source       = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
+		$class  = self::theme_runtime_class( $theme_slug );
+		$marker = '/* Static Site Importer portable internal links. */';
+		$source = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
 		if ( ! is_string( $source ) || '' === $source ) {
 			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(
 				'status' => 'skipped',

@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-static-site-importer-source-route.php';
+
 final class Static_Site_Importer_Redirection_Materializer {
 	public const OWNERSHIP_OPTION = 'static_site_importer_redirect_ownership';
 	private const MAX_RULES       = 500;
@@ -42,13 +44,26 @@ final class Static_Site_Importer_Redirection_Materializer {
 		if ( ! empty( $args['source_route_aliases'] ) ) {
 			return true; }
 		foreach ( $plan['pages'] ?? array() as $page ) {
-			// Native destinations are known only after commitment. Every source
-			// document can need continuity, not just provider-owned candidates.
-			if ( ! empty( $page['source_path'] ) ) {
+			// The plan route predicts native page ancestry. Provider-owned pages
+			// may instead land at a provider permalink after commitment.
+			$source = self::served_source_path( (string) ( $page['source_path'] ?? '' ) );
+			if ( ! empty( $page['whole_page_candidates'] ) || ( '' !== $source && trim( $source, '/' ) !== trim( (string) ( $page['route']['path'] ?? '' ), '/' ) ) ) {
 				return true; }
 		}
 		$owned = function_exists( 'get_option' ) ? get_option( self::OWNERSHIP_OPTION, array() ) : array();
 		return is_array( $owned ) && isset( $owned[ (string) ( $args['slug'] ?? '' ) ] );
+	}
+
+	/** Directory index filenames belong to the capture, not the public URL. */
+	private static function served_source_path( string $source ): string {
+		$public = Static_Site_Importer_Source_Route::public_source_route( $source );
+		if ( 'index.html' === $public ) {
+			return '/';
+		}
+		if ( str_ends_with( $public, '/index.html' ) ) {
+			return '/' . substr( $public, 0, -strlen( '/index.html' ) );
+		}
+		return '' === $public ? '' : '/' . ltrim( $public, '/' );
 	}
 
 	private static function invoke( object|string $receiver, string $method, mixed ...$args ): mixed {
@@ -169,10 +184,9 @@ final class Static_Site_Importer_Redirection_Materializer {
 				return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed source document has no native destination URL.' );
 			}
 			$target_path = wp_parse_url( $target, PHP_URL_PATH );
-			$public      = Static_Site_Importer_Source_Route::public_source_route( $source );
-			$directory   = 'index.html' === $public ? '/' : ( str_ends_with( $public, '/index.html' ) ? substr( $public, 0, -strlen( '/index.html' ) ) : '' );
+			$public      = self::served_source_path( $source );
 			$sources     = array_merge(
-				array( $page['route']['path'] ?? '', $public, $directory ),
+				array( $page['route']['path'] ?? '', $public ),
 				$aliases[ $source ] ?? array()
 			);
 			foreach ( $sources as $from ) {

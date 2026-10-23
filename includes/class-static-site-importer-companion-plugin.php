@@ -316,20 +316,20 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
-		$inventory_hash         = substr( hash( 'sha256', (string) wp_json_encode( $inventory_source ) ), 0, 16 );
-		$registration_callback  = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
-		$runtime_class          = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
-		$link_runtime_class     = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
-		$metric_runtime_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
-		$ip_classifier_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_IP_Classifier';
-		$grid_runtime_class     = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Product_Grid_Runtime';
+		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( $inventory_source ) ), 0, 16 );
+		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
+		$runtime_class         = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
+		$link_runtime_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
+		$metric_runtime_class  = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
+		$ip_classifier_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_IP_Classifier';
+		$grid_runtime_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Product_Grid_Runtime';
 		if ( 'theme' === $owner ) {
-			$class_prefix           = 'SSI_THEME_' . strtoupper( str_replace( '-', '_', $owner_slug ) );
-			$runtime_class          = $class_prefix . '_Provider_Form_Runtime_V1';
-			$link_runtime_class     = $class_prefix . '_Internal_Link_Runtime';
-			$metric_runtime_class   = $class_prefix . '_External_Metric_Runtime';
-			$ip_classifier_class    = $class_prefix . '_IP_Classifier';
-			$grid_runtime_class     = $class_prefix . '_Product_Grid_Runtime';
+			$class_prefix         = 'SSI_THEME_' . strtoupper( str_replace( '-', '_', $owner_slug ) );
+			$runtime_class        = $class_prefix . '_Provider_Form_Runtime_V1';
+			$link_runtime_class   = $class_prefix . '_Internal_Link_Runtime';
+			$metric_runtime_class = $class_prefix . '_External_Metric_Runtime';
+			$ip_classifier_class  = $class_prefix . '_IP_Classifier';
+			$grid_runtime_class   = $class_prefix . '_Product_Grid_Runtime';
 		}
 		$main_file = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
 		$config    = wp_json_encode(

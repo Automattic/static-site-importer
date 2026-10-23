@@ -84,7 +84,7 @@ $assert( 'fixture-shop' === ( $shop['id'] ?? '' ), 'Cart selects the configured 
 $cart_result = Static_Site_Importer_Entity_Materializer_Registry::materialize( $shop, array( 'products' => array( $fixture[0] ) ) );
 $assert( 'completed' === ( $cart_result['status'] ?? '' ), 'Commerce provider handles the cart' );
 $assert( Static_Site_Importer_Quality_Gates::is_commerce_controls_fallback_diagnostic( $fixture[0] ), 'Cart reconciles as commerce controls' );
-$assert( ! Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $fixture[0] ), 'Cart never receives a form loss decision' );
+$assert( Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $fixture[0] ), 'Cart remains a tracked fallback until commerce binding proves resolution' );
 $assert( ! Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $fixture[1] ), 'Sort never receives a form loss decision' );
 $legacy = $fixture[2];
 unset( $legacy['form_intent'] );
