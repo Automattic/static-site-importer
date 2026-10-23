@@ -106,11 +106,12 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$entity_args['resolved_entity_images']  = self::resolve_product_image_references( $lifecycle, $prepared );
 			$entity_args['resolved_product_images'] = $entity_args['resolved_entity_images'];
 		}
-		$entity_result = $page_ready ? array(
+		$entity_result                                   = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,
 		) : Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, $entity_args );
-		$entities      = $entity_result['reports'];
+		$entities                                        = $entity_result['reports'];
+		$prepared['args']['materialized_entity_reports'] = $entities;
 		if ( null !== $entity_result['error'] ) {
 			return self::lifecycle_failure( $entity_result['error'], $lifecycle, $dependencies, $entities, 'entity_materialization' );
 		}

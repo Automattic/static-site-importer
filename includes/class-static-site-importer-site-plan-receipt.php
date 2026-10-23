@@ -99,39 +99,40 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
-				'pages'                      => $pages,
-				'navigation_entities'        => $state['applied']['navigation_entities'] ?? array(),
-				'synced_patterns'            => $state['applied']['synced_patterns'] ?? array(),
-				'taxonomy_entities'          => $state['applied']['taxonomy_entities'] ?? array(),
-				'files'                      => $state['applied']['files'],
-				'operations'                 => $state['applied']['operations'],
-				'site_identity'              => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
-				'runtime_declarations'       => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
-				'font_materialization'       => $state['applied']['font_materialization'] ?? array(
+				'pages'                        => $pages,
+				'unresolved_same_origin_links' => $state['applied']['unresolved_same_origin_links'] ?? array(),
+				'navigation_entities'          => $state['applied']['navigation_entities'] ?? array(),
+				'synced_patterns'              => $state['applied']['synced_patterns'] ?? array(),
+				'taxonomy_entities'            => $state['applied']['taxonomy_entities'] ?? array(),
+				'files'                        => $state['applied']['files'],
+				'operations'                   => $state['applied']['operations'],
+				'site_identity'                => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
+				'runtime_declarations'         => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
+				'font_materialization'         => $state['applied']['font_materialization'] ?? array(
 					'status'      => 'not_requested',
 					'files'       => array(),
 					'diagnostics' => array(),
 				),
-				'viewport_metadata'          => $state['applied']['viewport_metadata'] ?? array(
+				'viewport_metadata'            => $state['applied']['viewport_metadata'] ?? array(
 					'status'      => 'not_requested',
 					'declaration' => '',
 					'files'       => array(),
 					'diagnostics' => array(),
 				),
-				'route_document_titles'      => $state['applied']['route_document_titles'] ?? array(
+				'route_document_titles'        => $state['applied']['route_document_titles'] ?? array(
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
-				'route_head_metadata'        => $state['applied']['route_head_metadata'] ?? array(
+				'route_head_metadata'          => $state['applied']['route_head_metadata'] ?? array(
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
-				'provider_layout_overlays'   => $state['applied']['provider_layout_overlays'] ?? array(
+				'provider_layout_overlays'     => $state['applied']['provider_layout_overlays'] ?? array(
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
-				'companion_asset_loading'    => $state['applied']['companion_asset_loading'] ?? array( 'status' => 'not_requested' ),
-				'runtime_policy'             => array(
+				'companion_asset_loading'      => $state['applied']['companion_asset_loading'] ?? array( 'status' => 'not_requested' ),
+				'runtime_policy'               => array(
 					'disable_smilies'        => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
 						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
@@ -141,11 +142,11 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 						'report'    => $state['applied']['runtime_policy']['remove_default_content'] ?? array( 'status' => 'not_applied' ),
 					),
 				),
-				'materialized_pages'         => $materialized_pages,
-				'block_provenance'           => $block_provenance,
-				'block_provenance_count'     => $block_provenance_count,
-				'block_provenance_truncated' => $block_provenance_count > count( $block_provenance ),
-				'declaration_ids'            => array_keys( $state['applied']['runtime_declarations']['asset_publications'] ?? array() ),
+				'materialized_pages'           => $materialized_pages,
+				'block_provenance'             => $block_provenance,
+				'block_provenance_count'       => $block_provenance_count,
+				'block_provenance_truncated'   => $block_provenance_count > count( $block_provenance ),
+				'declaration_ids'              => array_keys( $state['applied']['runtime_declarations']['asset_publications'] ?? array() ),
 			),
 			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_column( $plan['writes'] ?? array(), 'reconciliation_identity' ), array_column( $plan['runtime_declarations'] ?? array(), 'reconciliation_identity' ) ),
 			'wordpress'                 => $state['applied']['posts'],

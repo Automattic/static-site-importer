@@ -276,6 +276,7 @@
           "tests/smoke-import-runtime-memory.php",
           "tests/smoke-intake-admission.php",
           "tests/smoke-internal-link-runtime.php",
+          "tests/smoke-materialized-entity-links.php",
           "tests/smoke-ip-classifier.php",
           "tests/smoke-layout-projection.php",
           "tests/smoke-lifecycle-compile-checkpoint.php",

@@ -105,6 +105,9 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	}
 
 	public static function resolve_root_relative( string $url ): string {
+		if ( str_starts_with( $url, '/?ssi_store_route=' ) ) {
+			return substr( self::resolve_urls( 'href="' . $url . '"' ), 6, -1 );
+		}
 		static $resolved = array();
 		if ( isset( $resolved[ $url ] ) ) {
 			return $resolved[ $url ];
@@ -224,6 +227,15 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		}
 		$replace = static function ( array $matches ): string {
 			$value = (string) $matches[2];
+			if ( function_exists( 'wc_get_page_id' ) && preg_match( '~^/\?ssi_store_route=(cart|search|account)(.*)$~', html_entity_decode( $value, ENT_QUOTES, 'UTF-8' ), $store ) ) {
+				if ( 'search' === $store[1] ) {
+					parse_str( ltrim( $store[2], '&' ), $query );
+					return $matches[1] . home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) . $matches[3];
+				}
+				$id   = (int) wc_get_page_id( 'account' === $store[1] ? 'myaccount' : 'cart' );
+				$link = $id > 0 ? get_permalink( $id ) : '';
+				return is_string( $link ) && '' !== $link ? $matches[1] . self::join_reference_suffix( $link, $store[2] ) . $matches[3] : $matches[0];
+			}
 			if ( ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:)?(?://[^/?#]+)?/\?(?:page_id|p)=([0-9]+)(.*)$~i', $value, $parts ) ) {
 				return $matches[0];
 			}
