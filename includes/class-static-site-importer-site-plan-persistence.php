@@ -13,6 +13,9 @@ if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Planned_Page_Templates' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-planned-page-templates.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
 }
@@ -42,6 +45,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
+		return Static_Site_Importer_Planned_Page_Templates::during(
+			$prepared['plan'] ?? null,
+			static fn(): array => self::materialize_prepared_state( $prepared )
+		);
+	}
+
+	/** @param array<string,mixed> $prepared @return array<string,mixed> */
+	private static function materialize_prepared_state( array $prepared ): array {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) || ! Static_Site_Importer_Site_Plan_Receipt::valid_receipt_instance_id( $prepared['receipt_instance_id'] ?? null ) ) {
 			return Static_Site_Importer_Site_Plan_Receipt::receipt(
 				'rejected',
