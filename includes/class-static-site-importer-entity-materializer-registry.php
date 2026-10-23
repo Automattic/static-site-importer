@@ -1095,6 +1095,112 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return false;
 	}
 
+	/**
+	 * Attach producer add-to-cart form anchors to an already seeded product.
+	 * Matching is deliberately independent of labels, titles and button text.
+	 *
+	 * @param array<string,mixed> $lifecycle Validated entity lifecycle.
+	 * @param array<string,mixed> $reports Seeded provider reports, extended with binding results.
+	 * @param array<int,mixed>    $fallbacks Producer fallback diagnostics.
+	 * @return array<string,mixed> Lifecycle including form-only product bindings.
+	 */
+	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks ): array {
+		foreach ( $fallbacks as $fallback ) {
+			if ( ! is_array( $fallback ) || 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) {
+				continue;
+			}
+			$source  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$matches = array( array(), array() );
+			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+				if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
+					continue;
+				}
+				foreach ( $prepared['manifest']['products'] ?? array() as $product ) {
+					$result = array();
+					foreach ( $reports[ $declaration_id ]['products'] ?? array() as $row ) {
+						if ( ( $row['slug'] ?? '' ) === ( $product['slug'] ?? '' ) && in_array( $row['status'] ?? '', array( 'created', 'updated' ), true ) && (int) ( $row['id'] ?? 0 ) > 0 ) {
+							$result = $row;
+						}
+					}
+					if ( empty( $result ) ) {
+						continue;
+					}
+					$candidate = array( $prepared['adapter'], $result );
+					foreach ( array( 'source_page', 'source_path', 'url' ) as $field ) {
+						// Card/grid occurrences share the page source, not its product identity.
+						if ( empty( $product['selector'] ) && empty( $product['bindings'] ) && is_string( $product[ $field ] ?? null ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( $product[ $field ] ) ) {
+							$matches[0][] = $candidate;
+							break;
+						}
+					}
+					foreach ( $fallback['controls'] ?? array() as $control ) {
+						if ( ! is_array( $control ) || 'hidden' !== ( $control['type'] ?? '' ) || 'id' !== ( $control['name'] ?? '' ) || '' === (string) ( $control['value'] ?? '' ) ) {
+							continue;
+						}
+						foreach ( $product['variants'] ?? array() as $variant ) {
+							foreach ( array( 'source_id', 'id', 'sku' ) as $field ) {
+								if ( (string) ( $variant[ $field ] ?? '' ) === (string) $control['value'] ) {
+									$matches[1][ (string) $result['id'] ] = $candidate;
+								}
+							}
+						}
+					}
+				}
+			}
+			if ( 1 < count( $matches[0] ) ) {
+				$id             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+				$reports[ $id ] = array( 'product_form_binding_reason' => 'ambiguous_page_product' );
+				continue;
+			}
+			$match = empty( $matches[0] ) ? $matches[1] : $matches[0];
+			if ( 1 !== count( $match ) ) {
+				continue;
+			}
+			list( $adapter, $result ) = array_values( $match )[0];
+			$anchors                  = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array();
+			if ( empty( $anchors ) ) {
+				$region = Static_Site_Importer_Product_Finding_Materializer::serialize_readable_graft_anchor( $fallback['readable_blocks'] ?? array() );
+				if ( '' !== $region ) {
+					$anchors[] = array(
+						'source_path'         => $source,
+						'search_block_markup' => $region,
+						'occurrence'          => 1,
+					);
+				}
+			}
+			if ( empty( $anchors ) ) {
+				continue;
+			}
+			foreach ( $anchors as &$anchor ) {
+				$anchor['role'] = 'commerce_add_to_cart_form';
+			}
+			unset( $anchor );
+			$entity                       = $fallback;
+			$entity['entity_kind']        = 'add_to_cart_form';
+			$entity['slug']               = $result['slug'];
+			$entity['bindings']           = $anchors;
+			$id                           = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+			$lifecycle['entities'][ $id ] = array(
+				'adapter'  => $adapter,
+				'manifest' => array( 'products' => array( $entity ) ),
+			);
+			$reports[ $id ]               = array( 'products' => array( $result ) );
+		}
+		return $lifecycle;
+	}
+
+	/**
+	 * Canonical route comparison, never basename-only matching across products.
+	 *
+	 * @param string $path Producer URL or source filename.
+	 * @return string
+	 */
+	private static function product_page_key( string $path ): string {
+		$path = (string) parse_url( $path, PHP_URL_PATH ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Also used before WordPress loads.
+		$path = preg_replace( '#^(?:/?website/)|(?:/index\\.html$)|(?:\\.html$)#', '', $path );
+		return trim( (string) $path, '/' );
+	}
+
 	/** Build exact provider-owned block replacements without consulting diagnostics. */
 	public static function block_bindings( array $lifecycle, array $reports ) {
 		$bindings = array();
@@ -1219,7 +1325,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// receipt carries the same form fallback reconciliation identity and hash
 		// a form binding does.
 		$is_grid          = in_array( $binding['role'], array( 'commerce_collection', 'commerce_product_grid' ), true );
-		$is_form_contract = in_array( $binding['role'], array( 'form', 'order_lookup' ), true );
+		$is_form_contract = in_array( $binding['role'], array( 'form', 'order_lookup', 'commerce_add_to_cart_form' ), true );
 		// A canonical product-grid binding records the grid's own source selector so
 		// quality reconciliation can join the detected grid finding to this receipt
 		// by the one evidence both sides carry, instead of a preserved-region hash
@@ -2055,7 +2161,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors', 'sku', 'images', 'tags', 'variants', 'losses' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors', 'sku', 'images', 'tags', 'variants', 'losses', 'source_page', 'source_path', 'url' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
@@ -2500,7 +2606,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(

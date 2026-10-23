@@ -70,15 +70,22 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		if ( 'product_grid' === ( $entity['entity_kind'] ?? '' ) ) {
 			return self::binding_grid_block_markup( $entity );
 		}
-		unset( $entity );
 		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
+		if ( 'add_to_cart_form' === ( $entity['entity_kind'] ?? '' ) ) {
+			return $id > 0 ? '<!-- wp:woocommerce/single-product {"productId":' . $id . '} --><div class="wp-block-woocommerce-single-product"><!-- wp:woocommerce/add-to-cart-form /--></div><!-- /wp:woocommerce/single-product -->' : '';
+		}
 		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->' : '';
 	}
 
 	/** Return fixed Woo shortcode data for a classic runtime binding. */
 	public static function binding_classic_render( array $entity, array $result ): array {
-		unset( $entity );
 		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
+		if ( 'add_to_cart_form' === ( $entity['entity_kind'] ?? '' ) ) {
+			return $id > 0 ? array(
+				'kind'    => 'shortcode',
+				'content' => '[add_to_cart id="' . $id . '" show_price="false"]',
+			) : array();
+		}
 		return $id > 0 ? array(
 			'kind'    => 'shortcode',
 			'content' => '[add_to_cart id="' . $id . '" class="ssi-commerce-control"]',
