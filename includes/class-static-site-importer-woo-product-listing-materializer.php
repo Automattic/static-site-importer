@@ -399,56 +399,6 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	/**
-	 * Resolve one exact block root against the producer's structural selector.
-	 *
-	 * @param string $markup Full source document blocks.
-	 * @param string $selector Producer selector.
-	 * @return string Exact serialized block, or empty when ambiguous.
-	 */
-	public static function region_anchor( string $markup, string $selector ): string {
-		$anchors  = array();
-		$mark     = static function ( array $blocks ) use ( &$mark, &$anchors ): string {
-			$output = '';
-			foreach ( $blocks as $block ) {
-				$id        = count( $anchors );
-				$anchors[] = serialize_block( $block );
-				$index     = 0;
-				$root      = true;
-				foreach ( $block['innerContent'] as $chunk ) {
-					if ( null === $chunk ) {
-						$output .= $mark( array( $block['innerBlocks'][ $index++ ] ) );
-					} else {
-						if ( $root ) {
-							$tags = new WP_HTML_Tag_Processor( $chunk );
-							if ( $tags->next_tag() ) {
-								$tags->set_attribute( 'data-ssi-anchor', (string) $id );
-								$chunk = $tags->get_updated_html();
-								$root  = false;
-							}
-						}
-						$output .= $chunk;
-					}
-				}
-			}
-			return $output;
-		};
-		$html     = $mark( parse_blocks( $markup ) );
-		$dom      = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$dom->loadHTML( '<!doctype html><html><body>' . $html . '</body></html>' );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-		$parsed  = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::parse( $selector );
-		$matches = array();
-		foreach ( $dom->getElementsByTagName( '*' ) as $element ) {
-			if ( $element->hasAttribute( 'data-ssi-anchor' ) && \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::matches( $element, $parsed )['matches'] ) {
-				$matches[] = $anchors[ (int) $element->getAttribute( 'data-ssi-anchor' ) ];
-			}
-		}
-		return 1 === count( $matches ) ? $matches[0] : '';
-	}
-
-	/**
 	 * The WooCommerce block for one listing control, the source block wired to
 	 * the archive's query parameter, or '' when the control keeps its source.
 	 */

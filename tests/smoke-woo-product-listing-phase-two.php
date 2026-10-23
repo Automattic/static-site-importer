@@ -70,13 +70,39 @@ $listing                 = array(
 	),
 	'bindings'      => array( $region_binding, $sort_binding ),
 );
-$fallback                = array(
-	'source_path'         => $source,
+// Producer-declared fallback: its page is `source` and its resolved block is its binding.
+$fallback = array(
+	'source'              => $source,
 	'selector'            => '#ordering',
 	'form_intent'         => 'filter_sort',
+	'control_count'       => 1,
+	'binding'             => array(
+		'schema'              => 'generic/block-binding/v1',
+		'search_block_markup' => $form,
+		'occurrence'          => 1,
+		'role'                => 'form',
+	),
 	'source_html_preview' => '<form id="ordering"><select name="sort_by"></select></form>',
 );
-$plan                    = array(
+// The empty collection is declared as a grid with no items and no card template.
+$empty_grid = array(
+	'source_path' => $source,
+	'selector'    => '#items',
+	'items'       => array(),
+	'bindings'    => array(
+		array(
+			'schema'                       => 'generic/block-binding/v1',
+			'source_path'                  => $source,
+			'search_block_markup'          => $empty,
+			'occurrence'                   => 1,
+			'role'                         => 'commerce_product_grid',
+			'superseded_runtime_selectors' => array( '#items' ),
+		),
+	),
+);
+$validated  = Static_Site_Importer_Entity_Materializer_Registry::validate_product_grids_manifest( array( 'product_grids' => array( $empty_grid ) ) );
+$assert( array() === $validated["errors"] && 1 === count( $validated["product_grids"] ), wp_json_encode( $validated["errors"] ) . 'An empty grid declared with no items and no template is valid.' );
+$plan      = array(
 	'pages'   => array(
 		array(
 			'source_path'           => $source,
@@ -87,25 +113,26 @@ $plan                    = array(
 	),
 	'quality' => array( 'fallbacks' => array( $fallback ) ),
 );
-$lifecycle               = array(
+$lifecycle = array(
 	'entities' => array(
 		array(
 			'adapter'  => array( 'entity_collection' => 'product_listings' ),
 			'manifest' => array( 'product_listings' => array( $listing ) ),
 		),
+		array(
+			'adapter'  => array( 'entity_collection' => 'product_grids' ),
+			'manifest' => array( 'product_grids' => array( $empty_grid ) ),
+		),
 	),
 );
-$prepared                = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
-$entity                  = $prepared['entities'][0]['manifest']['product_listings'][0];
+$prepared  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$assert( array() === $prepared['entities'][1]['manifest']['product_grids'], 'An empty grid is owned by its listing, never materialized as a card grid.' );
+$entity = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $entity['empty_listing'] ) && array( $region_binding ) === $entity['bindings'], 'Empty region is adopted even without products.' );
-$nonempty_plan                           = $plan;
-$nonempty_plan['quality']['fallbacks'][] = array(
-	'source_path'   => $source,
-	'selector'      => '#items',
-	'product_count' => 2,
-);
-$not_empty                               = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $nonempty_plan );
-$assert( empty( $not_empty['entities'][0]['manifest']['product_listings'][0]['bindings'] ), 'A failed populated grid must not be adopted as an empty listing.' );
+$undeclared = $lifecycle;
+unset( $undeclared['entities'][1] );
+$not_empty = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $undeclared, $plan );
+$assert( empty( $not_empty['entities'][0]['manifest']['product_listings'][0]['bindings'] ), 'Without a declared empty grid the listing is not adopted.' );
 $report = Static_Site_Importer_Woo_Product_Listing_Materializer::materialize( array( 'product_listings' => array( $entity ) ) );
 $assert( 'mapped' === $report['product_listings'][0]['status'], 'Empty listing materializes.' );
 $markup     = Static_Site_Importer_Woo_Product_Listing_Materializer::binding_block_markup( $entity, array( 'status' => 'mapped' ) );
@@ -192,9 +219,10 @@ $lifecycle['entities'][0]['manifest']['product_listings'][0]['controls'][0]['opt
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][1]['search_block_markup'] = $select;
 $nested_region = str_replace( $form, $nested_form, $region );
 $lifecycle['entities'][0]['manifest']['product_listings'][0]['bindings'][0]['search_block_markup'] = $nested_region;
-$plan['pages'][0]['resolved_block_markup'] = $nested_region;
-$prepared                                  = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
-$nested                                    = $prepared['entities'][0]['manifest']['product_listings'][0];
+$plan['pages'][0]['resolved_block_markup']                         = $nested_region;
+$plan['quality']['fallbacks'][0]['binding']['search_block_markup'] = $nested_form;
+$prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
+$nested   = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $nested['replaced_fallback_identities'] ), 'A sort select inside its single-select form reconciles the form.' );
 
 class WP_Block {
