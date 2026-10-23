@@ -394,6 +394,7 @@ final class Static_Site_Importer_Form_Box_Transposition {
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
 				$facts = array_merge( $facts, self::non_block_flow_facts( array_replace( $layout, Static_Site_Importer_Form_Layout_Projection::layout_patch( $variant ) ), $parent_layout ) );
 			}
+			$facts = array_values( array_diff( $facts, $s->suppressed_layout_properties[ $node_id ] ?? array() ) );
 			if ( array() === $facts ) {
 				continue;
 			}

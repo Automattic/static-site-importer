@@ -233,8 +233,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * A submit whose source wrappers are plain block boxes between it and the
-	 * form occupies its own row there, placed within that row by the inherited
+	 * A submit whose single-control wrapper chain consists of plain block boxes
+	 * occupies its own row, placed within that row by the inherited
 	 * text alignment. The provider renders the button's Core wrapper as a
 	 * shrink-to-fit item of its flex form, so restore the row and the placement.
 	 *
@@ -243,7 +243,24 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return array<string,string>|null Layout for the provider button wrapper.
 	 */
 	private static function submit_block_row( array $chain, array $layout_nodes_by_id ): ?array {
+		// Shared ancestors are not in the single-control chain. They must also
+		// be block boxes: a submit inside a shared flex/grid row is not its own row.
 		$outer = $layout_nodes_by_id[ (string) ( $chain[0]['id'] ?? '' ) ] ?? null;
+		for ( $depth = 0; $depth < 16; ++$depth ) {
+			if ( ! is_array( $outer ) || 'form' === ( $outer['parent'] ?? null ) ) {
+				break;
+			}
+			$outer = $layout_nodes_by_id[ (string) ( $outer['parent'] ?? '' ) ] ?? null;
+			if ( is_array( $outer ) ) {
+				array_unshift(
+					$chain,
+					array(
+						'id'  => $outer['id'],
+						'tag' => $outer['source']['tag'] ?? '',
+					)
+				);
+			}
+		}
 		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
 			return null;
 		}
@@ -281,6 +298,66 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'display'         => 'flex',
 			'justify_content' => $justify,
 		);
+	}
+
+	/** Project a single-item flex row through the existing submit-row placement. */
+	private static function submit_flex_row( Static_Site_Importer_Form_Topology_State $s, array $chain, string $target ): ?array {
+		$inner      = $chain[ count( $chain ) - 1 ];
+		$id         = $inner['id'];
+		$base       = $s->layout_by_node[ $id ] ?? array();
+		$properties = array( 'display', 'direction', 'justify_content', 'align_items' );
+		$nodes      = $s->layout_nodes_by_id;
+		$rows       = array();
+		$variants   = $s->variants_by_node[ $id ] ?? array();
+		// A different wrapper's conditional flow cannot be collapsed onto this row.
+		foreach ( $chain as $wrapper ) {
+			if ( $wrapper['id'] !== $id && ! empty( $s->variants_by_node[ $wrapper['id'] ] ) ) {
+				return null;
+			}
+		}
+		foreach ( array_merge( array( null ), $variants ) as $variant ) {
+			$layout     = null === $variant ? $base : array_replace( $base, self::layout_patch( $variant ) );
+			$provenance = null === $variant ? ( $nodes[ $id ]['provenance'] ?? array() ) : ( $variant['provenance'] ?? array() );
+			if ( ! self::layout_facts_proven( $provenance, $variant['condition'] ?? null, null === $variant ? $base : self::layout_patch( $variant ) ) ) {
+				return null;
+			}
+			$align = array(
+				'flex-start'    => 'left',
+				'start'         => 'left',
+				'left'          => 'left',
+				'flex-end'      => 'right',
+				'end'           => 'right',
+				'right'         => 'right',
+				'center'        => 'center',
+				'space-between' => 'left',
+				'space-around'  => 'center',
+				'space-evenly'  => 'center',
+			)[ $layout['justify_content'] ?? '' ] ?? null;
+			if ( ! in_array( $layout['display'] ?? '', array( 'flex', 'inline-flex' ), true )
+				|| 'row' !== ( $layout['direction'] ?? 'row' ) || null === $align
+				|| array_diff( array_keys( $layout ), array_merge( $properties, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) )
+			) {
+				return null;
+			}
+			$nodes[ $id ]['layout']                               = array_diff_key( $layout, array_flip( $properties ) );
+			$nodes[ $id ]['presentation']['styles']['display']    = 'block';
+			$nodes[ $id ]['presentation']['styles']['text_align'] = $align;
+			$row = self::submit_block_row( $chain, $nodes );
+			if ( null === $row ) {
+				return null;
+			}
+			$rows[] = $row;
+		}
+		$s->suppressed_layout_properties[ $id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $id ] ?? array(), $properties ) ) );
+		$s->class_carried_variants[ $id ]       = array_merge( $s->class_carried_variants[ $id ] ?? array(), $properties );
+		foreach ( $variants as $index => $variant ) {
+			$s->responsive_variant_targets[] = array(
+				'node'         => $target,
+				'condition'    => $variant['condition'],
+				'layout_patch' => $rows[ $index + 1 ],
+			);
+		}
+		return $rows[0];
 	}
 
 	/**
@@ -715,7 +792,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 				$s->record( 'topology', 'provider_field_wrapper_class_projection', $outermost['id'] );
 
-				$row = self::submit_block_row( $chain, $s->layout_nodes_by_id );
+				$row = self::submit_block_row( $chain, $s->layout_nodes_by_id ) ?? self::submit_flex_row( $s, $chain, $outermost['id'] );
 				if ( null !== $row ) {
 					$s->provider_layout_targets[ $outermost['id'] ] = $button_hook;
 					$s->overlay_node_targets[]                      = array(
