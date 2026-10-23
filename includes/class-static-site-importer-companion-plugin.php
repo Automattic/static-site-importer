@@ -309,7 +309,8 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( ! empty( $validated_metrics['errors'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
-		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ) );
+		$listing_runtime  = (string) file_get_contents( __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Package listing controls independently of the importer.
+		$inventory_source = array( hash( 'sha256', $listing_runtime ), $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ) );
 		if ( 'theme' === $owner ) {
 			$inventory_source[] = array( 'theme', $owner_slug );
 		}
@@ -373,6 +374,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]  = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class, $ip_classifier_class );
 		$files[ $plugin_slug . '/includes/ip-classifier.php' ]            = self::ip_classifier_runtime_file( $ip_classifier_runtime, $ip_classifier_class );
 		$files[ $plugin_slug . '/includes/product-grid-runtime.php' ]     = str_replace( 'Static_Site_Importer_Product_Grid_Runtime', $grid_runtime_class, $product_grid_runtime );
+		$files[ $plugin_slug . '/includes/product-listing-runtime.php' ]  = str_replace( 'Static_Site_Importer_Woo_Product_Listing_Materializer', $grid_runtime_class . '_Listing', $listing_runtime );
 		$artifact_provenance = self::artifact_provenance( $payload );
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
@@ -883,6 +885,8 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
 		$lines[] = $metric_runtime_class . '::register();';
 		$lines[] = $grid_runtime_class . '::register();';
+		$lines[] = "require_once __DIR__ . '/includes/product-listing-runtime.php';";
+		$lines[] = $grid_runtime_class . '_Listing::register();';
 		$lines[] = '';
 		$lines[] = '/**';
 		$lines[] = ' * Register generated blocks from their metadata directories.';

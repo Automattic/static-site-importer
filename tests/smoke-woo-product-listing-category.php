@@ -154,7 +154,8 @@ $prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_prod
 			),
 		),
 	),
-	array( 'pages' => $pages )
+	array( 'pages' => $pages ),
+	array()
 );
 $listings = $prepared['entities'][0]['manifest']['product_listings'];
 $assert(

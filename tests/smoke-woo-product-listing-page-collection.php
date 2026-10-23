@@ -14,7 +14,7 @@ $assert( str_contains( $page_markup, '"woocommerceHandPickedProducts":[21,22]' )
 $page_blocks = parse_blocks( $page_markup );
 $collection  = $page_blocks[1]['attrs'] ?? array();
 $assert( 'woocommerce/product-collection/hand-picked' === ( $collection['collection'] ?? null ) && 2 === ( $collection['query']['perPage'] ?? null ) && 1 === ( $collection['query']['pages'] ?? null ), 'page-uses-one-hand-picked-collection' );
-$assert( str_contains( $page_markup, $category ) && str_contains( $page_markup, $sort ) && str_contains( $page_markup, $count ), 'page-keeps-source-controls' );
+$assert( str_contains( $page_markup, $category ) && str_contains( $page_markup, 'data-sort' ) && str_contains( $page_markup, 'staticSiteImporterListingControl' ) && str_contains( $page_markup, $count ), 'page-keeps-source-controls' );
 $assert( str_contains( $data, '"inherit":true' ) && ! str_contains( $data, 'woocommerceHandPickedProducts' ), 'archive-keeps-inheriting-query' );
 
 // Empty seeded ids preserve the previous archive-style page fallback.

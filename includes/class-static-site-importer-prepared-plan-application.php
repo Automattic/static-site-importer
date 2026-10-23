@@ -25,7 +25,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
 		}
-		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
+		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array(), $prepared['plan']['quality']['fallbacks'] ?? array() );
 		$classic   = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
 		$preflight = $classic ? Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $preflight ) ) {
