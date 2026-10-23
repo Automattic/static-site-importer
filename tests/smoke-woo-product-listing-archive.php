@@ -139,9 +139,9 @@ $GLOBALS['ssi_listing_theme_file'] = '';
 function get_theme_file_path( string $file ): string {
 	return '' === $GLOBALS['ssi_listing_theme_file'] ? '/nonexistent/' . $file : $GLOBALS['ssi_listing_theme_file']; }
 function is_shop(): bool {
-	return true; }
+	return $GLOBALS['ssi_archive_shop'] ?? true; }
 function is_product_taxonomy(): bool {
-	return false; }
+	return $GLOBALS['ssi_archive_taxonomy'] ?? false; }
 function wc_get_page_id( string $name ): int {
 	return 'shop' === $name ? 6 : 0; }
 
@@ -518,13 +518,13 @@ $diagnostics = array();
 Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, $bindings, $reports, $diagnostics );
 $archive = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
 $data    = (string) ( $archive[0]['payload']['data'] ?? '' );
-$assert( 1 === count( $archive ) && str_starts_with( $data, '<!-- wp:template-part {"slug":"header"} /--><!-- wp:heading -->' ) && str_contains( $data, '<!-- wp:woocommerce/product-collection' ) && str_ends_with( $data, '<!-- wp:template-part {"slug":"footer"} /-->' ) && ! str_contains( $data, 'wp:post-content' ) && hash( 'sha256', $data ) === $archive[0]['payload_hash'], 'listing-page-is-written-as-the-archive-product-template', $data );
+$assert( 1 === count( $archive ) && str_contains( $data, '<!-- wp:template-part {"slug":"header"} /--><!-- wp:heading -->' ) && str_contains( $data, '<!-- wp:woocommerce/product-collection' ) && str_ends_with( $data, '<!-- wp:template-part {"slug":"footer"} /-->' ) && ! str_contains( $data, 'wp:post-content' ) && hash( 'sha256', $data ) === $archive[0]['payload_hash'], 'listing-page-is-written-as-the-archive-product-template', $data );
 
 // --- 6. The archive lists every product with the shop page's styles.
-$assert( 12 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ) && 0 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_document_id( 0 ), 'theme-without-an-archive-design-keeps-woocommerce-defaults' );
+$assert( 12 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ), 'theme-without-an-archive-design-keeps-woocommerce-defaults' );
 // Any readable file stands in for the written template.
 $GLOBALS['ssi_listing_theme_file'] = __FILE__;
-$assert( -1 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ) && 6 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_document_id( 0 ), 'designed-archive-shows-every-product-with-the-shop-page-styles' );
+$assert( -1 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ), 'designed-archive-shows-every-product' );
 
 // --- 7. A wired control renders the requested archive state.
 $render               = static fn( mixed $block ): string => ! is_array( $block ) ? '' : Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( render_block_stub( $block ), $block );

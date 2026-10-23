@@ -868,7 +868,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$page_patches[ $binding['source_path'] ][] = $patch;
 			}
 			if ( 'pages' === $group && 'commerce_listing' === ( $binding['role'] ?? '' ) ) {
-				$archive_pages[ $binding['source_path'] ] = true;
+				$archive_pages[ $binding['source_path'] ] = max( $archive_pages[ $binding['source_path'] ] ?? 0, (int) ( $binding['archive_product_count'] ?? 0 ) );
 			}
 			$plan[ $group ][ $index ]['materialized_block_markup'] = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$reports[ $binding['reconciliation_identity'] ]        = array(
@@ -890,7 +890,17 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $part_patches as $source_path => $patches ) {
 			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches, $documents[ $source_path ]['group'] );
 		}
-		foreach ( array_keys( $archive_pages ) as $source_path ) {
+		// Prefer the largest adopted grid, then the first source path, never processing order.
+		$archive_sources = array_keys( $archive_pages );
+		usort(
+			$archive_sources,
+			static function ( string $left, string $right ) use ( $archive_pages ): int {
+				$count = $archive_pages[ $right ] <=> $archive_pages[ $left ];
+				return 0 !== $count ? $count : strcmp( $left, $right );
+			}
+		);
+		if ( array() !== $archive_sources ) {
+			$source_path = $archive_sources[0];
 			self::write_product_archive_template( $plan, $documents[ $source_path ]['index'], $page_patches[ $source_path ] );
 		}
 		foreach ( $reports as &$report ) {
@@ -1102,6 +1112,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @param array<string,mixed>                                                $plan    Resolved plan.
 	 * @param int|string                                                         $index   Page index.
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the page.
+	 * @throws InvalidArgumentException When archive assets cannot be resolved.
 	 */
 	private static function write_product_archive_template( array &$plan, int|string $index, array $patches ): void {
 		$page     = $plan['pages'][ $index ];
@@ -1119,8 +1130,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		if ( null === $template ) {
 			return;
 		}
-		// Theme files keep the canonical asset tokens; a page whose canonical
-		// serialization does not line up keeps its resolved markup.
+		// Splice against canonical markup to preserve binding offsets, then resolve
+		// the new template through the same destination mapping as the source page.
 		try {
 			$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
 		} catch ( InvalidArgumentException $mismatch ) {
@@ -1133,9 +1144,33 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		if ( 1 !== $count || '' === $content ) {
 			return;
 		}
+		$references = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ) );
+		try {
+			$markup = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $markup, $references );
+		} catch ( InvalidArgumentException $error ) {
+			// The plan's own reference table must cover every token it emitted.
+			// ssi-error-class: integrity
+			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
+		}
+		// The source page's portable identity travels with the template as block
+		// metadata on its first block, never a destination-specific post ID.
+		$identity = (string) ( $page['reconciliation_identity'] ?? '' );
+		if ( 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+			$markup = (string) preg_replace_callback(
+				'/<!-- wp:([a-z][a-z0-9_-]*(?:\/[a-z][a-z0-9_-]*)?)(?:\s+(\{.*?\}))?\s+(\/)?-->/s',
+				static function ( array $matches ) use ( $identity ): string {
+					$attrs = '' !== ( $matches[2] ?? '' ) ? json_decode( $matches[2], true ) : array();
+					$attrs = is_array( $attrs ) ? $attrs : array();
+					$attrs['metadata'][ Static_Site_Importer_Product_Grid_Runtime::ARCHIVE_DOCUMENT_KEY ] = $identity;
+					return '<!-- wp:' . $matches[1] . ' ' . serialize_block_attributes( $attrs ) . ' ' . ( $matches[3] ?? '' ) . '-->';
+				},
+				$markup,
+				1
+			);
+		}
 		$write = array(
 			'kind'                    => 'theme_template',
-			'source_path'             => '',
+			'source_path'             => (string) $page['source_path'],
 			'target_path'             => Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE,
 			'payload'                 => array(
 				'encoding' => 'utf8',

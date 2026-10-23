@@ -117,6 +117,7 @@
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('invalid_page_parent_identity')": { "class": "representability", "unit": "page", "owning_layer": "static-site-importer", "tracker": "Automattic/static-site-importer#2054" },
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('invalid_theme_slug')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('page_missing_final_block_markup')": { "class": "representability", "unit": "page", "owning_layer": "blocks-engine", "tracker": "Automattic/static-site-importer#2054" },
+    "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('product_archive_asset_token_unresolved')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('payload_reference_invalid')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('post_conflict')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-site-plan-preparation.php#throw new InvalidArgumentException('prepared_destination_changed')": { "class": "integrity", "owning_layer": "static-site-importer" },

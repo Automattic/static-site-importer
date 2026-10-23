@@ -26,6 +26,9 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Block metadata key that marks a template slot the render filter fills. */
 	public const SLOT_KEY = 'staticSiteImporterItemSlot';
 
+	/** Block metadata key on the archive template naming its source page's reconciliation identity. */
+	public const ARCHIVE_DOCUMENT_KEY = 'staticSiteImporterArchiveDocument';
+
 	/** Class on the product collection whose loop wrappers are flattened. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
@@ -37,9 +40,42 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			return;
 		}
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
+		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/**
+	 * Resolve the archive's portable source identity against the imported page records.
+	 *
+	 * @param mixed $id Default document ID.
+	 */
+	public static function archive_document_id( mixed $id ): mixed {
+		if ( ! function_exists( 'is_shop' ) || ! function_exists( 'is_product_taxonomy' ) || ! ( is_shop() || is_product_taxonomy() ) ) {
+			return $id;
+		}
+		// The theme asks once per page-scoped stylesheet; resolve once per request.
+		static $resolved = array();
+		$path            = function_exists( 'get_theme_file_path' ) ? get_theme_file_path( 'templates/archive-product.html' ) : '';
+		if ( ! array_key_exists( $path, $resolved ) ) {
+			$resolved[ $path ] = 0;
+			$markup            = '' !== $path && is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read the active theme's archive identity.
+			if ( is_string( $markup ) && preg_match( '/"' . self::ARCHIVE_DOCUMENT_KEY . '":"([a-f0-9]{64})"/', $markup, $match ) ) {
+				$pages             = get_posts(
+					array(
+						'post_type'      => 'page',
+						'post_status'    => 'publish',
+						'posts_per_page' => 1,
+						'fields'         => 'ids',
+						'meta_key'       => '_blocks_engine_reconciliation_identity', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Imported document identity lookup.
+						'meta_value'     => $match[1], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Imported document identity lookup.
+					)
+				);
+				$resolved[ $path ] = empty( $pages ) ? 0 : (int) $pages[0];
+			}
+		}
+		return 0 === $resolved[ $path ] ? $id : $resolved[ $path ];
 	}
 
 	/**
