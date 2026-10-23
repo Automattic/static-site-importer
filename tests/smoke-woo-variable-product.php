@@ -180,4 +180,12 @@ $created_s = (int) term_exists( 's', 'pa_size' )['term_id'];
 $assert( 3 === get_term_meta( $existing_m, 'order', true ) && 4 === get_term_meta( $created_s, 'order', true ), 'a pre-existing term keeps its order while the created one follows the taxonomy maximum', array( $existing_m => get_term_meta( $existing_m, 'order', true ), $created_s => get_term_meta( $created_s, 'order', true ) ) );
 $rollback = Static_Site_Importer_Woo_Product_Seeder::rollback( $report );
 $assert( 'rolled_back' === $rollback['status'] && array( $existing_m ) === array_keys( $GLOBALS['terms'] ) && 3 === get_term_meta( $existing_m, 'order', true ), 'rollback removes only the created term, leaving the pre-existing order untouched', $rollback );
+// An attachment with the product slug must not be treated as an existing product.
+$reset();
+$GLOBALS['products'][55] = array( 'ID' => 55, 'post_type' => 'attachment', 'post_name' => 'generic-item' );
+$GLOBALS['attachments_by_slug']['generic-item'] = 55;
+$report = Static_Site_Importer_Woo_Product_Seeder::seed( $validate( $simple_row ) );
+$assert( 1 === $report['counts']['created'] && 55 !== $report['products'][0]['id'], 'attachment slug collision creates a new product', $report );
+$assert( 'product' === $GLOBALS['products'][ $report['products'][0]['id'] ]['post_type'], 'created record has product post type' );
+
 print "Woo variable product smoke passed\n";

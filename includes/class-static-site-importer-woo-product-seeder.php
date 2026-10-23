@@ -255,7 +255,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		);
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
-			$before   = $existing instanceof WP_Post ? self::product_state( (int) $existing->ID ) : null;
+			if ( $existing instanceof WP_Post && 'product' !== $existing->post_type ) {
+				$existing = null;
+			}
+			$before = $existing instanceof WP_Post ? self::product_state( (int) $existing->ID ) : null;
 			if ( is_array( $before ) ) {
 				$report['rollback'][ (int) $existing->ID ] = $before; }
 			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'], $report['rollback']['created_variations'] );
@@ -418,8 +421,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		$existing = get_page_by_path( $slug, OBJECT, 'product' );
-		$product  = null;
-		$status   = 'created';
+		if ( $existing instanceof WP_Post && 'product' !== $existing->post_type ) {
+			$existing = null;
+		}
+		$product = null;
+		$status  = 'created';
 
 		if ( $existing instanceof WP_Post && function_exists( 'wc_get_product' ) ) {
 			$product = wc_get_product( $existing->ID );

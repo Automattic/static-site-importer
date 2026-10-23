@@ -27,7 +27,7 @@ class WP_Error {
 		return $this->message; }
 }
 class WP_Post {
-	public function __construct( public int $ID ) {}
+	public function __construct( public int $ID, public string $post_type = 'product' ) {}
 }
 function is_wp_error( mixed $value ): bool {
 	return $value instanceof WP_Error; }
@@ -41,8 +41,11 @@ function taxonomy_exists( string $taxonomy ): bool {
 	return 'product_cat' === $taxonomy || isset( $GLOBALS['taxonomies'][ $taxonomy ] ); }
 function register_taxonomy( string $taxonomy ): void {
 	$GLOBALS['taxonomies'][ $taxonomy ] = true; }
-function get_page_by_path( string $slug ): ?WP_Post {
-	return isset( $GLOBALS['products_by_slug'][ $slug ] ) ? new WP_Post( $GLOBALS['products_by_slug'][ $slug ] ) : null; }
+function get_page_by_path( string $slug, mixed $output = OBJECT, string $post_type = 'post' ): ?WP_Post {
+	if ( isset( $GLOBALS['attachments_by_slug'][ $slug ] ) ) {
+		return new WP_Post( $GLOBALS['attachments_by_slug'][ $slug ], 'attachment' );
+	}
+	return isset( $GLOBALS['products_by_slug'][ $slug ] ) ? new WP_Post( $GLOBALS['products_by_slug'][ $slug ], 'product' ) : null; }
 function get_post( int $id ): ?array {
 	return $GLOBALS['products'][ $id ] ?? null; }
 function get_post_meta( int $id ): array {
@@ -153,7 +156,11 @@ class WC_Product_Attribute {
 }
 class WC_Product_Simple {
 	public array $data = array();
-	public function __construct( public int $id = 0 ) {}
+	public function __construct( public int $id = 0 ) {
+		if ( $id > 0 && isset( $GLOBALS['products'][ $id ] ) && 'attachment' === ( $GLOBALS['products'][ $id ]['post_type'] ?? '' ) ) {
+			throw new Exception( 'Invalid product.' );
+		}
+	}
 	public function __call( string $method, array $args ): void {
 		$this->data[ $method ] = $args[0] ?? null; }
 	public function save(): int {
@@ -161,6 +168,7 @@ class WC_Product_Simple {
 		$slug                                 = (string) ( $this->data['set_slug'] ?? 'product-' . $id );
 		$GLOBALS['products'][ $id ]           = array(
 			'ID'        => $id,
+			'post_type' => 'product',
 			'post_name' => $slug,
 		);
 		$GLOBALS['products_by_slug'][ $slug ] = $id;
@@ -183,6 +191,7 @@ $assert = static function ( bool $condition, string $label, mixed $detail = null
 	} };
 $reset  = static function (): void {
 	$GLOBALS['products']          = array();
+	$GLOBALS['attachments_by_slug'] = array();
 	$GLOBALS['products_by_slug']  = array();
 	$GLOBALS['meta']              = array();
 	$GLOBALS['relations']         = array();
