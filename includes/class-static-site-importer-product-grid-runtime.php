@@ -106,6 +106,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		$source  = array(
 			'product_id' => $product_id,
 			'name'       => $product instanceof WC_Product ? $product->get_name() : '',
+			'price'      => $product instanceof WC_Product ? $product->get_price() : '',
 			'permalink'  => '',
 			'images'     => array(),
 		);
@@ -140,12 +141,19 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			// Legacy markers have no source identity to map safely.
 			return $content;
 		}
+		$rendered = self::template_values( (int) ( $source['product_id'] ?? 0 ), $content, 'field' );
+		foreach ( array( 'permalink', 'images', 'price' ) as $key ) {
+			if ( empty( $source[ $key ] ) ) {
+				$source[ $key ] = $rendered[ $key ];
+			}
+		}
 		$ids   = array_values( array_filter( array_merge( array( $product->get_image_id() ), $product->get_gallery_image_ids() ) ) );
 		$index = 0;
 		$tags  = new WP_HTML_Tag_Processor( $content );
 		while ( $tags->next_token() ) {
 			if ( '#text' === $tags->get_token_type() && ! in_array( $tags->get_tag(), array( 'SCRIPT', 'STYLE' ), true ) && ! empty( $source['name'] ) ) {
 				$text = $tags->get_modifiable_text();
+				$text = self::replace_price_figure( $text, (string) ( $source['price'] ?? '' ), $product->get_price() );
 				$tags->set_modifiable_text( str_replace( $source['name'], $product->get_name(), $text ) );
 				continue;
 			}
@@ -195,6 +203,39 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			}
 		}
 		return $tags->get_updated_html();
+	}
+
+	/**
+	 * Replace only a complete price figure, preserving source currency placement.
+	 * Derived amounts such as instalments are not recomputed.
+	 *
+	 * @param string $text Source text token.
+	 * @param string $source Template product price.
+	 * @param string $price Current product price.
+	 */
+	private static function replace_price_figure( string $text, string $source, string $price ): string {
+		if ( ! is_numeric( $source ) || ! is_numeric( $price ) ) {
+			return $text;
+		}
+		return (string) preg_replace_callback(
+			'/[0-9]+(?:[.,\x{00a0}\x{202f}\x{0020}\x{0027}][0-9]+)*/u',
+			static function ( array $figure ) use ( $source, $price ): string {
+				foreach ( array( '.', ',' ) as $decimal ) {
+					foreach ( array( '', '.', ',', ' ', "\u{00a0}", "\u{202f}", "'" ) as $thousands ) {
+						if ( $decimal === $thousands ) {
+							continue;
+						}
+						for ( $places = 0; $places <= 4; ++$places ) {
+							if ( number_format( (float) $source, $places, $decimal, $thousands ) === $figure[0] ) {
+								return number_format( (float) $price, $places, $decimal, $thousands );
+							}
+						}
+					}
+				}
+				return $figure[0];
+			},
+			$text
+		);
 	}
 
 	/**

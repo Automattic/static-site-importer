@@ -244,6 +244,10 @@ $assert( 'field' === ( $field['role'] ?? '' ) && array( '11', '12' ) === array_m
 // --- 4. Render time: the add control joins WooCommerce's add-to-cart.
 class WC_Product {
 	public function __construct( private int $id ) {}
+	/** Catalog price fixture. */
+	public function get_price(): string {
+		return '19.95';
+	}
 	public function get_name(): string {
 		return 11 === $this->id ? 'Alpha Item' : 'Beta Item'; }
 	public function get_id(): int {

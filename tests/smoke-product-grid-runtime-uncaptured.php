@@ -27,6 +27,10 @@ function _doing_it_wrong(): void {}
 function is_utf8_charset(): bool {
 	return true;
 }
+/** Minimal URL protocol allowlist. */
+function wp_allowed_protocols(): array {
+	return array( 'http', 'https' );
+}
 /** Core JSON wrapper stub. */
 function wp_json_encode( mixed $value ): string|false {
 	return json_encode( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Core encoding wrapper fixture.
@@ -42,6 +46,10 @@ class WC_Product {
 	/** Catalog name includes characters that must stay text. */
 	public function get_name(): string {
 		return 11 === $this->id ? 'Alpha & Item' : 'Beta <Item> & "New"';
+	}
+	/** Catalog price. */
+	public function get_price(): string {
+		return 11 === $this->id ? '1234.50' : '2345.75';
 	}
 	/** Product link. */
 	public function get_permalink(): string {
@@ -83,6 +91,32 @@ function get_post_meta( int $id, string $key, bool $single ): string {
 /** Woo placeholder fixture. */
 function wc_placeholder_img_src(): string {
 	return '/images/placeholder.png';
+}
+// phpcs:disable Generic.Files.OneObjectStructurePerFile -- Minimal Core post fixture alongside the catalog stub.
+/** Seeded post fixture. */
+class WP_Post {
+	/** Post identity. */
+	public function __construct( public int $ID ) {} // phpcs:ignore WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- Core property name.
+}
+/** Seeded product resolution. */
+function get_page_by_path( string $slug, mixed $output, string $type ): ?WP_Post {
+	return new WP_Post( 'alpha' === $slug ? 11 : 12 );
+}
+/** Render globally registered dynamic card fixtures and structural wrappers. */
+function ssi_render_fixture( array $block ): string {
+	if ( isset( $GLOBALS['ssi_dynamic_cards'][ $block['blockName'] ] ) ) {
+		return $GLOBALS['ssi_dynamic_cards'][ $block['blockName'] ];
+	}
+	$output = '';
+	$index  = 0;
+	foreach ( $block['innerContent'] as $chunk ) {
+		$output .= null === $chunk ? ssi_render_fixture( $block['innerBlocks'][ $index++ ] ) : $chunk;
+	}
+	return $output;
+}
+add_filter( 'pre_render_block', static fn( mixed $content, array $block ): string => ssi_render_fixture( $block ), 10, 2 );
+if ( ! defined( 'OBJECT' ) ) {
+	define( 'OBJECT', 'OBJECT' );
 }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-grid-materializer.php';
 
@@ -148,6 +182,51 @@ $output                         = Static_Site_Importer_Product_Grid_Runtime::ren
 $assert( str_contains( $output, '/images/beta-141.jpg' ) && str_contains( $output, '/images/placeholder.png' ) && ! str_contains( $output, 'srcset=' ), 'gallery-only product uses gallery first, single URL clears source srcset' );
 $node['attrs']['metadata'][ Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY ]['optional'] = true;
 $assert( '' === Static_Site_Importer_Product_Grid_Runtime::render_slot( $content, $node ), 'uncaptured optional slot remains empty' );
+// Two independently registered dynamic cards share layout, not data or names.
+$dynamic_alpha                  = '<article class="blocks-engine-source-card"><a href="https://store.example/products/alpha/"><img src="/images/alpha.jpg"><span>Alpha &amp; Item</span><b>$1,234.50</b><small>12 payments of $102.88</small></a></article>';
+$dynamic_beta                   = str_replace( array( 'alpha', 'Alpha &amp; Item', '$1,234.50', '$102.88' ), array( 'beta', 'Captured Beta', '$2,345.75', '$195.48' ), $dynamic_alpha );
+$GLOBALS['ssi_dynamic_cards']   = array(
+	'neutral/list-one' => $dynamic_alpha,
+	'neutral/list-two' => $dynamic_beta,
+);
+$make_grid                      = static function ( string $name, string $slug, string $slot_id ): array {
+	$card = '<!-- wp:neutral/' . $name . ' /-->';
+	return array(
+		'item_template' => array(
+			'block_markup' => $card,
+			'slots'        => array(
+				array(
+					'id'   => $slot_id,
+					'role' => 'field',
+					'path' => array(),
+				),
+			),
+		),
+		'items'         => array(
+			array(
+				'product' => $slug,
+				'slots'   => array( $slot_id => array( 'markup' => $card ) ),
+			),
+		),
+		'bindings'      => array( array( 'search_block_markup' => '<!-- wp:group --><div><!-- wp:neutral/' . $name . ' /--></div><!-- /wp:group -->' ) ),
+	);
+};
+$own_grid                       = $make_grid( 'list-one', 'alpha', 'card' );
+$other_grid                     = $make_grid( 'list-two', 'beta', 'other-card' );
+$own_grid['captured_grids']     = array( $other_grid, $make_grid( 'list-two', 'alpha', 'other-card' ) );
+$archive                        = Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $own_grid );
+$archive_card                   = parse_blocks( $archive )[0]['innerBlocks'][0]['innerBlocks'][0];
+$GLOBALS['ssi_current_product'] = 12;
+$assert( Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $archive_card ) === $dynamic_beta, 'other listing captured card renders exact source markup' );
+$GLOBALS['ssi_current_product'] = 11;
+$assert( Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $archive_card ) === $dynamic_alpha, 'own captured card unchanged' );
+$GLOBALS['ssi_current_product'] = 14;
+$output                         = Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $archive_card );
+$assert( str_contains( $output, 'href="/products/beta/"' ) && ! str_contains( $output, 'store.example' ), 'dynamic uncaptured permalink comes from rendered template' );
+$assert( str_contains( $output, '$2,345.75' ) && ! str_contains( $output, '$1,234.50' ), 'dynamic uncaptured price preserves source format' );
+$assert( str_contains( $output, '12 payments of $102.88' ), 'derived instalment text remains untouched' );
+$price_method = method_exists( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) ? new ReflectionMethod( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) : null;
+$assert( null !== $price_method && '2.345,75 €' === $price_method->invoke( null, '1.234,50 €', '1234.50', '2345.75' ), 'decimal comma and trailing currency preserved' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

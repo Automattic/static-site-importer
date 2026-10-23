@@ -236,8 +236,48 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 	 * @param array<string,mixed> $entity Grid entity.
 	 */
 	public static function inherited_grid_block_markup( array $entity ): string {
-		$card = self::card_markup( $entity, self::product_ids( $entity ) );
+		$items     = self::product_ids( $entity );
+		$template  = $entity['item_template'] ?? array();
+		$signature = self::card_structure_signature( (string) ( $template['block_markup'] ?? '' ) );
+		foreach ( $entity['captured_grids'] ?? array() as $grid ) {
+			if ( '' === $signature || self::card_structure_signature( (string) ( $grid['item_template']['block_markup'] ?? '' ) ) !== $signature ) {
+				continue;
+			}
+			foreach ( self::product_ids( $grid ) as $id => $values ) {
+				foreach ( $template['slots'] ?? array() as $slot ) {
+					foreach ( $grid['item_template']['slots'] ?? array() as $candidate ) {
+						if ( $slot['path'] !== $candidate['path'] || $slot['role'] !== $candidate['role'] || isset( $items[ $id ][ $slot['id'] ] ) ) {
+							continue;
+						}
+						$value = $values[ $candidate['id'] ] ?? array();
+						$block = self::single_block( (string) ( $value['markup'] ?? '' ) );
+						if ( null !== $block && '' !== trim( render_block( $block ) ) ) {
+							$items[ $id ][ $slot['id'] ] = $value;
+						}
+					}
+				}
+			}
+		}
+		$card = self::card_markup( $entity, $items );
 		return '' === $card ? '' : self::grid_around( $entity, self::single_block( '<!-- wp:woocommerce/product-template -->' . $card . '<!-- /wp:woocommerce/product-template -->' ) );
+	}
+
+	/**
+	 * Rendered element/class skeleton, independent of block names and data.
+	 *
+	 * @param string $markup Serialized card.
+	 */
+	private static function card_structure_signature( string $markup ): string {
+		$block = self::single_block( $markup );
+		$tags  = new WP_HTML_Tag_Processor( null === $block ? '' : render_block( $block ) );
+		$parts = array();
+		while ( $tags->next_tag( array( 'tag_closers' => 'visit' ) ) ) {
+			$classes = preg_split( '/\s+/', trim( (string) $tags->get_attribute( 'class' ) ) );
+			$classes = false === $classes ? array() : $classes;
+			sort( $classes );
+			$parts[] = array( $tags->is_tag_closer(), $tags->get_tag(), $classes );
+		}
+		return empty( $parts ) ? '' : (string) wp_json_encode( $parts );
 	}
 
 	/**
