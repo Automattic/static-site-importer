@@ -1164,7 +1164,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$anchors[] = array(
 						'source_path'         => $source,
 						'search_block_markup' => $region,
-						'occurrence'          => 1
+						'occurrence'          => 1,
 					);
 				}
 			}
@@ -1182,7 +1182,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$id                           = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
 			$lifecycle['entities'][ $id ] = array(
 				'adapter'  => $adapter,
-				'manifest' => array( 'products' => array( $entity ) )
+				'manifest' => array( 'products' => array( $entity ) ),
 			);
 			$reports[ $id ]               = array( 'products' => array( $result ) );
 		}
