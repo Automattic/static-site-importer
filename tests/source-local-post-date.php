@@ -21,7 +21,7 @@ foreach ( $cases as $name => list( $local, $detected, $expected ) ) {
 	$row    = null === $local ? array() : array( 'publication_local_time' => $local );
 	$actual = Static_Site_Importer_Document_Type_Classifier::local_date( $row, $detected );
 	if ( $expected !== $actual ) {
-		throw new RuntimeException( $name . ': expected ' . static_site_importer_test_json( $expected ) . ', got ' . static_site_importer_test_json( $actual ) );
+		throw new RuntimeException( $name . ': expected ' . static_site_importer_test_json( $expected ) . ', got ' . static_site_importer_test_json( $actual ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- CLI test failure message.
 	}
 }
 echo "Source-local post dates passed.\n";
