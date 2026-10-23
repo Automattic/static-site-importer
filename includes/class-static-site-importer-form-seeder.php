@@ -76,6 +76,7 @@ class Static_Site_Importer_Form_Seeder {
 			'id'                       => 'jetpack_contact_form',
 			'entity_type'              => 'form',
 			'entity_collection'        => 'forms',
+			'rejected_rows_degrade'    => true,
 			'capability'               => 'form',
 			'provider'                 => 'jetpack',
 			'label'                    => 'Jetpack contact form',

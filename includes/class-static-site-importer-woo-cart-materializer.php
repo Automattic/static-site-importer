@@ -22,6 +22,7 @@ final class Static_Site_Importer_Woo_Cart_Materializer {
 			'id'                       => 'woocommerce_cart',
 			'entity_type'              => 'cart',
 			'entity_collection'        => 'carts',
+			'rejected_rows_degrade'    => true,
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
 			'label'                    => 'WooCommerce cart',

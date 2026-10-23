@@ -47,6 +47,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			'id'                       => 'woocommerce_product_listing',
 			'entity_type'              => 'product_listing',
 			'entity_collection'        => 'product_listings',
+			'rejected_rows_degrade'    => true,
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
 			'label'                    => 'WooCommerce product archive',
