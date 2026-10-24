@@ -45,10 +45,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
-		return Static_Site_Importer_Planned_Page_Templates::during(
-			$prepared['plan'] ?? null,
-			static fn(): array => self::materialize_prepared_state( $prepared )
-		);
+		if ( ! defined( 'WP_IMPORTING' ) ) {
+			define( 'WP_IMPORTING', true );
+		}
+		wp_defer_term_counting( true );
+		wp_defer_comment_counting( true );
+		try {
+			do_action( 'import_start' );
+			return Static_Site_Importer_Planned_Page_Templates::during(
+				$prepared['plan'] ?? null,
+				static fn(): array => self::materialize_prepared_state( $prepared )
+			);
+		} finally {
+			wp_defer_term_counting( false );
+			wp_defer_comment_counting( false );
+			do_action( 'import_end' );
+		}
 	}
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
@@ -161,7 +173,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $synced_patterns ) ) {
 			return self::failed_receipt_from_error( $state, $synced_patterns );
 		}
+		$authors = self::materialize_author_entities( $state );
+		if ( is_wp_error( $authors ) ) {
+			return self::failed_receipt_from_error( $state, $authors );
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
+			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
+				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
+			}
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				if ( ! empty( $page['retire_archive_page'] ) ) {
 					$archive_id = (int) ( $page['planned_existing_id'] ?? 0 );
@@ -479,11 +498,110 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 
+	/** Materialize only proven authors; never adopt an unmarked destination user. */
+	private static function materialize_author_entities( array &$state ) {
+		$mapping  = array();
+		$entities = $state['plan']['author_entities'] ?? array();
+		if ( empty( $entities ) ) {
+			return $mapping;
+		}
+		$posts = array();
+		foreach ( $state['ordered_pages'] as $page ) {
+			if ( 'post' === ( $page['post_type'] ?? '' ) && empty( $page['skip_materialization'] ) ) {
+				$posts[ $page['source_path'] ] = true;
+			}
+		}
+		$allow = apply_filters( 'import_allow_create_users', true );
+		foreach ( $entities as $entity ) {
+			if ( ! is_array( $entity ) || 'author' !== ( $entity['kind'] ?? '' ) || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,49}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ( $entity['evidence'] ?? null ) !== array(
+				'membership' => true,
+				'name'       => true,
+				'archive'    => true,
+			) || ( $entity['archive']['source_route'] ?? '' ) !== '/author/' . $entity['slug'] ) {
+				return new WP_Error( 'author_entity_contract_invalid' );
+			}
+			$identity = hash( 'sha256', self::source_origin_url( $state ) . "\n" . $entity['slug'] );
+			$user_id  = (int) get_current_user_id();
+			$status   = 'creation_disabled';
+			if ( $allow ) {
+				$marked = get_users( array(
+					'meta_key'   => '_static_site_importer_source_author',
+					'meta_value' => $identity,
+					'number'     => 1,
+					'fields'     => 'ID',
+				) );
+				if ( $marked ) {
+					$user_id = (int) $marked[0];
+					$status  = 'reused';
+				} else {
+					$inserted = wp_insert_user( array(
+						'user_login'    => sanitize_user( $entity['slug'], true ),
+						'user_nicename' => $entity['slug'],
+						'display_name'  => $entity['name'],
+						'user_pass'     => wp_generate_password(),
+						'user_email'    => '',
+					) );
+					if ( is_wp_error( $inserted ) ) {
+						$status = $inserted->get_error_code();
+					} else {
+						$user_id                      = (int) $inserted;
+						$state['rollback']['users'][] = $user_id;
+						if ( ! add_user_meta( $user_id, '_static_site_importer_source_author', $identity, true ) ) {
+							return new WP_Error( 'author_ownership_metadata_write_failed' );
+						}
+						$status = 'created';
+					}
+				}
+			}
+			if ( ! in_array( $status, array( 'created', 'reused' ), true ) ) {
+				$state['diagnostics'][] = array(
+					'reason_code' => 'author_user_fallback',
+					'slug'        => $entity['slug'],
+					'reason'      => $status,
+					'user_id'     => $user_id,
+				);
+			}
+			foreach ( $entity['membership_source_paths'] as $path ) {
+				if ( ! is_string( $path ) || ! isset( $posts[ $path ] ) || isset( $mapping[ $path ] ) ) {
+					return new WP_Error( 'author_membership_invalid' );
+				}
+				$mapping[ $path ] = $user_id;
+			}
+			$state['applied']['author_entities'][] = array(
+				'slug'                    => $entity['slug'],
+				'user_id'                 => $user_id,
+				'status'                  => $status,
+				'membership_source_paths' => $entity['membership_source_paths'],
+			);
+		}
+		return $mapping;
+	}
+
 	/** Apply the producer-proven term set while preserving destination-owned terms. */
 	private static function materialize_taxonomy_entities( array &$state ) {
 		$term_ids_by_source = array();
 		$reports            = array();
-		foreach ( $state['plan']['taxonomy_entities'] ?? array() as $entity ) {
+		// Resolve the producer's immediate parent slugs before inserting any child.
+		$pending = $state['plan']['taxonomy_entities'] ?? array();
+		$ordered = array();
+		$seen    = array();
+		while ( $pending ) {
+			$progress = false;
+			foreach ( $pending as $key => $entity ) {
+				if ( isset( $entity['parent'] ) && ! isset( $seen[ ( $entity['taxonomy'] ?? '' ) . ':' . $entity['parent'] ] ) ) {
+					continue;
+				}
+				$ordered[] = $entity;
+				$seen[ ( $entity['taxonomy'] ?? '' ) . ':' . ( $entity['slug'] ?? '' ) ] = true;
+				unset( $pending[ $key ] );
+				$progress = true;
+			}
+			if ( ! $progress ) {
+				return new WP_Error( 'taxonomy_parent_unresolved' );
+			}
+		}
+		$resolved_terms = array();
+		foreach ( $ordered as $entity ) {
 			if ( ! is_array( $entity ) || 'taxonomy_term' !== ( $entity['kind'] ?? '' ) || ! in_array( $entity['taxonomy'] ?? '', array( 'category', 'post_tag' ), true ) || ( $entity['evidence'] ?? null ) !== array(
 				'membership' => true,
 				'name'       => true,
@@ -499,10 +617,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( is_wp_error( $route_result ) ) {
 				return $route_result;
 			}
+			$parent   = isset( $entity['parent'] ) ? (int) $resolved_terms[ $taxonomy . ':' . $entity['parent'] ] : 0;
 			$existing = term_exists( $entity['slug'], $taxonomy );
 			$created  = false;
 			if ( ! $existing ) {
-				$inserted = wp_insert_term( $entity['name'], $taxonomy, array( 'slug' => $entity['slug'] ) );
+				$inserted = wp_insert_term( $entity['name'], $taxonomy, array(
+					'slug'   => $entity['slug'],
+					'parent' => $parent,
+				) );
 				if ( is_wp_error( $inserted ) ) {
 					return $inserted;
 				}
@@ -519,6 +641,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			if ( $term_id <= 0 || is_wp_error( get_term( $term_id, $taxonomy ) ) ) {
 				return new WP_Error( 'taxonomy_term_resolution_failed' );
+			}
+			$resolved_terms[ $taxonomy . ':' . $entity['slug'] ] = $term_id;
+			if ( isset( $entity['parent'] ) && ! $created && (int) get_term( $term_id, $taxonomy )->parent !== $parent ) {
+				$state['diagnostics'][] = array(
+					'reason_code'     => 'taxonomy_existing_parent_mismatch',
+					'term_id'         => $term_id,
+					'expected_parent' => $parent,
+				);
 			}
 			foreach ( $entity['membership_source_paths'] as $source_path ) {
 				if ( ! is_string( $source_path ) || ! isset( $state['source_ids'][ $source_path ] ) || 'post' !== get_post_type( (int) $state['source_ids'][ $source_path ] ) ) {
@@ -599,6 +729,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$slug  = (string) $entity['slug'];
 		if ( '' === $route || ! preg_match( '~^/?[a-z0-9-]+(?:/[a-z0-9-]+)*$~', $route ) || basename( $route ) !== $slug ) {
 			return new WP_Error( 'taxonomy_archive_route_invalid' );
+		}
+		if ( isset( $entity['parent'] ) && 'category' === $entity['taxonomy'] && str_starts_with( $route, 'category/' ) && ! get_option( 'category_base' ) ) {
+			// Core's hierarchical category rewrite already accepts the full path.
+			return true;
 		}
 		$base_regex = '^' . $route . '/?$';
 		$page_regex = '^' . $route . '/page/' . \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE . '/?$';
@@ -745,7 +879,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 		$post    = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
-			'post_author'  => $user_id > 0 ? $user_id : 1,
+			'post_author'  => $page['materialized_post_author'] ?? ( $user_id > 0 ? $user_id : 1 ),
 			'post_type'    => $post_type,
 			'post_status'  => (string) ( $page['materialized_post_status'] ?? 'publish' ),
 			'post_title'   => (string) $page['title'],
@@ -2342,6 +2476,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		$state['applied']['files'] = array();
+		if ( ! empty( $state['rollback']['users'] ) ) {
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+			foreach ( $state['rollback']['users'] as $user_id ) {
+				try {
+					if ( ! wp_delete_user( $user_id ) ) {
+						// ssi-error-class: operational
+						throw new RuntimeException( 'materialization_rollback_user_delete_failed' );
+					}
+				} catch ( Throwable $error ) {
+					self::record_rollback_failure( $state, 'user', (string) $user_id, $error );
+				}
+			}
+		}
 		if ( isset( $state['rollback']['theme_runtime_registration'] ) ) {
 			Static_Site_Importer_Generated_Runtime_Package::restore_registration( $state['rollback']['theme_runtime_registration'] );
 		}
