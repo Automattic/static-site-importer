@@ -257,7 +257,7 @@ class Static_Site_Importer_Receipt_Projection {
 				'source_path' => $asset['source_path'],
 				'theme_path'  => $asset['target_path'],
 			),
-			$plan['assets']
+			array_values( array_filter( $plan['assets'], static fn( array $asset ): bool => ! isset( $plan['resolution']['attachment_resolutions'][ $asset['token'] ] ) ) )
 		);
 		foreach ( $receipt['completed']['font_materialization']['files'] ?? array() as $file ) {
 			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';

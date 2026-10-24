@@ -101,11 +101,12 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * The resulting state may be passed to materialize_prepared(). That method prepares
 	 * again before writing so changes after this check cannot bypass conflict protection.
 	 *
-	 * @param array<string,mixed> $plan Canonical v2 plan.
+	 * @param array<string,mixed> $plan Canonical v2 or v3 plan.
 	 * @param array<string,mixed> $args Materialization options.
+	 * @param array<string,array{id:int,url:string}> $attachment_resolutions Existing attachments supplied by persistence after admission.
 	 * @return array<string,mixed> Prepared state or a rejected receipt.
 	 */
-	public static function prepare( array $plan, array $args = array() ): array {
+	public static function prepare( array $plan, array $args = array(), array $attachment_resolutions = array() ): array {
 		// Payload readers hold transient workspace access and must never enter a
 		// canonical plan hash, prepared-plan persistence, or receipt projection.
 		$payload_reader = $args['_static_site_importer_payload_reader'] ?? null;
@@ -187,6 +188,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$plan,
 				array(
 					'theme_uri'                            => $theme_uri,
+					'attachment_resolutions'               => $attachment_resolutions,
 					'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true,
 					'runtime_capabilities'                 => array( 'asset_materialization' ),
 				)
@@ -203,6 +205,14 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					$page['resolved_block_markup'] = '';
 				}
 				unset( $page );
+			}
+			if ( ! empty( $attachment_resolutions ) && is_array( $args['theme_runtime_payload'] ?? null ) ) {
+				$package = Static_Site_Importer_Generated_Runtime_Package::theme( $args['theme_runtime_payload'], $slug );
+				if ( is_wp_error( $package ) ) {
+					// ssi-error-class: propagated
+					throw new InvalidArgumentException( (string) $package->get_error_code() );
+				}
+				$resolved = Static_Site_Importer_Generated_Runtime_Package::with_writes( $resolved, $package );
 			}
 			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
 			$resolved                                   = self::with_consumer_theme_scaffold( $resolved, $identity, $args );

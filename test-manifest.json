@@ -203,6 +203,7 @@
     { "path": "tests/smoke-region-binding-row-degradation.php", "environment": "standalone-php" },
     { "path": "tests/source-local-post-date.php", "environment": "standalone-php" },
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-site-plan-media-destination.php", "environment": "wordpress-runtime", "reason": "Run with wp eval-file in a disposable WordPress runtime; creates real attachments and rolls back the import." },
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-attributes.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-store-visibility.php", "environment": "standalone-php" },
