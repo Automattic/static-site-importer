@@ -495,8 +495,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					}
 				}
 				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error, $authored_selection );
-				if ( $error || ! $id ) {
-					return $error ?? new WP_Error( 'media_library_attachment_failed' );
+				if ( $error ) {
+					return $error;
+				}
+				// Artwork WordPress cannot hold as an attachment (unproven SVG or
+				// ICO, non-image bytes) keeps its unresolved theme destination.
+				if ( ! $id ) {
+					continue;
 				}
 				$resolutions[ $asset['token'] ] = array(
 					'id'  => $id,
