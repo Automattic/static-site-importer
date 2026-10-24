@@ -2481,6 +2481,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			foreach ( $state['rollback']['users'] as $user_id ) {
 				try {
 					if ( ! wp_delete_user( $user_id ) ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'materialization_rollback_user_delete_failed' );
 					}
 				} catch ( Throwable $error ) {
