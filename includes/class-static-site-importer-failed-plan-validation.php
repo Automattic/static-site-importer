@@ -104,7 +104,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 				'provenance' => array_slice( $provenance, 0, self::MAX_DIAGNOSTICS ),
 			),
 			'wordpress_site_plan' => array(
-				'schema'  => (string) ( $plan['schema'] ?? 'blocks-engine/wordpress-site-plan/v2' ),
+				'schema'  => (string) ( $plan['schema'] ?? 'blocks-engine/wordpress-site-plan/v3' ),
 				'source'  => $source,
 				'quality' => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
 			),

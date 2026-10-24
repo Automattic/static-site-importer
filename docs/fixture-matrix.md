@@ -132,7 +132,7 @@ SSI owns the adapter from concrete three-Fig E2E artifacts to Blocks Engine's
 `blocks-engine/figma-wordpress-stage-evidence/v1` contract. It does not treat an
 aggregate matrix status as evidence. It validates and copies Blocks Engine's Figma-owned
 acceptance stage files, then combines them with SSI import/editor/fallback facts,
-a deployable `wordpress-site-plan/v2`, isolated WordPress identities, and the
+a deployable `wordpress-site-plan` (v2 or v3), isolated WordPress identities, and the
 remaining downstream parity artifacts.
 
 Run the provider after a real E2E run, choosing the evaluator output directory

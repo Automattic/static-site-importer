@@ -15,7 +15,7 @@
       "schema": "blocks-engine/php-transformer/result/v1",
       "required_fields": ["schema", "status", "source_reports.wordpress_site_plan"],
       "wordpress_site_plan": {
-        "schema": "blocks-engine/wordpress-site-plan/v2",
+        "schema": "blocks-engine/wordpress-site-plan/v3",
         "required_fields": ["schema", "source", "pages", "assets", "writes"]
       },
       "notes": "Blocks Engine emits the canonical WordPress materialization plan and remains unaware of Codebox validation details."
@@ -69,7 +69,7 @@
       "status": "success",
       "source_reports": {
         "wordpress_site_plan": {
-          "schema": "blocks-engine/wordpress-site-plan/v2",
+          "schema": "blocks-engine/wordpress-site-plan/v3",
           "source": { "entry_path": "website/index.html" },
           "pages": [
             {

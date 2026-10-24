@@ -26,7 +26,7 @@ The command resolves the requested ref once, archives `php-transformer/` and `fi
 
 ## Canonical Site Plans
 
-`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v2` response. Plan, report, classic handoff, and receipt bindings use the producer's `blocks-engine/wordpress-site-plan-identity/v1`; the materializer keeps its `prepared_resolved_projection_hash` separate for prepare-to-write TOCTOU detection. It accepts no source HTML or transformer result envelope.
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v3` produced by Blocks Engine. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v2` response. Plan, report, classic handoff, and receipt bindings use the producer's `blocks-engine/wordpress-site-plan-identity/v1`; the materializer keeps its `prepared_resolved_projection_hash` separate for prepare-to-write TOCTOU detection. It accepts no source HTML or transformer result envelope.
 
 For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
 
@@ -545,7 +545,7 @@ Owner readiness after materialization uses `static-site-importer/owner-handoff-e
 The handoff path is:
 
 - product caller sends a `blocks-engine/php-transformer/site-artifact/v1` input artifact;
-- Blocks Engine `ArtifactCompiler` returns `blocks-engine/php-transformer/result/v1` with `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`;
+- Blocks Engine `ArtifactCompiler` returns `blocks-engine/php-transformer/result/v1` with `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v3`;
 - SSI consumes that v2 plan, writes WordPress state, and returns a materialization receipt plus `static-site-importer/import-report/v1` with import validation and finding packet artifacts;
 - Codebox may validate the WordPress result and return `wp-codebox/validation-artifact-envelope/v1` artifact references.
 

@@ -542,7 +542,7 @@ $same_content_cross_route = ( new ArtifactCompiler() )->compile(
 )->toWordPressSitePlanView();
 $cross_route_scripts      = array_map( static fn( array $page ): int => count( $page['document_metadata']['scripts'] ?? array() ), $same_content_cross_route['wordpress_site_plan']['pages'] ?? array() );
 $assert( array( 1, 1 ) === $cross_route_scripts && array() === ( $same_content_cross_route['companion_plugin_payload']['preserved_js'] ?? array() ), 'released producer retains same-content inline scripts as separate generated-theme declarations across routes' );
-$assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
+$assert( 'blocks-engine/wordpress-site-plan/v3' === $plan['schema'], 'compiler emits the released v3 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
 $block_runtime = new Blocks_Engine_WordPress_Runtime();
