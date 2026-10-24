@@ -409,6 +409,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( $source !== $relative ) {
 			return self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error, true );
 		}
+		return self::attachment_from_source( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
+	}
+
+	/**
+	 * Shared content-addressed attachment creation for staged bytes and theme fallbacks.
+	 *
+	 * @param array<mixed>      $state Transaction state.
+	 * @param array<string,int> $attachments Attachment IDs by source path.
+	 * @param array<string,int> $by_hash Attachment IDs by content hash.
+	 */
+	private static function attachment_from_source( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
@@ -427,6 +438,84 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$by_hash[ $hash ] = $attachments[ $relative ];
 		}
 		return $attachments[ $relative ];
+	}
+
+	/**
+	 * Upload plan-routed media from verified compiled bytes, never from the theme.
+	 * The temporary source tree preserves rendition selection and the shared
+	 * attachment identity/dedupe path used by the post-write materializer.
+	 *
+	 * @return array|WP_Error Token resolutions or an upload failure.
+	 */
+	public static function resolve_plan_assets( array &$state ) {
+		$assets = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) );
+		if ( 'blocks-engine/wordpress-site-plan/v3' !== ( $state['plan']['schema'] ?? '' ) || empty( $assets ) || ! function_exists( 'wp_insert_attachment' ) ) {
+			return array();
+		}
+		$root  = get_temp_dir() . 'ssi-media-' . wp_generate_uuid4();
+		$dir   = $root . '/' . basename( $state['theme_dir'] );
+		$files = array();
+		try {
+			$writes = array_column( $state['resolved']['writes'], null, 'target_path' );
+			// Include captured image siblings for the existing largest-rendition
+			// policy, even when a sibling itself has only stylesheet consumers.
+			foreach ( $state['plan']['assets'] as $asset ) {
+				if ( 'media_library' !== ( $asset['destination'] ?? '' ) && ! in_array( strtolower( pathinfo( $asset['target_path'], PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+					continue;
+				}
+				$relative = $asset['target_path'];
+				$write    = $writes[ $relative ] ?? null;
+				if ( ! is_array( $write ) || ! Static_Site_Importer_Site_Plan_Persistence::safe_destination( $dir, $relative ) ) {
+					return new WP_Error( 'media_library_source_missing' );
+				}
+				$files[] = $dir . '/' . $relative;
+				$result  = Static_Site_Importer_Site_Plan_Persistence::write_file( $dir, $write, $state['payload_reader'] ?? null );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+			$attachments = array();
+			$by_hash     = array();
+			$resolutions = array();
+			$error       = null;
+			foreach ( $assets as $asset ) {
+				$alt                = '';
+				$authored_selection = false;
+				$documents          = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
+				foreach ( $documents as $page ) {
+					$markup = (string) ( $page['resolved_block_markup'] ?? '' );
+					if ( preg_match_all( '/<img\\b[^>]*>/i', $markup, $tags ) ) {
+						foreach ( $tags[0] as $tag ) {
+							if ( str_contains( $tag, $asset['target_path'] ) ) {
+								$alt                = self::alt_from_tag( $tag );
+								$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
+								break 2;
+							}
+						}
+					}
+				}
+				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error, $authored_selection );
+				if ( $error || ! $id ) {
+					return $error ?? new WP_Error( 'media_library_attachment_failed' );
+				}
+				$resolutions[ $asset['token'] ] = array(
+					'id'  => $id,
+					'url' => wp_get_attachment_url( $id ),
+				);
+			}
+			return $resolutions;
+		} finally {
+			foreach ( $files as $file ) {
+				wp_delete_file( $file );
+				$parent = dirname( $file );
+				while ( str_starts_with( $parent, $root ) && is_dir( $parent ) ) {
+					if ( ! @rmdir( $parent ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Remove only empty temporary staging directories.
+						break;
+					}
+					$parent = dirname( $parent );
+				}
+			}
+		}
 	}
 
 	/**

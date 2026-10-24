@@ -87,6 +87,43 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $capabilities ) ) {
 			return self::failed_receipt_from_error( $state, $capabilities );
 		}
+		// Preparation remains read-only. Only after admission may media uploads
+		// bind a fresh projection; all new attachments join the rollback journal.
+		$resolutions = Static_Site_Importer_Media_Library_Materializer::resolve_plan_assets( $state );
+		if ( is_wp_error( $resolutions ) ) {
+			return self::failed_receipt_from_error( $state, $resolutions );
+		}
+		if ( ! empty( $resolutions ) ) {
+			$media_state  = $state;
+			$resolve_args = $state['args'];
+			$resolve_args['_static_site_importer_payload_reader'] = $state['payload_reader'];
+			// Provider anchors were prepared against theme URLs. Rebind those
+			// fragments through the same producer resolver as their documents.
+			$canonical_urls = array();
+			foreach ( $state['plan']['assets'] as $asset ) {
+				if ( isset( $resolutions[ $asset['token'] ] ) ) {
+					$canonical_urls[ $state['theme']['uri'] . '/' . $asset['target_path'] ] = '{{wordpress-site-plan:asset:' . $asset['token'] . '}}';
+				}
+			}
+			$references = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $state['plan']['reference_tokens'], $state['theme']['uri'], $resolutions );
+			foreach ( $resolve_args['runtime_entity_bindings'] ?? array() as $index => $binding ) {
+				foreach ( array( 'search_block_markup', 'replacement_block_markup', 'archive_replacement_block_markup' ) as $key ) {
+					if ( is_string( $binding[ $key ] ?? null ) ) {
+						$resolve_args['runtime_entity_bindings'][ $index ][ $key ] = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolveMarkup( strtr( $binding[ $key ], $canonical_urls ), $references, $resolutions );
+					}
+				}
+			}
+			$bound = Static_Site_Importer_Site_Plan_Preparation::prepare( $state['plan'], $resolve_args, $resolutions );
+			if ( 'prepared' !== ( $bound['status'] ?? '' ) ) {
+				return self::failed_receipt( $state, $bound['receipt']['failure_reason'] ?? 'media_library_resolution_failed' );
+			}
+			$bound['receipt_instance_id'] = $state['receipt_instance_id'];
+			$state                        = Static_Site_Importer_Site_Plan_Preparation::refresh_prepared_destination( $bound );
+			if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
+				return self::failed_receipt( $media_state, 'media_library_resolution_failed' );
+			}
+			$state['applied']['attachments'] = $media_state['applied']['attachments'] ?? array();
+		}
 		// Theme package writes participate in the normal journal and are installed
 		// before editor admission, including page-ready imports before activation.
 		$runtime_payload = $state['args']['theme_runtime_payload'] ?? null;
@@ -126,7 +163,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			Static_Site_Importer_Site_Plan_Preparation::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 		} catch ( InvalidArgumentException $error ) {
 			$state['failure_reason'] = $error->getMessage();
-			return is_array( $runtime_payload ) ? self::failed_receipt( $state, $error->getMessage() ) : Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
+			return is_array( $runtime_payload ) || ! empty( $resolutions ) ? self::failed_receipt( $state, $error->getMessage() ) : Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
 		}
 		$args                        = $state['args'];
 		$font_overlay                = $state['font_overlay'];

@@ -80,7 +80,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		$entry  = (string) ( $projection['chrome_source_path'] ?? '' );
 		$root   = '' === $entry || '.' === dirname( $entry ) ? '' : trim( dirname( $entry ), '/' );
 		$assets = new AssetReferenceCanonicalizer( $tokens, $root );
-		$urls   = WordPressSitePlanResolver::references( $tokens, rtrim( $theme_uri, '/' ) );
+		$urls   = WordPressSitePlanResolver::references( $tokens, rtrim( $theme_uri, '/' ), $resolved['resolution']['attachment_resolutions'] ?? array() );
 		$routes = array();
 		foreach ( $resolved['pages'] ?? array() as $page ) {
 			$routes[ (string) ( $page['source_path'] ?? '' ) ] = (string) ( $page['route']['path'] ?? '' ); }

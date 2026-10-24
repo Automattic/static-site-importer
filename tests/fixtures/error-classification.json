@@ -180,6 +180,7 @@
     "invalid_source_post_meta": { "class": "integrity", "owning_layer": "static-site-importer" },
     "invalid_theme_slug": { "class": "integrity", "owning_layer": "static-site-importer" },
     "media_library_attachment_failed": { "class": "operational", "owning_layer": "wordpress" },
+    "media_library_source_missing": { "class": "integrity", "owning_layer": "wordpress" },
     "media_library_upload_failed": { "class": "operational", "owning_layer": "wordpress" },
     "missing_parent_page": { "class": "representability", "unit": "page", "owning_layer": "static-site-importer", "tracker": "Automattic/static-site-importer#2054" },
     "navigation_entity_declaration_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
