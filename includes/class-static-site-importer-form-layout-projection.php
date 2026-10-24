@@ -233,16 +233,40 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
+	 * A single stretched column item has block-like flow; its gap has no used value.
+	 * With one item there is one flex line, which `align-content: normal` stretches,
+	 * so wrapping changes nothing. Without a definite block size the column has no
+	 * free main-axis space, so `justify-content` places nothing either.
+	 *
+	 * @param Static_Site_Importer_Form_Topology_State $s Source topology and projection state.
+	 * @param array<string,mixed>                      $node Source layout graph container.
+	 * @return bool Whether only box facts need projection.
+	 */
+	private static function submit_column_box( Static_Site_Importer_Form_Topology_State $s, array $node ): bool {
+		$layout = $node['layout'] ?? array();
+		return 'container' === ( $node['kind'] ?? '' )
+			&& 'flex' === ( $layout['display'] ?? '' )
+			&& 'column' === ( $layout['direction'] ?? '' )
+			&& in_array( $layout['wrap'] ?? 'nowrap', array( 'nowrap', 'wrap' ), true )
+			&& in_array( $layout['align_items'] ?? 'normal', array( 'normal', 'stretch' ), true )
+			&& in_array( $layout['align_content'] ?? 'normal', array( 'normal', 'stretch' ), true )
+			&& array() === array_intersect_key( $layout, array_flip( array( 'height', 'min_height', 'max_height', 'flex', 'flex_grow', 'flex_basis', 'align_self' ) ) )
+			&& 1 === ( $node['in_flow_children'] ?? null )
+			&& empty( $s->variants_by_node[ $node['id'] ] );
+	}
+
+	/**
 	 * A submit whose single-control wrapper chain consists of plain block boxes
 	 * occupies its own row, placed within that row by the inherited
 	 * text alignment. The provider renders the button's Core wrapper as a
 	 * shrink-to-fit item of its flex form, so restore the row and the placement.
 	 *
+	 * @param Static_Site_Importer_Form_Topology_State $s Source topology and projection state.
 	 * @param array<int,array<string,mixed>>   $chain              Source wrappers, outermost first.
 	 * @param array<string,array<string,mixed>> $layout_nodes_by_id Source layout graph nodes.
 	 * @return array<string,string>|null Layout for the provider button wrapper.
 	 */
-	private static function submit_block_row( array $chain, array $layout_nodes_by_id ): ?array {
+	private static function submit_block_row( Static_Site_Importer_Form_Topology_State $s, array $chain, array $layout_nodes_by_id ): ?array {
 		// Shared ancestors are not in the single-control chain. They must also
 		// be block boxes: a submit inside a shared flex/grid row is not its own row.
 		$outer = $layout_nodes_by_id[ (string) ( $chain[0]['id'] ?? '' ) ] ?? null;
@@ -264,12 +288,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
 			return null;
 		}
-		$box   = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'margin_block_start', 'margin_block_end' ) );
-		$align = '';
+		$box     = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'margin_block_start', 'margin_block_end' ) );
+		$align   = '';
+		$columns = array();
 		foreach ( $chain as $wrapper ) {
 			// A wrapper the layout graph omits declared no layout facts, display
 			// included, so it is the plain block box its topology tag describes.
-			$node    = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? array( 'source' => array( 'tag' => (string) ( $wrapper['tag'] ?? 'div' ) ) );
+			$node = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? array( 'source' => array( 'tag' => (string) ( $wrapper['tag'] ?? 'div' ) ) );
+			if ( self::submit_column_box( $s, $node ) ) {
+				$properties                                = array( 'display', 'direction', 'align_items', 'align_content', 'justify_content', 'wrap', 'gap', 'row_gap', 'column_gap' );
+				$columns[ $node['id'] ]                    = $properties;
+				$node['layout']                            = array_diff_key( $node['layout'], array_flip( $properties ) );
+				$node['presentation']['styles']['display'] = 'block';
+			}
 			$display = strtolower( trim( (string) ( $node['layout']['display'] ?? ( $node['presentation']['styles']['display'] ?? 'block' ) ) ) );
 			if ( ! in_array( $node['source']['tag'] ?? '', array( 'div', 'p', 'section', 'fieldset', 'li' ), true ) || ! in_array( $display, array( 'block', 'flow-root' ), true ) || array() !== array_diff_key( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $box ) ) {
 				return null;
@@ -289,6 +320,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		)[ $align ] ?? null;
 		if ( null === $justify ) {
 			return null;
+		}
+		foreach ( $columns as $id => $properties ) {
+			$s->suppressed_layout_properties[ $id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $id ] ?? array(), $properties ) ) );
 		}
 		return array(
 			'width'           => '100%',
@@ -342,7 +376,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$nodes[ $id ]['layout']                               = array_diff_key( $layout, array_flip( $properties ) );
 			$nodes[ $id ]['presentation']['styles']['display']    = 'block';
 			$nodes[ $id ]['presentation']['styles']['text_align'] = $align;
-			$row = self::submit_block_row( $chain, $nodes );
+			$row = self::submit_block_row( $s, $chain, $nodes );
 			if ( null === $row ) {
 				return null;
 			}
@@ -792,7 +826,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 				$s->record( 'topology', 'provider_field_wrapper_class_projection', $outermost['id'] );
 
-				$row = self::submit_block_row( $chain, $s->layout_nodes_by_id ) ?? self::submit_flex_row( $s, $chain, $outermost['id'] );
+				$row = self::submit_block_row( $s, $chain, $s->layout_nodes_by_id ) ?? self::submit_flex_row( $s, $chain, $outermost['id'] );
 				if ( null !== $row ) {
 					$s->provider_layout_targets[ $outermost['id'] ] = $button_hook;
 					$s->overlay_node_targets[]                      = array(
