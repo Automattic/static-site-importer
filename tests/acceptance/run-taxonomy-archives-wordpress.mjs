@@ -23,8 +23,8 @@ if ( releasePackageMode ) {
 	const composerManifest = JSON.parse( readFileSync( join( root, 'composer.json' ), 'utf8' ) );
 	const lockPackage = ( composerLock.packages ?? [] ).find( item => item.name === transformerPackage );
 	const vendorVersion = readFileSync( join( installedTransformerRoot, 'VERSION' ), 'utf8' ).trim();
-	const expectedVersion = process.env.SSI_TAXONOMY_RELEASE_VERSION;
-	if ( ! lockPackage || ! expectedVersion || vendorVersion !== expectedVersion || lockPackage.version !== `v${ expectedVersion }` || composerManifest.require?.[ transformerPackage ] !== expectedVersion || lockPackage.source?.reference !== lockPackage.dist?.reference ) {
+	const expectedVersion = process.env.SSI_TAXONOMY_RELEASE_VERSION ?? composerManifest.require?.[ transformerPackage ]?.replace( /^v/, '' );
+	if ( ! lockPackage || ! expectedVersion || vendorVersion !== expectedVersion || lockPackage.version !== `v${ expectedVersion }` || composerManifest.require?.[ transformerPackage ]?.replace( /^v/, '' ) !== expectedVersion || lockPackage.source?.reference !== lockPackage.dist?.reference ) {
 		throw new Error( 'Release-package proof requires the expected installed and locked immutable Blocks Engine PHP transformer package.' );
 	}
 	releasePackageIdentity = {
