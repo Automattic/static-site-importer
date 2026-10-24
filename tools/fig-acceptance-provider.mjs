@@ -8,6 +8,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isSupportedMaterializationPlanSchema } from '../lib/fixture-matrix/wordpress-site-plan.mjs';
 
 export const STAGES = ['decode', 'normalize', 'emit', 'figma_html_desktop_parity', 'figma_html_mobile_parity', 'import', 'editor_validity', 'fallback', 'html_wordpress_desktop_parity', 'html_wordpress_mobile_parity', 'figma_wordpress_desktop_parity', 'figma_wordpress_mobile_parity', 'responsive_selection'];
 const PARITY = { figma_html_desktop_parity: 'figma_html', figma_html_mobile_parity: 'figma_html', html_wordpress_desktop_parity: 'html_wordpress', html_wordpress_mobile_parity: 'html_wordpress', figma_wordpress_desktop_parity: 'figma_wordpress', figma_wordpress_mobile_parity: 'figma_wordpress' };
@@ -115,7 +116,7 @@ function readExternalParity(value, stage) {
   requiredFile(item.source_screenshot, `${stage} source screenshot`); requiredFile(item.rendered_screenshot, `${stage} rendered screenshot`);
   return { source_screenshot: item.source_screenshot, rendered_screenshot: item.rendered_screenshot, diff_report: requiredObject(item.diff_report, `${stage} diff_report`) };
 }
-function validateSitePlan(plan) { if (plan.schema !== 'blocks-engine/wordpress-site-plan/v2' || !Array.isArray(plan.pages) || !plan.pages.some((page) => page && typeof page === 'object') || !Array.isArray(plan.routes) || !plan.routes.some((route) => route && typeof route === 'object')) fail('site plan is not a structurally valid non-empty blocks-engine/wordpress-site-plan/v2 artifact'); }
+function validateSitePlan(plan) { if (!isSupportedMaterializationPlanSchema(plan.schema) || !Array.isArray(plan.pages) || !plan.pages.some((page) => page && typeof page === 'object') || !Array.isArray(plan.routes) || !plan.routes.some((route) => route && typeof route === 'object')) fail('site plan is not a structurally valid non-empty blocks-engine/wordpress-site-plan artifact'); }
 function fallbackCountFrom(matrix) { const quality = requiredObject(matrix.quality_metrics, 'matrix quality_metrics'); const count = integer(quality.fallback_count, 'matrix fallback_count'); if (integer(matrix.block_composition?.core_html_block_count || 0, 'core html block count') !== 0) fail('core/html fallback count must be zero'); return count; }
 function fixtureRecord(document, id, label) { const record = (Array.isArray(document.fixtures) ? document.fixtures : []).find((item) => item?.id === id || item?.fixture_id === id); if (!record) fail(`${label} evidence has no fixture ${id}`); return record; }
 function artifactPath(slot, root, label) { const value = slot?.ref?.path || slot?.path; const file = path.resolve(root, requiredString(value, label)); return requiredFile(file, label); }

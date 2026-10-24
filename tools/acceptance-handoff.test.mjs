@@ -42,6 +42,30 @@ test('acceptance handoff accepts a complete hash-bound generic fixture', () => {
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('acceptance handoff accepts v2 and v3 site plan schemas', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ssi-handoff-'));
+  try {
+    for (const schema of ['blocks-engine/wordpress-site-plan/v2', 'blocks-engine/wordpress-site-plan/v3']) {
+      const document = produceAcceptanceHandoff(completeInput(directory, { sitePlan: { schema, pages: [{ route: '/' }], routes: [{ path: '/' }] } }));
+      assert.equal(document.disposition, 'passed', schema);
+      assert.deepEqual(consumeAcceptanceHandoff(path.join(directory, 'handoff'), document), { schema: 'static-site-importer/acceptance-handoff/v1', disposition: 'passed', reasons: [] });
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('acceptance handoff rejects an unknown site plan schema in both checks', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ssi-handoff-'));
+  try {
+    const document = produceAcceptanceHandoff(completeInput(directory, { sitePlan: { schema: 'blocks-engine/wordpress-site-plan/v9', pages: [{ route: '/' }], routes: [{ path: '/' }] } }));
+    assert.equal(document.disposition, 'not_proven');
+    assert.deepEqual(document.not_proven.map((reason) => reason.code), ['site_plan_invalid']);
+    const validation = validateAcceptanceHandoff(path.join(directory, 'handoff'), document);
+    assert.equal(validation.valid, false);
+    assert.equal(validation.disposition, 'not_proven');
+    assert.deepEqual(validation.reasons, [{ code: 'site_plan_invalid' }]);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('acceptance handoff records absent evidence without inferring it', () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'ssi-handoff-'));
   try {

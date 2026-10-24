@@ -308,6 +308,72 @@ test('matrix evidence fails closed when the materialization receipt is absent', 
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
+test('matrix evidence accepts v2 and v3 site plan schemas', () => {
+  for (const schema of ['blocks-engine/wordpress-site-plan/v2', 'blocks-engine/wordpress-site-plan/v3']) {
+    const evidence = collectMatrixEvidence({
+      import_report: {
+        blocks_engine: {
+          transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
+          wordpress_site_plan: { schema, assets: [] },
+        },
+      },
+      materialization_receipt: {
+        schema: 'static-site-importer/materialization-receipt/v1',
+        status: 'completed',
+        plan_hash: 'plan-hash',
+        completed: { pages: { 'index.html': 1 }, files: [{ target_path: 'style.css' }], operations: [], declaration_ids: ['asset'] },
+      },
+    });
+    assert.equal(evidence.readiness, 'verified', schema);
+    assert.deepEqual(evidence.missing, [], schema);
+    assert.deepEqual(evidence.lineage.artifact, { schema }, schema);
+  }
+});
+
+test('matrix evidence fails closed on an unknown site plan schema', () => {
+  const evidence = collectMatrixEvidence({
+    import_report: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v9', assets: [] },
+      },
+    },
+    materialization_receipt: {
+      schema: 'static-site-importer/materialization-receipt/v1',
+      status: 'completed',
+      plan_hash: 'plan-hash',
+      completed: { pages: { 'index.html': 1 }, files: [{ target_path: 'style.css' }], operations: [], declaration_ids: ['asset'] },
+    },
+  });
+  assert.equal(evidence.readiness, 'runtime_evidence_incomplete');
+  assert.deepEqual(evidence.missing, ['wordpress_site_plan']);
+  assert.equal(evidence.lineage.artifact, undefined);
+});
+
+test('fixture matrix reports a v3 site plan import as verified runtime evidence', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-v3-site-plan-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'v3-site-plan-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      import_report: {
+        blocks_engine: {
+          transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
+          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v3' },
+        },
+        materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+      },
+    },
+  });
+
+  assert.equal(result.fixtures[0].status, 'passed');
+  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'verified');
+  assert.equal(result.fixtures[0].matrix_evidence.missing.includes('wordpress_site_plan'), false);
+});
+
 test('legacy validation payloads without a receipt contract remain consumable', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-legacy-no-sidecar-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-no-sidecar' });
