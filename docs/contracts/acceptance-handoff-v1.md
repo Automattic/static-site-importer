@@ -6,7 +6,7 @@ only through a relative SHA-256 reference. The contract is implemented by
 `lib/fixture-matrix/acceptance-handoff.mjs` and its JSON schema is adjacent.
 
 The producer records supplied input identity, compiler identity, a
-`blocks-engine/wordpress-site-plan/v2`, terminal materialization receipt and
+`blocks-engine/wordpress-site-plan/v3` (v2 is still accepted), terminal materialization receipt and
 resolved route/entity mapping, route-and-viewport visual evidence, route-bound
 editor evidence, and the quality-admission projection. It never fills absent
 facts from aggregate status.
