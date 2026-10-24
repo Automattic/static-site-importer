@@ -22,6 +22,22 @@ use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations;
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
+function do_action( $hook, ...$args ) {}
+function wp_defer_term_counting( $defer = null ) {
+	static $deferred = false;
+	if ( null !== $defer ) {
+		$deferred = $defer;
+	}
+	return $deferred;
+}
+function wp_defer_comment_counting( $defer = null ) {
+	static $deferred = false;
+	if ( null !== $defer ) {
+		$deferred = $defer;
+	}
+	return $deferred;
+}
+
 define( 'OBJECT', 'OBJECT' );
 define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['ssi_plan_root']                    = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );

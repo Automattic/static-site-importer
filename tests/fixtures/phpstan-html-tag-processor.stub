@@ -1,0 +1,6 @@
+<?php
+
+class WP_HTML_Tag_Processor {
+	/** @return Generator<int, string> */
+	public function class_list() {}
+}
