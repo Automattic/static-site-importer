@@ -539,7 +539,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 */
 	private static function compile_node_layouts( array &$pass, array $graph ): void {
 		foreach ( $graph['nodes'] ?? array() as $node ) {
-			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
+			if ( ! is_array( $node ) || 'empty_box' === ( $node['kind'] ?? null ) || empty( $node['layout'] ) ) {
 				continue;
 			}
 			$id     = (string) ( $node['id'] ?? '' );
