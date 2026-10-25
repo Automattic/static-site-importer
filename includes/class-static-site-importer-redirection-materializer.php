@@ -177,7 +177,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 		$alias_paths = array();
 		foreach ( $aliases as $source => $paths ) {
 			foreach ( $paths as $path ) {
-				$alias_paths[ '/' . ltrim( $path, '/' ) ] = $source;
+				$alias_paths[ '/' . ltrim( rawurldecode( $path ), '/' ) ] = $source;
 			}
 		}
 		$routes = array();
@@ -186,7 +186,13 @@ final class Static_Site_Importer_Redirection_Materializer {
 			$id     = (int) ( $ids[ $source ] ?? 0 );
 			if ( $id <= 0 ) {
 				continue; }
-			if ( ! empty( $page['synthetic'] ) && 'draft' === ( $page['materialized_post_status'] ?? '' ) && ( ! isset( $page['alias_target_source_path'] ) || ( $alias_paths[ $page['route']['path'] ?? '' ] ?? null ) === $page['alias_target_source_path'] ) && 'draft' === get_post_status( $id ) ) {
+			// Redirection stores every source after rawurldecode (its own
+			// sanitizer) and its matcher decodes requests the same way. Express
+			// each route once in that canonical decoded form here, so inventory
+			// matching, native writes, committed-rule identification and the
+			// ownership option all key the identical rule.
+			$route_path = rawurldecode( (string) ( $page['route']['path'] ?? '' ) );
+			if ( ! empty( $page['synthetic'] ) && 'draft' === ( $page['materialized_post_status'] ?? '' ) && ( ! isset( $page['alias_target_source_path'] ) || ( $alias_paths[ $route_path ] ?? null ) === $page['alias_target_source_path'] ) && 'draft' === get_post_status( $id ) ) {
 				// This native row supplies descendant ancestry; its exact public URL
 				// is owned by the alias bound to a different page receipt, or by no
 				// source document at all.
@@ -199,14 +205,14 @@ final class Static_Site_Importer_Redirection_Materializer {
 			$target_path = wp_parse_url( $target, PHP_URL_PATH );
 			$public      = self::served_source_path( $source );
 			$sources     = array_merge(
-				array( $page['route']['path'] ?? '', $public ),
+				array( $route_path, $public ),
 				$aliases[ $source ] ?? array()
 			);
 			foreach ( $sources as $from ) {
 				if ( '' === (string) $from ) {
 					continue;
 				}
-				$from = '/' . ltrim( (string) $from, '/' );
+				$from = '/' . ltrim( rawurldecode( (string) $from ), '/' );
 				if ( trim( $from, '/' ) === trim( (string) $target_path, '/' ) ) {
 					continue; }
 				if ( isset( $routes[ $from ] ) && $routes[ $from ] !== $target ) {

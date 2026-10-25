@@ -67,7 +67,9 @@ $assert( true === ( $plain['success'] ?? false ), 'Ordinary import completes.' )
 $assert( is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Ordinary source documents install their sole continuity provider.' );
 $request['source']['files'][] = array(
 	'path'    => 'website/_redirects',
-	'content' => "/old /destination.html 301\n",
+	// Redirection stores sources decoded; a percent-encoded UTF-8 alias must
+	// own one decoded rule that the encoded request still reaches (#2384).
+	'content' => "/old /destination.html 301\n/blogi/ik%C3%A4ihmisen /destination.html 301\n",
 );
 $result                       = $import( $request );
 $assert( true === ( $result['success'] ?? false ), 'The identity-less CLI operator installs, prepares and configures native Redirection from typed captured aliases: ' . wp_json_encode( $result ) );
@@ -83,6 +85,7 @@ $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::availabl
 $groups       = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'group', array( 'per_page' => 200 ) );
 $native_group = array_values( array_filter( $groups['items'] ?? array(), static fn( array $group ): bool => (int) $group['id'] === (int) $scope['group_id'] ) );
 $assert( 1 === count( $native_group ) && 50 === strlen( $native_group[0]['name'] ) && 'Imported source routes: ' . substr( hash( 'sha256', $scope_name ), 0, 26 ) === $native_group[0]['name'], 'Long scope identity is preserved within the native provider name bound.' );
+$assert( isset( $scope['rules']['/blogi/ikäihmisen'] ) && ! isset( $scope['rules']['/blogi/ik%C3%A4ihmisen'] ), 'A percent-encoded alias is owned in the provider canonical decoded form: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
 $assert( isset( $scope['rules']['/destination.html'], $scope['rules']['/tag/topic/page/1'] ), 'Served HTML and differing nested routes are native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
 $assert( ! isset( $scope['rules']['/index.html'] ) && ! isset( $scope['rules']['/notes/deep/index.html'] ) && ! isset( $scope['rules']['/tag/topic/page/1/index.html'] ), 'Capture index filenames do not create public aliases.' );
 $assert( ! is_file( get_stylesheet_directory() . '/portable-source-routes.php' ) && ! is_file( get_stylesheet_directory() . '/ssi-runtime/includes/source-route-redirect.php' ), 'Generated themes contain no source-route runtime.' );
@@ -300,7 +303,8 @@ $check_routes = static function () use ( $assert, $scope_name ): void {
 			$origin   = $origin ? $origin : home_url();
 			$host     = wp_parse_url( home_url(), PHP_URL_HOST );
 			$port     = wp_parse_url( home_url(), PHP_URL_PORT );
-			$response = wp_remote_request( $origin . $from, array(
+			// Request the path as a browser sends it: percent-encoded.
+			$response = wp_remote_request( $origin . implode( '/', array_map( 'rawurlencode', explode( '/', $from ) ) ), array(
 				'method'      => $method,
 				'redirection' => 0,
 				'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),
