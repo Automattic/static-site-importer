@@ -373,6 +373,57 @@
 	$assert( in_array( 'provider_wrapper_layout_unrepresentable', array_column( $structural_selector_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'ancestor-dependent-class-selector-does-not-survive-wrapper-flattening' );
 	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
 	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
+
+	$empty_box_graph            = $root_graph;
+	$empty_box_node             = $layout_node( 'empty-0', array( 'height' => '24px' ) );
+	$empty_box_node['kind']     = 'empty_box';
+	$empty_box_graph['nodes'][] = $empty_box_node;
+	foreach ( array( Static_Site_Importer_Provider_Layout_Overlay::SURFACE_FRONT_END, Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR ) as $empty_box_surface ) {
+		$baseline_overlay  = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map, array(), array(), $empty_box_surface );
+		$empty_box_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $empty_box_graph, $root_map, array(), array(), $empty_box_surface );
+		$assert(
+			$baseline_overlay === $empty_box_overlay && ! in_array( 'provider_structure_mismatch', array_column( $empty_box_overlay['losses'], 'reason_code' ), true ),
+			'empty-box-does-not-change-provider-overlay-' . $empty_box_surface,
+			wp_json_encode( $empty_box_overlay )
+		);
+	}
+
+	$gap_pair_form = array(
+		'layout_graph'      => $layout_graph( array( $layout_node( 'form', array(
+			'display'   => 'flex',
+			'direction' => 'column',
+			'gap'       => '1rem',
+		), 'form' ) ) ),
+		'sibling_relations' => array(
+			'schema' => 'generic/form-sibling-relations/v1',
+			'pairs'  => array(
+				array( 'control' => 0 ),
+				array(
+					'control' => 1,
+					'parent'  => 'form',
+				),
+				array(
+					'control' => 2,
+					'parent'  => 'wrapper-0',
+				),
+				array(
+					'control' => 3,
+					'parent'  => 'context-0',
+				),
+			),
+		),
+	);
+
+	$gap_pair_form['layout_graph']['nodes'][0]['provenance'] = array(
+		array( 'properties' => array( 'display', 'flex-direction', 'gap' ) ),
+	);
+
+	$gap_pair_targets = Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $gap_pair_form );
+	$assert(
+		array( 0, 1 ) === array_column( $gap_pair_targets, 'control' ) && array( '1rem', '1rem' ) === array_column( array_column( $gap_pair_targets, 'layout' ), 'gap' ),
+		'form-gap-targets-only-legacy-and-explicit-form-pairs',
+		wp_json_encode( $gap_pair_targets )
+	);
 	// A control container with no provider destination is the same loss on either
 	// surface, named for neither (#2281).
 	$unplaced_container = array(

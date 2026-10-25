@@ -129,7 +129,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			foreach ( $relations['pairs'] as $pair ) {
-				if ( is_array( $pair ) && is_int( $pair['control'] ?? null ) ) {
+				if ( is_array( $pair ) && ( ! array_key_exists( 'parent', $pair ) || 'form' === $pair['parent'] ) && is_int( $pair['control'] ?? null ) ) {
 					$targets[] = array_filter( array(
 						'control'   => $pair['control'],
 						'layout'    => array(
