@@ -361,6 +361,7 @@ if ( ! function_exists( 'get_page_uri' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once __DIR__ . '/fixtures/core-html-api.php';
 $figma_transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php';
 if ( is_readable( $figma_transformer_bootstrap ) ) {
 	require_once $figma_transformer_bootstrap;
@@ -519,6 +520,7 @@ $assert( is_wp_error( $pasted_shell_response ), 'rest-pasted-client-shell-errors
 $assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_code() : '' ), 'rest-pasted-client-shell-error-code' );
 $pasted_shell_error_data = is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_data() : array();
 $assert( 'website/index.html' === ( $pasted_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-pasted-client-shell-diagnostic-source-path' );
+$assert( 'website/index.html' === ( $pasted_shell_error_data['source_path'] ?? '' ), 'rest-pasted-client-shell-error-names-source-path' );
 
 $uploaded_shell_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
@@ -538,6 +540,7 @@ $assert( is_wp_error( $uploaded_shell_response ), 'rest-uploaded-client-shell-er
 $assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_code() : '' ), 'rest-uploaded-client-shell-error-code' );
 $uploaded_shell_error_data = is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_data() : array();
 $assert( 'website/index.html' === ( $uploaded_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-uploaded-client-shell-diagnostic-source-path' );
+$assert( 'website/index.html' === ( $uploaded_shell_error_data['source_path'] ?? '' ), 'rest-uploaded-client-shell-error-names-source-path' );
 
 $figma_upload_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
 	array(

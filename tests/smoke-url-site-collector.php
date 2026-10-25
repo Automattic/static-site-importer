@@ -57,6 +57,7 @@ if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 	}
 }
 
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';

@@ -694,15 +694,34 @@ class Static_Site_Importer_URL_Fetcher {
 	 */
 	public static function html_source_diagnostic( string $html ): array {
 		$markup_bytes     = strlen( $html );
-		$script_count     = preg_match_all( '#<script\b#i', $html );
-		$app_shell        = preg_match( '#\bid=(?:"|\')(?:root|app|__next|gatsby-focus-wrapper|mount)(?:"|\')#i', $html );
-		$text_html        = preg_replace( '#<script\b[^>]*>.*?</script>#is', ' ', $html );
-		$text_html        = preg_replace( '#<style\b[^>]*>.*?</style>#is', ' ', (string) $text_html );
-		$text_html        = preg_replace( '#<template\b[^>]*>.*?</template>#is', ' ', (string) $text_html );
-		$content_elements = preg_match_all( '#<(?:main|article|h[1-6]|p|figure|picture|img|video)\b#i', (string) $text_html );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_strip_all_tags().
-		$stripped   = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $text_html ) : strip_tags( (string) $text_html );
-		$text       = html_entity_decode( trim( preg_replace( '/\s+/', ' ', $stripped ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$script_count     = 0;
+		$app_shell        = false;
+		$content_elements = 0;
+		$text             = '';
+		$template_depth   = 0;
+		$processor        = new WP_HTML_Tag_Processor( $html );
+		while ( $processor->next_token() ) {
+			$token = $processor->get_token_type();
+			if ( '#tag' === $token ) {
+				$tag = $processor->get_tag();
+				if ( 'TEMPLATE' === $tag ) {
+					$template_depth = max( 0, $template_depth + ( $processor->is_tag_closer() ? -1 : 1 ) );
+					continue;
+				}
+				if ( $processor->is_tag_closer() ) {
+					continue;
+				}
+				$script_count += 'SCRIPT' === $tag ? 1 : 0;
+				$app_shell     = $app_shell || in_array( $processor->get_attribute( 'id' ), array( 'root', 'app', '__next', 'gatsby-focus-wrapper', 'mount' ), true );
+				if ( 0 === $template_depth && in_array( $tag, array( 'MAIN', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'FIGURE', 'PICTURE', 'IMG', 'VIDEO' ), true ) ) {
+					++$content_elements;
+				}
+			} elseif ( '#text' === $token && 0 === $template_depth ) {
+				// SCRIPT, STYLE and TITLE contents belong to their tag token, so only visible text reaches here.
+				$text .= ' ' . $processor->get_modifiable_text();
+			}
+		}
+		$text       = trim( preg_replace( '/\s+/', ' ', $text ) );
 		$text_chars = strlen( $text );
 		$text_ratio = $markup_bytes > 0 ? $text_chars / $markup_bytes : 0;
 
