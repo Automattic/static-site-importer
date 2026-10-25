@@ -67,7 +67,9 @@ $assert( true === ( $plain['success'] ?? false ), 'Ordinary import completes.' )
 $assert( is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Ordinary source documents install their sole continuity provider.' );
 $request['source']['files'][] = array(
 	'path'    => 'website/_redirects',
-	'content' => "/old /destination.html 301\n",
+	// Redirection stores sources decoded; a percent-encoded UTF-8 alias must
+	// own one decoded rule that the encoded request still reaches (#2384).
+	'content' => "/old /destination.html 301\n/blogi/ik%C3%A4ihmisen /destination.html 301\n",
 );
 $result                       = $import( $request );
 $assert( true === ( $result['success'] ?? false ), 'The identity-less CLI operator installs, prepares and configures native Redirection from typed captured aliases: ' . wp_json_encode( $result ) );
@@ -83,7 +85,9 @@ $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::availabl
 $groups       = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'group', array( 'per_page' => 200 ) );
 $native_group = array_values( array_filter( $groups['items'] ?? array(), static fn( array $group ): bool => (int) $group['id'] === (int) $scope['group_id'] ) );
 $assert( 1 === count( $native_group ) && 50 === strlen( $native_group[0]['name'] ) && 'Imported source routes: ' . substr( hash( 'sha256', $scope_name ), 0, 26 ) === $native_group[0]['name'], 'Long scope identity is preserved within the native provider name bound.' );
-$assert( isset( $scope['rules']['/destination.html'], $scope['rules']['/tag/topic/page/1'] ), 'Served HTML and differing nested routes are native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
+$assert( array( '/blogi/ikäihmisen', '/destination.html', '/old' ) === array_keys( $scope['rules'] ), 'Served HTML and explicit aliases, the percent-encoded one in the provider canonical decoded form, are the native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
+$nested = get_page_by_path( 'notes/deep', OBJECT, 'page' );
+$assert( $nested instanceof WP_Post && '/notes/deep/' === wp_parse_url( get_permalink( $nested->ID ), PHP_URL_PATH ), 'Nested documents are committed at their own nested permalink and need no native rule.' );
 $assert( ! isset( $scope['rules']['/index.html'] ) && ! isset( $scope['rules']['/notes/deep/index.html'] ) && ! isset( $scope['rules']['/tag/topic/page/1/index.html'] ), 'Capture index filenames do not create public aliases.' );
 $assert( ! is_file( get_stylesheet_directory() . '/portable-source-routes.php' ) && ! is_file( get_stylesheet_directory() . '/ssi-runtime/includes/source-route-redirect.php' ), 'Generated themes contain no source-route runtime.' );
 $again = $import( $request, 'admin' );
@@ -108,7 +112,7 @@ $receipt = array(
 );
 // Keep the full committed document inventory during fault injection, so a
 // retried failed deletion has not already replayed unrelated retirement rows.
-foreach ( array( 'website/index.html', 'website/notes/deep/index.html', 'website/tag/topic/page/1/index.html' ) as $source_path ) {
+foreach ( array( 'website/index.html', 'website/notes/deep/index.html' ) as $source_path ) {
 	$source_posts = get_posts( array(
 		'post_type'   => 'page',
 		'meta_key'    => Static_Site_Importer_Source_Route::META_KEY,
@@ -126,6 +130,10 @@ $temporary = Static_Site_Importer_Redirection_Materializer::materialize(
 		'source_route_aliases' => array(
 			array(
 				'from' => 'old',
+				'to'   => 'destination.html',
+			),
+			array(
+				'from' => 'blogi/ik%C3%A4ihmisen',
 				'to'   => 'destination.html',
 			),
 			array(
@@ -296,11 +304,12 @@ $check_routes = static function () use ( $assert, $scope_name ): void {
 		$native = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'redirect', array( 'filterBy' => array( 'id' => (string) $rule['id'] ) ) );
 		$target = $native['items'][0]['action_data']['url'] ?? null;
 		foreach ( array( 'GET', 'HEAD' ) as $method ) {
+			// Request the path as a browser sends it: percent-encoded.
 			$origin   = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
 			$origin   = $origin ? $origin : home_url();
 			$host     = wp_parse_url( home_url(), PHP_URL_HOST );
 			$port     = wp_parse_url( home_url(), PHP_URL_PORT );
-			$response = wp_remote_request( $origin . $from, array(
+			$response = wp_remote_request( $origin . implode( '/', array_map( 'rawurlencode', explode( '/', $from ) ) ), array(
 				'method'      => $method,
 				'redirection' => 0,
 				'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),

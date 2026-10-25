@@ -66,4 +66,16 @@ $clean_receipt['plan']['pages'][2]['route']['path'] = '/notes/deep/';
 $clean_receipt['plan']['pages'][2]['whole_page_candidates'] = array( array( 'provider' => 'test' ) );
 $assert( Static_Site_Importer_Redirection_Materializer::has_intent( $clean_receipt['plan'], array() ), 'Whole-page candidates retain provider route intent.' );
 $assert( Static_Site_Importer_Redirection_Materializer::has_intent( array( 'pages' => $clean_pages ), array( 'source_route_aliases' => array( '/old' => 'website/about/index.html' ) ) ), 'Explicit aliases retain route intent.' );
+// Redirection stores sources after rawurldecode; encoded routes are
+// canonicalized once, where the rules are built, so one decoded rule owns the
+// encoded request (#2384).
+$GLOBALS['permalinks'][2] = 'https://native.test/ikaihmisen-ravitsemus/';
+$encoded_flat = array(
+	array( 'source_path' => 'website/blogi/categories/ik%C3%A4ihmisen-ravitsemus.html', 'route' => array( 'path' => '/blogi/categories/ik%C3%A4ihmisen-ravitsemus.html' ) ),
+);
+$encoded_receipt = array( 'plan' => array( 'pages' => $encoded_flat ), 'completed' => array( 'pages' => array( 'website/blogi/categories/ik%C3%A4ihmisen-ravitsemus.html' => 2 ) ) );
+$assert( array( '/blogi/categories/ikäihmisen-ravitsemus.html' => 'https://native.test/ikaihmisen-ravitsemus/' ) === Static_Site_Importer_Redirection_Materializer::routes( $encoded_receipt, array() ), 'Encoded declared and served routes collapse into one decoded rule.' );
+$alias_receipt = array( 'plan' => array( 'pages' => array( $pages[0] ) ), 'completed' => array( 'pages' => array( 'website/index.html' => 1 ) ) );
+$encoded_alias_routes = Static_Site_Importer_Redirection_Materializer::routes( $alias_receipt, array( 'source_route_aliases' => array( array( 'from' => 'blogi/categories/ik%C3%A4ihmisen-ravitsemus', 'to' => 'index.html' ) ) ) );
+$assert( array( '/blogi/categories/ikäihmisen-ravitsemus' => 'https://native.test/' ) === $encoded_alias_routes, 'A percent-encoded alias binds in the provider canonical decoded form.' );
 echo "Redirection source route contract passed.\n";
