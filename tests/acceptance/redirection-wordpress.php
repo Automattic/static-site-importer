@@ -133,6 +133,10 @@ $temporary = Static_Site_Importer_Redirection_Materializer::materialize(
 				'to'   => 'destination.html',
 			),
 			array(
+				'from' => 'blogi/ik%C3%A4ihmisen',
+				'to'   => 'destination.html',
+			),
+			array(
 				'from' => 'temporary',
 				'to'   => 'destination.html',
 			),
