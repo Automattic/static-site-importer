@@ -759,8 +759,9 @@ function static_site_importer_rest_validate_static_html_sources( array $files ) 
 				'static_site_importer_client_rendered_app_shell',
 				__( 'This source appears to be a JavaScript-rendered application shell. Static Site Importer can import server-rendered HTML, but this source needs a browser-rendered capture before it can produce WordPress blocks.', 'static-site-importer' ),
 				array(
-					'status'     => 422,
-					'diagnostic' => $diagnostic,
+					'status'      => 422,
+					'source_path' => $path,
+					'diagnostic'  => $diagnostic,
 				)
 			);
 		}

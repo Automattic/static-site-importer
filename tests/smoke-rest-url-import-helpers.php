@@ -87,6 +87,7 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 	}
 }
 
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 
 $assert( 'website/export/index.html' === static_site_importer_rest_entrypoint( array( array( 'path' => 'website/export/about.html' ), array( 'path' => 'website/export/index.html' ) ), true ), 'nested-zip-index-precedes-alphabetical-document' );

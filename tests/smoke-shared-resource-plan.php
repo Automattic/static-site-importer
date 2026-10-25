@@ -7,6 +7,7 @@ function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value
 function sanitize_file_name( string $name ): string { return preg_replace( '/[^A-Za-z0-9._-]+/', '-', $name ) ?? ''; }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-run.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-shared-resource-plan.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';

@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
+require_once __DIR__ . '/fixtures/core-html-api.php';
+
 $assertions = 0;
 $failures   = array();
 
@@ -190,6 +192,9 @@ $client_shell_html = '<!doctype html><html><head><title>App</title>' . str_repea
 $client_shell_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $client_shell_html );
 $assert( 'client_rendered_app_shell' === ( $client_shell_diagnostic['type'] ?? '' ), 'client-rendered-shell-diagnostic-detected' );
 $assert( 'browser_rendered_capture_required' === ( $client_shell_diagnostic['repair_bucket'] ?? '' ), 'client-rendered-shell-repair-bucket' );
+$reduced_capture_html = '<!doctype html><html><head><script type="application/ld+json">{}</script><script>1</script><script>2</script></head><body><div id="app"><button data-x="<span><!-- icon --></span>">Menu</button><main><h1>Server-rendered heading</h1><p>' . str_repeat( 'Visible body text. ', 30 ) . '</p></main></div></body></html>';
+$reduced_capture_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $reduced_capture_html );
+$assert( array() === $reduced_capture_diagnostic, 'attribute-comment-does-not-truncate-visible-page-text' );
 
 $server_rendered_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( '<!doctype html><html><head><title>Server</title></head><body><main><h1>Server rendered</h1><p>' . str_repeat( 'Useful page content. ', 80 ) . '</p></main><script src="/tracking.js"></script></body></html>' );
 $assert( array() === $server_rendered_diagnostic, 'server-rendered-html-not-flagged-as-client-shell' );
