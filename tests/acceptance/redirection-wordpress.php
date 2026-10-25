@@ -304,11 +304,11 @@ $check_routes = static function () use ( $assert, $scope_name ): void {
 		$native = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'redirect', array( 'filterBy' => array( 'id' => (string) $rule['id'] ) ) );
 		$target = $native['items'][0]['action_data']['url'] ?? null;
 		foreach ( array( 'GET', 'HEAD' ) as $method ) {
+			// Request the path as a browser sends it: percent-encoded.
 			$origin   = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
 			$origin   = $origin ? $origin : home_url();
 			$host     = wp_parse_url( home_url(), PHP_URL_HOST );
 			$port     = wp_parse_url( home_url(), PHP_URL_PORT );
-			// Request the path as a browser sends it: percent-encoded.
 			$response = wp_remote_request( $origin . implode( '/', array_map( 'rawurlencode', explode( '/', $from ) ) ), array(
 				'method'      => $method,
 				'redirection' => 0,
