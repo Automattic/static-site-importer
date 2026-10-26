@@ -322,21 +322,13 @@ class Static_Site_Importer_Form_Seeder {
 		// so the group keeps the source form's layout around its children.
 		// The source form's classes live on that group, so the provider block
 		// carries only the layout scope.
-		$root                    = Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state );
-		$attrs                   = $root['attrs'];
+		$root                    = self::form_root_as_group( Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state ) );
 		$form_attrs              = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
 		$form_attrs['className'] = $state->scope;
-		unset( $attrs['tagName'] );
-		$block = array(
+		$block                   = array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
-			'innerBlocks' => array(
-				array(
-					'name'        => 'core/group',
-					'attrs'       => $attrs,
-					'innerBlocks' => $root['innerBlocks'],
-				),
-			),
+			'innerBlocks' => array( $root ),
 		);
 
 		// No wrapper/layout facts enter the overlay. Its presentation destinations
@@ -400,6 +392,33 @@ class Static_Site_Importer_Form_Seeder {
 		$receipt['status'] = 'applied';
 		$state->layout     = array( 'receipt' => $receipt );
 		return Static_Site_Importer_Form_Mapping_Plan::prepared( $state->form, $state->field_blocks, $block, null, self::mapped_report_row( $state, $available, $maps['target'], $overlay, array() ) );
+	}
+
+	/**
+	 * The source form's group as a `div` inside the provider's form.
+	 *
+	 * The producer saved the group with its own markup: its frame (padding,
+	 * border, radius, paint) and its layout classes. Only the element changes,
+	 * since the provider renders the one `form`; everything else stays the
+	 * markup the producer saved.
+	 *
+	 * @param array<string,mixed> $root Substituted readable root block.
+	 * @return array<string,mixed>
+	 */
+	private static function form_root_as_group( array $root ): array {
+		if ( 'form' !== ( $root['attrs']['tagName'] ?? '' ) ) {
+			return $root;
+		}
+		unset( $root['attrs']['tagName'] );
+		$slots = array_keys( array_filter( $root['innerContent'], 'is_string' ) );
+		if ( array() !== $slots ) {
+			$first                          = reset( $slots );
+			$last                           = end( $slots );
+			$root['innerContent'][ $first ] = (string) preg_replace( '/^(\s*)<form\b/i', '$1<div', $root['innerContent'][ $first ], 1 );
+			$root['innerContent'][ $last ]  = (string) preg_replace( '/<\/form>(\s*)$/i', '</div>$1', $root['innerContent'][ $last ], 1 );
+		}
+		$root['innerHTML'] = implode( '', array_filter( $root['innerContent'], 'is_string' ) );
+		return $root;
 	}
 
 	/** Normalize the producer form and release the controls the provider will map. */
