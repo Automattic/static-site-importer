@@ -721,6 +721,38 @@ $before_conflict_inserts = $GLOBALS['ssi_plan_insert_calls'];
 $archive_conflict = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $recategorized_plan, array( 'slug' => 'taxonomy-archive-owner-conflict' ) );
 $assert( 'rejected' === ( $archive_conflict['status'] ?? '' ) && 'taxonomy_archive_route_conflict' === ( $archive_conflict['receipt']['diagnostics'][0]['reason_code'] ?? '' ) && $before_conflict_inserts === $GLOBALS['ssi_plan_insert_calls'], 'A destination-owned page route blocks archive takeover before post writes.' );
 unset( $GLOBALS['ssi_plan_posts'][ 99001 ] );
+// Current plans carry no page for a native archive document; the entity alone
+// drives conflict checks and retirement of a page left by an earlier import.
+$plan_page_sources = array_column( $recategorized_plan['pages'] ?? array(), 'source_path' );
+$assert( ! in_array( 'archives/personal.html', $plan_page_sources, true ) && 'archives/personal.html' === ( array_column( $recategorized_plan['taxonomy_entities'], null, 'slug' )['personal']['archive']['source_path'] ?? '' ), 'The pinned producer emits the archive as a taxonomy entity without a plan page.' );
+$earlier_archive_identity = WordPressSitePlan::identity( 'page', 'archives/personal.html', '/writing/category/personal' );
+$GLOBALS['ssi_plan_posts'][ 99002 ] = array( 'post_type' => 'page', 'post_name' => 'writing/category/personal', 'post_status' => 'publish' );
+$GLOBALS['ssi_plan_meta'][ 99002 ] = array( '_static_site_importer_reconciliation_identity' => $earlier_archive_identity, '_blocks_engine_reconciliation_identity' => $earlier_archive_identity );
+$retirement_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $recategorized_plan, array( 'slug' => 'taxonomy-archive-contract', 'overwrite' => true ) );
+$retirement_skips = array_values( array_filter( $retirement_receipt['skipped_targets'] ?? array(), static fn( $row ): bool => is_array( $row ) && 'native_taxonomy_archive' === ( $row['reason'] ?? '' ) && 'archives/personal.html' === ( $row['source_path'] ?? '' ) ) );
+$assert( 'completed' === ( $retirement_receipt['status'] ?? '' ) && 'draft' === get_post_status( 99002 ) && ! metadata_exists( 'post', 99002, '_static_site_importer_reconciliation_identity' ) && ! metadata_exists( 'post', 99002, '_blocks_engine_reconciliation_identity' ) && 1 === count( $retirement_skips ) && in_array( 99002, array_column( $retirement_receipt['wordpress'] ?? array(), 'id' ), true ), 'Re-import retires an earlier archive page found by entity identity to draft and records the native archive skip: ' . wp_json_encode( array( 'status' => $retirement_receipt['status'] ?? null, 'errors' => $retirement_receipt['errors'] ?? array(), 'skipped' => $retirement_receipt['skipped_targets'] ?? null, 'post' => $GLOBALS['ssi_plan_posts'][ 99002 ] ) ) );
+unset( $GLOBALS['ssi_plan_posts'][ 99002 ], $GLOBALS['ssi_plan_meta'][ 99002 ] );
+$author_source = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html' => '<main><h1>Author test</h1></main>',
+		array( 'path' => 'author/jane.html', 'content' => '<main><h1>Jane Doe</h1><article><h2><a href="/stories/jane-story">Jane story</a></h2></article></main>', 'metadata' => array( 'route_path' => '/author/jane' ) ),
+		array( 'path' => 'stories/jane-story.html', 'content' => '<article><h1>Jane story</h1><p>Body.</p><a href="/author/jane">Jane Doe</a></article>', 'metadata' => array( 'post_type' => 'post' ) ),
+	),
+);
+$author_plan = ( new ArtifactCompiler() )->compile( $author_source )->toArray()['source_reports']['wordpress_site_plan'];
+foreach ( array_merge( $author_plan['pages'] ?? array(), $author_plan['templates'] ?? array(), $author_plan['template_parts'] ?? array() ) as $author_document ) {
+	if ( is_array( $author_document ) ) {
+		$register_document_blocks( $block_runtime->parseBlocks( (string) ( $author_document['canonical_block_markup'] ?? '' ) ) );
+	}
+}
+$author_entity = $author_plan['author_entities'][0] ?? array();
+$assert( '/author/jane' === ( $author_entity['archive']['source_route'] ?? '' ) && ! in_array( (string) ( $author_entity['archive']['source_path'] ?? '' ), array_column( $author_plan['pages'] ?? array(), 'source_path' ), true ), 'The pinned producer emits the author archive as an entity without a plan page: ' . wp_json_encode( array( 'authors' => $author_plan['author_entities'] ?? null, 'pages' => array_column( $author_plan['pages'] ?? array(), 'source_path' ) ) ) );
+$GLOBALS['ssi_plan_posts'][ 99003 ] = array( 'post_type' => 'page', 'post_name' => 'author/jane', 'post_status' => 'publish' );
+$before_author_conflict_inserts = $GLOBALS['ssi_plan_insert_calls'];
+$author_conflict = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $author_plan, array( 'slug' => 'author-archive-owner-conflict' ) );
+$assert( 'rejected' === ( $author_conflict['status'] ?? '' ) && 'author_archive_route_conflict' === ( $author_conflict['receipt']['diagnostics'][0]['reason_code'] ?? '' ) && $before_author_conflict_inserts === $GLOBALS['ssi_plan_insert_calls'], 'A destination-owned page at an author archive route rejects the import before post writes: ' . wp_json_encode( $author_conflict['receipt']['diagnostics'] ?? $author_conflict ) );
+unset( $GLOBALS['ssi_plan_posts'][ 99003 ] );
 foreach ( array_diff( array_keys( $GLOBALS['ssi_plan_posts'] ), array_keys( $taxonomy_saved['posts'] ) ) as $created_id ) wp_delete_post( (int) $created_id, true );
 $GLOBALS['ssi_plan_posts'] = $taxonomy_saved['posts'];
 $GLOBALS['ssi_plan_meta'] = $taxonomy_saved['meta'];

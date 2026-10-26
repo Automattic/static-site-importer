@@ -532,7 +532,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
 				);
 			}
-			self::mark_taxonomy_archive_pages( $state );
+			self::mark_native_archive_routes( $state );
 			$pending_blocks = array();
 			if ( is_array( $args['theme_runtime_payload'] ?? null ) ) {
 				require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
@@ -581,7 +581,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
-		self::mark_taxonomy_archive_pages( $state );
+		self::mark_native_archive_routes( $state );
 		self::plan_synthetic_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
@@ -594,13 +594,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'duplicate_page_route' );
 			}
 			$pages_by_route[ $route ] = true;
+			// Native archive routes were claimed (and conflict-checked) from plan
+			// entities by mark_native_archive_routes().
 			if ( ! empty( $page['skip_materialization'] ) ) {
-				$archive_match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
-				$archive_conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
-				if ( $archive_conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $archive_conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) ) {
-					// ssi-error-class: integrity
-					throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
-				}
 				continue;
 			}
 
@@ -736,41 +732,93 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		}
 	}
 
-	/** Exclude producer-owned taxonomy archive source documents from page writes and page validation. */
-	private static function mark_taxonomy_archive_pages( array &$state ): void {
+	/**
+	 * Claim every native archive route the plan declares through its taxonomy
+	 * and author entities, before any post writes.
+	 *
+	 * WordPress serves taxonomy and author archives natively, so no page may
+	 * own those routes. Ownership is read from the entities, not plan pages:
+	 * current plans carry no page for an archive document, while older plans
+	 * still do and have that page excluded from writes here. A page left by an
+	 * earlier import (matched by the archive document's page reconciliation
+	 * identity) is queued for retirement to draft; any other page at the route
+	 * rejects the import unless it is an untouched default-content seed.
+	 *
+	 * @param array<string,mixed> $state Preparation state.
+	 * @throws InvalidArgumentException When an archive route is owned elsewhere or a plan page disagrees with its entity route.
+	 */
+	private static function mark_native_archive_routes( array &$state ): void {
+		$reasons = array(
+			'taxonomy' => 'native_taxonomy_archive',
+			'author'   => 'native_author_archive',
+		);
+
+		$state['skipped'] = array_values(
+			array_filter(
+				$state['skipped'] ?? array(),
+				static fn( $row ): bool => ! is_array( $row ) || ! in_array( $row['reason'] ?? null, $reasons, true )
+			)
+		);
+
+		$state['archive_page_retirements'] = array();
+
 		$archives = array();
-		foreach ( $state['resolved']['taxonomy_entities'] ?? array() as $entity ) {
-			if ( is_array( $entity ) && is_array( $entity['archive'] ?? null ) && is_string( $entity['archive']['source_path'] ?? null ) ) {
-				$archives[ $entity['archive']['source_path'] ] = (string) ( $entity['archive']['source_route'] ?? '' );
+		$sources  = array(
+			'taxonomy' => $state['resolved']['taxonomy_entities'] ?? $state['plan']['taxonomy_entities'] ?? array(),
+			'author'   => $state['resolved']['author_entities'] ?? $state['plan']['author_entities'] ?? array(),
+		);
+		foreach ( $sources as $kind => $entities ) {
+			foreach ( is_array( $entities ) ? $entities : array() as $entity ) {
+				if ( ! is_array( $entity ) || ! is_array( $entity['archive'] ?? null ) || ! is_string( $entity['archive']['source_path'] ?? null ) || '' === $entity['archive']['source_path'] || ! is_string( $entity['archive']['source_route'] ?? null ) ) {
+					continue;
+				}
+				$archives[ $entity['archive']['source_path'] ] = array(
+					'kind'  => $kind,
+					'route' => $entity['archive']['source_route'],
+				);
 			}
 		}
+		$plan_pages = array();
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			$source_path = (string) ( $page['source_path'] ?? '' );
-			if ( ! isset( $archives[ $source_path ] ) || ! empty( $page['skip_materialization'] ) ) {
+			if ( ! isset( $archives[ $source_path ] ) ) {
 				continue;
 			}
-			if ( ( $page['route']['path'] ?? null ) !== $archives[ $source_path ] ) {
+			if ( ( $page['route']['path'] ?? null ) !== $archives[ $source_path ]['route'] ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'taxonomy_archive_route_mismatch' );
 			}
-			$archive_match = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) ( $page['reconciliation_identity'] ?? '' ) );
-			$conflict      = get_page_by_path( trim( $archives[ $source_path ], '/' ), OBJECT, 'page' );
-			if ( $conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+			$page['skip_materialization'] = true;
+			$plan_pages[ $source_path ]   = (string) ( $page['reconciliation_identity'] ?? '' );
+		}
+		unset( $page );
+		foreach ( $archives as $source_path => $archive ) {
+			$route    = (string) $archive['route'];
+			$identity = $plan_pages[ $source_path ] ?? WordPressSitePlan::identity( 'page', (string) $source_path, $route );
+			$match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $identity );
+			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
+			if ( $conflict && ( ! $match || (int) $match->ID !== (int) $conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+				if ( 'author' === $archive['kind'] ) {
+					// ssi-error-class: integrity
+					throw new InvalidArgumentException( 'author_archive_route_conflict' );
+				}
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
 			}
-			if ( $archive_match ) {
-				$page['planned_existing_id'] = (int) $archive_match->ID;
-				$page['retire_archive_page'] = true;
+			if ( $match ) {
+				$state['archive_page_retirements'][] = array(
+					'kind'                    => $archive['kind'],
+					'planned_existing_id'     => (int) $match->ID,
+					'source_path'             => (string) $source_path,
+					'reconciliation_identity' => $identity,
+				);
 			}
-			$page['skip_materialization'] = true;
-			$state['skipped'][]           = array(
-				'source_path' => $source_path,
-				'route'       => $archives[ $source_path ],
-				'reason'      => 'native_taxonomy_archive',
+			$state['skipped'][] = array(
+				'source_path' => (string) $source_path,
+				'route'       => $route,
+				'reason'      => $reasons[ $archive['kind'] ],
 			);
 		}
-		unset( $page );
 	}
 
 	/**
