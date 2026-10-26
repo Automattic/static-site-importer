@@ -82,6 +82,7 @@ namespace {
 	 * - `field_list`: a source field list that wraps the fields but not the submit.
 	 * - `native_form`: a page-grid form whose flex column the provider form keeps
 	 *   natively.
+	 * - `checkbox_row`: a flex row holding a checkbox and its sibling label.
 	 * - `country`: a phone field with a source country-picker trigger.
 	 */
 	$sources = array(
@@ -130,6 +131,8 @@ namespace {
 			. '<div><label for="msg" class="block mb-2 text-sm">Message</label><textarea id="msg" name="msg" rows="4" class="w-full px-4 py-3 border"></textarea></div>'
 			. '<button type="submit" class="btn">Send</button>'
 			. '</form></main>',
+		'checkbox_row' => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.consent{display:flex;align-items:flex-start;gap:8px}.consent input{margin:0;width:16px;height:16px}</style>'
+			. '<main><form><div class="consent"><input type="checkbox" id="news" name="news"><label for="news">Send me news</label></div><button type="submit">Send</button></form></main>',
 		'country'     => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.sourcegroup{display:flex;align-items:center;gap:8px}.globe{width:24px}.chevron{width:16px}.ph{display:flex;align-items:center;border:1px solid #999;background:#fff}.ph button{position:relative;flex-shrink:0;padding:6px 10px;border:0;background:#fafafa}.ph input{flex:1;border:0;padding:8px}</style>'
 			. '<main><form><div class="ph"><button type="button" aria-haspopup="listbox" aria-label="Phone country selector"><span class="sourcegroup"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></span></button><input type="tel" name="phone"></div><button type="submit">Send</button></form></main>',
 	);
@@ -447,6 +450,8 @@ namespace {
 				$part = 'field_list';
 			} elseif ( preg_match( '/^field-[0-9]+$/D', $node ) ) {
 				$part = 'field';
+			} elseif ( preg_match( '/^checkbox-[0-9]+$/D', $node ) ) {
+				$part = 'checkbox_layout';
 			} elseif ( str_ends_with( $selector, ' > .wp-block-button__link' ) ) {
 				$part = 'submit_link_box';
 			} elseif ( preg_match( '/ \.ssi-node-[a-f0-9]{12}-wrap$/D', $selector ) ) {

@@ -742,6 +742,9 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'textarea_rows' => true,
 			),
 			'checkbox_control'          => array(),
+			// The editor renders the single checkbox and its label inside the
+			// option block, the field block's child, instead of a choice wrap.
+			'checkbox_layout'           => array( 'retarget' => array( '-wrap .contact-form__checkbox-wrap', ' > .wp-block-jetpack-option' ) ),
 			'sibling_stacked'           => array( 'placeholder' => $placeholder ),
 			'control_container'         => array(),
 			// The submit button.

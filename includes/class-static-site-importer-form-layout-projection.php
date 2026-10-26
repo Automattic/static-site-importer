@@ -92,6 +92,64 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		'phone_popup_targets'          => array(),
 	);
 
+	/** Project a proven two-item checkbox/label flex container onto the provider's choice wrap. */
+	public static function checkbox_label_layout_targets( array $form ): array {
+		$graph   = $form['layout_graph'] ?? array();
+		$targets = array();
+		if ( 'generic/computed-layout-graph/v3' !== ( $graph['schema'] ?? null ) || ! empty( $graph['truncated'] ) ) {
+			return $targets;
+		}
+		$nodes = array_column( $graph['nodes'] ?? array(), null, 'id' );
+		foreach ( $nodes as $label ) {
+			if ( 'label' !== ( $label['kind'] ?? null ) ) {
+				continue;
+			}
+			$control = $nodes[ $label['for_control'] ?? '' ] ?? array();
+			$parent  = $label['parent'] ?? '';
+			$wrapper = $nodes[ $parent ] ?? array();
+			$layout  = $wrapper['layout'] ?? array();
+			$index   = (int) substr( $control['id'] ?? '', 8 );
+			if ( 'control' !== ( $control['kind'] ?? null ) || 'checkbox' !== ( $form['controls'][ $index ]['type'] ?? null ) || ! empty( $form['controls'][ $index ]['options'] ) || ( $control['parent'] ?? null ) !== $parent || 2 !== ( $wrapper['in_flow_children'] ?? null ) || ! in_array( $layout['display'] ?? '', array( 'flex', 'inline-flex' ), true ) ) {
+				continue;
+			}
+			$children = array_filter( $nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === $parent );
+			if ( 2 !== count( $children ) || ! is_int( $control['order'] ?? null ) || ! is_int( $label['order'] ?? null ) || $label['order'] === $control['order'] ) {
+				continue;
+			}
+			$in_flow = true;
+			foreach ( array( $control, $label ) as $item ) {
+				$item_layout = $item['layout'] ?? array();
+				if ( 'none' === ( $item_layout['display'] ?? '' ) || in_array( $item_layout['position'] ?? '', array( 'absolute', 'fixed' ), true ) || ! empty( $item_layout['order'] ) ) {
+					$in_flow = false;
+				}
+			}
+			$gaps = self::source_gaps( $layout );
+			if ( ! $in_flow || null === $gaps || ( null === $gaps['row'] && null === $gaps['column'] ) ) {
+				continue;
+			}
+			$direction = $layout['direction'] ?? 'row';
+			if ( $label['order'] < $control['order'] ) {
+				$direction = str_ends_with( $direction, '-reverse' ) ? substr( $direction, 0, -8 ) : $direction . '-reverse';
+			}
+			$patch = array(
+				'display'     => 'flex',
+				'direction'   => $direction,
+				'align_items' => $layout['align_items'] ?? 'stretch',
+			);
+			foreach ( array( 'gap', 'row_gap', 'column_gap', 'align_items', 'justify_content' ) as $property ) {
+				if ( isset( $layout[ $property ] ) ) {
+					$patch[ $property ] = $layout[ $property ];
+				}
+			}
+			$targets[] = array(
+				'control' => $index,
+				'target'  => 'checkbox-' . $index,
+				'layout'  => $patch,
+			);
+		}
+		return $targets;
+	}
+
 	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
 	public static function direct_label_control_gap_targets( array $form ): array {
 		$relations = $form['sibling_relations'] ?? null;
@@ -3645,7 +3703,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			$id = $node['id'];
-			if ( 'form' !== $id && 'form-box' !== $id && 'field-list' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field)-[0-9]+$/D', $id ) ) {
+			if ( 'form' !== $id && 'form-box' !== $id && 'field-list' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field|checkbox)-[0-9]+$/D', $id ) ) {
 				continue;
 			}
 			if ( 'form-box' === $id ) {
@@ -3680,6 +3738,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			} elseif ( preg_match( '/^field-([0-9]+)$/D', $id, $matches ) ) {
 				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
 				$part         = 'field';
+				$capabilities = Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES;
+			} elseif ( preg_match( '/^checkbox-([0-9]+)$/D', $id, $matches ) ) {
+				// The provider nests a single checkbox and its label in a choice wrap
+				// inside the field wrapper; a source checkbox/label row lays out there.
+				// A retained source wrapper (`.ssi-field-row`) can sit between the two,
+				// and the field wrapper holds exactly one choice wrap, so descend.
+				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap .contact-form__checkbox-wrap';
+				$part         = 'checkbox_layout';
 				$capabilities = Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES;
 			} else {
 				$hook = $box_targets[ $id ] ?? self::layout_node_class( $scope, $id );

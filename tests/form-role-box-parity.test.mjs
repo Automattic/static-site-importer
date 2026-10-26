@@ -63,6 +63,7 @@ const PAIRS = {
 	control_container: { form: 'controls', origin: 'control-4', front: `${ FIELD( 4 ) } textarea`, editor: '[data-type="jetpack/field-textarea"]' },
 	checkbox_control: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } input[type="checkbox"]`, editor: 'input.jetpack-field-option__checkbox' },
 	choice_label: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } label.grunion-field-label`, editor: '.jetpack-field-option__label-wrapper > .rich-text' },
+	checkbox_layout: { form: 'checkbox_row', origin: 'checkbox-0', front: `${ FIELD( 0 ) } .contact-form__checkbox-wrap`, editor: '[data-type="jetpack/field-checkbox"] > [data-type="jetpack/option"]' },
 	choice_label_box: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } .contact-form__checkbox-wrap`, editor: '[data-type="jetpack/field-checkbox"] .jetpack-field-option__label-wrapper > .rich-text', editorBox: '[data-type="jetpack/field-checkbox"] > [data-type="jetpack/option"]' },
 	label: { form: 'controls', origin: 'control-0', front: `${ FIELD( 0 ) } label.grunion-field-label`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/label"] > label', editorBox: '[data-type="jetpack/field-text"] [data-type="jetpack/label"]' },
 	wrapping_label_reset: { form: 'controls', origin: 'control-6', front: `${ FIELD( 6 ) } legend.grunion-field-label`, editor: '[data-type="jetpack/field-radio"] [data-type="jetpack/label"] > label', editorBox: '[data-type="jetpack/field-radio"] [data-type="jetpack/label"]', margins: true },
@@ -87,6 +88,7 @@ const TODO = {
 	checkbox_control: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	choice_label: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	choice_label_box: 'https://github.com/Automattic/static-site-importer/issues/2172',
+	checkbox_layout: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	label: 'https://github.com/Automattic/static-site-importer/issues/2173',
 	required_marker: 'https://github.com/Automattic/static-site-importer/issues/2173',
 };

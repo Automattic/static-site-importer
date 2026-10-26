@@ -110,6 +110,7 @@ function ssi_editor_parts_graph(): array {
 			array( 'id' => 'form-box' ),
 			array( 'id' => 'field-list' ),
 			array( 'id' => 'field-0' ),
+			array( 'id' => 'checkbox-0' ),
 			array( 'id' => 'control-0' ),
 			array( 'id' => 'control-1' ),
 			array( 'id' => 'wrapper-0' ),
