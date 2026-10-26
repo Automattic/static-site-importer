@@ -309,6 +309,18 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
+		// Substituted choice groups paint their options and lay out their option list.
+		$choices                         = Static_Site_Importer_Form_Readable_Substitution::choice_presentation( $state, $presentation_form['presentation_graph'] );
+		$state->presentation_descriptors = array_replace( $state->presentation_descriptors, $choices['descriptors'] );
+		$presentation_form['presentation_graph']['controls']           = array_merge(
+			array_values( array_filter( $presentation_form['presentation_graph']['controls'], static fn( array $control ): bool => ! isset( $choices['descriptors'][ $control['index'] ] ) ) ),
+			$choices['controls']
+		);
+		$presentation_form['presentation_graph']['variants']           = array_merge( $presentation_form['presentation_graph']['variants'] ?? array(), $choices['variants'] );
+		$presentation_form['presentation_graph']['control_containers'] = array_merge(
+			array_values( array_filter( $presentation_form['presentation_graph']['control_containers'] ?? array(), static fn( array $container ): bool => ! isset( $choices['descriptors'][ $container['index'] ] ) ) ),
+			$choices['control_containers']
+		);
 		$maps    = self::target_maps( $state, $presentation_form );
 		$overlay = Static_Site_Importer_Form_Presentation::collapse_inactive_field_errors(
 			// Core's editor does not run the server-side source-class transfer hook,

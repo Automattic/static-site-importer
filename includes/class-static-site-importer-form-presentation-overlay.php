@@ -151,12 +151,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				'destinations' => array(),
 			);
 			foreach ( $destinations as $destination ) {
-				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'checked', 'properties', 'aliases', 'resets', 'priority' ) ) || ( isset( $destination['checked'] ) && ( ! is_string( $destination['checked'] ) || ! self::safe_selector( $destination['checked'], $map['scope'] ) ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
 				}
 				$clean['destinations'][] = array_filter( array(
 					'role'       => $destination['role'],
 					'selector'   => $destination['selector'],
+					'checked'    => $destination['checked'] ?? null,
 					'properties' => array_values( array_unique( $destination['properties'] ) ),
 					'aliases'    => empty( $destination['aliases'] ) ? null : $destination['aliases'],
 					'resets'     => empty( $destination['resets'] ) ? null : $destination['resets'],
@@ -807,7 +808,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| \.contact-form__checkbox-wrap| > \.wp-block-jetpack-option| > label| > input\.jetpack-field-option__checkbox| > div\.jetpack-field__control > \.wp-block-jetpack-label| select)?| \.ssi-source-choice-label--ssi-node-[a-f0-9]{12}(?: > \.jetpack-field-option__label-wrapper > \.rich-text)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > (?:label|\.ssi-node-[a-f0-9]{12})| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?|:has\(> input:checked\)| > \.grunion-label-required| \.contact-form__checkbox-wrap| > \.wp-block-jetpack-option| > label| > input\.jetpack-field-option__checkbox| > div\.jetpack-field__control > \.wp-block-jetpack-label| select)?| \.ssi-source-choice-label--ssi-node-[a-f0-9]{12}(?: > \.jetpack-field-option__label-wrapper > \.rich-text)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > (?:label|\.ssi-node-[a-f0-9]{12})| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -885,6 +886,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( str_ends_with( $selector, ' select' ) ) {
 			return self::safe_selector( substr( $selector, 0, -strlen( ' select' ) ), $scope );
 		}
+		// A choice option while its own input is checked.
+		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}:has\(> input:checked\)$/D', $selector ) ) {
+			return true;
+		}
 		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}::placeholder$/D', $selector ) ) {
 			return true;
 		}
@@ -927,6 +932,12 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
 			return false;
+		}
+		if ( 'state' === ( $condition['kind'] ?? null ) ) {
+			return array(
+				'kind'  => 'state',
+				'state' => 'checked',
+			) === $condition;
 		}
 		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
 			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^' . self::MEDIA_FEATURE_QUERY . '$/D', $condition['query'] );
@@ -1126,7 +1137,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	/** Adapter maps may select only these captured presentation properties. */
 	public static function presentation_property_map(): array {
 		$keys = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'inset', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width', 'flex_shrink', 'position', 'transform' );
-		$keys = array_merge( $keys, array( 'font', 'align_items', 'flex_direction', 'gap', 'justify_content' ) );
+		$keys = array_merge( $keys, array( 'font', 'align_items', 'flex_direction', 'flex_wrap', 'gap', 'justify_content' ) );
 		$keys = array_merge( $keys, array( 'align_self', 'justify_self', 'top', 'right', 'bottom', 'left' ) );
 		$keys = array_merge( $keys, array( 'flex', 'flex_basis', 'flex_grow', 'margin_block', 'margin_inline', 'order', 'z_index' ) );
 		// A source can author vertical/horizontal padding through the same two-value
@@ -1249,9 +1260,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
 	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
+		$state       = 'state' === ( $condition['kind'] ?? null );
 		// The provider adds a flex item around the source button. Its percentage
 		// width must resolve against a full row, not a shrink-to-fit label box.
-		if ( isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
+		if ( ! $state && isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
 			$basis = '100%' === $styles['width'] ? '100%' : 'auto';
 			foreach ( $destinations as $destination ) {
 				$suffix = ' > .wp-block-button__link';
@@ -1264,6 +1276,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		}
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
+			// A state patch paints only the destinations that state a selector for it.
+			if ( $state ) {
+				if ( ! isset( $destination['checked'] ) ) {
+					continue;
+				}
+				$destination['selector'] = $destination['checked'];
+			}
 			$emit_styles = $styles;
 			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
 				$emit_styles = array_diff_key( $styles, array_flip( array( 'position', 'inset', 'top', 'right', 'bottom', 'left' ) ) );
@@ -1297,8 +1316,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
 			}
 			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
-			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
-			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
+			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
+			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
 		}
 		// A captured property outside every ordinary destination's own vocabulary
 		// (see `positioned_control_only_presentation_property_keys()`) is not a

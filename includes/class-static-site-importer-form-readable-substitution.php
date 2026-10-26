@@ -224,28 +224,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	/** Preserve saved wrapper fragments, changing only their child slots. */
 	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
 		if ( isset( $block['form_choice_group_index'] ) ) {
-			$choice                      = $state->form['choice_groups'][ $block['form_choice_group_index'] ];
-			$options                     = array_map(
-				static fn( array $option ): array => array(
-					'label' => $option['label'],
-					'value' => $option['source_value'] ?? $option['label'],
-				),
-				$choice['choices']
-			);
-			$multiple                    = 'multiple' === ( $choice['group']['selection_mode'] ?? $choice['group']['mode'] ?? '' )
-				|| 1 < count( array_filter( $choice['observed_transition']['selected'] ?? array(), static fn( mixed $selected ): bool => true === $selected ) );
-			$field                       = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
-				'input',
-				$multiple ? 'checkbox' : 'radio',
-				array(
-					'label'   => $choice['group']['label'] ?? '',
-					'options' => $options,
-				)
-			);
-			$token                       = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $options );
-			$field['attrs']['className'] = trim( 'is-style-button ' . $token );
-			$state->mapped_types[]       = $field['name'];
-			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
+			return self::choice_field( $block, $state );
 		}
 		if ( isset( $block['form_control_index'] ) ) {
 			$index = $block['form_control_index'];
@@ -289,6 +268,302 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * A captured choice group as the provider's choice field.
+	 *
+	 * The field is the group: a fieldset framing the group names it with its
+	 * legend, and the choice the source shows selected is the field's default.
+	 * Each option keeps a hook for its source choice's presentation, and the
+	 * option list one for the source row that laid the choices out
+	 * (choice_presentation()).
+	 *
+	 * @param array<string,mixed> $block Readable block indexed as the choice group.
+	 * @return array<string,mixed>
+	 */
+	private static function choice_field( array $block, Static_Site_Importer_Form_Plan_State $state ): array {
+		$choice   = $state->form['choice_groups'][ $block['form_choice_group_index'] ];
+		$options  = array_map(
+			static fn( array $option ): array => array(
+				'label' => $option['label'],
+				'value' => $option['source_value'] ?? $option['label'],
+			),
+			$choice['choices']
+		);
+		$selected = $choice['observed_transition']['selected'] ?? array();
+		$multiple = 'multiple' === ( $choice['group']['selection_mode'] ?? $choice['group']['mode'] ?? '' )
+			|| 1 < count( array_filter( is_array( $selected ) ? $selected : array(), static fn( mixed $value ): bool => true === $value ) );
+		$label    = is_string( $choice['group']['label'] ?? null ) ? trim( $choice['group']['label'] ) : '';
+		if ( '' === $label && 'group' === ( $block['form_field']['kind'] ?? null ) && is_string( $block['form_field']['label'] ?? null ) ) {
+			$label = trim( html_entity_decode( wp_strip_all_tags( $block['form_field']['label'] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+		}
+		$field                       = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+			'input',
+			$multiple ? 'checkbox' : 'radio',
+			array(
+				'label'   => $label,
+				'options' => $options,
+			)
+		);
+		$token                       = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $options );
+		$field['attrs']['className'] = trim( 'is-style-button ' . $token );
+		$selected_index              = $choice['observed_transition']['selected_index'] ?? null;
+		if ( ! $multiple && is_int( $selected_index ) && isset( $options[ $selected_index ] ) ) {
+			$field['attrs']['defaultValue'] = $options[ $selected_index ]['label'];
+		}
+		$controls = self::control_indices( $block );
+		if ( count( $controls ) === count( $options ) ) {
+			$row = self::choice_row( $state->form, $controls );
+			foreach ( $field['innerBlocks'] as &$inner ) {
+				if ( 'jetpack/options' !== $inner['name'] ) {
+					continue;
+				}
+				if ( null !== $row ) {
+					$inner['attrs']['className'] = Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, $row );
+				}
+				foreach ( $inner['innerBlocks'] as $position => &$option ) {
+					$option['attrs']['className'] = Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $controls[ $position ] );
+				}
+				unset( $option );
+			}
+			unset( $inner );
+			$state->choice_groups[] = array(
+				'controls' => $controls,
+				'row'      => $row,
+				'selected' => is_array( $selected ) ? array_values( $selected ) : array(),
+			);
+		}
+		$state->mapped_types[] = $field['name'];
+		return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
+	}
+
+	/**
+	 * The presentation of each substituted choice group, on the provider's options.
+	 *
+	 * Each source choice paints its own option, and the source row that laid the
+	 * choices out lays out the option list. The source shows one selection; a
+	 * choice's paint is a state when every choice the source shows unselected
+	 * paints alike, and so does every selected one. Every option then takes the
+	 * unselected paint, and the checked option the selected paint's difference.
+	 *
+	 * @param array<string,mixed> $graph Producer presentation graph.
+	 * @return array{descriptors:array<int,array<string,mixed>>,controls:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>,control_containers:array<int,array<string,mixed>>}
+	 */
+	public static function choice_presentation( Static_Site_Importer_Form_Plan_State $state, array $graph ): array {
+		$out  = array(
+			'descriptors'        => array(),
+			'controls'           => array(),
+			'variants'           => array(),
+			'control_containers' => array(),
+		);
+		$rows = array();
+		foreach ( $graph['controls'] ?? array() as $row ) {
+			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) ) {
+				$rows[ $row['index'] ] = $row;
+			}
+		}
+		$nodes = array();
+		foreach ( $state->form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$nodes[ $node['id'] ] = $node;
+			}
+		}
+		foreach ( $state->choice_groups as $group ) {
+			$list = self::choice_row_presentation( $state, $nodes[ $group['row'] ?? '' ]['layout'] ?? null, $group['row'] ?? '' );
+			if ( null !== $list ) {
+				$out['control_containers'][]                 = array(
+					'index'  => $group['controls'][0],
+					'styles' => $list['styles'],
+				);
+				$out['descriptors'][ $group['controls'][0] ] = array(
+					'has_presentation'   => true,
+					'control_class'      => '',
+					'label_class'        => '',
+					'phone_destinations' => array(),
+					'destinations'       => array( $list['destination'] ),
+				);
+			}
+			$painted = array_values( array_filter( $group['controls'], static fn( int $index ): bool => isset( $rows[ $index ] ) ) );
+			if ( count( $painted ) !== count( $group['controls'] ) ) {
+				continue;
+			}
+			// A source button sizes its box with its border (the browser default the
+			// capture does not restate); the provider option is a label, sized by content.
+			foreach ( $group['controls'] as $index ) {
+				if ( 'button' === ( $state->form['controls'][ $index ]['tag'] ?? null ) ) {
+					$rows[ $index ]['control']['styles'] += array( 'box_sizing' => 'border-box' );
+				}
+			}
+			$state_paint = self::selection_paint( $group, $rows );
+			foreach ( $group['controls'] as $position => $index ) {
+				$hook        = '.' . $state->scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $index );
+				$destination = array(
+					'part'       => 'choice_option',
+					'role'       => 'control',
+					'selector'   => $hook,
+					'properties' => array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
+					'resets'     => array(),
+					'priority'   => 'important',
+					// The editor option is the option block, which carries the same class.
+					'editor'     => array( 'selector' => '{scope} .' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $index ) ),
+				);
+				$row = $rows[ $index ];
+				if ( null !== $state_paint ) {
+					$destination['checked']           = $hook . ':has(> input:checked)';
+					$destination['editor']['checked'] = true === ( $group['selected'][ $position ] ?? null );
+					$row['control']                   = $state_paint['unselected'];
+					if ( array() !== $state_paint['patch']['style_patch'] ) {
+						$out['variants'][] = array( 'index' => $index ) + $state_paint['patch'];
+					}
+				}
+				$out['controls'][]                              = $row;
+				$out['descriptors'][ $index ]                   = $out['descriptors'][ $index ] ?? array(
+					'has_presentation'   => true,
+					'control_class'      => '',
+					'label_class'        => '',
+					'phone_destinations' => array(),
+					'destinations'       => array(),
+				);
+				$out['descriptors'][ $index ]['destinations'][] = $destination;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The source row that laid out a choice group's choices, presented on the
+	 * provider's option list. The list is no flex box of its own, so the row
+	 * states the initial values its source flex box leaves implicit.
+	 *
+	 * @param mixed $layout The row's captured layout facts.
+	 * @return array{styles:array<string,string>,destination:array<string,mixed>}|null
+	 */
+	private static function choice_row_presentation( Static_Site_Importer_Form_Plan_State $state, mixed $layout, string $row_id ): ?array {
+		if ( ! is_array( $layout ) || 'flex' !== ( $layout['display'] ?? null ) ) {
+			return null;
+		}
+		$layout    += array(
+			'direction'   => 'row',
+			'wrap'        => 'nowrap',
+			'align_items' => 'stretch',
+		);
+		$styles     = array();
+		$properties = array(
+			'display'         => 'display',
+			'direction'       => 'flex_direction',
+			'wrap'            => 'flex_wrap',
+			'gap'             => 'gap',
+			'align_items'     => 'align_items',
+			'justify_content' => 'justify_content',
+		);
+		foreach ( $properties as $fact => $property ) {
+			if ( is_string( $layout[ $fact ] ?? null ) && '' !== $layout[ $fact ] ) {
+				$styles[ $property ] = $layout[ $fact ];
+			}
+		}
+		$hook = Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, $row_id );
+		return array(
+			'styles'      => $styles,
+			'destination' => array(
+				'part'       => 'choice_row',
+				'role'       => 'control_container',
+				'selector'   => '.' . $state->scope . ' .' . $hook,
+				'properties' => array_keys( $styles ),
+				'resets'     => array(),
+				'priority'   => 'important',
+				// The editor list is the options block, which carries the same class.
+				'editor'     => array( 'selector' => '{scope} .' . $hook ),
+			),
+		);
+	}
+
+	/**
+	 * A choice group's unselected paint, and the selected paint's difference
+	 * from it, when the source shows both and each state paints alike.
+	 *
+	 * @param array{controls:array<int,int>,selected:array<int,?bool>} $group Choice group.
+	 * @param array<int,array<string,mixed>>                           $rows  Presentation rows by control index.
+	 * @return array{unselected:array<string,mixed>,patch:array<string,mixed>}|null
+	 */
+	private static function selection_paint( array $group, array $rows ): ?array {
+		$states = array();
+		foreach ( $group['controls'] as $position => $index ) {
+			$selected = $group['selected'][ $position ] ?? null;
+			if ( ! is_bool( $selected ) ) {
+				return null;
+			}
+			$states[ (int) $selected ][] = $rows[ $index ]['control'];
+		}
+		if ( ! isset( $states[0], $states[1] ) ) {
+			return null;
+		}
+		foreach ( $states as $paints ) {
+			if ( count( array_unique( array_map( static fn( array $paint ): string => (string) wp_json_encode( $paint['styles'] ), $paints ) ) ) > 1 ) {
+				return null;
+			}
+		}
+		$unselected = $states[0][0];
+		$selected   = $states[1][0];
+		$patch      = array();
+		foreach ( $selected['styles'] as $property => $value ) {
+			if ( ( $unselected['styles'][ $property ] ?? null ) !== $value ) {
+				$patch[ $property ] = $value;
+			}
+		}
+		$changed = array_map( static fn( string $property ): string => str_replace( '_', '-', $property ), array_keys( $patch ) );
+		return array(
+			'unselected' => $unselected,
+			'patch'      => array(
+				'role'        => 'control',
+				'condition'   => array(
+					'kind'  => 'state',
+					'state' => 'checked',
+				),
+				'style_patch' => $patch,
+				'provenance'  => array_values(
+					array_filter(
+						array_map(
+							static fn( array $entry ): array => array( 'properties' => array_values( array_intersect( $entry['properties'] ?? array(), $changed ) ) ) + $entry,
+							$selected['provenance'] ?? array()
+						),
+						static fn( array $entry ): bool => array() !== $entry['properties']
+					)
+				),
+			),
+		);
+	}
+
+	/**
+	 * The source controls a readable subtree holds, in source order.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 * @return array<int,int>
+	 */
+	private static function control_indices( array $block ): array {
+		$indices = isset( $block['form_control_index'] ) && is_int( $block['form_control_index'] ) ? array( $block['form_control_index'] ) : array();
+		foreach ( $block['innerBlocks'] ?? array() as $child ) {
+			$indices = array_merge( $indices, self::control_indices( $child ) );
+		}
+		return $indices;
+	}
+
+	/**
+	 * The layout node that lays out every choice of a group, when they share one.
+	 *
+	 * @param array<string,mixed> $form     Producer form.
+	 * @param array<int,int>      $controls Choice control indices.
+	 */
+	private static function choice_row( array $form, array $controls ): ?string {
+		$ids     = array_flip( array_map( static fn( int $index ): string => 'control-' . $index, $controls ) );
+		$parents = array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && isset( $ids[ $node['id'] ?? '' ] ) ) {
+				$parents[] = $node['parent'] ?? null;
+			}
+		}
+		$row = array_unique( $parents );
+		return count( $parents ) === count( $controls ) && 1 === count( $row ) && is_string( $row[0] ) ? $row[0] : null;
 	}
 
 	/**

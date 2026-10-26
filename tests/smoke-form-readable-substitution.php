@@ -70,18 +70,35 @@ $checks['textarea rows still compile'] = str_contains( $page, 'ssi-textarea-rows
 foreach ( array( false, true ) as $multiple ) {
 	$captured = $validated['forms'][0];
 	$captured['choice_groups'] = array( array(
-		'group' => array( 'label' => 'Topic' ),
+		'group' => array( 'tag' => 'div' ),
 		'choices' => array( array( 'label' => 'General', 'source_value' => 'general' ), array( 'label' => 'Bookings', 'source_value' => 'bookings' ), array( 'label' => 'Other', 'source_value' => 'other' ) ),
-		'observed_transition' => array( 'selected' => array( true, $multiple, false ) ),
+		'observed_transition' => array( 'selected_index' => $multiple ? null : 1, 'selected' => array( $multiple, true, false ) ),
 	) );
 	// A fieldset framing one captured choice group is that group's node.
 	$captured['readable_blocks'][0]['innerBlocks'][1]['form_choice_group_index'] = 0;
 	$choice_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $captured ) ) )['forms'][0];
 	$choice_tree = parse_blocks( $choice_row['block_markup'] )[0]['innerBlocks'][0]['innerBlocks'][1];
 	$checks['captured choice ' . (int) $multiple] = 'mapped' === $choice_row['status'] && ( $multiple ? 'jetpack/field-checkbox-multiple' : 'jetpack/field-radio' ) === $choice_tree['blockName'] && str_contains( $choice_tree['attrs']['className'], 'is-style-button' ) && array( 'General', 'Bookings', 'Other' ) === $choice_tree['attrs']['options'];
-	// Every emitted provider block must be one Jetpack registers at runtime.
-	preg_match_all( '/<!-- wp:(jetpack\/[a-z0-9-]+)/', $row['block_markup'] . $choice_row['block_markup'], $emitted );
-	$checks['registered provider blocks ' . (int) $multiple] = array() === array_diff( array_unique( $emitted[1] ), Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() );
+	// The fieldset's legend names the field, and the choice the source shows selected is its default.
+	$checks['choice field named by its legend ' . (int) $multiple] = array( 'label' => 'Topic' ) === $choice_tree['innerBlocks'][0]['attrs'];
+	$checks['choice default is the source selection ' . (int) $multiple] = ( $multiple ? null : 'Bookings' ) === ( $choice_tree['attrs']['defaultValue'] ?? null );
+	// The source row lays out the options, each option takes its choice's paint,
+	// and the selected paint follows the checked option.
+	$options = $choice_tree['innerBlocks'][1];
+	$overlay = $choice_row['provider_layout_overlay_css'];
+	$option_class = $options['innerBlocks'][1]['attrs']['className'] ?? '';
+	$other_class = $options['innerBlocks'][2]['attrs']['className'] ?? '';
+	// The declarations of the rules whose selector names one class (with an optional suffix).
+	$rule = static fn( string $css, string $selector ): string => implode( ';', preg_match_all( '/(?:(?<=\})|^)[^{}]*\.' . preg_quote( $selector, '/' ) . '(?=[,{])[^{}]*\{([^}]*)\}/', $css, $found ) ? $found[1] : array() );
+	$lays_out = static fn( string $declarations ): bool => array() === array_diff( array( 'display:flex!important', 'flex-wrap:wrap!important', 'gap:8px!important' ), explode( ';', $declarations ) );
+	$checks['choice row lays out the options ' . (int) $multiple] = $lays_out( $rule( $overlay['css'], $options['attrs']['className'] ?? '-' ) ) && $lays_out( $rule( $overlay['editor_css'], $options['attrs']['className'] ?? '-' ) );
+	$checks['choice options take their paint ' . (int) $multiple] = str_contains( $rule( $overlay['css'], $other_class ), 'background:#fff!important;border:2px solid #ddd!important;border-radius:999px!important' )
+		// A source button keeps its border-box sizing on the provider's label option.
+		&& str_contains( $rule( $overlay['css'], $other_class ), 'box-sizing:border-box!important' );
+	$checks['choice overlay is admitted ' . (int) $multiple] = null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
+	$checks['checked option takes the selected paint ' . (int) $multiple] = $multiple
+		? ! str_contains( $overlay['css'], ':checked' )
+		: 'background:#111!important;border:2px solid #111!important;color:#fff!important' === $rule( $overlay['css'], $option_class . ':has(> input:checked)' ) && str_contains( $rule( $overlay['editor_css'], $option_class ), 'background:#111!important;border:2px solid #111!important;color:#fff!important' ) && ! str_contains( $rule( $overlay['editor_css'], $other_class ), '#111' );
 }
 // Suppression removes the child and its null slot, not its source ancestors.
 $hidden = $validated['forms'][0];

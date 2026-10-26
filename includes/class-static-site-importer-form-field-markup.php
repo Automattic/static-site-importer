@@ -782,7 +782,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '"' . ( '' !== $style ? ' style="' . self::escape_attribute( rtrim( $style, ';' ) ) . '"' : '' ) . '>';
 			$suffix = '</' . $tag . ">\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
-			$prefix = "\n<" . $wrapper . '>';
+			// The options list saves through useBlockProps.save(): a custom class is saved with the block's generated class.
+			$custom = 'jetpack/options' === $name && is_string( $attrs['className'] ?? null ) ? trim( $attrs['className'] ) : '';
+			$prefix = "\n<" . $wrapper . ( '' !== $custom ? ' class="' . self::escape_attribute( 'wp-block-jetpack-options ' . $custom ) . '"' : '' ) . '>';
 			$suffix = '</' . $wrapper . ">\n";
 		}
 

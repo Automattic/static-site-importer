@@ -681,7 +681,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * the entry's own `editor` declaration, or else the editor table row.
 	 *
 	 * @param array<string,mixed> $entry A layout target or presentation destination.
-	 * @return array{drop?:bool,selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,forced?:array<string,string>,textarea_rows?:bool}
+	 * @return array{drop?:bool,selector?:string,checked?:bool,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,forced?:array<string,string>,textarea_rows?:bool}
 	 * @throws LogicException When the part is missing or declares no realisation, or two.
 	 */
 	public static function editor_surface_part( array $entry ): array {
@@ -800,6 +800,11 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					$destination['properties'] = array_values( array_diff( $destination['properties'], $box_properties ) );
 				}
 				$destination['selector'] = self::editor_selector( $destination['selector'], $surface, $scope_selector );
+				// The editor has no checked option: a source-selected choice is painted as the field's default.
+				unset( $destination['checked'] );
+				if ( true === ( $surface['checked'] ?? false ) ) {
+					$destination['checked'] = $destination['selector'];
+				}
 				foreach ( $surface['add_resets'] ?? array() as $reset => $value ) {
 					$destination['resets'][ $reset ] = $value;
 				}
