@@ -29,7 +29,8 @@ foreach ( array( false, true ) as $reverse ) {
 	if ( ! $reverse && str_contains( $overlay, 'background-color:transparent' ) ) {
 		throw new RuntimeException( 'A winning shorthand must suppress the stale longhand.' );
 	}
-	if ( $reverse && ! str_contains( $overlay, 'background:#171717;background-color:white' ) ) {
+	// Order is the contract here; the submit link may carry either priority.
+	if ( $reverse && 1 !== preg_match( '/background:#171717(?:!important)?;background-color:white(?:!important)?/', $overlay ) ) {
 		throw new RuntimeException( 'A winning longhand must follow the shorthand without discarding its other components.' );
 	}
 }
