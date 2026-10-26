@@ -193,6 +193,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( 'submit_wrapper' === $part ) {
 				$descriptor['destinations'][ $index ]['resets'] = array(
 					'display'    => 'inline-block',
+					// A source button is never capped by its container; Jetpack's
+					// editor caps every field block at 100%.
+					'max-width'  => 'none',
 					'padding'    => '0',
 					'border'     => '0',
 					'background' => 'transparent',

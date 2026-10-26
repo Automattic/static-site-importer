@@ -1310,7 +1310,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
-			if ( 'transform:none' === $declaration ) {
+			if ( 'transform:none' === $declaration || 'word-break:normal' === $declaration ) {
 				continue;
 			}
 			if ( preg_match( '/^(--[a-z][a-z0-9-]{0,79}):(.+)$/D', $declaration, $alias ) ) {
@@ -1867,12 +1867,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'flex-direction', 'align-items', 'align-self', 'order', 'width', 'height', 'appearance', 'transform', '--jetpack--contact-form--input-height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'max-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'flex-direction', 'align-items', 'align-self', 'order', 'width', 'height', 'appearance', 'transform', 'word-break', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
-			// A transform reset may only release the provider's own nudge.
-			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) || ( 'transform' === $property && 'none' !== $value ) ) {
+			// A transform or word-break reset may only release the provider's own default.
+			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) || ( 'transform' === $property && 'none' !== $value ) || ( 'word-break' === $property && 'normal' !== $value ) ) {
 				return false;
 			}
 		}

@@ -61,17 +61,33 @@ namespace {
 				. '<div class="grid gap-2"><label for="m">Message</label><textarea id="m" name="m" rows="4" class="' . $input . '"></textarea></div>'
 				. '<button type="submit" class="btn">Send</button></form>',
 		),
-		// A column-flex form with a 12-track grid row, a note between fields and
-		// a first-column submit cell with a minimum height.
+		// A column-flex form with a context heading and disclaimer whose type
+		// comes from form custom properties, a 12-track grid row, a note between
+		// fields and a first-column submit cell with a minimum height.
 		'grid_span'        => array(
-			'*,::before,::after{box-sizing:border-box}.stack{display:flex;flex-direction:column;gap:24px;padding:13px 17px;background:#123456;color:#fff}.stack label{display:block;margin-bottom:8px}.stack input,.stack textarea{display:block;width:100%}.send{min-height:56px}',
-			'<form class="stack"><h2 style="margin:0">Contact us</h2>'
+			'*,::before,::after{box-sizing:border-box}.stack{display:flex;flex-direction:column;gap:24px;padding:13px 17px;background:#123456;color:#fff;--context-family:Georgia;--context-line-height:1.75}'
+				. '.stack label{display:block;margin-bottom:8px}.stack input,.stack textarea{display:block;width:100%}.send{min-height:56px}'
+				. '.stack .intro-note,.stack .disclaimer-note{margin:0 0 24px;padding:8px 0 16px}form.stack .intro-note,form.stack .disclaimer-note{font-family:var(--context-family);line-height:var(--context-line-height)}'
+				. '.stack .responsive-intro{font-size:16px}@media(min-width:1024px){.send{min-height:68px}.stack .responsive-intro{font-size:24px;padding-top:12px}}',
+			'<form class="stack"><h2 class="intro-note responsive-intro">Contact us</h2>'
 				. '<div style="display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px">'
 				. '<div style="grid-column:1 / span 6"><label for="f">First name</label><input id="f" name="f"></div>'
+				. '<p class="interleaved-note">Information between fields.</p>'
 				. '<div style="grid-column:7 / span 6"><label for="l">Last name</label><input id="l" name="l"></div>'
 				. '<div style="grid-column:1 / span 12"><label for="m">Message</label><textarea id="m" name="m"></textarea></div>'
-				. '<div style="grid-column:1 / span 3;min-height:64px"><button class="send" type="submit">Send</button></div>'
-				. '</div><p style="margin:0">We will reply soon.</p></form>',
+				. '<div style="grid-column:1 / span 3;min-height:64px"><button class="send" type="submit" style="margin-left:auto">Send</button></div>'
+				. '</div><p class="disclaimer-note">We will reply soon.</p></form>',
+		),
+		// Tailwind stacking (#2159): a reversible calc margin between groups and
+		// a two-column row whose gap differs from that margin, with labels not
+		// associated through `for`.
+		'stacking_rhythm'  => array(
+			$tailwind . '.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem * var(--tw-space-y-reverse))}'
+				. '.gap-4{gap:1rem}.mb-1\\.5{margin-bottom:.375rem}',
+			'<form class="space-y-5">'
+				. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label class="block mb-1.5">Name</label><input class="w-full" name="name"></div><div><label class="block mb-1.5">Email</label><input class="w-full" name="email" type="email"></div></div>'
+				. '<div><label class="block mb-1.5">Message</label><textarea class="w-full" name="message"></textarea></div>'
+				. '<button type="submit">Send</button></form>',
 		),
 		// Two floated halves of a name row that stack below 768px.
 		'floated_name_row' => array(

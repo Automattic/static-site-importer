@@ -346,7 +346,12 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 							'padding'     => 'revert',
 							'border'      => 'revert',
 						),
-						'submit' === $type ? array( 'min-height' => '0' ) : array(),
+						// Core lets a button link break inside a word, below the
+						// width a source `<button>` keeps for its caption.
+						'submit' === $type ? array(
+							'min-height' => '0',
+							'word-break' => 'normal',
+						) : array(),
 						'checkbox' === $type ? array(
 							'min-width' => '0',
 							'padding'   => '0',
