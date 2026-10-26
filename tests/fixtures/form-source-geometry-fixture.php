@@ -104,7 +104,7 @@ namespace {
 		// consent checkbox with a link, and alternating painted field boxes.
 		'label_boxes'      => array(
 			'*,::before,::after{box-sizing:border-box}.f{display:flex;flex-direction:column;gap:18px}.row{display:flex;flex-wrap:wrap;gap:16px}'
-				. '.row>label{flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}'
+				. '.row>label{flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-family:Verdana;font-size:16px;font-weight:600}'
 				. '.row input,.row select{min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit}'
 				. '.alt{padding:14px 18px;background:#f0f4f8}.consent{display:flex;align-items:flex-start;gap:10px;font-size:14px}',
 			'<form class="f"><div class="row">'

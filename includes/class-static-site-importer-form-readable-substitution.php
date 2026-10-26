@@ -73,11 +73,18 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( 'label' === $part ) {
 				$destination['properties'] = array_values( array_intersect( $destination['properties'], self::LABEL_TEXT_FACTS ) );
 			}
+			if ( 'control' === $part ) {
+				// The field box stretches an auto-width control as the source label
+				// did, and keeps its intrinsic width as the box's floor. The
+				// provider's percentage width drops that floor, so a row of field
+				// boxes would stay on one line where the source wraps.
+				$destination['resets']['width'] = 'auto';
+			}
 			$destinations[] = $destination;
 		}
 		// The provider field wrapper arranges the caption and control as the
 		// source label did; the shell states the rest of that box.
-		$destinations[]             = array(
+		$destinations[] = array(
 			'part'       => 'field_box_wrapper',
 			'role'       => 'label',
 			// Jetpack renders the field block's class with a `-wrap` suffix.
@@ -125,7 +132,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				'editor'     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
 			);
 		}
-		$descriptor['destinations'][]   = array(
+		$descriptor['destinations'][] = array(
 			'part'       => 'caption_after_control',
 			'role'       => 'label',
 			'selector'   => $wrapper . ' > label',

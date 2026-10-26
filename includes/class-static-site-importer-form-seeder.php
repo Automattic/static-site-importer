@@ -341,10 +341,10 @@ class Static_Site_Importer_Form_Seeder {
 
 		// No wrapper/layout facts enter the overlay. Its presentation destinations
 		// still own label paint, input sizing and the textarea rows policy.
-		$presentation_form                                   = $state->form;
-		$presentation_form['layout_graph']                   = array( 'nodes' => array() );
-		$state->presentation_descriptors                     = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
-		$field_box_labels = array();
+		$presentation_form                 = $state->form;
+		$presentation_form['layout_graph'] = array( 'nodes' => array() );
+		$state->presentation_descriptors   = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		$field_box_labels                  = array();
 		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
@@ -364,7 +364,7 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
 			}
 		}
-		$presentation_form['presentation_graph'] = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
+		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		$maps    = self::target_maps(
 			$state,
@@ -376,7 +376,7 @@ class Static_Site_Importer_Form_Seeder {
 			''
 		);
 		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_field_errors(
-			Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ?? array() ),
+			Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ),
 			$state->scope
 		);
 		$receipt = array();

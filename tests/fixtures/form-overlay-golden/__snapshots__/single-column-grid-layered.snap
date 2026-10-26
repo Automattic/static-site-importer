@@ -33,8 +33,8 @@ sha256: 8443a4c7478009ecf0544b84335899b343d1f33fb4bdcbb48a100dcd5f1ad1fb
 .ssi-form-6371992b9ea7 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: b872322056b228c8919fabf75f9ee14efa924485eaa666224376b82641c0ef31
-/* Static Site Importer editor control chrome: 4c1d500c85f1 */
+sha256: 4934f6fd1fbeac340c67adfd2a734b664f141cf3e77114f1aedb7e732abd5024
+/* Static Site Importer editor control chrome: b2301c5f203f */
 .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2{border:0 solid;box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{gap:calc(0.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;padding:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -53,7 +53,7 @@ sha256: b872322056b228c8919fabf75f9ee14efa924485eaa666224376b82641c0ef31
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{font:-webkit-small-control;min-height:0;word-break:normal;padding:1px 6px;border:0 solid;box-sizing:border-box;border-style:solid}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
-.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder, .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{position:relative;z-index:1;pointer-events:auto}
 .editor-styles-wrapper .ssi-form-6371992b9ea7 > div.jetpack-contact-form{display:contents}
