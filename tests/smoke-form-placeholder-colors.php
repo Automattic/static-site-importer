@@ -1,6 +1,7 @@
 <?php
 /** Regression for #2296: author placeholder colours survive provider resets. */
 // phpcs:ignoreFile -- Standalone CLI regression.
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
 
@@ -12,7 +13,7 @@ $result      = ( new ArtifactCompiler() )->compile( array(
 ) )->toArray();
 $plan        = $result['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
-$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $declaration['payload']['entities'] ) );
+$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan ) ) );
 $row         = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ) )['forms'][0];
 $css         = implode( "\n", array_map( static fn( array $write ): string => str_ends_with( $write['target_path'], '.css' ) ? $write['payload']['data'] : '', $plan['writes'] ) );
 $overlay     = $row['provider_layout_overlay_css'];
@@ -31,7 +32,7 @@ $checks      = array(
 	'existing stylesheet path replays too' => str_contains( $existing['/tmp/placeholder-theme/style.css'], 'input' . $scope . '::placeholder' ),
 	'repeated materialization does not duplicate source selectors' => substr_count( $repeat['/tmp/placeholder-theme/style.css'], $scope ) === substr_count( $stylesheet, $scope ),
 	'without forms source remains unchanged' => $plain['/tmp/placeholder-theme/style.css'] === $css,
-	'no authored placeholder keeps fallback' => ! str_contains( $fallback['/tmp/placeholder-theme/style.css'], $scope ) && str_contains( $fallback['/tmp/placeholder-theme/style.css'], '::placeholder{color:revert}' ),
+	'no authored placeholder keeps fallback' => ! str_contains( $fallback['/tmp/placeholder-theme/style.css'], $scope ),
 );
 if ( in_array( '--json', $argv, true ) ) {
 	echo json_encode( array( 'css' => $stylesheet, 'overlay' => $overlay['css'], 'editor' => $writes['/tmp/placeholder-theme/assets/css/editor-style.css'], 'markup' => $row['block_markup'], 'fallback' => $fallback['/tmp/placeholder-theme/style.css'] ) );

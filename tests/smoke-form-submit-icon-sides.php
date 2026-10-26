@@ -19,7 +19,7 @@ $result      = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $plan        = $result['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
-$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $declaration['payload']['entities'] ) );
+$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan ) ) );
 $checks      = array(
 	'fixture validates' => empty( $validated['errors'] ) && 2 === count( $validated['forms'] ),
 );

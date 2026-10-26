@@ -6,10 +6,10 @@
  */
 
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
-if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
-	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( 'Static_Site_Importer_Form_Presentation_Overlay' ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation-overlay.php';
 }
-$method = new ReflectionMethod( Static_Site_Importer_Provider_Layout_Overlay::class, 'compact_rules' );
+$method = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Overlay::class, 'compact_rules' );
 $node_a = '.ssi-form-123456789abc .ssi-node-000000000001-wrap';
 $node_b = '.ssi-form-123456789abc .ssi-node-000000000002-wrap';
 $node_c = '.ssi-form-123456789abc .ssi-node-000000000003-wrap';
@@ -32,7 +32,7 @@ foreach ( $cases as $index => list( $input, $expected ) ) {
 		throw new RuntimeException( 'Rule compaction changed cascade case ' . $index );
 	}
 }
-$limit = new ReflectionMethod( Static_Site_Importer_Provider_Layout_Overlay::class, 'overlay_byte_limit' );
+$limit = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Overlay::class, 'overlay_byte_limit' );
 if ( 16384 !== $limit->invoke( null, '' ) || 17408 !== $limit->invoke( null, "$node_a{color:red}\n$node_a{color:blue}" ) || 18432 !== $limit->invoke( null, "$node_a{color:red}\n$node_b{color:blue}" ) ) {
 	throw new RuntimeException( 'Overlay budget must grow with unique mapped nodes, not repeated rules.' );
 }

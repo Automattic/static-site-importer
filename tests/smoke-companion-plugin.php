@@ -1248,43 +1248,6 @@ $assert(
 	'scaffold-rejects-missing-blocks'
 );
 
-$empty_country_state      = array(
-	'schema'        => 'static-site-importer/form-visual-state/v2',
-	'field_class'   => 'ssi-node-123456789abc',
-	'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
-	'group'         => array(
-		'id'    => 'visual-group-1234567890abcdef',
-		'class' => 'ssi-fvg-123456789abc',
-	),
-	'parts'         => array(
-		array(
-			'id'     => 'control-0-svg-0',
-			'class'  => 'ssi-fvs-123456789abc',
-			'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>',
-		),
-		array(
-			'id'     => 'control-0-svg-1',
-			'class'  => 'ssi-fvs-abcdef123456',
-			'markup' => '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l7 7 7-7"/></svg>',
-		),
-	),
-	'css'           => '.ssi-form-123456789abc .ssi-form-visual-state .ssi-fvs-123456789abc{width:24px!important}',
-);
-$visual_companion         = array(
-	'schema'             => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'          => 'visual-state',
-	'blocks'             => array(),
-	'form_visual_states' => array( $empty_country_state ),
-);
-$visual_descriptor        = Static_Site_Importer_Companion_Plugin::scaffold( $visual_companion );
-$visual_main              = is_array( $visual_descriptor ) ? (string) ( $visual_descriptor['files']['ssi-visual-state/ssi-visual-state.php'] ?? '' ) : '';
-$invalid_visual_companion = $visual_companion;
-$invalid_visual_companion['form_visual_states'][0]['parts'][0]['markup'] = '<svg><script>alert(1)</script></svg>';
-$visual_config = is_array( $visual_descriptor ) ? json_decode( (string) ( $visual_descriptor['files']['ssi-visual-state/companion.json'] ?? '' ), true ) : null;
-$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && is_array( $visual_config ) && 'ssi-node-123456789abc' === ( $visual_config['form_visual_states'][0]['field_class'] ?? '' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
-// The v1 state keyed one fixed rendered field ID, which repeats in every copy of a reused form.
-$retired_visual_state = array( 'schema' => 'static-site-importer/form-visual-state/v1', 'field_id' => 'ssi-form-123456789abc-field-0' ) + array_diff_key( $empty_country_state, array( 'schema' => true, 'field_class' => true ) );
-$assert( ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_visual_state( $retired_visual_state ), 'visual-state-v2-is-keyed-by-field-class-not-rendered-field-id' );
 
 // 2. Install plan resolves the file set + activation intent (pure / no writes).
 if ( is_array( $descriptor ) ) {
@@ -1338,7 +1301,7 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/inde
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/internal-link-runtime.php' ), 'install-writes-companion-internal-link-runtime' );
-$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_jetpack/contact-form'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
+$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['the_content'] ), 'installed-companion-registers-internal-link-runtime' );
 $submit_filter    = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
@@ -1348,8 +1311,8 @@ $projected_submit = is_callable( $submit_filter ) ? call_user_func(
 ) : '';
 $assert( str_contains( $projected_submit, 'class="wp-block-button"' ) && str_contains( $projected_submit, 'class="wp-block-button__link source-submit"' ), 'installed-companion-projects-submit-presentation-at-runtime' );
 $wrapper_filter    = $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'][0][0] ?? null;
-$projected_wrapper = is_callable( $wrapper_filter ) ? call_user_func( $wrapper_filter, '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input type="text"></div>' ) : '';
-$assert( str_contains( $projected_wrapper, '<div class="ssi-field-row source-box"><input type="text"></div>' ) && ! str_contains( $projected_wrapper, 'ssi-source-wrapper-' ), 'installed-companion-rebuilds-provider-input-wrapper-at-runtime' );
+$projected_wrapper = is_callable( $wrapper_filter ) ? call_user_func( $wrapper_filter, '<div class="grunion-field-text-wrap"><textarea class="ssi-textarea-rows-4"></textarea></div>' ) : '';
+$assert( str_contains( $projected_wrapper, '<textarea rows="4"' ) && ! str_contains( $projected_wrapper, 'ssi-textarea-rows-' ), 'installed-companion-applies-readable-textarea-rows-at-runtime' );
 $standalone_bootstrap = <<<'PHP'
 define( 'ABSPATH', __DIR__ . '/' );
 class WP_Block_Type {
@@ -1462,8 +1425,8 @@ $classes = json_decode( end( $argv ), true );
 $submit = $GLOBALS['filters']['render_block_core/button'][0] ?? null;
 $wrapper = $GLOBALS['filters']['grunion_contact_form_field_html'][0] ?? null;
 $submit_output = is_callable( $submit ) ? $submit( '<div class="wp-block-button ssi-source-submit--source-submit"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) ) ) : '';
-$wrapper_output = is_callable( $wrapper ) ? $wrapper( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input></div>' ) : '';
-exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<div class="ssi-field-row source-box"><input>' ) ? 0 : 1 );
+$wrapper_output = is_callable( $wrapper ) ? $wrapper( '<div class="grunion-field-text-wrap"><textarea class="ssi-textarea-rows-4"></textarea></div>' ) : '';
+exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<textarea rows="4"' ) ? 0 : 1 );
 PHP;
 	$process   = proc_open(
 		array( PHP_BINARY, '-r', $bootstrap, ...$files, wp_json_encode( $classes ) ),

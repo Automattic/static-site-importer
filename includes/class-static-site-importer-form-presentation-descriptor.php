@@ -25,7 +25,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	);
 
 	private static function presentation_node_class( string $scope, int $index, string $role ): string {
-		return Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'presentation-' . $index . '-' . $role );
+		return Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'presentation-' . $index . '-' . $role );
 	}
 
 	private static function presentation_destination_class( string $scope, int $index, string $role ): string {
@@ -44,7 +44,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					$roles[ $row['index'] ][ $role ] = true;
 				}
 			}
-			if ( is_array( $row['control'] ?? null ) && Static_Site_Importer_Form_Layout_Projection::has_sibling_combinator_margin( $row['control']['provenance'] ?? null ) ) {
+			if ( is_array( $row['control'] ?? null ) && Static_Site_Importer_Form_Presentation::has_sibling_combinator_margin( $row['control']['provenance'] ?? null ) ) {
 				$roles[ $row['index'] ]['sibling_stacked_margin'] = true;
 			}
 		}
@@ -60,132 +60,6 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		}
 		ksort( $roles, SORT_NUMERIC );
 		return $roles;
-	}
-
-	/** Build only a topology-owned source-captured empty-country group. */
-	public static function empty_country_visual_state( array $form, string $scope, array $phone_popup_targets ): array {
-		$parts    = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
-		$groups   = is_array( $form['presentation_graph']['visual_groups'] ?? null ) ? $form['presentation_graph']['visual_groups'] : array();
-		$by_index = array();
-		foreach ( $parts as $part ) {
-			if ( is_array( $part ) && is_int( $part['index'] ?? null ) ) {
-				$by_index[ $part['index'] ][] = $part;
-			}
-		}
-		foreach ( $phone_popup_targets as $auxiliary_index => $phone_index ) {
-			$group = $by_index[ $auxiliary_index ] ?? array();
-			if ( ! is_int( $auxiliary_index ) || ! is_int( $phone_index ) || count( $group ) < 1 || count( $group ) > 32 ) {
-				continue;
-			}
-			$state_parts = array();
-			$seen        = array();
-			foreach ( $group as $part ) {
-				if ( ! is_string( $part['id'] ?? null ) || isset( $seen[ $part['id'] ] ) || ! is_string( $part['markup'] ?? null ) || ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_inline_svg( $part['markup'] ) ) {
-					return array( 'diagnostics' => array( 'visual_state_rejected' ) );
-				}
-				$seen[ $part['id'] ] = true;
-				$state_parts[]       = array(
-					'id'     => $part['id'],
-					'class'  => 'ssi-fvs-' . substr( hash( 'sha256', $scope . "\n" . $part['id'] ), 0, 12 ),
-					'markup' => $part['markup'],
-				);
-			}
-			$part_ids    = array_column( $state_parts, 'id' );
-			$state_group = null;
-			foreach ( $groups as $candidate ) {
-				if ( is_array( $candidate ) && ( $candidate['part_ids'] ?? null ) === $part_ids && is_string( $candidate['id'] ?? null ) ) {
-					$state_group = array(
-						'id'    => $candidate['id'],
-						'class' => 'ssi-fvg-' . substr( hash( 'sha256', $scope . "\n" . $candidate['id'] ), 0, 12 ),
-					);
-					break;
-				}
-			}
-			if ( null === $state_group ) {
-				return array( 'diagnostics' => array( 'visual_state_group_geometry_gap' ) );
-			}
-			$css = self::empty_country_visual_css( $scope, $state_group, $state_parts, $group, $groups, $form['presentation_graph']['variants'] ?? array() );
-			return array(
-				'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
-				'state'         => array(
-					'schema'        => 'static-site-importer/form-visual-state/v2',
-					'field_class'   => Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $phone_index ),
-					'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
-					'group'         => $state_group,
-					'parts'         => $state_parts,
-					'css'           => $css,
-				),
-				'diagnostics'   => array(),
-			);
-		}
-		return array();
-	}
-
-	/** Compile only validated visual-part CSS facts into the declared state wrapper. */
-	private static function empty_country_visual_css( string $scope, array $state_group, array $state_parts, array $parts, array $groups, array $variants ): string {
-		$classes = array_column( $state_parts, 'class', 'id' );
-		$rules   = array();
-		$map     = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() + array(
-			'align_items'     => 'align-items',
-			'flex_direction'  => 'flex-direction',
-			'gap'             => 'gap',
-			'justify_content' => 'justify-content',
-		);
-		foreach ( $groups as $group ) {
-			if ( ! is_array( $group ) || ( $state_group['id'] ?? null ) !== ( $group['id'] ?? null ) || ! is_array( $group['source_css']['styles'] ?? null ) ) {
-				continue;
-			}
-			$declarations = array();
-			foreach ( $group['source_css']['styles'] as $key => $value ) {
-				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
-					$declarations[] = $map[ $key ] . ':' . $value . '!important';
-				}
-			}
-			if ( ! empty( $declarations ) ) {
-				$rules[] = '.' . $scope . ' .ssi-form-visual-state:not([hidden]).' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}';
-			}
-		}
-		foreach ( $parts as $part ) {
-			$styles = $part['source_css']['styles'] ?? array();
-			if ( ! is_array( $styles ) || ! isset( $classes[ $part['id'] ?? '' ] ) ) {
-				continue;
-			}
-			$declarations = array();
-			foreach ( $styles as $key => $value ) {
-				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
-					$declarations[] = $map[ $key ] . ':' . $value . '!important';
-				}
-			}
-			if ( ! empty( $declarations ) ) {
-				$rules[] = '.' . $scope . ' .ssi-form-visual-state .' . $classes[ $part['id'] ] . '{' . implode( ';', $declarations ) . '}';
-			}
-		}
-		foreach ( $variants as $variant ) {
-			if ( 'visual_group' === ( $variant['role'] ?? null ) && ( $state_group['id'] ?? null ) === ( $variant['group_id'] ?? null ) && is_array( $variant['style_patch'] ?? null ) && is_array( $variant['condition'] ?? null ) && 'media' === ( $variant['condition']['kind'] ?? null ) && is_string( $variant['condition']['query'] ?? null ) ) {
-				$declarations = array();
-				foreach ( $variant['style_patch'] as $key => $value ) {
-					if ( isset( $map[ $key ] ) && is_string( $value ) ) {
-						$declarations[] = $map[ $key ] . ':' . $value . '!important';
-					}
-				}
-				if ( ! empty( $declarations ) ) {
-					$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state:not([hidden]).' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}}';
-				}
-			}
-			if ( 'visual_part' !== ( $variant['role'] ?? null ) || ! isset( $classes[ $variant['part_id'] ?? '' ] ) || ! is_array( $variant['style_patch'] ?? null ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) ) {
-				continue;
-			}
-			$declarations = array();
-			foreach ( $variant['style_patch'] as $key => $value ) {
-				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
-					$declarations[] = $map[ $key ] . ':' . $value . '!important';
-				}
-			}
-			if ( ! empty( $declarations ) ) {
-				$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state .' . $classes[ $variant['part_id'] ] . '{' . implode( ';', $declarations ) . '}}';
-			}
-		}
-		return implode( "\n", array_values( array_unique( $rules ) ) );
 	}
 
 	/**
@@ -223,7 +97,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'primary' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' ),
-				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'properties' => array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
 				'resets'     => array(
 					'font-family' => 'revert',
 					'line-height' => 'revert',
@@ -285,7 +159,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				$phone_destinations = self::phone_presentation_destinations( $scope, $index );
 				$destinations       = $phone_destinations;
 			} else {
-				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
+				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Form_Presentation_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() );
 				$inner_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
 				if ( '' !== $inner_suffix ) {
 					// The wrapper is the item of the source container, so the
@@ -298,7 +172,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 						// reset, and keep it off the inner link (which is also zeroed).
 						$wrapper_properties = array_merge(
 							$wrapper_properties,
-							Static_Site_Importer_Form_Layout_Projection::MARGIN_FACTS
+							Static_Site_Importer_Form_Presentation::MARGIN_FACTS
 						);
 					}
 					$wrapper = array(
@@ -450,7 +324,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'role'       => 'control_container',
 				// The source chrome owns the provider field wrapper, not its nested input.
 				// The layout hook is placed on that wrapper for every Jetpack field type.
-				'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ),
+				'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ),
 				'properties' => array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
 			);
 		}
@@ -460,7 +334,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'part'       => $choice_box ? 'choice_label' : 'label',
 				'role'       => 'label',
 				'selector'   => '.' . $scope . ' .' . $label_class . ( $choice_box ? ' > label' : '' ),
-				'properties' => $choice_box ? $text_properties : array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'properties' => $choice_box ? $text_properties : array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
 				'resets'     => array(
 					'margin'      => '0',
 					'font-weight' => 'inherit',
@@ -500,7 +374,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					'part'       => 'choice_label_box',
 					'role'       => 'label',
 					'selector'   => '.' . $scope . ' .' . $label_class,
-					'properties' => array_values( array_diff( array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ), $text_properties ) ),
+					'properties' => array_values( array_diff( array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ), $text_properties ) ),
 				);
 			}
 		}
@@ -509,7 +383,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'part'       => 'required_marker',
 				'role'       => 'required_marker',
 				'selector'   => '.' . $scope . ' .' . $label_class . ' > .grunion-label-required',
-				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'properties' => array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
 				'resets'     => array( 'font-size' => 'inherit' ),
 				'priority'   => 'important',
 			);
@@ -570,7 +444,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			if ( ! in_array( strtolower( trim( (string) ( $styles['position'] ?? '' ) ) ), array( 'absolute', 'fixed' ), true ) ) {
 				return false;
 			}
-			foreach ( Static_Site_Importer_Form_Layout_Projection::INSET_SIDES as $side ) {
+			foreach ( Static_Site_Importer_Form_Presentation::INSET_SIDES as $side ) {
 				if ( 1 === preg_match( '/^-([0-9]+(?:\.[0-9]+)?)px$/D', strtolower( trim( (string) ( $styles[ $side ] ?? '' ) ) ), $match ) && (float) $match[1] >= 999.0 ) {
 					return true;
 				}
@@ -607,13 +481,13 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		if ( ! is_array( $parent ) || 'wrapper' !== ( $parent['kind'] ?? null ) || 'label' === ( $parent['tag'] ?? '' ) ) {
 			return array();
 		}
-		$tokens = Static_Site_Importer_Form_Layout_Projection::class_tokens( $parent );
+		$tokens = Static_Site_Importer_Form_Presentation::class_tokens( $parent );
 		$label  = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' )[ $index ]['label'] ?? null;
 		if ( array() === $tokens || ! is_array( $label ) ) {
 			return array();
 		}
-		$margins = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::layout_property_map(), array_flip( Static_Site_Importer_Form_Layout_Projection::MARGIN_SIDE_FACTS ) );
-		$facts   = Static_Site_Importer_Form_Layout_Projection::class_carried_box_facts( is_array( $label['styles'] ?? null ) ? $label['styles'] : array(), is_array( $label['provenance'] ?? null ) ? $label['provenance'] : array(), $tokens, $margins );
+		$margins = array_intersect_key( Static_Site_Importer_Form_Presentation_Overlay::layout_property_map(), array_flip( Static_Site_Importer_Form_Presentation::MARGIN_SIDE_FACTS ) );
+		$facts   = Static_Site_Importer_Form_Presentation::class_carried_box_facts( is_array( $label['styles'] ?? null ) ? $label['styles'] : array(), is_array( $label['provenance'] ?? null ) ? $label['provenance'] : array(), $tokens, $margins );
 		return array_values( array_map( static fn( string $fact ): string => $margins[ $fact ], $facts ) );
 	}
 
@@ -655,7 +529,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		if ( ! is_array( $box ) || 'wrapper' !== ( $box['kind'] ?? null ) || ! in_array( $box['tag'] ?? 'div', array( 'div', 'span' ), true ) || '' === trim( (string) ( $form['controls'][ $control['control'] ?? -1 ]['label'] ?? '' ) ) ) {
 			return null;
 		}
-		$box_classes = Static_Site_Importer_Form_Layout_Projection::class_tokens( $box );
+		$box_classes = Static_Site_Importer_Form_Presentation::class_tokens( $box );
 		if ( empty( $box_classes ) || 1 !== count( array_filter( $nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === $parent ) ) ) {
 			return null;
 		}
@@ -858,7 +732,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	/**
 	 * The map without its derivation metadata (each entry's `part` and declared
 	 * `editor` realisation): the canonical map that
-	 * `Provider_Layout_Overlay::validate_map()` and `compile()` accept.
+	 * `Form_Presentation_Overlay::validate_map()` and `compile()` accept.
 	 *
 	 * @param array<string,mixed> $map Front-end or editor target map.
 	 * @return array<string,mixed>

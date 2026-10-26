@@ -23,14 +23,12 @@ final class Static_Site_Importer_Form_Mapping_Plan {
 	 * @param array<string,mixed>      $source_form Normalized producer form.
 	 * @param array<int,array>         $fields Planned blocks keyed by source control.
 	 * @param array<string,mixed>|null $contact_form Complete, unserialized provider block.
-	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null $source_shell Source-owned containing shell.
 	 * @param array<string,mixed>      $report_facts Receipt, destinations and capabilities.
 	 */
 	private function __construct(
 		public readonly array $source_form,
 		public readonly array $fields,
 		public readonly ?array $contact_form,
-		public readonly ?array $source_shell,
 		public readonly array $report_facts
 	) {
 		$this->decision = null === $contact_form ? null : Static_Site_Importer_Form_Mapping_Decision::resolve( $this );
@@ -38,16 +36,15 @@ final class Static_Site_Importer_Form_Mapping_Plan {
 
 	/** Return a terminal control/topology rejection without an emission candidate. */
 	public static function skipped( array $source_form, array $row ): self {
-		return new self( $source_form, array(), null, null, $row );
+		return new self( $source_form, array(), null, $row );
 	}
 
 	/**
 	 * Resolve support from planned fields, destinations and losses before emission.
 	 *
-	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null $source_shell Source-owned containing shell.
 	 */
-	public static function prepared( array $source_form, array $fields, array $contact_form, ?array $source_shell, array $report_facts ): self {
-		return new self( $source_form, $fields, $contact_form, $source_shell, $report_facts );
+	public static function prepared( array $source_form, array $fields, array $contact_form, array $report_facts ): self {
+		return new self( $source_form, $fields, $contact_form, $report_facts );
 	}
 
 	/** @return array<string,mixed>|null Canonical support decision. */
@@ -71,9 +68,7 @@ final class Static_Site_Importer_Form_Mapping_Plan {
 		if ( null === $this->proposed_row ) {
 			$row = $this->report_facts;
 			if ( null !== $this->contact_form ) {
-				$row['block_markup'] = null === $this->source_shell
-					? Static_Site_Importer_Form_Field_Markup::serialize_block( $this->contact_form )
-					: Static_Site_Importer_Form_Field_Markup::serialize_in_shell( $this->contact_form, $this->source_shell );
+				$row['block_markup'] = Static_Site_Importer_Form_Field_Markup::serialize_block( $this->contact_form );
 			}
 			$this->proposed_row = $row;
 		}

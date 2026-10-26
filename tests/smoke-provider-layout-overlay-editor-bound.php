@@ -9,8 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
-	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( 'Static_Site_Importer_Form_Presentation_Overlay' ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation-overlay.php';
 }
 
 $assertions = 0;
@@ -37,7 +37,7 @@ $graph   = array(
 	),
 );
 $map     = array(
-	'schema'               => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA,
+	'schema'               => Static_Site_Importer_Form_Presentation_Overlay::MAP_SCHEMA,
 	'provider'             => 'synthetic',
 	'scope'                => $scope,
 	'targets'              => array(
@@ -79,9 +79,9 @@ for ( $index = 0; $index < 128; ++$index ) {
 }
 $presentation_graph = array( 'controls' => $controls );
 
-$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
+$shared_editor = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $presentation_graph, Static_Site_Importer_Form_Presentation_Overlay::SURFACE_EDITOR );
 $assert( empty( $shared_editor['losses'] ) && ! empty( $shared_editor['overlay']['editor_css'] ), 'equivalent adjacent control presentations fit the editor admission bound' );
-$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_editor['overlay'] ), 'compacted shared editor presentation is admitted' );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $shared_editor['overlay'] ), 'compacted shared editor presentation is admitted' );
 
 // Distinct declarations cannot share a selector list and must retain the bound.
 foreach ( $presentation_graph['controls'] as $index => &$control ) {
@@ -94,11 +94,11 @@ foreach ( $map['presentation_targets'] as &$target ) {
 }
 unset( $target );
 
-$frontend = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
+$frontend = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $presentation_graph );
 $assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 65536, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
-$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $frontend['overlay'] ), 'fixture frontend overlay is admitted' );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $frontend['overlay'] ), 'fixture frontend overlay is admitted' );
 
-$editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
+$editor      = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $presentation_graph, Static_Site_Importer_Form_Presentation_Overlay::SURFACE_EDITOR );
 $editor_size = strlen( $editor['overlay']['editor_css'] ?? '' );
 $assert(
 	array() === $editor['overlay'] && '' === $editor['css'] && in_array( 'provider layout overlay exceeds its bounded size.', array_column( $editor['losses'], 'map_error' ), true ),
@@ -129,12 +129,12 @@ $bound_graph['control_containers'] = array(
 	),
 );
 
-$bound_front    = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $bound_map, $bound_graph );
-$bound_surfaces = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $graph, $bound_map, $bound_map, $bound_graph );
+$bound_front    = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $bound_map, $bound_graph );
+$bound_surfaces = Static_Site_Importer_Form_Presentation_Overlay::compile_surfaces( $graph, $bound_map, $bound_map, $bound_graph );
 $bound_css      = $bound_front['css'];
 $assert( '' !== $bound_css && $bound_surfaces['css'] === $bound_css && ( $bound_surfaces['overlay']['css'] ?? null ) === $bound_css, 'an over-bound editor surface keeps the front-end css' );
 $assert( '' === ( $bound_surfaces['overlay']['editor_css'] ?? '' ) && '' === ( $bound_surfaces['overlay']['editor_context_css'] ?? '' ), 'an over-bound editor surface carries no editor css (editor_css ' . strlen( $bound_surfaces['overlay']['editor_css'] ?? '' ) . ' bytes)' );
 $assert( in_array( 'provider layout overlay exceeds its bounded size.', array_column( $bound_surfaces['losses'], 'map_error' ), true ), 'an over-bound editor surface records its bound loss' );
-$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $bound_surfaces['overlay'] ), 'the front-end-only overlay is admitted' );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $bound_surfaces['overlay'] ), 'the front-end-only overlay is admitted' );
 
 echo "provider layout overlay editor bound smoke passed ({$assertions} assertions)\n";

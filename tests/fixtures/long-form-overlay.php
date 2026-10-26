@@ -10,7 +10,7 @@
 // The oracle compiles the exact same form with only compaction and admission
 // disabled. It is never used by production or by the mapped/gate assertions.
 if ( in_array( '--uncompacted', $argv, true ) ) {
-	$source = file_get_contents( dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-provider-layout-overlay.php' );
+	$source = file_get_contents( dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-form-presentation-overlay.php' );
 	$source = str_replace( 'private static function compact_rules( array $rules ): array {', 'private static function compact_rules( array $rules ): array { return $rules;', $source );
 	$source = str_replace( 'self::overlay_byte_limit( $css )', 'PHP_INT_MAX', $source );
 	$root = sys_get_temp_dir() . '/ssi-uncompacted-' . getmypid();
@@ -19,7 +19,7 @@ if ( in_array( '--uncompacted', $argv, true ) ) {
 	foreach ( glob( dirname( __DIR__, 2 ) . '/includes/*.php' ) as $file ) {
 		copy( $file, $root . '/includes/' . basename( $file ) );
 	}
-	$overlay_path = $root . '/includes/class-static-site-importer-provider-layout-overlay.php';
+	$overlay_path = $root . '/includes/class-static-site-importer-form-presentation-overlay.php';
 	unlink( $overlay_path );
 	file_put_contents( $overlay_path, $source );
 	symlink( dirname( __DIR__, 2 ) . '/vendor', $root . '/vendor' );
@@ -74,4 +74,4 @@ $rendered = preg_replace_callback( '/<!-- wp:jetpack\/field-([a-z]+) (\{.*?\}) -
 	return '<div class="' . ( $attrs['className'] ?? '' ) . '"><label class="' . ( $label_attrs['className'] ?? '' ) . '">' . ( $label_attrs['label'] ?? '' ) . '</label>' . $tag . '</div>';
 }, $markup );
 $rendered = preg_replace( '/<!--.*?-->/s', '', $rendered );
-echo wp_json_encode( array( 'overlayValid' => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ?? null ), 'html' => $rendered, 'status' => $row['status'] ?? '', 'row' => $row, 'fields' => $fields, 'className' => $class, 'css' => $row['provider_layout_overlay_css']['css'] ?? '', 'editorCss' => $row['provider_layout_overlay_css']['editor_css'] ?? '' ) );
+echo wp_json_encode( array( 'overlayValid' => null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ?? null ), 'html' => $rendered, 'status' => $row['status'] ?? '', 'row' => $row, 'fields' => $fields, 'className' => $class, 'css' => $row['provider_layout_overlay_css']['css'] ?? '', 'editorCss' => $row['provider_layout_overlay_css']['editor_css'] ?? '' ) );

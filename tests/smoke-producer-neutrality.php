@@ -11,8 +11,8 @@
  * `capture-findings` / `capture_findings`, matched case-insensitively in
  * includes/, lib/, the plugin bootstrap and tools/ (tests excluded), with no
  * exemptions: operator tools take their capture producer as configuration. The
- * capture-shaped form fixtures (kmr-form-*.json, *-form*.json.gz) are scanned
- * too, with JSON `\u002d` escapes spelled out. It also
+ * current readable form fixtures are scanned too, with JSON `\u002d`
+ * escapes spelled out. It also
  * fails on a capture name outside Blocks Engine's one prefix: every capture
  * attribute and class is `data-blocks-engine-capture-<name>`, so a bare
  * `blocks-engine-capture-<name>` (an engine-generated class namespace) is
@@ -72,14 +72,14 @@ function ssi_neutrality_fixture_text( string $path ): string {
 
 // Capture-shaped form fixtures feed the locked compiler, which reads only the
 // one capture prefix, so they must carry the current names as well.
-$fixtures = array_merge( glob( $root . '/tests/fixtures/kmr-form-*.json' ), glob( $root . '/tests/fixtures/*-form*.json.gz' ) );
+$fixtures = array_merge( glob( $root . '/tests/fixtures/*form*.html' ), glob( $root . '/tests/fixtures/*placeholder*.html' ) );
 foreach ( $fixtures as $fixture ) {
 	if ( 0 < preg_match_all( SSI_PRODUCER_NAME_PATTERN, ssi_neutrality_fixture_text( $fixture ), $matches ) ) {
 		$failures[] = sprintf( '%s carries %d capture name(s) outside data-blocks-engine-capture- (first: %s); rename them by the one-prefix rule.', substr( $fixture, strlen( $root ) + 1 ), count( $matches[0] ), $matches[0][0] );
 	}
 }
-if ( count( $fixtures ) < 6 ) {
-	$failures[] = 'Scanned only ' . count( $fixtures ) . ' capture-shaped form fixtures; the fixtures moved.';
+if ( count( $fixtures ) < 4 ) {
+	$failures[] = 'Scanned only ' . count( $fixtures ) . ' readable form fixtures; the fixtures moved.';
 }
 
 // The pattern itself must keep catching every spelling it guards.
