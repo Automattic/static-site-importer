@@ -214,32 +214,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $authors ) ) {
 			return self::failed_receipt_from_error( $state, $authors );
 		}
+		$retired = self::retire_archive_pages( $state );
+		if ( null !== $retired ) {
+			return $retired;
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
 				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
 			}
 			if ( ! empty( $page['skip_materialization'] ) ) {
-				if ( ! empty( $page['retire_archive_page'] ) ) {
-					$archive_id = (int) ( $page['planned_existing_id'] ?? 0 );
-					self::journal_post( $state, $page );
-					$updated = wp_update_post(
-						array(
-							'ID'          => $archive_id,
-							'post_status' => 'draft',
-						),
-						true
-					);
-					if ( is_wp_error( $updated ) || (int) $updated !== $archive_id || 'draft' !== get_post_status( $archive_id ) ) {
-						return self::failed_receipt( $state, 'taxonomy_archive_page_retirement_failed' );
-					}
-					$state['applied']['posts'][] = array(
-						'id'                      => $archive_id,
-						'source_path'             => $page['source_path'],
-						'reconciliation_identity' => $page['reconciliation_identity'],
-					);
-					delete_post_meta( $archive_id, self::RECONCILIATION_META_KEY );
-					delete_post_meta( $archive_id, self::PRODUCER_RECONCILIATION_META_KEY );
-				}
 				continue;
 			}
 			self::journal_post( $state, $page );
@@ -2204,6 +2187,41 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$state = Static_Site_Importer_Site_Plan_Receipt::with_error_diagnostics( $state, $error );
 		self::rollback( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'partial', $state );
+	}
+
+	/**
+	 * Retire pages an earlier import created for native archive documents.
+	 *
+	 * Preparation queues them from plan taxonomy and author entities; each is
+	 * journaled, drafted, and released from importer reconciliation ownership.
+	 *
+	 * @param array $state Materialization state.
+	 * @return array<string,mixed>|null Failed receipt, or null when every retirement held.
+	 */
+	private static function retire_archive_pages( array &$state ): ?array {
+		foreach ( $state['archive_page_retirements'] ?? array() as $retirement ) {
+			$archive_id = (int) ( $retirement['planned_existing_id'] ?? 0 );
+			self::journal_post( $state, $retirement );
+			$updated = wp_update_post(
+				array(
+					'ID'          => $archive_id,
+					'post_status' => 'draft',
+				),
+				true
+			);
+			if ( is_wp_error( $updated ) || $archive_id !== (int) $updated || 'draft' !== get_post_status( $archive_id ) ) {
+				$kind = (string) ( $retirement['kind'] ?? 'taxonomy' );
+				return self::failed_receipt( $state, 'author' === $kind ? 'author_archive_page_retirement_failed' : 'taxonomy_archive_page_retirement_failed' );
+			}
+			$state['applied']['posts'][] = array(
+				'id'                      => $archive_id,
+				'source_path'             => $retirement['source_path'],
+				'reconciliation_identity' => $retirement['reconciliation_identity'],
+			);
+			delete_post_meta( $archive_id, self::RECONCILIATION_META_KEY );
+			delete_post_meta( $archive_id, self::PRODUCER_RECONCILIATION_META_KEY );
+		}
+		return null;
 	}
 
 	/** Journal a post before any insert/update so failed theme writes restore it exactly enough for SSI ownership. */
