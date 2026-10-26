@@ -578,22 +578,22 @@ npm install
 npm run test:validation
 ```
 
-The harness imports `tests/fixtures/wordpress-is-dead/` into the configured WordPress site, then runs the PHP smokes and the JavaScript block-validation smoke in dependency order.
+The harness requires the Studio CLI. By default it creates a disposable Studio site in a fresh temporary directory, imports `tests/fixtures/wordpress-is-dead/`, and runs the PHP smokes and JavaScript block-validation smoke in dependency order. WordPress commands use `studio wp --path <temporary-site>`. The harness deletes the site and directory afterwards, including on failure.
 
-By default it uses:
+Use `--keep-site` to retain the disposable site for inspection, even on failure; its path is printed. Set `STATIC_SITE_IMPORTER_SITE_PATH` to use an existing site instead: the harness may change its content and active theme, but never deletes it.
 
-```text
-studio wp --path /Users/chubes/Studio/intelligence-chubes4
-```
-
-Useful overrides:
+The theme directory defaults to the target site's `wp-content/themes/wordpress-is-dead`. A positional directory overrides `STATIC_SITE_IMPORTER_THEME_DIR`, which overrides that default. `STATIC_SITE_IMPORTER_WP_CLI` overrides the WordPress command only, not disposable-site creation or cleanup; pair it with an explicit site path for an existing non-Studio runtime.
 
 ```bash
+npm run test:validation -- --keep-site
 STATIC_SITE_IMPORTER_SITE_PATH=/path/to/site npm run test:validation
-STATIC_SITE_IMPORTER_WP_CLI="wp" npm run test:validation
-npm run test:validation -- --skip-import /path/to/wp-content/themes/wordpress-is-dead
+STATIC_SITE_IMPORTER_SITE_PATH=/path/to/site STATIC_SITE_IMPORTER_WP_CLI="wp --path=/path/to/site" npm run test:validation
+STATIC_SITE_IMPORTER_SITE_PATH=/path/to/site npm run test:validation -- --skip-import /path/to/wp-content/themes/wordpress-is-dead
+STATIC_SITE_IMPORTER_THEME_DIR=/path/to/theme npm run test:validation
 npm run test:validation -- --json
 ```
+
+`--skip-import` skips fixture import only; use an existing site and generated theme when revalidating artifacts. `--json` emits structured results, including the target site path.
 
 ### Test Inventory
 
