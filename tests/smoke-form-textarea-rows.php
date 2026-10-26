@@ -208,7 +208,7 @@ $ssi_textarea_scope   = 'ssi-form-123456789abc';
 $ssi_textarea_policy  = ssi_textarea_rows_resolve( 'block', $ssi_textarea_edges, array( 'rows' => 4 ) );
 $ssi_textarea_surface = array();
 foreach ( array( 'textarea', 'select', 'submit' ) as $ssi_textarea_type ) {
-	$ssi_textarea_map    = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map(
+	$ssi_textarea_map    = Static_Site_Importer_Form_Presentation::provider_layout_target_map(
 		array( 'layout_graph' => array( 'nodes' => array( array( 'id' => 'form' ), array( 'id' => 'control-1' ) ) ) ),
 		$ssi_textarea_scope,
 		array(

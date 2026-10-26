@@ -22,12 +22,9 @@ $source = array(
 	),
 );
 
-// Exercise the existing public path first: visual-state collection is planning,
-// and must not serialize a whole provider form that it never consumes.
-$GLOBALS['ssi_test_form_serializations'] = 0;
-Static_Site_Importer_Form_Seeder::visual_states( array( 'forms' => array( $source ) ) );
-$assert( 0 === $GLOBALS['ssi_test_form_serializations'], 'Visual-state collection emitted a provider form.' );
+$source['readable_blocks'] = array( array( 'blockName' => 'core/group', 'attrs' => array( 'tagName' => 'form' ), 'innerBlocks' => array( array( 'blockName' => 'core/paragraph', 'attrs' => array(), 'form_control_index' => 0 ), array( 'blockName' => 'core/button', 'attrs' => array(), 'form_control_index' => 1 ) ) ) );
 
+$GLOBALS['ssi_test_form_serializations'] = 0;
 $prepare = new ReflectionMethod( Static_Site_Importer_Form_Seeder::class, 'plan_form' );
 $plan    = $prepare->invoke( null, $source, true );
 $assert( $plan instanceof Static_Site_Importer_Form_Mapping_Plan && $plan->is_mapped(), 'Supported form was not planned as mapped.' );
@@ -44,6 +41,7 @@ $unsupported = array(
 		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ),
 	),
 );
+$unsupported['readable_blocks'] = array( array( 'blockName' => 'core/group', 'attrs' => array( 'tagName' => 'form' ), 'innerBlocks' => array( array( 'blockName' => 'core/paragraph', 'attrs' => array(), 'form_control_index' => 0 ), array( 'blockName' => 'core/button', 'attrs' => array(), 'form_control_index' => 1 ) ) ) );
 $GLOBALS['ssi_test_form_serializations'] = 0;
 $declined = $prepare->invoke( null, $unsupported, true );
 $assert( ! $declined->is_mapped() && 'declined' === $declined->decision()['status'], 'Unrenderable attribute did not decline during planning.' );
@@ -73,7 +71,6 @@ $overflow = Static_Site_Importer_Form_Mapping_Plan::prepared(
 	$source,
 	array(),
 	array( 'name' => 'jetpack/contact-form' ),
-	null,
 	array(
 		'field_blocks'               => array(),
 		'skipped_types'              => array(),
@@ -84,5 +81,5 @@ $overflow = Static_Site_Importer_Form_Mapping_Plan::prepared(
 $assert( ! $overflow->is_mapped() && 3 === $overflow->decision()['losses'][0]['loss_count'] && 0 === $GLOBALS['ssi_test_form_serializations'], 'Truncated gate losses were admitted or required serialization.' );
 
 $empty = $prepare->invoke( null, array( 'selector' => 'form.empty', 'controls' => array() ), true );
-$assert( ! $empty->is_mapped() && null === $empty->decision() && 'no_mappable_form_fields' === $empty->to_report()['reason'] && 0 === $GLOBALS['ssi_test_form_serializations'], 'Early control rejection produced an emission candidate.' );
+$assert( ! $empty->is_mapped() && null === $empty->decision() && 'incomplete_readable_form_tree' === $empty->to_report()['reason'] && 0 === $GLOBALS['ssi_test_form_serializations'], 'Early control rejection produced an emission candidate.' );
 echo 'PASS smoke-form-mapping-plan.php (' . $assertions . " assertions)\n";

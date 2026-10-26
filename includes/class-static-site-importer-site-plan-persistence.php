@@ -1433,7 +1433,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Persist admitted provider overlay CSS and its frontend delivery bootstrap. */
 	public static function apply_provider_layout_overlays( array &$state, array $overlays ) {
-		$admitted = array_filter( $overlays, static fn( $overlay ): bool => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay ) );
+		$admitted = array_filter( $overlays, static fn( $overlay ): bool => null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay ) );
 		if ( empty( $admitted ) ) {
 			return new WP_Error( 'provider_layout_overlay_rejected' );
 		}
@@ -1493,7 +1493,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return array();
 		}
 		foreach ( $overlays as $overlay ) {
-			if ( null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay ) ) {
+			if ( null === Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay ) ) {
 				return new WP_Error( 'provider_layout_overlay_rejected' );
 			}
 		}

@@ -13,8 +13,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
-	/** @var array<string,array<string,mixed>> Complete empty-country groups keyed by generated field ID. */
-	private static array $visual_states = array();
 
 	/** Admit only the portable subset also enforced by Blocks Engine's SourceDom. */
 	public static function valid_inline_svg( string $markup ): bool {
@@ -80,30 +78,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return $valid;
 	}
 
-	/** Configure complete, source-captured empty-country groups for this companion. */
-	public static function configure_visual_states( array $states ): void {
-		self::$visual_states = array();
-		foreach ( $states as $state ) {
-			if ( self::valid_visual_state( $state ) ) {
-				self::$visual_states[ $state['field_class'] ] = $state;
-			}
-		}
-	}
 
-	/** Validate the portable configuration before it is persisted in a companion. */
-	public static function valid_visual_state( mixed $state ): bool {
-		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_class', 'trigger_class', 'group', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v2' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}$/D', $state['field_class'] ) || ! is_string( $state['trigger_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}-destination-country-trigger$/D', $state['trigger_class'] ) || ! is_array( $state['group'] ?? null ) || array_keys( $state['group'] ) !== array( 'id', 'class' ) || ! is_string( $state['group']['id'] ?? null ) || ! preg_match( '/^visual-group-[a-f0-9]{16}$/D', $state['group']['id'] ) || ! is_string( $state['group']['class'] ?? null ) || ! preg_match( '/^ssi-fvg-[a-f0-9]{12}$/D', $state['group']['class'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
-			return false;
-		}
-		$seen = array();
-		foreach ( $state['parts'] as $part ) {
-			if ( ! is_array( $part ) || array_keys( $part ) !== array( 'id', 'class', 'markup' ) || ! is_string( $part['id'] ?? null ) || isset( $seen[ $part['id'] ] ) || ! preg_match( '/^control-[0-9]+-svg-[0-9]+$/D', $part['id'] ) || ! is_string( $part['class'] ?? null ) || ! preg_match( '/^ssi-fvs-[a-f0-9]{12}$/D', $part['class'] ) || ! is_string( $part['markup'] ?? null ) || strlen( $part['markup'] ) > 16384 || ! self::valid_inline_svg( $part['markup'] ) ) {
-				return false;
-			}
-			$seen[ $part['id'] ] = true;
-		}
-		return true;
-	}
 
 	/** Register inert-unless-marked provider projection hooks. */
 	public static function register(): void {
@@ -113,10 +88,6 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		self::$registered = true;
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_choice_values' ), 30 );
-		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
-		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_form_container_placement' ), 5, 2 );
-		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_field_list_wrapper' ), 6, 2 );
-		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
 	}
@@ -205,334 +176,13 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return $out;
 	}
 
-	/** Copy the provider block's layout role onto Jetpack's page-grid item. */
-	public static function project_form_container_placement( string $html, array $block = array() ): string {
-		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
-		if ( 262144 < strlen( $html ) || '' === trim( $class_name ) || ! preg_match( '/(?:^|\s)ssi-form-[a-f0-9]{12}(?:\s|$)/', $class_name ) || ! str_contains( $html, 'jetpack-contact-form-container' ) ) {
-			return $html;
-		}
-		$tokens = preg_split( '/\s+/', $class_name );
-		if ( in_array( 'ssi-native-form-topology', false === $tokens ? array() : $tokens, true ) && class_exists( 'WP_HTML_Tag_Processor' ) ) {
-			return self::project_native_form_classes( $html, $class_name );
-		}
-		$carry = preg_split( '/\s+/', trim( $class_name ) );
-		$carry = false === $carry ? array() : array_values( array_filter( $carry, array( self::class, 'is_page_placement_class' ) ) );
-		if ( empty( $carry ) ) {
-			return $html;
-		}
-		$projected = preg_replace_callback(
-			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bjetpack-contact-form-container\b[^"\']*)\2)/i',
-			static function ( array $matches ) use ( $carry ): string {
-				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
-				$existing = false === $existing ? array() : $existing;
-				$merged   = implode( ' ', array_values( array_unique( array_filter( array_merge( $existing, $carry ) ) ) ) );
-				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . $merged . $matches[2], $matches[1] );
-			},
-			$html,
-			1
-		);
-		if ( ! is_string( $projected ) ) {
-			return $html;
-		}
-		// Every class carried to the page item paints there once. Left on the
-		// field list Jetpack renders inside that item as well, a source box class
-		// (Tailwind `p-6 rounded-lg` or a semantic `.form{padding;background}`)
-		// stacks the source card's own chrome and height on top of itself. The
-		// field list keeps its layout classes, which are never carried, and the
-		// importer's own `ssi-*` scope and markers its rules address.
-		$owned    = array_values( array_filter( $carry, static fn( string $class_name ): bool => ! str_starts_with( $class_name, 'ssi-' ) ) );
-		$stripped = preg_replace_callback(
-			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bwp-block-jetpack-contact-form\b[^"\']*)\2)/i',
-			static function ( array $matches ) use ( $owned ): string {
-				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
-				$existing = false === $existing ? array() : $existing;
-				$kept     = array_values( array_diff( $existing, $owned ) );
-				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . implode( ' ', $kept ) . $matches[2], $matches[1] );
-			},
-			$projected,
-			1
-		);
-		return is_string( $stripped ) ? $stripped : $projected;
-	}
 
-	/** Source classes paint the real form once; provider scope paints placement. */
-	private static function project_native_form_classes( string $html, string $class_name ): string {
-		$tokens  = preg_split( '/\s+/', trim( $class_name ) );
-		$classes = array_values( array_filter( false === $tokens ? array() : $tokens ) );
-		$scope   = array_values( array_filter( $classes, static fn( string $token ): bool => 'ssi-native-form-topology' === $token || 1 === preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $token ) ) );
-		$source  = array_values( array_diff( $classes, $scope ) );
-		$probe   = new WP_HTML_Tag_Processor( $html );
-		if ( ! $probe->next_tag( array(
-			'tag_name'   => 'FORM',
-			'class_name' => 'jetpack-contact-form__form',
-		) ) ) {
-			return $html;
-		}
-		$tags = new WP_HTML_Tag_Processor( $html );
-		while ( $tags->next_tag() ) {
-			$existing = preg_split( '/\s+/', trim( (string) $tags->get_attribute( 'class' ) ) );
-			$existing = false === $existing ? array() : $existing;
-			if ( in_array( 'jetpack-contact-form-container', $existing, true ) ) {
-				$tags->set_attribute( 'class', implode( ' ', array_unique( array_merge( array_diff( $existing, $source ), $scope ) ) ) );
-			} elseif ( in_array( 'wp-block-jetpack-contact-form', $existing, true ) ) {
-				$tags->set_attribute( 'class', implode( ' ', array_diff( $existing, $source ) ) );
-			} elseif ( 'FORM' === $tags->get_tag() && in_array( 'jetpack-contact-form__form', $existing, true ) ) {
-				$tags->set_attribute( 'class', implode( ' ', array_unique( array_merge( $existing, $source ) ) ) );
-			}
-		}
-		return $tags->get_updated_html();
-	}
 
-	/** Field-list display/track utilities belong on the inner list, not the page item. */
-	private static function is_page_placement_class( string $class_name ): bool {
-		if ( '' === $class_name || 'ssi-source-field-list' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'block', 'hidden', 'contents', 'inline-flex' ), true ) ) {
-			return false;
-		}
-		// A vertical/horizontal rhythm utility sizes the gap between the form's own
-		// controls. The page item carries provider siblings of the form (a submission
-		// status region), so the rhythm applied there reaches the wrong children and
-		// shifts the whole form box inside its grid cell. It stays on the field list.
-		if ( 1 === preg_match( '/(?:^|:)space-[xy]-/', $class_name ) ) {
-			return false;
-		}
-		return 1 !== preg_match( '/(?:^|:)(?:grid-cols-|col-span-|gap-)/', $class_name );
-	}
 
-	/** Field-list display/track utilities that must not share a box with the submit. */
-	private static function is_field_list_class( string $class_name ): bool {
-		if ( 'ssi-source-field-list' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'inline-flex' ), true ) ) {
-			return true;
-		}
-		return 1 === preg_match( '/(?:^|:)(?:grid-cols-|gap-)/', $class_name );
-	}
 
-	/**
-	 * Keep source submits outside the gapped field list, in authored order.
-	 *
-	 * Jetpack renders fields and submit as children of one `.wp-block-jetpack-contact-form`.
-	 * A source list such as `grid gap-6` must wrap only the fields, or the submit loses
-	 * its authored top margin to the list gap (or to a cancel that overwrites it).
-	 * A source may also interleave rows — field(s), submit, field(s) — so every
-	 * contiguous run of field children is wrapped in place with the list classes and
-	 * submit children stay at their original position with their own presentation
-	 * classes. Gathering all fields into one list before the first submit would
-	 * silently move a later checkbox ahead of an earlier button.
-	 */
-	public static function project_field_list_wrapper( string $html, array $block = array() ): string {
-		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
-		if ( 262144 < strlen( $html ) || ! preg_match( '/(?:^|\s)ssi-form-[a-f0-9]{12}(?:\s|$)/', $class_name ) || ! str_contains( $html, 'wp-block-jetpack-contact-form' ) ) {
-			return $html;
-		}
-		$document = new \DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$loaded   = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-		if ( ! $loaded ) {
-			return $html;
-		}
-		$body = $document->getElementsByTagName( 'body' )->item( 0 );
-		if ( ! $body instanceof \DOMElement ) {
-			return $html;
-		}
-		$field_list = null;
-		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
-			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
-			$classes = false === $classes ? array() : $classes;
-			if ( 'div' === strtolower( $element->tagName ) && in_array( 'wp-block-jetpack-contact-form', $classes, true ) ) {
-				if ( $field_list instanceof \DOMElement ) {
-					return $html;
-				}
-				$field_list = $element;
-			}
-		}
-		if ( ! $field_list instanceof \DOMElement ) {
-			return $html;
-		}
-		$classes      = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
-		$classes      = false === $classes ? array() : array_values( array_filter( $classes ) );
-		$list_classes = array();
-		$kept         = array();
-		foreach ( $classes as $class ) {
-			if ( self::is_field_list_class( $class ) ) {
-				$list_classes[] = $class;
-			} else {
-				$kept[] = $class;
-			}
-		}
-		if ( empty( $list_classes ) ) {
-			return $html;
-		}
-		// Segment direct children in document order: submit children break the
-		// field runs and keep their original position; each contiguous field run
-		// is wrapped once, so no field ever crosses a source submit. Without the
-		// source field-list marker the list classes are the source form's own, so
-		// its submit was an item of that list and stays a member of it.
-		$submit_is_sibling = in_array( 'ssi-source-field-list', $list_classes, true );
-		$field_runs        = array();
-		$run               = array();
-		$has_submit        = false;
-		$has_field         = false;
-		foreach ( iterator_to_array( $field_list->childNodes ) as $child ) {
-			if ( ! $child instanceof \DOMElement ) {
-				$run[] = $child;
-				continue;
-			}
-			if ( self::is_submit_field_list_child( $child ) ) {
-				$has_submit = true;
-				if ( ! $submit_is_sibling ) {
-					$run[] = $child;
-					continue;
-				}
-				if ( ! empty( $run ) ) {
-					$field_runs[] = $run;
-					$run          = array();
-				}
-				continue;
-			}
-			$has_field = true;
-			$run[]     = $child;
-		}
-		if ( ! empty( $run ) ) {
-			$field_runs[] = $run;
-		}
-		if ( ! $has_submit || ! $has_field ) {
-			return $html;
-		}
-		$wrapper_classes = implode( ' ', array_values( array_unique( $list_classes ) ) );
-		foreach ( $field_runs as $run ) {
-			$wrapper = $document->createElement( 'div' );
-			$wrapper->setAttribute( 'class', $wrapper_classes );
-			$field_list->insertBefore( $wrapper, $run[0] );
-			foreach ( $run as $node ) {
-				$wrapper->appendChild( $node );
-			}
-		}
-		$field_list->setAttribute( 'class', implode( ' ', $kept ) );
-		$output = '';
-		foreach ( $body->childNodes as $child ) {
-			$output .= $document->saveHTML( $child );
-		}
-		return $output;
-	}
 
-	private static function is_submit_field_list_child( \DOMElement $child ): bool {
-		$classes = preg_split( '/\s+/', trim( $child->getAttribute( 'class' ) ) );
-		$classes = false === $classes ? array() : $classes;
-		if ( array_intersect( $classes, array( 'is-submit', 'form-button-submit' ) ) ) {
-			return true;
-		}
-		foreach ( $child->getElementsByTagName( 'button' ) as $button ) {
-			if ( 'submit' === strtolower( $button->getAttribute( 'type' ) ) ) {
-				return true;
-			}
-		}
-		return false;
-	}
 
-	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
-	public static function project_plain_root_fieldset( string $html, array $block = array() ): string {
-		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
-		if ( 262144 < strlen( $html ) || ! preg_match( '/(?:^|\s)ssi-source-root-fieldset(?:\s|$)/', $class_name ) ) {
-			return $html;
-		}
-		$source_classes = array();
-		$classes        = preg_split( '/\s+/', $class_name );
-		foreach ( false === $classes ? array() : $classes as $class ) {
-			if ( preg_match( '/^ssi-source-root-fieldset--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $class, $marker ) ) {
-				$source_classes[] = $marker[1];
-			}
-		}
-		$source_classes = array_slice( array_values( array_unique( $source_classes ) ), 0, 8 );
-		$document       = new \DOMDocument();
-		$previous       = libxml_use_internal_errors( true );
-		$loaded         = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-		if ( ! $loaded ) {
-			return $html;
-		}
-		$body = $document->getElementsByTagName( 'body' )->item( 0 );
-		if ( ! $body instanceof \DOMElement ) {
-			return $html;
-		}
-		$field_list = null;
-		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
-			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
-			$classes = false === $classes ? array() : $classes;
-			if ( in_array( 'ssi-source-root-fieldset', $classes, true ) ) {
-				if ( $field_list instanceof \DOMElement || 'div' !== strtolower( $element->tagName ) || ! in_array( 'wp-block-jetpack-contact-form', $classes, true ) ) {
-					return $html;
-				}
-				$field_list = $element;
-			}
-		}
-		if ( ! $field_list instanceof \DOMElement || ! $field_list->parentNode instanceof \DOMElement ) {
-			return $html;
-		}
-		$form         = $field_list->parentNode;
-		$form_classes = preg_split( '/\s+/', trim( $form->getAttribute( 'class' ) ) );
-		if ( 'form' !== strtolower( $form->tagName ) || ! in_array( 'jetpack-contact-form__form', false === $form_classes ? array() : $form_classes, true ) ) {
-			return $html;
-		}
-		$fieldset = $document->createElement( 'fieldset' );
-		if ( ! empty( $source_classes ) ) {
-			$fieldset->setAttribute( 'class', implode( ' ', $source_classes ) );
-		}
-		$form->insertBefore( $fieldset, $field_list );
-		$fieldset->appendChild( $field_list );
-		$field_classes = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
-		$field_classes = array_values( array_filter( false === $field_classes ? array() : $field_classes, static fn( string $class_name ): bool => 'ssi-source-root-fieldset' !== $class_name && 1 !== preg_match( '/^ssi-source-root-fieldset--/', $class_name ) ) );
-		$field_list->setAttribute( 'class', implode( ' ', $field_classes ) );
-		$output = '';
-		foreach ( $body->childNodes as $child ) {
-			$output .= $document->saveHTML( $child );
-		}
-		return $output;
-	}
 
-	/**
-	 * Insert the complete captured group into Jetpack's existing trigger and keep a functional default country.
-	 *
-	 * The state is keyed by the field's SSI layout class, which every rendered
-	 * copy of a reused form carries, not by the per-instance field ID.
-	 */
-	public static function project_empty_country_visual_state( string $html ): string {
-		if ( empty( self::$visual_states ) ) {
-			return $html;
-		}
-		$field_class = null;
-		if ( preg_match_all( '/(?<![A-Za-z0-9_-])(ssi-node-[a-f0-9]{12})(?:-wrap)?(?![A-Za-z0-9_-])/', $html, $tokens ) ) {
-			foreach ( $tokens[1] as $token ) {
-				if ( isset( self::$visual_states[ $token ] ) ) {
-					$field_class = $token;
-					break;
-				}
-			}
-		}
-		if ( null === $field_class ) {
-			return $html;
-		}
-		if ( ! preg_match( '/<button\b(?=[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger\b[^"\']*\1)[^>]*>/i', $html, $button, PREG_OFFSET_CAPTURE ) || ! preg_match( '/<[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger-arrow\b[^"\']*\1[^>]*>/i', $html, $arrow, PREG_OFFSET_CAPTURE ) ) {
-			return $html;
-		}
-		$state   = self::$visual_states[ $field_class ];
-		$trigger = preg_replace( '/\bclass=("|\')(.*?)\1/is', 'class=$1$2 ' . $state['trigger_class'] . '$1', $button[0][0], 1 );
-		if ( ! is_string( $trigger ) ) {
-			return $html;
-		}
-		$html           = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
-		$parts          = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
-		$visibility_css = '.' . $state['trigger_class'] . ' [hidden]{display:none!important}.' . $state['trigger_class'] . ' .jetpack-combobox-selected,.' . $state['trigger_class'] . ' .jetpack-combobox-trigger-arrow{display:none!important}.' . $state['trigger_class'] . ':has(>.ssi-form-visual-state){gap:0}';
-		$group          = '<style>' . $visibility_css . $state['css'] . '</style><span class="ssi-form-visual-state ' . $state['group']['class'] . '">' . implode( '', $parts ) . '</span>';
-		$html           = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
-		$arrow_offset   = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
-		$arrow_tag      = $arrow[0][0];
-		$arrow_tag      = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
-		$html           = substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
-		$with_default   = preg_replace( '/(&quot;|")defaultCountry\1\s*:\s*\1\1/', '$1defaultCountry$1:$1US$1', $html, 1 );
-		return is_string( $with_default ) ? $with_default : $html;
-	}
 
 	/** Move source submit presentation from Core's wrapper onto its button control. */
 	public static function project_submit_presentation( string $html, array $block = array() ): string {
@@ -583,7 +233,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 			);
 		}
-		return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
+		return is_string( $projected ) ? $projected : $html;
 	}
 
 	/**
@@ -623,39 +273,20 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		) ?? $html;
 	}
 
-	/**
-	 * Rebuild explicitly projected wrapper layers onto a provider field.
-	 *
-	 * The seeder's `ssi-source-wrapper-N--CLASS-wrap` token is a bounded transport
-	 * contract. It never makes CLASS part of saved provider markup: this filter
-	 * recognizes it only on the provider field shell. The outermost layer is the
-	 * source field row — it contained the label and any sibling description — so
-	 * it is restored onto that shell. Deeper layers still wrap the native control.
-	 * Phone composites keep wrapping only the value input. Older depth-qualified
-	 * tokens remain readable because they have already been persisted in imported
-	 * content.
-	 *
-	 * @param string $html Provider field HTML.
-	 * @return string
-	 */
+	/** Apply field help, choice label, phone destination and textarea row hooks. */
 	public static function project_wrapper_classes( string $html ): string {
 		// A telephone field without the country selector renders as a plain tel
 		// input ($is_plain_tel). It has no shell, carrier, or prefix box for those
 		// hooks to style.
 		$html                      = self::project_help_classes( $html );
-		$wrapper_layers            = array();
-		$field_ancestors           = array();
-		$choice_box                = array();
 		$choice_label              = array();
-		$composite_layers          = array();
-		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
 		$is_plain_tel              = $is_phone && ! str_contains( $html, 'jetpack-field__input-phone-wrapper' );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( $is_plain_tel, &$wrapper_layers, &$field_ancestors, &$choice_box, &$choice_label, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+			static function ( array $matches ) use ( $is_plain_tel, &$choice_label, &$phone_destination_classes, &$textarea_rows ): string {
 				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
@@ -663,35 +294,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$output         = array();
 				foreach ( $classes as $class_name ) {
 					$transport = $is_wrapper && str_ends_with( $class_name, '-wrap' ) ? substr( $class_name, 0, -5 ) : $class_name;
-					if ( preg_match( '/^ssi-source-(field-ancestor-([0-9]{1,2})|choice-box|choice-label)--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $transport, $marker ) ) {
+					if ( preg_match( '/^ssi-source-choice-label--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $transport, $marker ) ) {
 						if ( $is_wrapper ) {
-							if ( str_starts_with( $marker[1], 'field-ancestor-' ) ) {
-								$field_ancestors[ (int) $marker[2] ][] = $marker[3];
-							} elseif ( 'choice-box' === $marker[1] ) {
-								$choice_box[] = $marker[3];
-							} else {
-								$choice_label[] = $marker[3];
-							}
+							$choice_label[] = $marker[1];
 						}
 						continue;
 					}
 					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
 						$textarea_rows = $marker[1];
-						continue;
-					}
-					if ( preg_match( '/^ssi-source-fullspan-child--(ssi-node-[a-f0-9]{12})-wrap$/D', $class_name, $marker ) ) {
-						if ( $is_wrapper ) {
-							$fullspan_child_classes[] = $marker[1] . '-wrap';
-						}
-						continue;
-					}
-					if ( preg_match( '/^ssi-source-wrapper-(prefix|shell)-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
-						if ( $is_wrapper ) {
-							$composite_layers[ $marker[1] ][ (int) $marker[2] ][] = $marker[3];
-						}
-						continue;
-					}
-					if ( preg_match( '/^ssi-source-wrapper-(?:prefix|shell)-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
 						continue;
 					}
 					if ( $is_plain_tel && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:shell|carrier|prefix)$/D', $class_name ) ) {
@@ -707,57 +317,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 						$output[] = $class_name;
 						continue;
 					}
-					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
-						if ( $is_wrapper ) {
-							$wrapper_layers[ (int) $marker[1] ][] = $marker[2];
-						}
-						continue;
-					}
-					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $class_name, $marker ) ) {
-						if ( $is_wrapper ) {
-							$wrapper_layers[ (int) $marker[1] ][] = $marker[2];
-						}
-						continue;
-					}
-					if ( str_starts_with( $class_name, 'ssi-source-wrapper--' ) ) {
-						if ( $is_wrapper && str_ends_with( $class_name, '-wrap' ) ) {
-							$source_class = substr( $class_name, strlen( 'ssi-source-wrapper--' ), -strlen( '-wrap' ) );
-							if ( 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source_class ) ) {
-								$wrapper_layers[0][] = $source_class;
-							}
-						}
-						continue;
-					}
 					$output[] = $class_name;
 				}
 				return 'class=' . $matches[1] . implode( ' ', array_values( array_unique( $output ) ) ) . $matches[1];
 			},
 			$html
 		);
-		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $fullspan_child_classes ) && empty( $phone_destination_classes ) ) ) {
-			return self::with_textarea_rows( self::project_whole_choice_field( is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html, $field_ancestors, $choice_box, $choice_label ), $textarea_rows );
+		if ( ! is_string( $projected ) ) {
+			return $html;
 		}
-
-		ksort( $wrapper_layers );
-		$field_row_classes = array();
-		if ( ! $is_phone && empty( $composite_layers ) && ! empty( $wrapper_layers ) ) {
-			$outer_depth       = array_key_first( $wrapper_layers );
-			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ] ) ) );
-			unset( $wrapper_layers[ $outer_depth ] );
-		}
-		$open  = '';
-		$close = '';
-		foreach ( $wrapper_layers as $classes ) {
-			$classes = array_values( array_unique( $classes ) );
-			$open   .= '<div class="' . implode( ' ', $classes ) . '">';
-			$close   = '</div>' . $close;
-		}
-		if ( ! empty( $fullspan_child_classes ) ) {
-			$open .= '<div class="' . implode( ' ', array_values( array_unique( $fullspan_child_classes ) ) ) . '">';
-			$close = '</div>' . $close;
-		}
-		// A phone field's country search precedes its value input in Jetpack's HTML.
-		// Target Jetpack's actual telephone control, leaving auxiliary and hidden inputs intact.
 		$pattern                    = $is_phone
 			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
@@ -765,70 +333,25 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$phone_destination_classes  = array_values( array_filter( $phone_destination_classes, static fn( string $class_name ): bool => ! str_ends_with( $class_name, '-destination-prefix' ) ) );
 		$wrapped                    = preg_replace_callback(
 			$pattern,
-			static function ( array $control_match ) use ( $open, $close, $is_phone, $phone_destination_classes ): string {
+			static function ( array $control_match ) use ( $is_phone, $phone_destination_classes ): string {
 				if ( ! $is_phone || empty( $phone_destination_classes ) ) {
-					return $open . $control_match[0] . $close;
+					return $control_match[0];
 				}
 				$value_classes   = implode( ' ', array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-primary' ) ) );
 				$carrier_classes = implode( ' ', array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-carrier' ) ) );
 				if ( '' === $value_classes ) {
-					return $open . $control_match[0] . $close;
+					return $control_match[0];
 				}
 				$input = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $value_classes . '$1', $control_match[0], 1 ) ?? $control_match[0];
-				if ( '' !== $carrier_classes && '' !== $open ) {
-					$carrier_open = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $carrier_classes . '$1', $open, 1 ) ?? $open;
-					return $carrier_open . $input . $close;
-				}
 				if ( '' !== $carrier_classes ) {
 					return '<div class="' . $carrier_classes . '">' . $input . '</div>';
 				}
-				return $open . $input . $close;
+				return $input;
 			},
 			$projected,
 			1
 		);
 		$wrapped                    = is_string( $wrapped ) ? $wrapped : $projected;
-		if ( ! empty( $field_row_classes ) ) {
-			$row_open = '<div class="' . implode( ' ', $field_row_classes ) . '">';
-			$with_row = preg_replace( '/(<div\b[^>]*\bgrunion-field-[A-Za-z0-9_-]+-wrap\b[^>]*>)/i', '$1' . $row_open, $wrapped, 1 );
-			if ( is_string( $with_row ) ) {
-				$close_at = strrpos( $with_row, '</div>' );
-				$wrapped  = false === $close_at ? $with_row : substr( $with_row, 0, $close_at ) . '</div>' . substr( $with_row, $close_at );
-			}
-		}
-		if ( ! empty( $composite_layers ) ) {
-			$document        = new \DOMDocument();
-			$previous_errors = libxml_use_internal_errors( true );
-			$loaded          = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $wrapped . '</body>', LIBXML_NONET );
-			libxml_clear_errors();
-			libxml_use_internal_errors( $previous_errors );
-			if ( $loaded ) {
-				$xpath = new \DOMXPath( $document );
-				foreach ( array(
-					'shell'  => 'jetpack-field__input-phone-wrapper',
-					'prefix' => 'jetpack-field__input-prefix',
-				) as $role => $class ) {
-					$targets = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " ' . $class . ' ")]' );
-					$target  = false === $targets ? null : $targets->item( 0 );
-					$layers  = $composite_layers[ $role ] ?? array();
-					if ( ! $target instanceof \DOMElement || null === $target->parentNode || empty( $layers ) ) {
-						continue;
-					}
-					ksort( $layers );
-					foreach ( $layers as $classes ) {
-						$layer = $document->createElement( 'div' );
-						$layer->setAttribute( 'class', implode( ' ', array_unique( $classes ) ) );
-						$target->parentNode->insertBefore( $layer, $target );
-						$layer->appendChild( $target );
-					}
-				}
-				$body    = $document->getElementsByTagName( 'body' )->item( 0 );
-				$wrapped = '';
-				foreach ( $body->childNodes as $child ) {
-					$wrapped .= $document->saveHTML( $child );
-				}
-			}
-		}
 		if ( ! empty( $prefix_destination_classes ) ) {
 			$prefix_classes = implode( ' ', array_unique( $prefix_destination_classes ) );
 			$prefixed       = preg_replace_callback(
@@ -845,12 +368,12 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			);
 			$wrapped        = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
-		return self::with_textarea_rows( self::project_whole_choice_field( self::project_semantic_wrappers( $wrapped ), $field_ancestors, $choice_box, $choice_label ), $textarea_rows );
+		return self::with_textarea_rows( self::project_choice_label( $wrapped, $choice_label ), $textarea_rows );
 	}
 
-	/** Restore source ancestry outside the complete choice field and its label. */
-	private static function project_whole_choice_field( string $html, array $ancestors, array $choice_box, array $choice_label ): string {
-		if ( ( empty( $choice_box ) && empty( $choice_label ) ) || strlen( $html ) > 262144 ) {
+	/** Carry the captured wrapping choice caption onto the native choice box. */
+	private static function project_choice_label( string $html, array $choice_label ): string {
+		if ( empty( $choice_label ) || strlen( $html ) > 262144 ) {
 			return $html;
 		}
 		$document = new \DOMDocument();
@@ -882,15 +405,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$existing_classes = preg_split( '/\s+/', $choice->getAttribute( 'class' ) );
 		$existing_classes = false === $existing_classes ? array() : $existing_classes;
-		$choice->setAttribute( 'class', implode( ' ', array_unique( array_merge( $existing_classes, $choice_box, $choice_label ) ) ) );
-		ksort( $ancestors );
-		foreach ( array_reverse( $ancestors, true ) as $classes ) {
-			$wrapper = $document->createElement( 'div' );
-			$wrapper->setAttribute( 'class', implode( ' ', array_unique( $classes ) ) );
-			$field->parentNode->replaceChild( $wrapper, $field );
-			$wrapper->appendChild( $field );
-			$field = $wrapper;
-		}
+		$choice->setAttribute( 'class', implode( ' ', array_unique( array_merge( $existing_classes, $choice_label ) ) ) );
 		$output = '';
 		foreach ( $body->childNodes as $child ) {
 			$output .= $document->saveHTML( $child );
@@ -910,70 +425,5 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$added = preg_replace( '/<textarea\b/i', '<textarea rows="' . $rows . '"', $html, 1 );
 		return is_string( $added ) ? $added : $html;
-	}
-
-	/**
-	 * Restore bounded source paragraph and single-field fieldset wrappers onto a
-	 * provider field.
-	 *
-	 * The projection stores `ssi-source-semantic-wrapper-N--TAG--CLASS` tokens on
-	 * the field block it owns. Jetpack copies those classes onto the field shell
-	 * and appends `-wrap` to each one. Each depth is one source ancestor, so the
-	 * marker is consumed here and the element is rebuilt around the provider
-	 * field's label and control, outer ancestor last. Tokens that do not match
-	 * the bounded shape are left alone, and consumed markers never persist.
-	 */
-	private static function project_semantic_wrappers( string $html ): string {
-		$wrappers  = array();
-		$projected = preg_replace_callback(
-			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrappers ): string {
-				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
-				$output  = array();
-				foreach ( false === $classes ? array() : $classes as $class ) {
-					$marker  = array();
-					$matched = preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--(p|fieldset)(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?-wrap$/D', $class, $marker )
-						|| preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--(p|fieldset)(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?$/D', $class, $marker );
-					if ( $matched ) {
-						$depth = (int) $marker[1];
-						if ( ! isset( $wrappers[ $depth ] ) ) {
-							$wrappers[ $depth ] = array(
-								'tag'     => $marker[2],
-								'classes' => array(),
-							);
-						}
-						if ( '' !== ( $marker[3] ?? '' ) ) {
-							$wrappers[ $depth ]['classes'][] = $marker[3];
-						}
-						continue;
-					}
-					$output[] = $class;
-				}
-				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
-			},
-			$html,
-			1
-		);
-		if ( ! is_string( $projected ) || empty( $wrappers ) ) {
-			return is_string( $projected ) ? $projected : $html;
-		}
-		ksort( $wrappers );
-		foreach ( array_reverse( $wrappers, true ) as $layer ) {
-			// A paragraph holds phrasing content only. Around the provider's block
-			// markup (the field shell and the Button wrapper are divs) the browser
-			// closes it before the first div and adds a second, empty paragraph
-			// after it. Those two empty paragraphs become extra items of the
-			// provider's flex row and push the field and the submit apart. The
-			// provider box already sits at the paragraph's position: the projection
-			// carries the paragraph's proven layout onto it, and a classed field
-			// paragraph's classes onto the rebuilt field row.
-			if ( 'p' === $layer['tag'] && 1 === preg_match( '/<(?:address|article|aside|blockquote|details|dialog|div|dl|fieldset|figure|footer|form|h[1-6]|header|hr|main|nav|ol|p|pre|section|table|ul)\b/i', $projected ) ) {
-				continue;
-			}
-			$classes   = array_values( array_unique( $layer['classes'] ) );
-			$attribute = empty( $classes ) ? '' : ' class="' . implode( ' ', $classes ) . '"';
-			$projected = '<' . $layer['tag'] . $attribute . '>' . $projected . '</' . $layer['tag'] . '>';
-		}
-		return $projected;
 	}
 }

@@ -154,19 +154,6 @@ $payload = array(
 			'dependencies' => array( 'wp-element' ),
 		),
 	),
-	'form_visual_states' => array(
-		array(
-			'schema'        => 'static-site-importer/form-visual-state/v2',
-			'field_class'   => 'ssi-node-123456789abc',
-			'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
-			'group'         => array( 'id' => 'visual-group-1234567890abcdef', 'class' => 'ssi-fvg-123456789abc' ),
-			'parts'         => array(
-				array( 'id' => 'control-0-svg-0', 'class' => 'ssi-fvs-123456789abc', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>' ),
-				array( 'id' => 'control-0-svg-1', 'class' => 'ssi-fvs-abcdef123456', 'markup' => '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l7 7 7-7"/></svg>' ),
-			),
-			'css'           => '.ssi-form-123456789abc .ssi-form-visual-state .ssi-fvs-123456789abc{width:24px!important}',
-		),
-	),
 	'provenance'         => array(
 		'schema'         => 'blocks-engine/generated-artifact-provenance/v1',
 		'generator'      => 'blocks-engine@2.3.4',
@@ -219,7 +206,6 @@ if ( is_array( $descriptor ) ) {
 
 		// Deactivation/removal consequences and dependency statement.
 		$assert( str_contains( $readme, 'Deactivating' ) || str_contains( $readme, 'deactivating' ), 'readme-explains-deactivation-consequence' );
-		$assert( str_contains( $readme, 'Jetpack' ), 'readme-names-form-dependency', 'form_visual_states present implies the Jetpack forms dependency must be named' );
 
 		// Snapshot truthfulness for external metrics: static captured values, no
 		// invented refresh provider, no fabricated wordpress.org fetching.

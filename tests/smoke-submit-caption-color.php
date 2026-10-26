@@ -12,8 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-layout-projection.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation-overlay.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation.php';
 
 $assertions = 0;
 $assert     = static function ( bool $condition, string $message ) use ( &$assertions ): void {
@@ -38,7 +38,7 @@ $graph              = array(
 	),
 );
 $map                = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( array(
-	'schema'               => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA,
+	'schema'               => Static_Site_Importer_Form_Presentation_Overlay::MAP_SCHEMA,
 	'provider'             => 'synthetic',
 	'scope'                => '.' . $scope,
 	'targets'              => array(
@@ -69,10 +69,10 @@ $presentation_graph = array(
 		),
 	),
 );
-$compiled           = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
+$compiled           = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $presentation_graph );
 $css                = $compiled['css'];
 $assert( 1 === preg_match( '/' . preg_quote( $caption[0]['selector'], '/' ) . '\{[^}]*color:rgb\(255,255,255\)/', $css ), 'the caption span is painted with the button text colour: ' . $css );
-$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
 
 
 // The captured `color` is the caption's own resolved colour, not an ancestor's:

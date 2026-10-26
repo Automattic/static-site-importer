@@ -1,6 +1,6 @@
 <?php
 define( 'ABSPATH', dirname( __DIR__, 2 ) . '/' );
-require_once ABSPATH . 'includes/class-static-site-importer-provider-layout-overlay.php';
+require_once ABSPATH . 'includes/class-static-site-importer-form-presentation-overlay.php';
 $rules  = array(
 	'.form .first{color:red;padding:4px}',
 	'.form .last{color:red;padding:4px}',
@@ -15,7 +15,7 @@ $rules  = array(
 	'.editor-styles-wrapper .form .first{border:1px solid red}',
 	'.editor-styles-wrapper .form .last{border:1px solid red}',
 );
-$method = new ReflectionMethod( Static_Site_Importer_Provider_Layout_Overlay::class, 'compact_rules' );
+$method = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Overlay::class, 'compact_rules' );
 $result = array(
 	'before' => implode( "\n", $rules ),
 	'after'  => implode( "\n", $method->invoke( null, $rules ) ),

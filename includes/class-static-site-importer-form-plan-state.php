@@ -24,8 +24,6 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $controls;
 	/** @var array<int,mixed> */
 	public array $textareas;
-	/** @var array<int,array<string,mixed>> */
-	public array $released_operations;
 	public string $selector;
 	public string $source_path;
 
@@ -40,7 +38,6 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $choice_pairs;
 	public array $submit_presentation;
 	public string $submit_text = 'Submit';
-	public bool $has_topology;
 
 	// Control mapping results.
 	public array $presentation_descriptors = array();
@@ -51,13 +48,8 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $skipped                  = array();
 	public array $unsupported_capabilities = array();
 	public array $control_attribute_losses = array();
-	public bool $has_source_submit         = false;
 
-	// Computed layout, host shell and overlay inputs.
-	/** @var array<string,mixed> Computed-layout result: `blocks` and `receipt`. */
-	public array $layout         = array();
-	public array $host           = array();
-	public array $context_before = array();
-	public array $context_after  = array();
-	public array $layout_intent  = array();
+	// Readable presentation receipt.
+	/** @var array<string,mixed> Presentation receipt consumed by the quality gate. */
+	public array $layout = array();
 }

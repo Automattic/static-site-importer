@@ -31,6 +31,7 @@ foreach ($fixture['forms'] as $name => $form_html) {
     $markup = $result['serialized_blocks'];
     $row = null;
     if ($entities) {
+        $entities = Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html($entities, $result['source_reports']['wordpress_site_plan']);
         $validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(array('forms' => $entities));
         if (is_wp_error($validated)) throw new RuntimeException($validated->get_error_message());
         $row = Static_Site_Importer_Form_Seeder::seed(array('forms' => $validated['forms']))['forms'][0];

@@ -83,9 +83,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		if ( ! empty( $scripts ) ) {
 			$parts[] = count( $scripts ) . ' runtime script' . ( 1 === count( $scripts ) ? '' : 's' );
 		}
-		if ( ! empty( $inventory['forms']['carried'] ?? false ) ) {
-			$parts[] = 'imported form field presentation';
-		}
 		$parts[] = 'internal-link rewriting';
 		$site    = self::header_value( (string) ( $inventory['site_name'] ?? '' ) );
 
@@ -103,7 +100,7 @@ final class Static_Site_Importer_Companion_Inventory {
 	 *
 	 * @param array<string,mixed> $input Canonical inputs: site_name, plugin_slug,
 	 *                                mu_plugin, blocks, block_names, islands,
-	 *                                editor_scripts, form_visual_states,
+	 *                                editor_scripts,
 	 *                                provenance, handoff.
 	 * @return array<string,mixed>
 	 */
@@ -149,7 +146,6 @@ final class Static_Site_Importer_Companion_Inventory {
 			);
 		}
 
-		$form_states      = is_array( $input['form_visual_states'] ?? null ) ? $input['form_visual_states'] : array();
 		$external_metrics = array();
 		foreach ( is_array( $input['external_metrics'] ?? null ) ? $input['external_metrics'] : array() as $fact ) {
 			if ( ! is_array( $fact ) || ! is_array( $fact['source'] ?? null ) ) {
@@ -180,11 +176,6 @@ final class Static_Site_Importer_Companion_Inventory {
 			'scripts'          => $scripts,
 			'editor_scripts'   => $editor_scripts,
 			'external_metrics' => $external_metrics,
-			'forms'            => array(
-				'carried' => array() !== $form_states,
-				'count'   => count( $form_states ),
-				'status'  => self::STATUS_REBUILT,
-			),
 			'routes'           => array(
 				'internal_links' => array( 'status' => self::STATUS_REBUILT ),
 			),
@@ -210,7 +201,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		$scripts          = is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array();
 		$editor           = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
 		$external_metrics = is_array( $inventory['external_metrics'] ?? null ) ? $inventory['external_metrics'] : array();
-		$forms            = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
 		$theme_owned      = 'theme' === ( $inventory['owner'] ?? '' );
 		$owner            = $theme_owned ? 'theme' : 'plugin';
 
@@ -230,9 +220,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$lines[] = '- Internal-link rewriting: imported internal links resolve to native WordPress permalinks. Old-source redirects are managed separately by Redirection, not this package.';
 		$lines[] = '- Imported product cards: a WooCommerce product loop that repeats an imported card fills that card for each product and keeps the source grid layout.';
-		if ( ! empty( $forms['carried'] ?? false ) ) {
-			$lines[] = '- Imported form field presentation: ' . (int) ( $forms['count'] ?? 0 ) . ' captured form field visual state' . ( 1 === (int) ( $forms['count'] ?? 0 ) ? '' : 's' ) . ' project onto the WordPress (Jetpack Forms) contact-form rendering this ' . $owner . ' registers.';
-		}
 		$lines[] = '';
 
 		$lines[] = '### Preserved runtime assets';
@@ -304,10 +291,6 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = '- stops the preserved source scripts from loading, breaking the interactive behavior they provide;';
 		$lines[] = '- stops filling imported product cards, so product loops repeat one static card outside the source grid layout;';
 		$lines[] = '- stops the imported form field presentation and its WordPress form rendering hooks.';
-		if ( ! empty( $forms['carried'] ?? false ) ) {
-			$lines[] = '';
-			$lines[] = 'The imported form fields render through the Jetpack Forms plugin. Removing Jetpack Forms removes form submission handling; this ' . $owner . ' only projects the captured field presentation onto it.';
-		}
 		$lines[] = '';
 
 		$lines[] = '## How to spot-check the import';
@@ -319,9 +302,6 @@ final class Static_Site_Importer_Companion_Inventory {
 			$lines[] = '- Preserved scripts: view the page source on the owning route and confirm each script listed above is enqueued.';
 		}
 		$lines[] = '- Snapshot content: compare a page against the source capture; imported numbers do not update.';
-		if ( ! empty( $forms['carried'] ?? false ) ) {
-			$lines[] = '- Forms: submit an imported form and confirm the normal WordPress form confirmation.';
-		}
 		$lines[] = '';
 
 		$lines[]    = '## Build version and provenance';

@@ -1,6 +1,7 @@
 <?php
 /** Regression for #2306: linked source CSS preserves placeholders in the frontend and the editor. */
 // phpcs:ignoreFile -- Standalone CLI regression.
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php';
 
@@ -15,7 +16,7 @@ $result      = ( new ArtifactCompiler() )->compile( array(
 ) )->toArray();
 $plan        = $result['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
-$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $declaration['payload']['entities'] ) );
+$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan ) ) );
 $row         = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ) )['forms'][0];
 $overlay     = $row['provider_layout_overlay_css'];
 $state       = array( 'theme_dir' => '/tmp/linked-placeholder-theme', 'theme' => array( 'slug' => 'linked-placeholder' ), 'resolved' => array( 'writes' => $plan['writes'] ) );

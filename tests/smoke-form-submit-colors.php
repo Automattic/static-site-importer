@@ -1,6 +1,7 @@
 <?php
 /** Regression for #2271: source-owned submit colours remain live stylesheet rules. */
 // phpcs:ignoreFile -- Standalone CLI regression.
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-form-runtime.php';
 
@@ -12,7 +13,7 @@ $result = ( new ArtifactCompiler() )->compile( array(
 ) )->toArray();
 $plan = $result['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
-$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $declaration['payload']['entities'] ) );
+$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan ) ) );
 $row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ) )['forms'][0];
 $css = implode( "\n", array_map( static fn( array $write ): string => str_ends_with( $write['target_path'], '.css' ) ? $write['payload']['data'] : '', $plan['writes'] ) );
 $overlay = $row['provider_layout_overlay_css']['css'];
@@ -39,7 +40,7 @@ foreach ( array( '.paint' => false, 'button' => true, '[style]' => true, '.ances
 		'styles' => array( 'background_color' => '#123456', 'padding' => '12px' ),
 		'provenance' => array( array( 'selector' => $selector, 'properties' => array( 'background-color' ), 'condition' => null ) ),
 	) ) ) );
-	$projected = Static_Site_Importer_Form_Layout_Projection::without_class_carried_submit_colors( $graph, array( array( 'type' => 'submit', 'class' => 'paint' ) ) );
+	$projected = Static_Site_Importer_Form_Presentation::without_class_carried_submit_colors( $graph, array( array( 'type' => 'submit', 'class' => 'paint' ) ) );
 	$checks[ 'colour ownership: ' . $selector ] = isset( $projected['controls'][0]['control']['styles']['background_color'] ) === $retained
 		&& '12px' === $projected['controls'][0]['control']['styles']['padding'];
 }
@@ -48,7 +49,7 @@ $graph['controls'][0]['control']['provenance'] = array(
 	array( 'selector' => 'button', 'properties' => array( 'background' ), 'condition' => null ),
 	array( 'selector' => '.paint', 'properties' => array( 'background-color' ), 'condition' => null ),
 );
-$projected = Static_Site_Importer_Form_Layout_Projection::without_class_carried_submit_colors( $graph, array( array( 'type' => 'submit', 'class' => 'paint' ) ) );
+$projected = Static_Site_Importer_Form_Presentation::without_class_carried_submit_colors( $graph, array( array( 'type' => 'submit', 'class' => 'paint' ) ) );
 $checks['overlapping background ownership stays together'] = $projected === $graph;
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {

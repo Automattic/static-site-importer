@@ -88,70 +88,11 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 	private static function provider_represents( array $loss, Static_Site_Importer_Form_Mapping_Plan $plan ): bool {
 		$form         = $plan->source_form;
 		$field_blocks = $plan->fields;
-		$target_map   = $plan->report_facts['provider_layout_target_map'];
-		if ( 'provider_native_control_visibility_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
-			foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
-				$index   = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
-				$control = is_int( $index ) ? ( $form['controls'][ $index ] ?? null ) : null;
-				if ( is_array( $node ) && is_int( $index ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $index ]['name'] ?? '' ) ) {
-					return true;
-				}
-			}
-		}
 		if ( 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_int( $loss['control_index'] ?? null ) ) {
 			$control = $form['controls'][ $loss['control_index'] ] ?? null;
 			if ( is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $loss['control_index'] ]['name'] ?? '' ) ) {
 				return true;
 			}
-		}
-		if ( 'provider_wrapper_layout_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
-			foreach ( $target_map['targets'] ?? array() as $target ) {
-				if ( ! is_array( $target ) || ! is_string( $target['node'] ?? null ) || hash( 'sha256', $target['node'] ) !== $loss['node_hash'] || ! is_array( $target['capabilities'] ?? null ) ) {
-					continue;
-				}
-				if ( array_diff( Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES, $target['capabilities'] ) === array() ) {
-					return true;
-				}
-			}
-		}
-		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
-			return false;
-		}
-		$nodes = isset( $form['control_topology']['nodes'] ) && is_array( $form['control_topology']['nodes'] ) ? $form['control_topology']['nodes'] : array();
-		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
-				continue;
-			}
-			$tag = (string) ( $node['tag'] ?? 'div' );
-			if ( in_array( $tag, array( 'ul', 'ol', 'li' ), true ) ) {
-				return true;
-			}
-			if ( 'fieldset' === $tag && Static_Site_Importer_Form_Layout_Projection::projectable_plain_root_fieldset( $node, $nodes, $field_blocks ) ) {
-				return true;
-			}
-			if ( 'label' !== $tag ) {
-				return false;
-			}
-			$nodes_by_id = array_column( $nodes, null, 'id' );
-			$controls    = array_values(
-				array_filter(
-					$nodes,
-					static function ( $candidate ) use ( $node, $nodes_by_id, $field_blocks ): bool {
-						if ( ! is_array( $candidate ) || 'control' !== ( $candidate['kind'] ?? '' ) || ! is_int( $candidate['control'] ?? null ) || ! isset( $field_blocks[ $candidate['control'] ] ) ) {
-							return false;
-						}
-						$parent = $candidate['parent'] ?? null;
-						while ( is_string( $parent ) ) {
-							if ( ( $node['id'] ?? null ) === $parent ) {
-								return true;
-							}
-							$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
-						}
-						return false;
-					}
-				)
-			);
-			return 1 === count( $controls );
 		}
 		return false;
 	}

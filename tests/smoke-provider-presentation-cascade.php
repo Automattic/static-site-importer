@@ -35,7 +35,7 @@ foreach ( array( false, true ) as $reverse ) {
 	}
 }
 // Exercise the overlay independently of the producer's alphabetic style keys.
-$resolve = new ReflectionMethod( Static_Site_Importer_Provider_Layout_Overlay::class, 'resolve_presentation_cascade' );
+$resolve = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Overlay::class, 'resolve_presentation_cascade' );
 foreach ( array( false, true ) as $longhand_wins ) {
 	$styles   = $resolve->invoke(
 		null,

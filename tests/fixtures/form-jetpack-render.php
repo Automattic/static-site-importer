@@ -223,7 +223,6 @@ function ssi_role_box_render_field( array $block ): string {
 	// Contact_Form_Field::render(): grunion_contact_form_field_html, in the
 	// runtime's registered priority order (10, 20, 30).
 	$html = Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
-	$html = Static_Site_Importer_Provider_Form_Runtime_V1::project_empty_country_visual_state( $html );
 	return Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_values( $html );
 }
 
@@ -327,10 +326,6 @@ function ssi_role_box_render_form( array $form ): string {
 		. $list
 		. "\t\t<input type='hidden' name='contact-form-id' value='1' />\n"
 		. "</form>\n</div>";
-	// render_block_jetpack/contact-form filters at priorities 5, 6 and 10.
-	$block = array( 'attrs' => $form['attrs'] );
-	$html  = Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_placement( $html, $block );
-	$html  = Static_Site_Importer_Provider_Form_Runtime_V1::project_field_list_wrapper( $html, $block );
-	return Static_Site_Importer_Provider_Form_Runtime_V1::project_plain_root_fieldset( $html, $block );
+	return $html;
 }
 

@@ -132,7 +132,6 @@ namespace {
 			fwrite( STDERR, "source form {$name} did not map: " . wp_json_encode( array( 'status' => $row['status'] ?? null, 'reason' => $row['reason'] ?? null, 'losses' => $row['form_receipt_unaccepted_losses'] ?? null ) ) . "\n" );
 			exit( 1 );
 		}
-		Static_Site_Importer_Provider_Form_Runtime_V1::configure_visual_states( isset( $row['form_visual_state'] ) ? array( $row['form_visual_state'] ) : array() );
 		// The imported theme serves the stylesheets the compile emits (engine
 		// support rules, then the projected source CSS), not the raw source.
 		$page_css = implode( "\n", array_map( static fn ( array $asset ): string => (string) $asset['content'], array_filter( $compiled['assets'] ?? array(), static fn ( array $asset ): bool => 'css' === ( $asset['kind'] ?? null ) ) ) );

@@ -88,7 +88,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			'part'       => 'field_box_wrapper',
 			'role'       => 'label',
 			// Jetpack renders the field block's class with a `-wrap` suffix.
-			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap',
+			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap',
 			'properties' => self::FIELD_BOX_ARRANGEMENT_FACTS,
 			'resets'     => array(
 				'margin'     => '0',
@@ -116,7 +116,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 */
 	public static function with_caption_after_control( array $descriptor, string $scope, int $index, bool $field_box ): array {
 		// Jetpack renders the field block's class with a `-wrap` suffix.
-		$wrapper = '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap';
+		$wrapper = '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap';
 		if ( ! $field_box ) {
 			$descriptor['destinations'][] = array(
 				'part'       => 'caption_after_control_box',
@@ -146,6 +146,53 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		);
 		$descriptor['has_presentation'] = true;
 		return $descriptor;
+	}
+
+	/**
+	 * Lay a single checkbox and its label out as the source row did.
+	 *
+	 * Jetpack nests the pair in a choice wrap inside the field wrapper; a
+	 * retained source wrapper (`.ssi-field-row`) can sit between the two, and
+	 * the field wrapper holds exactly one choice wrap, so the selector descends.
+	 *
+	 * @param array<string,mixed>  $descriptor   Presentation descriptor.
+	 * @param array<string,string> $declarations Source row arrangement.
+	 * @return array<string,mixed>
+	 */
+	public static function with_checkbox_layout( array $descriptor, string $scope, int $index, array $declarations ): array {
+		$descriptor['destinations'][] = array(
+			'part'       => 'checkbox_layout',
+			'role'       => 'label',
+			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap .contact-form__checkbox-wrap',
+			'properties' => array(),
+			'resets'     => $declarations,
+		);
+		$descriptor['has_presentation'] = true;
+		return $descriptor;
+	}
+
+	/**
+	 * Give each laid-out checkbox a label row, so its layout destination
+	 * compiles even when the source states no label paint.
+	 *
+	 * @param array<string,mixed> $graph   Presentation graph.
+	 * @param array<int,mixed>    $indices Controls with a checkbox layout.
+	 * @return array<string,mixed>
+	 */
+	public static function with_checkbox_layout_rows( array $graph, array $indices ): array {
+		$graph['controls'] = $graph['controls'] ?? array();
+		foreach ( array_keys( $indices ) as $index ) {
+			$key = array_search( $index, array_map( static fn( $control ) => $control['index'] ?? null, $graph['controls'] ), true );
+			if ( false === $key ) {
+				$graph['controls'][] = array(
+					'index' => $index,
+					'label' => array( 'styles' => array() ),
+				);
+			} elseif ( ! is_array( $graph['controls'][ $key ]['label']['styles'] ?? null ) ) {
+				$graph['controls'][ $key ]['label']['styles'] = array();
+			}
+		}
+		return $graph;
 	}
 
 	/**
@@ -339,5 +386,90 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			'wrapper' => 'paragraph',
 			'content' => $text,
 		) );
+	}
+
+	/**
+	 * The source arrangement of each proven two-item checkbox/label flex row.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 * @return array<int,array<string,string>> CSS declarations by control index.
+	 */
+	public static function checkbox_layouts( array $form ): array {
+		$graph   = $form['layout_graph'] ?? array();
+		$targets = array();
+		if ( 'generic/computed-layout-graph/v3' !== ( $graph['schema'] ?? null ) || ! empty( $graph['truncated'] ) ) {
+			return $targets;
+		}
+		$nodes = array_column( $graph['nodes'] ?? array(), null, 'id' );
+		foreach ( $nodes as $label ) {
+			if ( 'label' !== ( $label['kind'] ?? null ) ) {
+				continue;
+			}
+			$control = $nodes[ $label['for_control'] ?? '' ] ?? array();
+			$parent  = $label['parent'] ?? '';
+			$wrapper = $nodes[ $parent ] ?? array();
+			$layout  = $wrapper['layout'] ?? array();
+			$index   = (int) substr( $control['id'] ?? '', 8 );
+			if ( 'control' !== ( $control['kind'] ?? null ) || 'checkbox' !== ( $form['controls'][ $index ]['type'] ?? null ) || ! empty( $form['controls'][ $index ]['options'] ) || ( $control['parent'] ?? null ) !== $parent || 2 !== ( $wrapper['in_flow_children'] ?? null ) || ! in_array( $layout['display'] ?? '', array( 'flex', 'inline-flex' ), true ) ) {
+				continue;
+			}
+			$children = array_filter( $nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === $parent );
+			if ( 2 !== count( $children ) || ! is_int( $control['order'] ?? null ) || ! is_int( $label['order'] ?? null ) || $label['order'] === $control['order'] ) {
+				continue;
+			}
+			$in_flow = true;
+			foreach ( array( $control, $label ) as $item ) {
+				$item_layout = $item['layout'] ?? array();
+				if ( 'none' === ( $item_layout['display'] ?? '' ) || in_array( $item_layout['position'] ?? '', array( 'absolute', 'fixed' ), true ) || ! empty( $item_layout['order'] ) ) {
+					$in_flow = false;
+				}
+			}
+			$gaps = self::source_gaps( $layout );
+			if ( ! $in_flow || null === $gaps || ( null === $gaps['row'] && null === $gaps['column'] ) ) {
+				continue;
+			}
+			$direction = $layout['direction'] ?? 'row';
+			if ( $label['order'] < $control['order'] ) {
+				$direction = str_ends_with( $direction, '-reverse' ) ? substr( $direction, 0, -8 ) : $direction . '-reverse';
+			}
+			$declarations = array(
+				'display'        => 'flex',
+				'flex-direction' => $direction,
+				'align-items'    => $layout['align_items'] ?? 'stretch',
+			);
+			foreach ( array( 'gap', 'row_gap', 'column_gap', 'justify_content' ) as $property ) {
+				if ( isset( $layout[ $property ] ) ) {
+					$declarations[ str_replace( '_', '-', $property ) ] = $layout[ $property ];
+				}
+			}
+			$targets[ $index ] = $declarations;
+		}
+		return $targets;
+	}
+
+	/**
+	 * Row and column gaps from a layout's gap facts, or null when they conflict.
+	 *
+	 * @param array<string,mixed> $layout Source layout facts.
+	 * @return array{row:?string,column:?string}|null
+	 */
+	private static function source_gaps( array $layout ): ?array {
+		$fact  = static fn ( string $key ): ?string => is_string( $layout[ $key ] ?? null ) && '' !== trim( $layout[ $key ] ) ? trim( $layout[ $key ] ) : null;
+		$parts = null === $fact( 'gap' ) ? array() : \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( (string) $fact( 'gap' ) );
+		if ( count( $parts ) > 2 ) {
+			return null;
+		}
+		$shorthand = array(
+			'row'    => $parts[0] ?? null,
+			'column' => $parts[1] ?? $parts[0] ?? null,
+		);
+		$gaps      = array(
+			'row'    => $fact( 'row_gap' ) ?? $shorthand['row'],
+			'column' => $fact( 'column_gap' ) ?? $shorthand['column'],
+		);
+		if ( array() !== $parts && $gaps !== $shorthand ) {
+			return null;
+		}
+		return $gaps;
 	}
 }
