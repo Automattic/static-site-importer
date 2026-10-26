@@ -608,13 +608,13 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			self::upsert_overlay_node( $overlay_graph, $target );
 		}
-		foreach ( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $state->form ) as $target ) {
+		foreach ( array_merge( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $state->form ), Static_Site_Importer_Form_Layout_Projection::checkbox_label_layout_targets( $state->form ) ) as $target ) {
 			$control_index = $target['control'];
 			$layout_patch  = $target['layout'];
 			// Jetpack renders a label and input as siblings in its field wrapper.
 			// Keep generic control layout on the input and target this relationship
 			// specifically at the generated wrapper.
-			$target_id = 'field-' . $control_index;
+			$target_id = $target['target'] ?? 'field-' . $control_index;
 			if ( isset( $target['condition'] ) ) {
 				if ( ! array_filter( $overlay_graph['nodes'], static fn( $node ): bool => is_array( $node ) && ( $node['id'] ?? null ) === $target_id ) ) {
 					$overlay_graph['nodes'][] = array(

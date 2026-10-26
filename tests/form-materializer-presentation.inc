@@ -6,6 +6,44 @@
  * ($assert), helper closures and shared fixtures.
  */
 
+	$consent_html = '<style>.consent{display:flex;gap:8px;margin:10px 8px 16px}.consent input{margin:0;width:13px;height:13px}.consent label{margin-top:-3px;line-height:18px}</style><form><div><label for="Name">Name *</label><input type="text" name="name" id="Name"></div><div class="consent"><input type="checkbox" name="consent" id="consent"><label for="consent">Yes, I want to receive news</label></div><div><input type="submit" value="Send"></div></form>';
+	foreach ( array(
+		'fixture'      => array( '', 'row', 'gap:8px' ),
+		'no-gap'       => array( 'no-gap', '', '' ),
+		'column'       => array( 'flex-direction:column;row-gap:11px;column-gap:5px', 'column', 'row-gap:11px;column-gap:5px' ),
+		'label-first'  => array( 'label-first', 'row-reverse', 'gap:8px' ),
+		'row-reverse'  => array( 'flex-direction:row-reverse;align-items:center', 'row-reverse', 'align-items:center;gap:8px' ),
+	) as $case => list( $extra, $direction, $spacing ) ) {
+		$html = $consent_html;
+		if ( 'no-gap' === $extra ) {
+			$html = str_replace( 'gap:8px;', '', $html );
+		} elseif ( 'label-first' === $extra ) {
+			$html = str_replace( '<input type="checkbox" name="consent" id="consent"><label for="consent">Yes, I want to receive news</label>', '<label for="consent">Yes, I want to receive news</label><input type="checkbox" name="consent" id="consent">', $html );
+		} elseif ( '' !== $extra ) {
+			$html = str_replace( 'gap:8px;', 'gap:8px;' . $extra . ';', $html );
+		}
+		$source = ( ( new $artifact_compiler() )->compile( array(
+			'entrypoint' => 'contact.html',
+			'files'      => array(
+				'contact.html' => $html,
+			),
+		) )->toArray() )['fallbacks'][0] ?? array();
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $source ) ) );
+		$row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		$css        = $row['provider_layout_overlay_css']['css'] ?? '';
+		$rule       = array();
+		$has_rule   = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap \.contact-form__checkbox-wrap\{([^}]+)\}/', $css, $rule );
+		if ( 'fixture' === $case ) {
+			$consent_gap_projected = $has_rule && str_contains( $rule[1], 'gap:8px' );
+		}
+		$assert(
+			empty( $validation['errors'] ) && 'mapped' === ( $row['status'] ?? '' )
+				&& ( 'no-gap' === $case ? $consent_gap_projected && ! $has_rule : $has_rule && str_contains( $rule[1], 'flex-direction:' . $direction ) && str_contains( $rule[1], $spacing ) ),
+			'compiled-checkbox-label-wrap-' . $case,
+			$css
+		);
+	}
+
 	$grid_shell_form = array(
 		'forms' => array( array(
 			'selector'         => 'form.grid-shell',

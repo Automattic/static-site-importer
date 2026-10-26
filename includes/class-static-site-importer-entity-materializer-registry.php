@@ -2662,6 +2662,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( array_key_exists( 'content', $node ) ) {
 				$clean['content'] = $node['content'];
 			}
+			if ( isset( $node['for_control'] ) ) {
+				$clean['for_control'] = $node['for_control'];
+			}
 			if ( array_key_exists( 'in_flow_children', $node ) ) {
 				$clean['in_flow_children'] = $node['in_flow_children'];
 			}

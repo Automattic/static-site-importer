@@ -742,6 +742,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'textarea_rows' => true,
 			),
 			'checkbox_control'          => array(),
+			'checkbox_layout'           => array(),
 			'sibling_stacked'           => array( 'placeholder' => $placeholder ),
 			'control_container'         => array(),
 			// The submit button.
