@@ -111,9 +111,11 @@ namespace {
 			fwrite( STDERR, "source form {$name} did not map: " . wp_json_encode( array( 'status' => $row['status'] ?? null, 'reason' => $row['reason'] ?? null, 'losses' => $row['form_receipt_unaccepted_losses'] ?? null ) ) . "\n" );
 			exit( 1 );
 		}
-if ( getenv( "SSI_GEO_DEBUG" ) ) { fwrite( STDERR, $name . " " . wp_json_encode( array_intersect_key( $row, array_flip( array( "form_layout_receipt", "provider_layout_overlay_css" ) ) ) ) . "\n" ); }
 		Static_Site_Importer_Provider_Form_Runtime_V1::configure_visual_states( isset( $row['form_visual_state'] ) ? array( $row['form_visual_state'] ) : array() );
-		$writes  = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/theme', 'Source Geometry', $base . $css, array(), array(), array( $row['provider_layout_overlay_css'] ) );
+		// The imported theme serves the stylesheets the compile emits (engine
+		// support rules, then the projected source CSS), not the raw source.
+		$page_css = implode( "\n", array_map( static fn ( array $asset ): string => (string) $asset['content'], array_filter( $compiled['assets'] ?? array(), static fn ( array $asset ): bool => 'css' === ( $asset['kind'] ?? null ) ) ) );
+		$writes   = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/theme', 'Source Geometry', $page_css, array(), array(), array( $row['provider_layout_overlay_css'] ) );
 		$blocks  = ssi_role_box_parse_blocks( (string) $row['block_markup'] );
 		$forms[] = array(
 			'name'       => $name,
@@ -121,7 +123,7 @@ if ( getenv( "SSI_GEO_DEBUG" ) ) { fwrite( STDERR, $name . " " . wp_json_encode(
 			'sourceHtml' => $source,
 			'blocks'     => $blocks,
 			'frontHtml'  => ssi_role_box_render_form( $blocks[0] ),
-			'css'        => $writes['/theme/style.css'] . str_replace( 'SCOPE', substr( (string) $row['provider_layout_target_map']['scope'], 1 ), (string) getenv( 'SSI_GEO_EXTRA' ) ),
+			'css'        => $writes['/theme/style.css'],
 			'editorCss'  => $writes['/theme/assets/css/editor-style.css'],
 		);
 	}
