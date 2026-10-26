@@ -348,9 +348,17 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
-			} elseif ( isset( $state->presentation_descriptors[ $control_index ] ) && null === Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) && Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
+				continue;
+			}
+			if ( ! isset( $state->presentation_descriptors[ $control_index ] ) || null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) ) {
+				continue;
+			}
+			if ( Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_field_box_label( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index );
 				$field_box_labels[ $control_index ]                = true;
+			}
+			if ( true === ( $state->form['controls'][ $control_index ]['label_after_control'] ?? null ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
 			}
 		}
 		$presentation_form['presentation_graph'] = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );

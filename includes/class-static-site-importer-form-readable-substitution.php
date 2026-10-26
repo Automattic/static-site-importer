@@ -98,6 +98,50 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/**
+	 * The provider renders its caption before every control. A source caption
+	 * that follows its control is restored to that place: the field box lays
+	 * its children out in a column, and the caption is ordered after the
+	 * control and keeps the full row a block caption has.
+	 *
+	 * @param array<string,mixed> $descriptor Field presentation descriptor.
+	 * @param bool                $field_box  Whether the wrapping label already arranges the field box.
+	 * @return array<string,mixed>
+	 */
+	public static function with_caption_after_control( array $descriptor, string $scope, int $index, bool $field_box ): array {
+		// Jetpack renders the field block's class with a `-wrap` suffix.
+		$wrapper = '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap';
+		if ( ! $field_box ) {
+			$descriptor['destinations'][] = array(
+				'part'       => 'caption_after_control_box',
+				'role'       => 'label',
+				'selector'   => $wrapper,
+				'properties' => array(),
+				'resets'     => array(
+					'display'        => 'flex',
+					'flex-direction' => 'column',
+					'align-items'    => 'flex-start',
+				),
+				// The editor field block is `display: contents`; its control box holds the caption and control.
+				'editor'     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
+			);
+		}
+		$descriptor['destinations'][]   = array(
+			'part'       => 'caption_after_control',
+			'role'       => 'label',
+			'selector'   => $wrapper . ' > label',
+			'properties' => array(),
+			'resets'     => array(
+				'order'      => '1',
+				'align-self' => 'stretch',
+			),
+			// The editor caption is the label block inside that control box.
+			'editor'     => array( 'retarget' => array( '-wrap > label', ' > div.jetpack-field__control > .wp-block-jetpack-label' ) ),
+		);
+		$descriptor['has_presentation'] = true;
+		return $descriptor;
+	}
+
+	/**
 	 * The presentation facts of each field-box label the provider carries: its
 	 * text on the caption, its arrangement on the field wrapper. The shell
 	 * states the rest of that box.
