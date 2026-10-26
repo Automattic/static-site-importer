@@ -90,11 +90,12 @@ foreach ( array( false, true ) as $multiple ) {
 	$other_class = $options['innerBlocks'][2]['attrs']['className'] ?? '';
 	// The declarations of the rules whose selector names one class (with an optional suffix).
 	$rule = static fn( string $css, string $selector ): string => implode( ';', preg_match_all( '/(?:(?<=\})|^)[^{}]*\.' . preg_quote( $selector, '/' ) . '(?=[,{])[^{}]*\{([^}]*)\}/', $css, $found ) ? $found[1] : array() );
-	$checks['choice row lays out the options ' . (int) $multiple] = str_contains( $rule( $overlay['css'], $options['attrs']['className'] ?? '-' ), 'display:flex;gap:8px;flex-wrap:wrap' ) && str_contains( $rule( $overlay['editor_css'], $options['attrs']['className'] ?? '-' ), 'display:flex;gap:8px;flex-wrap:wrap' );
+	$lays_out = static fn( string $declarations ): bool => array() === array_diff( array( 'display:flex!important', 'flex-wrap:wrap!important', 'gap:8px!important' ), explode( ';', $declarations ) );
+	$checks['choice row lays out the options ' . (int) $multiple] = $lays_out( $rule( $overlay['css'], $options['attrs']['className'] ?? '-' ) ) && $lays_out( $rule( $overlay['editor_css'], $options['attrs']['className'] ?? '-' ) );
 	$checks['choice options take their paint ' . (int) $multiple] = str_contains( $rule( $overlay['css'], $other_class ), 'background:#fff!important;border:2px solid #ddd!important;border-radius:999px!important' )
 		// A source button keeps its border-box sizing on the provider's label option.
 		&& str_contains( $rule( $overlay['css'], $other_class ), 'box-sizing:border-box!important' );
-	$checks['choice overlay is admitted ' . (int) $multiple] = null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
+	$checks['choice overlay is admitted ' . (int) $multiple] = null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
 	$checks['checked option takes the selected paint ' . (int) $multiple] = $multiple
 		? ! str_contains( $overlay['css'], ':checked' )
 		: 'background:#111!important;border:2px solid #111!important;color:#fff!important' === $rule( $overlay['css'], $option_class . ':has(> input:checked)' ) && str_contains( $rule( $overlay['editor_css'], $option_class ), 'background:#111!important;border:2px solid #111!important;color:#fff!important' ) && ! str_contains( $rule( $overlay['editor_css'], $other_class ), '#111' );

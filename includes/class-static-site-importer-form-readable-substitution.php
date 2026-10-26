@@ -348,15 +348,14 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * unselected paint, and the checked option the selected paint's difference.
 	 *
 	 * @param array<string,mixed> $graph Producer presentation graph.
-	 * @return array{descriptors:array<int,array<string,mixed>>,controls:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>,layout_nodes:array<int,array<string,mixed>>,layout_targets:array<int,array<string,mixed>>}
+	 * @return array{descriptors:array<int,array<string,mixed>>,controls:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>,control_containers:array<int,array<string,mixed>>}
 	 */
 	public static function choice_presentation( Static_Site_Importer_Form_Plan_State $state, array $graph ): array {
 		$out  = array(
-			'descriptors'  => array(),
-			'controls'     => array(),
-			'variants'     => array(),
-			'layout_nodes' => array(),
-			'layout_targets' => array(),
+			'descriptors'        => array(),
+			'controls'           => array(),
+			'variants'           => array(),
+			'control_containers' => array(),
 		);
 		$rows = array();
 		foreach ( $graph['controls'] ?? array() as $row ) {
@@ -371,23 +370,18 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			}
 		}
 		foreach ( $state->choice_groups as $group ) {
-			$row_id = $group['row'];
-			if ( null !== $row_id && is_array( $nodes[ $row_id ]['layout'] ?? null ) ) {
-				$node           = $nodes[ $row_id ];
-				$node['parent'] = null;
-				// The provider list is not a flex row, so the row states what its
-				// source flex box leaves at the initial values.
-				$node['layout']         += 'flex' === ( $node['layout']['display'] ?? null ) ? array(
-					'direction'   => 'row',
-					'wrap'        => 'nowrap',
-					'align_items' => 'stretch',
-				) : array();
-				$out['layout_nodes'][]   = $node;
-				$out['layout_targets'][] = array(
-					'part'         => 'box',
-					'node'         => $row_id,
-					'selector'     => '.' . $state->scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, $row_id ),
-					'capabilities' => Static_Site_Importer_Form_Presentation_Overlay::LAYOUT_CAPABILITIES,
+			$list = self::choice_row_presentation( $state, $nodes[ $group['row'] ?? '' ]['layout'] ?? null, $group['row'] ?? '' );
+			if ( null !== $list ) {
+				$out['control_containers'][]                 = array(
+					'index'  => $group['controls'][0],
+					'styles' => $list['styles'],
+				);
+				$out['descriptors'][ $group['controls'][0] ] = array(
+					'has_presentation'   => true,
+					'control_class'      => '',
+					'label_class'        => '',
+					'phone_destinations' => array(),
+					'destinations'       => array( $list['destination'] ),
 				);
 			}
 			$painted = array_values( array_filter( $group['controls'], static fn( int $index ): bool => isset( $rows[ $index ] ) ) );
@@ -423,17 +417,65 @@ class Static_Site_Importer_Form_Readable_Substitution {
 						$out['variants'][] = array( 'index' => $index ) + $state_paint['patch'];
 					}
 				}
-				$out['controls'][]            = $row;
-				$out['descriptors'][ $index ] = array(
+				$out['controls'][]                              = $row;
+				$out['descriptors'][ $index ]                   = $out['descriptors'][ $index ] ?? array(
 					'has_presentation'   => true,
 					'control_class'      => '',
 					'label_class'        => '',
 					'phone_destinations' => array(),
-					'destinations'       => array( $destination ),
+					'destinations'       => array(),
 				);
+				$out['descriptors'][ $index ]['destinations'][] = $destination;
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * The source row that laid out a choice group's choices, presented on the
+	 * provider's option list. The list is no flex box of its own, so the row
+	 * states the initial values its source flex box leaves implicit.
+	 *
+	 * @param mixed $layout The row's captured layout facts.
+	 * @return array{styles:array<string,string>,destination:array<string,mixed>}|null
+	 */
+	private static function choice_row_presentation( Static_Site_Importer_Form_Plan_State $state, mixed $layout, string $row_id ): ?array {
+		if ( ! is_array( $layout ) || 'flex' !== ( $layout['display'] ?? null ) ) {
+			return null;
+		}
+		$layout    += array(
+			'direction'   => 'row',
+			'wrap'        => 'nowrap',
+			'align_items' => 'stretch',
+		);
+		$styles     = array();
+		$properties = array(
+			'display'         => 'display',
+			'direction'       => 'flex_direction',
+			'wrap'            => 'flex_wrap',
+			'gap'             => 'gap',
+			'align_items'     => 'align_items',
+			'justify_content' => 'justify_content',
+		);
+		foreach ( $properties as $fact => $property ) {
+			if ( is_string( $layout[ $fact ] ?? null ) && '' !== $layout[ $fact ] ) {
+				$styles[ $property ] = $layout[ $fact ];
+			}
+		}
+		$hook = Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, $row_id );
+		return array(
+			'styles'      => $styles,
+			'destination' => array(
+				'part'       => 'choice_row',
+				'role'       => 'control_container',
+				'selector'   => '.' . $state->scope . ' .' . $hook,
+				'properties' => array_keys( $styles ),
+				'resets'     => array(),
+				'priority'   => 'important',
+				// The editor list is the options block, which carries the same class.
+				'editor'     => array( 'selector' => '{scope} .' . $hook ),
+			),
+		);
 	}
 
 	/**
