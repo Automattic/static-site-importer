@@ -79,11 +79,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( isset( $state->suppressed_controls[ $index ] ) || ! isset( $state->field_blocks[ $index ] ) ) {
 				return null;
 			}
-			$field = $state->field_blocks[ $index ];
-			if ( 'submit' === ( $state->controls[ $index ]['type'] ?? '' ) ) {
-				$field['name'] = 'jetpack/button';
-			}
-			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
+			return Static_Site_Importer_Form_Field_Markup::parsed_block( $state->field_blocks[ $index ] );
 		}
 		$children = array();
 		$slots    = array();

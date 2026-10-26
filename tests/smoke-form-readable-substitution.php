@@ -40,7 +40,7 @@ $actual = parse_blocks( $row['block_markup'] )[0];
 $compare = static function( array $before, array $after, string $path = 'root' ) use ( &$compare, &$checks ): void {
 	if ( isset( $before['form_control_index'] ) ) {
 		$index = $before['form_control_index'];
-		$checks[ 'control at ' . $path ] = 14 === $index ? 'jetpack/button' === $after['blockName'] : ( in_array( $index, array( 0, 1, 2, 9, 10, 11 ), true ) ? 'core/button' === $after['blockName'] : str_starts_with( $after['blockName'], 'jetpack/field-' ) );
+		$checks[ 'control at ' . $path ] = 14 === $index ? 'core/button' === $after['blockName'] && 'submit' === ( $after['attrs']['type'] ?? '' ) && '' !== trim( wp_strip_all_tags( $after['innerHTML'] ) ) : ( in_array( $index, array( 0, 1, 2, 9, 10, 11 ), true ) ? 'core/button' === $after['blockName'] : str_starts_with( $after['blockName'], 'jetpack/field-' ) );
 		return;
 	}
 	$checks[ 'wrapper at ' . $path ] = 'root' === $path ? 'jetpack/contact-form' === $after['blockName'] : $before['blockName'] === $after['blockName'] && $before['attrs'] === $after['attrs'] && $before['innerContent'] === $after['innerContent'];
@@ -66,7 +66,7 @@ foreach ( array( false, true ) as $multiple ) {
 	$checks['captured choice ' . (int) $multiple] = 'mapped' === $choice_row['status'] && ( $multiple ? 'jetpack/field-checkbox-multiple' : 'jetpack/field-radio' ) === $choice_tree['blockName'] && str_contains( $choice_tree['attrs']['className'], 'is-style-button' ) && array( 'General', 'Bookings', 'Other' ) === $choice_tree['attrs']['options'];
 	// Every emitted provider block must be one Jetpack registers at runtime.
 	preg_match_all( '/<!-- wp:(jetpack\/[a-z0-9-]+)/', $row['block_markup'] . $choice_row['block_markup'], $emitted );
-	$checks['registered provider blocks ' . (int) $multiple] = array() === array_diff( array_diff( array_unique( $emitted[1] ), array( 'jetpack/button' ) ), Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() );
+	$checks['registered provider blocks ' . (int) $multiple] = array() === array_diff( array_unique( $emitted[1] ), Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() );
 }
 // Suppression removes the child and its null slot, not its source ancestors.
 $hidden = $validated['forms'][0];
