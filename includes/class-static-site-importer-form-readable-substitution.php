@@ -373,8 +373,8 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		foreach ( $state->choice_groups as $group ) {
 			$row_id = $group['row'];
 			if ( null !== $row_id && is_array( $nodes[ $row_id ]['layout'] ?? null ) ) {
-				$node                                = $nodes[ $row_id ];
-				$node['parent']                      = null;
+				$node           = $nodes[ $row_id ];
+				$node['parent'] = null;
 				// The provider list is not a flex row, so the row states what its
 				// source flex box leaves at the initial values.
 				$node['layout']         += 'flex' === ( $node['layout']['display'] ?? null ) ? array(
@@ -394,6 +394,13 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( count( $painted ) !== count( $group['controls'] ) ) {
 				continue;
 			}
+			// A source button sizes its box with its border (the browser default the
+			// capture does not restate); the provider option is a label, sized by content.
+			foreach ( $group['controls'] as $index ) {
+				if ( 'button' === ( $state->form['controls'][ $index ]['tag'] ?? null ) ) {
+					$rows[ $index ]['control']['styles'] += array( 'box_sizing' => 'border-box' );
+				}
+			}
 			$state_paint = self::selection_paint( $group, $rows );
 			foreach ( $group['controls'] as $position => $index ) {
 				$hook        = '.' . $state->scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $index );
@@ -407,16 +414,16 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					// The editor option is the option block, which carries the same class.
 					'editor'     => array( 'selector' => '{scope} .' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $index ) ),
 				);
-				$row         = $rows[ $index ];
+				$row = $rows[ $index ];
 				if ( null !== $state_paint ) {
-					$destination['checked']         = $hook . ':has(> input:checked)';
+					$destination['checked']           = $hook . ':has(> input:checked)';
 					$destination['editor']['checked'] = true === ( $group['selected'][ $position ] ?? null );
-					$row['control']                 = $state_paint['unselected'];
+					$row['control']                   = $state_paint['unselected'];
 					if ( array() !== $state_paint['patch']['style_patch'] ) {
 						$out['variants'][] = array( 'index' => $index ) + $state_paint['patch'];
 					}
 				}
-				$out['controls'][]             = $row;
+				$out['controls'][]            = $row;
 				$out['descriptors'][ $index ] = array(
 					'has_presentation'   => true,
 					'control_class'      => '',

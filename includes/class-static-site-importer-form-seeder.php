@@ -310,8 +310,8 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		// Substituted choice groups paint their options and lay out their option list.
-		$choices                                             = Static_Site_Importer_Form_Readable_Substitution::choice_presentation( $state, $presentation_form['presentation_graph'] );
-		$state->presentation_descriptors                     = array_replace( $state->presentation_descriptors, $choices['descriptors'] );
+		$choices                         = Static_Site_Importer_Form_Readable_Substitution::choice_presentation( $state, $presentation_form['presentation_graph'] );
+		$state->presentation_descriptors = array_replace( $state->presentation_descriptors, $choices['descriptors'] );
 		$presentation_form['presentation_graph']['controls'] = array_merge(
 			array_values( array_filter( $presentation_form['presentation_graph']['controls'], static fn( array $control ): bool => ! isset( $choices['descriptors'][ $control['index'] ] ) ) ),
 			$choices['controls']
@@ -593,8 +593,8 @@ class Static_Site_Importer_Form_Seeder {
 		// recorded carries none.
 		$part_map            = Static_Site_Importer_Form_Presentation::provider_layout_target_map( $overlay_form, $state->scope, $state->presentation_descriptors );
 		$part_map['targets'] = array_merge( $part_map['targets'], $layout_targets );
-		$target_map         = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( $part_map );
-		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
+		$target_map          = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( $part_map );
+		$presentation_graph  = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		// The editor sizes a textarea from its resolved policy; a control whose
 		// presentation row the overlay withdrew has no editor box to size.
 		$editor_textareas = array();
