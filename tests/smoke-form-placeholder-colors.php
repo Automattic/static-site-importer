@@ -32,7 +32,7 @@ $checks      = array(
 	'existing stylesheet path replays too' => str_contains( $existing['/tmp/placeholder-theme/style.css'], 'input' . $scope . '::placeholder' ),
 	'repeated materialization does not duplicate source selectors' => substr_count( $repeat['/tmp/placeholder-theme/style.css'], $scope ) === substr_count( $stylesheet, $scope ),
 	'without forms source remains unchanged' => $plain['/tmp/placeholder-theme/style.css'] === $css,
-	'no authored placeholder keeps fallback' => ! str_contains( $fallback['/tmp/placeholder-theme/style.css'], $scope ),
+	'no authored placeholder keeps fallback' => ! str_contains( $fallback['/tmp/placeholder-theme/style.css'], $scope ) && str_contains( $fallback['/tmp/placeholder-theme/style.css'], '::placeholder{color:revert}' ),
 );
 if ( in_array( '--json', $argv, true ) ) {
 	echo json_encode( array( 'css' => $stylesheet, 'overlay' => $overlay['css'], 'editor' => $writes['/tmp/placeholder-theme/assets/css/editor-style.css'], 'markup' => $row['block_markup'], 'fallback' => $fallback['/tmp/placeholder-theme/style.css'] ) );

@@ -205,9 +205,12 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		return self::close_pass( $pass );
 	}
 
-	/** Compile the same field presentation on the front end and in the editor. */
-	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array() ): array {
-		$front  = self::compile( $graph, $front_map, $presentation_graph, self::SURFACE_FRONT_END );
+	/**
+	 * Compile field presentation on the front end and in the editor. The front
+	 * end may omit facts its live source rules already carry.
+	 */
+	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array(), ?array $front_presentation_graph = null ): array {
+		$front  = self::compile( $graph, $front_map, $front_presentation_graph ?? $presentation_graph, self::SURFACE_FRONT_END );
 		$editor = self::compile( $graph, $editor_map, $presentation_graph, self::SURFACE_EDITOR );
 		$losses = array_merge( $editor['losses'], $front['losses'] );
 		if ( array() === $front['overlay'] ) {

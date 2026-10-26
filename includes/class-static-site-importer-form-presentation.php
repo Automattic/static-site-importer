@@ -181,11 +181,57 @@ final class Static_Site_Importer_Form_Presentation {
 		if ( ! isset( $overlay['overlay'] ) || ! is_array( $overlay['overlay'] ) || ! is_string( $overlay['css'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $scope ) ) {
 			return $overlay;
 		}
-		return self::with_overlay_css( $overlay, rtrim( $overlay['css'] ) . "\n" . self::inactive_field_error_rule( $scope ) . "\n" );
+		return self::with_overlay_css( $overlay, rtrim( $overlay['css'] ) . "\n" . self::provider_base_rules( $scope ) . "\n" );
 	}
 
-	private static function inactive_field_error_rule( string $scope ): string {
-		return '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}';
+	/**
+	 * Inactive field errors take no space, and a placeholder without an
+	 * authored colour keeps the browser default over the provider's `inherit`.
+	 */
+	private static function provider_base_rules( string $scope ): string {
+		return '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}';
+	}
+
+	/**
+	 * Leave class-owned submit colours with the source stylesheet. Its rules
+	 * already bind palette presets and include interaction states; restating a
+	 * computed literal at overlay specificity would override both.
+	 *
+	 * @param array<string,mixed> $graph    Presentation graph.
+	 * @param array<int,mixed>    $controls Source controls.
+	 * @return array<string,mixed>
+	 */
+	public static function without_class_carried_submit_colors( array $graph, array $controls ): array {
+		foreach ( $graph['controls'] ?? array() as $offset => $row ) {
+			$control = $controls[ $row['index'] ] ?? array();
+			if ( 'submit' !== ( $control['type'] ?? '' ) ) {
+				continue;
+			}
+			$tokens = preg_split( '/\s+/', trim( (string) ( $control['class'] ?? '' ) ) );
+			$tokens = false === $tokens ? array() : $tokens;
+			$part   = $row['control'] ?? array();
+			$facts  = self::class_carried_box_facts(
+				$part['styles'] ?? array(),
+				$part['provenance'] ?? array(),
+				$tokens,
+				array(
+					'background'       => 'background',
+					'background_color' => 'background-color',
+					'color'            => 'color',
+				),
+				true
+			);
+			// Never split overlapping shorthand/longhand ownership: a retained
+			// overlay background would still win over the source longhand.
+			$backgrounds = array_intersect( array_keys( $part['styles'] ?? array() ), array( 'background', 'background_color' ) );
+			if ( array_diff( $backgrounds, $facts ) ) {
+				$facts = array_diff( $facts, $backgrounds );
+			}
+			foreach ( $facts as $fact ) {
+				unset( $graph['controls'][ $offset ]['control']['styles'][ $fact ] );
+			}
+		}
+		return $graph;
 	}
 
 	/** The overlay carrying CSS, with its digest and size restated. */

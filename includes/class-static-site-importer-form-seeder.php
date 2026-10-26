@@ -311,7 +311,9 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		$maps    = self::target_maps( $state, $presentation_form );
 		$overlay = Static_Site_Importer_Form_Presentation::collapse_inactive_field_errors(
-			Static_Site_Importer_Form_Presentation_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ),
+			// Core's editor does not run the server-side source-class transfer hook,
+			// so only the front end leaves class-owned submit colours to the live source rules.
+			Static_Site_Importer_Form_Presentation_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'], Static_Site_Importer_Form_Presentation::without_class_carried_submit_colors( $presentation_form['presentation_graph'], $state->controls ) ),
 			$state->scope
 		);
 		$receipt = array();
