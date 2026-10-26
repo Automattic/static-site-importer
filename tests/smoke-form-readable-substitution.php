@@ -55,7 +55,9 @@ $compare = static function( array $before, array $after, string $path = 'root' )
 			array_splice( $after['innerContent'], array_search( null, $after['innerContent'], true ), 1 );
 		}
 	}
-	$checks[ 'wrapper at ' . $path ] = 'root' === $path ? 'core/group' === $after['blockName'] && array_diff_key( $before['attrs'], array( 'tagName' => true ) ) === $after['attrs'] : $before['blockName'] === $after['blockName'] && $before['attrs'] === $after['attrs'] && $before['innerContent'] === $after['innerContent'];
+	// The root keeps its saved frame (padding, border, layout classes); only the element becomes a div inside the provider's form.
+	$root_markup = static fn( array $block ): string => implode( '', array_filter( $block['innerContent'], 'is_string' ) );
+	$checks[ 'wrapper at ' . $path ] = 'root' === $path ? 'core/group' === $after['blockName'] && array_diff_key( $before['attrs'], array( 'tagName' => true ) ) === $after['attrs'] && str_replace( array( '<form ', '</form>' ), array( '<div ', '</div>' ), $root_markup( $before ) ) === $root_markup( $after ) && str_contains( $root_markup( $after ), 'padding-top:28px' ) : $before['blockName'] === $after['blockName'] && $before['attrs'] === $after['attrs'] && $before['innerContent'] === $after['innerContent'];
 	$checks[ 'child count at ' . $path ] = count( $before['innerBlocks'] ) === count( $after['innerBlocks'] );
 	foreach ( $before['innerBlocks'] as $i => $child ) {
 		$compare( $child, $after['innerBlocks'][ $i ] ?? array(), $path . '/' . $i );
