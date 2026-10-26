@@ -48,6 +48,41 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		return $valid && count( $indices ) === count( $form['controls'] ?? array() ) && count( $groups ) === count( $form['choice_groups'] ?? array() );
 	}
 
+	/**
+	 * The source submit is one element, both the item its layout box places
+	 * and the painted button; core/button splits it into a wrapper and a link.
+	 * The wrapper takes the source button's place: it carries the source
+	 * classes, so every source rule that places or sizes the button reaches
+	 * it, with the button's own box (an inline-block by default) and none of
+	 * its paint. The link fills the wrapper and keeps the paint.
+	 *
+	 * @param array<string,mixed> $descriptor Submit presentation descriptor.
+	 * @return array<string,mixed>
+	 */
+	public static function with_source_box_submit_wrapper( array $descriptor ): array {
+		foreach ( $descriptor['destinations'] as $index => $destination ) {
+			$part = $destination['part'] ?? null;
+			if ( 'submit_wrapper' === $part ) {
+				$descriptor['destinations'][ $index ]['resets'] = array(
+					'display'    => 'inline-block',
+					'padding'    => '0',
+					'border'     => '0',
+					'background' => 'transparent',
+					// Jetpack's editor sets the button block's line-height.
+					'font'       => 'inherit',
+				);
+			} elseif ( 'submit_link' === $part ) {
+				$descriptor['destinations'][ $index ]['resets'] += array(
+					// A block <button> still shrinks to its content.
+					'display' => 'block',
+					'width'   => '100%',
+					'margin'  => '0',
+				);
+			}
+		}
+		return $descriptor;
+	}
+
 	/** Preserve saved wrapper fragments, changing only their child slots. */
 	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
 		if ( isset( $block['form_choice_group_index'] ) ) {
@@ -79,7 +114,12 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( isset( $state->suppressed_controls[ $index ] ) || ! isset( $state->field_blocks[ $index ] ) ) {
 				return null;
 			}
-			return Static_Site_Importer_Form_Field_Markup::parsed_block( $state->field_blocks[ $index ] );
+			$field = $state->field_blocks[ $index ];
+			if ( 'core/button' === $field['name'] && preg_match_all( '/(?:^|\s)ssi-source-submit--(\S+)/', $field['attrs']['className'] ?? '', $source ) ) {
+				// The wrapper is the source button's box (with_source_box_submit_wrapper()).
+				$field['attrs']['className'] .= ' ' . implode( ' ', $source[1] );
+			}
+			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 		}
 		$children = array();
 		$slots    = array();

@@ -1815,8 +1815,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// Resets release provider defaults first; authored declarations then own
 			// their exact longhand/shorthand box, including over a reset shorthand.
 			$declarations = array_merge( $reset_declarations, $source_declarations );
-			if ( isset( $destination['resets']['font'] ) ) {
-				$declarations = array_merge( array( 'font:' . $destination['resets']['font'] ), array_values( array_filter( $declarations, static fn( string $declaration ): bool => ! str_starts_with( $declaration, 'font:' ) ) ) );
+			// A font shorthand reset leads, so every font longhand after it wins;
+			// an authored font shorthand has already replaced it above.
+			$font_reset = isset( $destination['resets']['font'] ) ? 'font:' . $destination['resets']['font'] : null;
+			if ( null !== $font_reset && in_array( $font_reset, $reset_declarations, true ) ) {
+				$declarations = array_merge( array( $font_reset ), array_values( array_diff( $declarations, array( $font_reset ) ) ) );
 			}
 			if ( empty( $declarations ) ) {
 				continue;
@@ -1861,7 +1864,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'align-items', 'width', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

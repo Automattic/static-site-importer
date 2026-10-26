@@ -334,14 +334,17 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					'selector'   => '.' . $scope . ( 'checkbox' === $type ? ' input.' : ' .' ) . $control_class . $inner_suffix,
 					'properties' => $properties,
 					// Every native control, the submit `<button>` included, takes its
-					// font family and line-height from the browser control default
-					// unless the source opts in (a reset's `font: inherit`), which
-					// the destination carries after this reset. Reverting releases
-					// the provider and theme button typography to that default.
+					// font family, line-height, padding and border from the browser
+					// control default unless the source authors them (a reset's
+					// `font: inherit`), which the destination carries after this
+					// reset. Reverting releases the provider and theme control
+					// typography and box to that default.
 					'resets'     => array_merge(
 						array(
 							'font-family' => 'revert',
 							'line-height' => 'revert',
+							'padding'     => 'revert',
+							'border'      => 'revert',
 						),
 						'submit' === $type ? array( 'min-height' => '0' ) : array(),
 						'checkbox' === $type ? array(
@@ -714,9 +717,16 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'padding' => '0',
 			),
 		);
+		// The editor's submit link is RichText, not a `<button>`, so `revert`
+		// cannot reach the browser button default there: the editor states
+		// that default (font, padding, border) instead.
 		$button_font = array(
-			'unset_resets' => array( 'font-family', 'line-height' ),
-			'add_resets'   => array( 'font' => '-webkit-small-control' ),
+			'unset_resets' => array( 'font-family', 'line-height', 'padding', 'border' ),
+			'add_resets'   => array(
+				'font'    => '-webkit-small-control',
+				'padding' => '1px 6px',
+				'border'  => '2px outset buttonborder',
+			),
 		);
 		return array(
 			// Layout targets.

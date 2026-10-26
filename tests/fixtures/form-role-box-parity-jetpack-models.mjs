@@ -280,6 +280,18 @@ body .is-layout-flex { display: flex; }
 .wp-container-jetpack-contact-form-is-layout-default { justify-content: flex-start; align-items: flex-start; }
 `;
 
+// The same base layout styles for an imported site's generated theme.json,
+// which sets styles.spacing.blockGap to false with blockGap support on: core
+// prints no flow or flex gap rules and an empty --wp--style--block-gap
+// (WP_Theme_JSON::get_root_layout_rules()), so source spacing stays in charge.
+export const IMPORTED_THEME_LAYOUT_CSS = `
+body .is-layout-flex { display: flex; }
+.is-layout-flex { flex-wrap: wrap; align-items: center; }
+.is-layout-flex > :is(*, div) { margin: 0; }
+:root { --wp--style--block-gap: ; }
+.wp-container-jetpack-contact-form-is-layout-default { justify-content: flex-start; align-items: flex-start; }
+`;
+
 const escapeAttr = ( value ) => String( value ).replace( /&/g, '&amp;' ).replace( /"/g, '&quot;' ).replace( /</g, '&lt;' );
 const escapeText = ( value ) => String( value ).replace( /&/g, '&amp;' ).replace( /</g, '&lt;' );
 const classes = ( ...names ) => names.filter( Boolean ).join( ' ' ).replace( /\s+/g, ' ' ).trim();
@@ -431,6 +443,14 @@ export function editorBlockHtml( block, parent = null ) {
 			}
 			return `<li ${ blockProps( name, attrs, `jetpack-field-option field-option-${ type }` ) }><input type="${ type }" class="jetpack-option__type" tabindex="-1">${ label }</li>`;
 		}
+		// Static core blocks: the saved element is the editor element, with the
+		// block list classes and the block type merged onto it.
+		case 'core/heading':
+		case 'core/paragraph':
+			return block.innerHTML.trim().replace( /^<([a-z0-9]+)((?:\s[^>]*)?)>/i, ( tag, element, rest ) => {
+				const saved = /\sclass="([^"]*)"/.exec( rest )?.[1] ?? '';
+				return `<${ element }${ rest.replace( /\sclass="[^"]*"/, '' ) } class="${ escapeAttr( classes( 'block-editor-block-list__block wp-block', saved ) ) }" data-type="${ escapeAttr( name ) }">`;
+			} );
 		default:
 			if ( name.endsWith( '/layout-shell' ) ) {
 				return layoutShellEditorHtml( block, inner() );
@@ -443,9 +463,9 @@ export function editorBlockHtml( block, parent = null ) {
 // to both surfaces.
 const BUTTON_CSS = readFileSync( createRequire( import.meta.url ).resolve( '@wordpress/block-library/build-style/button/style.css' ), 'utf8' );
 
-/** The front end: block styles, then the theme's style.css, in a block theme's site wrapper. */
-export function frontDocument( form ) {
-	const providerCss = [ BUTTON_CSS, CORE_LAYOUT_CSS, JETPACK_FRONT_CSS, JETPACK_LAYOUT_CSS, JETPACK_FRONT_PHONE_CSS, JETPACK_COMBOBOX_CSS ].join( '\n' );
+/** The front end: block styles, then the theme's style.css, in a block theme's site wrapper. `layoutCss` as for editorDocument. */
+export function frontDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
+	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_FRONT_CSS, JETPACK_LAYOUT_CSS, JETPACK_FRONT_PHONE_CSS, JETPACK_COMBOBOX_CSS ].join( '\n' );
 	return `<!doctype html><html><head><style>${ providerCss }</style><style>${ form.css }</style></head>`
 		+ `<body><div class="wp-site-blocks"><div id="ssi-role-root">${ form.frontHtml }</div></div></body></html>`;
 }
@@ -454,10 +474,11 @@ export function frontDocument( form ) {
  * The iframed block editor canvas: editor-style.css is added untransformed
  * (block-editor/src/components/block-canvas/index.js passes no scope when
  * iframed), the body carries `editor-styles-wrapper`, and blocks render in
- * the post content root container.
+ * the post content root container. `layoutCss` picks the theme's core layout
+ * styles (default theme, or IMPORTED_THEME_LAYOUT_CSS).
  */
-export function editorDocument( form ) {
-	const providerCss = [ BUTTON_CSS, CORE_LAYOUT_CSS, JETPACK_EDITOR_CSS, JETPACK_LAYOUT_CSS, JETPACK_EDITOR_PHONE_CSS, JETPACK_COMBOBOX_CSS, LAYOUT_SHELL_EDITOR_CSS ].join( '\n' );
+export function editorDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
+	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_EDITOR_CSS, JETPACK_LAYOUT_CSS, JETPACK_EDITOR_PHONE_CSS, JETPACK_COMBOBOX_CSS, LAYOUT_SHELL_EDITOR_CSS ].join( '\n' );
 	const blocks = form.blocks.map( ( block ) => editorBlockHtml( block ) ).join( '' );
 	return `<!doctype html><html><head><style>${ providerCss }</style><style>${ form.editorCss }</style></head>`
 		+ `<body class="editor-styles-wrapper block-editor-iframe__body"><div id="ssi-role-root" class="is-root-container is-layout-flow wp-block-post-content block-editor-block-list__layout">${ blocks }</div></body></html>`;

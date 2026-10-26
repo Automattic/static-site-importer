@@ -315,12 +315,16 @@ class Static_Site_Importer_Form_Seeder {
 		// The source form's own box stays a native group: Jetpack lays its form
 		// body out as a wrapping flex row and gives a group child the full row,
 		// so the group keeps the source form's layout around its children.
-		$root  = Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state );
-		$attrs = $root['attrs'];
+		// The source form's classes live on that group, so the provider block
+		// carries only the layout scope.
+		$root                    = Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state );
+		$attrs                   = $root['attrs'];
+		$form_attrs              = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
+		$form_attrs['className'] = $state->scope;
 		unset( $attrs['tagName'] );
 		$block = array(
 			'name'        => 'jetpack/contact-form',
-			'attrs'       => Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope ),
+			'attrs'       => $form_attrs,
 			'innerBlocks' => array(
 				array(
 					'name'        => 'core/group',
@@ -335,6 +339,11 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_form                                   = $state->form;
 		$presentation_form['layout_graph']                   = array( 'nodes' => array() );
 		$state->presentation_descriptors                     = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		foreach ( $state->field_blocks as $control_index => $field_block ) {
+			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
+			}
+		}
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		$maps    = self::target_maps(
 			$state,
