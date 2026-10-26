@@ -1255,7 +1255,7 @@ $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true
 
 $overlay_css        = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;gap:1rem}\n";
 $overlay            = array(
-	'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA,
+	'schema' => Static_Site_Importer_Form_Presentation_Overlay::OVERLAY_SCHEMA,
 	'css'    => $overlay_css,
 	'sha256' => hash( 'sha256', $overlay_css ),
 	'bytes'  => strlen( $overlay_css ),

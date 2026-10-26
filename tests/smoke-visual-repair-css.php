@@ -21,7 +21,7 @@ if ( ! function_exists( 'esc_url_raw' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation-overlay.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
@@ -37,7 +37,7 @@ $styles = array(
 	'editor'   => array( '.compiled-site-repair { display: block; }', '.editor-styles-wrapper .glow-orb { opacity: 1; }' ),
 );
 $css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex}\n";
-$overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $css, 'sha256' => hash( 'sha256', $css ), 'bytes' => strlen( $css ) );
+$overlay = array( 'schema' => Static_Site_Importer_Form_Presentation_Overlay::OVERLAY_SCHEMA, 'css' => $css, 'sha256' => hash( 'sha256', $css ), 'bytes' => strlen( $css ) );
 $writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero{display:grid}', array(), $styles, array( $overlay, $overlay ) );
 $style = (string) ( $writes['/tmp/visual-repair-smoke/style.css'] ?? '' );
 $editor = (string) ( $writes['/tmp/visual-repair-smoke/assets/css/editor-style.css'] ?? '' );

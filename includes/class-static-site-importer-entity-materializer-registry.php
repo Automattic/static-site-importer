@@ -12,8 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( 'Static_Site_Importer_Form_Presentation_Overlay' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-presentation-overlay.php';
 }
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
@@ -2718,7 +2718,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( true === $candidate['truncated'] ) {
 			return array( 'error' => 'presentation_graph is truncated and cannot be materialized.' );
 		}
-		$properties = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
+		$properties = Static_Site_Importer_Form_Presentation_Overlay::presentation_property_map();
 		$roles      = array_merge(
 			...array_map(
 				static fn( array $row ): array => array_values( array_intersect_key( $row, array_flip( array( 'control', 'label', 'required_marker' ) ) ) ),
@@ -2810,7 +2810,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( false !== $candidate['truncated'] ) {
 			return array( 'error' => 'layout_graph element presentation is truncated.' );
 		}
-		$properties = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
+		$properties = Static_Site_Importer_Form_Presentation_Overlay::presentation_property_map();
 		foreach ( array_merge( array( $candidate['styles'] ), array_column( $candidate['variants'], 'styles' ) ) as $styles ) {
 			if ( array_diff_key( $styles, $properties ) ) {
 				return array( 'error' => 'layout_graph element presentation contains a style the provider cannot materialize.' );

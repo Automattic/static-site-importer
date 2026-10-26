@@ -88,7 +88,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			'part'       => 'field_box_wrapper',
 			'role'       => 'label',
 			// Jetpack renders the field block's class with a `-wrap` suffix.
-			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap',
+			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap',
 			'properties' => self::FIELD_BOX_ARRANGEMENT_FACTS,
 			'resets'     => array(
 				'margin'     => '0',
@@ -116,7 +116,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 */
 	public static function with_caption_after_control( array $descriptor, string $scope, int $index, bool $field_box ): array {
 		// Jetpack renders the field block's class with a `-wrap` suffix.
-		$wrapper = '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap';
+		$wrapper = '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap';
 		if ( ! $field_box ) {
 			$descriptor['destinations'][] = array(
 				'part'       => 'caption_after_control_box',

@@ -15,7 +15,7 @@ if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
 }
-require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+require_once __DIR__ . '/class-static-site-importer-form-presentation-overlay.php';
 if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
 }
@@ -89,7 +89,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		}
 		$scopes = array();
 		foreach ( $overlays as $overlay ) {
-			$validated = Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
+			$validated = Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
 			if ( null !== $validated && preg_match( '/\.ssi-form-[a-f0-9]{12}/', $validated['css'], $match ) ) {
 				$scopes[] = str_repeat( $match[0], 5 ) . ' *';
 			}
@@ -126,7 +126,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	private static function provider_layout_overlay_css( array $overlays, string $field = 'css' ): string {
 		$css = array();
 		foreach ( $overlays as $overlay ) {
-			$validated = Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
+			$validated = Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
 			if ( null !== $validated ) {
 				$css[] = $validated[ $field ] ?? '';
 			}

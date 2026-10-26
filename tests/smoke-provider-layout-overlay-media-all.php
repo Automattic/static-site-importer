@@ -11,8 +11,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
-	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( 'Static_Site_Importer_Form_Presentation_Overlay' ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-presentation-overlay.php';
 }
 
 $assertions = 0;
@@ -36,7 +36,7 @@ $graph = array(
 	),
 );
 $map   = array(
-	'schema'               => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA,
+	'schema'               => Static_Site_Importer_Form_Presentation_Overlay::MAP_SCHEMA,
 	'provider'             => 'synthetic',
 	'scope'                => $scope,
 	'targets'              => array(
@@ -87,13 +87,13 @@ $presentation_graph = array(
 	),
 );
 
-$compiled = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
+$compiled = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $presentation_graph );
 $css      = (string) ( $compiled['css'] ?? '' );
 $assert( ! str_contains( (string) json_encode( $compiled['losses'] ?? array() ), 'responsive_layout_ownership' ), 'a media="all" variant is not recorded as a responsive loss: ' . json_encode( $compiled['losses'] ?? array() ) );
 $assert( 1 === preg_match( '/(?:^|\})[^@{}]*\.ssi-node-000000000000 > \.wp-block-button__link\{[^}]*background-color:rgba\(0,87,225,1\)/', $css ), 'the media="all" patch compiles outside any at-rule: ' . $css );
 $assert( ! str_contains( $css, '@media all' ), 'no @media all wrapper is emitted: ' . $css );
 $assert( 1 === preg_match( '/@media \(max-width:767px\)\{[^{}]*\.ssi-node-000000000000 > \.wp-block-button__link\{[^}]*font-size:14px/', $css ), 'a real breakpoint stays conditional: ' . $css );
-$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
 
 
 
@@ -130,13 +130,13 @@ $with_base = array(
 		),
 	),
 );
-$based = (string) ( Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $with_base )['css'] ?? '' );
+$based = (string) ( Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $with_base )['css'] ?? '' );
 $assert( str_contains( $based, 'font-family:Inter;line-height:1.5' ) && str_contains( $based, 'background-color:rgb(1,2,3)' ), 'base and promoted patch both compile: ' . $based );
 $assert( ! str_contains( $based, 'revert' ), 'a promoted media all patch does not repeat provider resets after the base rule: ' . $based );
 
 // Without a base pass the provider resets are emitted once, ahead of the patch.
 $without_base = array( 'variants' => $with_base['variants'] );
-$alone        = (string) ( Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $without_base )['css'] ?? '' );
+$alone        = (string) ( Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $without_base )['css'] ?? '' );
 $assert( 1 === substr_count( $alone, 'font-family:revert' ) && strpos( $alone, 'font-family:revert' ) < strpos( $alone, 'background-color:rgb(1,2,3)' ), 'resets are emitted once, before the promoted patch: ' . $alone );
 
 echo "provider layout overlay media all smoke passed ({$assertions} assertions)\n";

@@ -302,7 +302,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			// A keyword that resolves against no element's own box would render the
 			// captured value differently here than at the source; drop it rather
 			// than keep an invalid inline declaration.
-			if ( '' === $style || in_array( $style, array( 'unset', 'initial', 'inherit' ), true ) || ! Static_Site_Importer_Provider_Layout_Overlay::safe_presentation_value( $style ) ) {
+			if ( '' === $style || in_array( $style, array( 'unset', 'initial', 'inherit' ), true ) || ! Static_Site_Importer_Form_Presentation_Overlay::safe_presentation_value( $style ) ) {
 				continue;
 			}
 			$styles[ $key ] = $style;

@@ -180,9 +180,6 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
 			}
 		}
-		if ( isset( $payload['form_visual_states'] ) && ( ! is_array( $payload['form_visual_states'] ) || ! array_is_list( $payload['form_visual_states'] ) || count( $payload['form_visual_states'] ) > 128 || array_filter( $payload['form_visual_states'], static fn( $state ): bool => ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_visual_state( $state ) ) ) ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_form_visual_states_invalid', 'Companion form visual states must be a list.' );
-		}
 		if ( array_key_exists( 'external_metrics', $payload ) ) {
 			$metrics = $payload['external_metrics'];
 			if ( ! is_array( $metrics ) || ! array_is_list( $metrics ) ) {
@@ -240,13 +237,12 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$blocks             = self::payload_blocks( $payload );
-		$plugin_slug        = 'ssi-' . $site_slug;
-		$block_namespace    = self::block_namespace( $payload );
-		$preserved          = self::preserved_js( $payload, $block_namespace );
-		$editor_scripts     = self::editor_scripts( $payload );
-		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
-		if ( 'plugin' === $owner && empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) && empty( $payload['external_metrics'] ) ) {
+		$blocks          = self::payload_blocks( $payload );
+		$plugin_slug     = 'ssi-' . $site_slug;
+		$block_namespace = self::block_namespace( $payload );
+		$preserved       = self::preserved_js( $payload, $block_namespace );
+		$editor_scripts  = self::editor_scripts( $payload );
+		if ( 'plugin' === $owner && empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $payload['external_metrics'] ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
 				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
@@ -310,7 +306,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
 		$listing_runtime  = (string) file_get_contents( __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Package listing controls independently of the importer.
-		$inventory_source = array( hash( 'sha256', $listing_runtime ), $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ) );
+		$inventory_source = array( hash( 'sha256', $listing_runtime ), $block_names, $preserved, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ) );
 		if ( 'theme' === $owner ) {
 			$inventory_source[] = array( 'theme', $owner_slug );
 		}
@@ -335,12 +331,12 @@ class Static_Site_Importer_Companion_Plugin {
 		$main_file = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
 		$config    = wp_json_encode(
 			array(
-				'site_name'          => $site_name,
-				'owner'              => $owner,
-				'owner_slug'         => $owner_slug,
-				'plugin_file'        => 'plugin' === $owner ? $main_file : '',
-				'block_directories'  => $block_directories,
-				'islands'            => array_map(
+				'site_name'         => $site_name,
+				'owner'             => $owner,
+				'owner_slug'        => $owner_slug,
+				'plugin_file'       => 'plugin' === $owner ? $main_file : '',
+				'block_directories' => $block_directories,
+				'islands'           => array_map(
 					static fn ( array $island ): array => array(
 						'handle'      => $island['handle'],
 						'src'         => $island['relative_src'],
@@ -350,7 +346,7 @@ class Static_Site_Importer_Companion_Plugin {
 					),
 					$preserved
 				),
-				'editor_scripts'     => array_map(
+				'editor_scripts'    => array_map(
 					static fn ( array $script ): array => array(
 						'handle'       => $script['handle'],
 						'src'          => $script['src'],
@@ -358,8 +354,7 @@ class Static_Site_Importer_Companion_Plugin {
 					),
 					$editor_scripts
 				),
-				'form_visual_states' => $form_visual_states,
-				'external_metrics'   => $external_metrics,
+				'external_metrics'  => $external_metrics,
 			),
 			JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 		);
@@ -378,19 +373,18 @@ class Static_Site_Importer_Companion_Plugin {
 		$artifact_provenance = self::artifact_provenance( $payload );
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
-				'site_name'          => $site_name,
-				'owner'              => $owner,
-				'plugin_slug'        => $plugin_slug,
-				'mu_plugin'          => $mu_plugin,
-				'blocks'             => self::payload_blocks( $payload ),
-				'block_names'        => $block_names,
-				'block_assets'       => $block_assets,
-				'islands'            => $preserved,
-				'editor_scripts'     => $editor_scripts,
-				'form_visual_states' => $form_visual_states,
-				'external_metrics'   => $external_metrics,
-				'provenance'         => $artifact_provenance,
-				'handoff'            => is_array( $payload['owner_handoff_evidence'] ?? null ) ? $payload['owner_handoff_evidence'] : null,
+				'site_name'        => $site_name,
+				'owner'            => $owner,
+				'plugin_slug'      => $plugin_slug,
+				'mu_plugin'        => $mu_plugin,
+				'blocks'           => self::payload_blocks( $payload ),
+				'block_names'      => $block_names,
+				'block_assets'     => $block_assets,
+				'islands'          => $preserved,
+				'editor_scripts'   => $editor_scripts,
+				'external_metrics' => $external_metrics,
+				'provenance'       => $artifact_provenance,
+				'handoff'          => is_array( $payload['owner_handoff_evidence'] ?? null ) ? $payload['owner_handoff_evidence'] : null,
 			)
 		);
 		$files               = array_merge(
@@ -879,7 +873,6 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "require_once __DIR__ . '/includes/internal-link-runtime.php';";
 		$lines[] = "require_once __DIR__ . '/includes/external-metric-runtime.php';";
 		$lines[] = "require_once __DIR__ . '/includes/product-grid-runtime.php';";
-		$lines[] = $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = $runtime_class . '::register();';
 		$lines[] = $link_runtime_class . '::register();';
 		$lines[] = $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
@@ -894,7 +887,6 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
 		// Config is read afresh on same-request package refresh, even when its
 		// callable already exists and require_once does not reload the runtime.
-		$lines[] = "\t" . $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = "\t" . $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
 		$lines[] = "\t\treturn;";

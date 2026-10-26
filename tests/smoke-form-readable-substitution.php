@@ -89,16 +89,19 @@ $hidden['controls'][3]['type'] = 'hidden';
 $hidden_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $hidden ) ) )['forms'][0];
 $hidden_tree = parse_blocks( $hidden_row['block_markup'] )[0]['innerBlocks'][0];
 $checks['hidden bookkeeping dropped without dropping row'] = 'mapped' === $hidden_row['status'] && 2 === count( $hidden_tree['innerBlocks'][2]['innerBlocks'] );
-// A missing index must select the legacy path, not partially substitute a tree.
+// Incomplete producer trees are explicitly declined through the public seeder.
 $partial = $validated['forms'][0];
 unset( $partial['readable_blocks'][0]['innerBlocks'][2]['innerBlocks'][0]['innerBlocks'][0]['form_control_index'] );
-$checks['partial trees use legacy path'] = ! Static_Site_Importer_Form_Readable_Substitution::supports( $partial );
+$checks['partial trees are unsupported'] = ! Static_Site_Importer_Form_Readable_Substitution::supports( $partial );
 $legacy = $validated['forms'][0];
 unset( $legacy['readable_blocks'] );
-$before = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $legacy ) ) )['forms'][0];
-$checks['regression declines before substitution'] = 'declined' === ( $before['mapping_decision']['status'] ?? '' );
-$partial_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $partial ) ) )['forms'][0];
-$checks['partial trees retain identical legacy output'] = $before === $partial_row;
+$empty = $validated['forms'][0];
+$empty['readable_blocks'] = array();
+foreach ( array( 'missing' => $legacy, 'empty' => $empty, 'partial' => $partial ) as $case => $unsupported ) {
+	$declined = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unsupported ) ) )['forms'][0];
+	$checks[ $case . ' tree has gate-visible reason' ] = 'skipped' === $declined['status'] && 'incomplete_readable_form_tree' === $declined['reason'] && false === $declined['runtime_mapped'] && empty( $declined['block_markup'] );
+}
+$before = $declined;
 $checks['root presentation retained'] = $source['attrs']['style'] === $actual['attrs']['style'] && $source['attrs']['layout'] === $actual['attrs']['layout'] && ! isset( $actual['attrs']['tagName'] );
 $checks['indices never serialize'] = ! str_contains( $page, 'form_control_index' ) && ! str_contains( $page, 'form_choice_group_index' );
 echo 'Before: ' . ( $before['mapping_decision']['status'] ?? $before['status'] ) . ', gate losses=' . count( $before['mapping_decision']['losses'] ?? array() ) . "\n";
