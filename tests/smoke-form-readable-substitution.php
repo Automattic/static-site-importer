@@ -123,6 +123,23 @@ $checks['root presentation retained'] = $source['attrs']['style'] === $actual['a
 $checks['indices never serialize'] = ! str_contains( $page, 'form_control_index' ) && ! str_contains( $page, 'form_choice_group_index' );
 echo 'Before: ' . ( $before['mapping_decision']['status'] ?? $before['status'] ) . ', gate losses=' . count( $before['mapping_decision']['losses'] ?? array() ) . "\n";
 echo 'After: ' . $row['status'] . ', gate losses=' . count( $row['mapping_decision']['losses'] ) . ', fields=' . $row['field_count'] . "\n";
+// Exercise both presentation facts on a neutral, fully indexed producer tree.
+$boxes_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => file_get_contents( __DIR__ . '/fixtures/form-readable-boxes.html' ) ),
+	)
+)->toArray();
+$boxes_plan        = $boxes_result['source_reports']['wordpress_site_plan'];
+$boxes_declaration = current( array_filter( $boxes_plan['runtime_declarations'], static fn( array $entry ): bool => 'forms' === ( $entry['type'] ?? null ) ) );
+$boxes_entities    = Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $boxes_declaration['payload']['entities'], $boxes_plan );
+$boxes_validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $boxes_entities ) );
+$boxes_row         = Static_Site_Importer_Form_Seeder::seed( $boxes_validated )['forms'][0];
+$checks['box fixture uses readable substitution'] = empty( $boxes_validated['errors'] ) && Static_Site_Importer_Form_Readable_Substitution::supports( $boxes_validated['forms'][0] ) && 'mapped' === $boxes_row['status'];
+$boxes_css = $boxes_row['provider_layout_overlay_css']['css'] ?? '';
+$checks['readable checkbox wrap has source gap'] = 1 === preg_match( '/[^{}]*-wrap \\.contact-form__checkbox-wrap\\{[^{}]*gap:8px/', $boxes_css );
+$checks['readable editor checkbox option has source gap'] = 1 === preg_match( '/[^{}]* > \\.wp-block-jetpack-option\\{[^{}]*gap:8px/', $boxes_row['provider_layout_overlay_css']['editor_css'] ?? '' );
+$checks['readable submit wrapper has no padding'] = 1 === preg_match( '/[^{}]* \\.ssi-node-[a-f0-9]{12}\\{[^{}]*padding:0!important(?:;|\\})/', $boxes_css ) && ! preg_match( '/[^{}]* \\.ssi-node-[a-f0-9]{12}\\{[^{}]*padding:5px 10px/', $boxes_css );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
