@@ -2379,7 +2379,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$field_row_span = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
 			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
 			: '';
-		$css            = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . '.' . $scope . ' div.form-button-submit{flex-basis:auto}' . "\n" . $field_row_span;
+		$css            = rtrim( $overlay['css'] ) . "\n" . self::inactive_field_error_rule( $scope ) . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . '.' . $scope . ' div.form-button-submit{flex-basis:auto}' . "\n" . $field_row_span;
 		// A restored native select appearance owns its arrow too. Suppress only the
 		// decoration inside that select's presentation hook, never provider-wide.
 		$select_icons = array();
@@ -2390,12 +2390,34 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 			}
 		}
-		$css                         .= implode( '', $select_icons );
+		return self::with_overlay_css( $overlay, $css . implode( '', $select_icons ) );
+	}
+
+	/**
+	 * Collapse each field's inactive provider error. Jetpack renders it as a
+	 * zero-height flex item, which still takes a gap slot in a flex field box.
+	 *
+	 * @param array<string,mixed> $overlay Compiled provider overlay.
+	 * @param string              $scope   Provider form scope.
+	 * @return array<string,mixed>
+	 */
+	public static function collapse_inactive_field_errors( array $overlay, string $scope ): array {
+		if ( ! isset( $overlay['overlay'] ) || ! is_array( $overlay['overlay'] ) || ! is_string( $overlay['css'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $scope ) ) {
+			return $overlay;
+		}
+		return self::with_overlay_css( $overlay, rtrim( $overlay['css'] ) . "\n" . self::inactive_field_error_rule( $scope ) . "\n" );
+	}
+
+	private static function inactive_field_error_rule( string $scope ): string {
+		return '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}';
+	}
+
+	/** The overlay carrying CSS, with its digest and size restated. */
+	private static function with_overlay_css( array $overlay, string $css ): array {
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
 		$overlay['overlay']['bytes']  = strlen( $css );
-
 		return $overlay;
 	}
 

@@ -364,6 +364,12 @@ function ssi_golden_seed_fixture( string $html ): array {
 	if ( 1 !== count( $forms ) ) {
 		$errors[] = 'expected exactly one compiled form fallback, got ' . count( $forms );
 	}
+	// These goldens describe the retained topology overlay for older producers.
+	// Indexed readable-tree behavior has its own end-to-end substitution smoke.
+	foreach ( $forms as &$form ) {
+		unset( $form['readable_blocks'] );
+	}
+	unset( $form );
 	$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array_slice( $forms, 0, 1 ) ) );
 	foreach ( $validated['errors'] as $error ) {
 		$errors[] = 'validate_forms_manifest: ' . implode( ' ', $error );

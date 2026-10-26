@@ -1119,7 +1119,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 *
 	 * @param array<string,mixed> $block Generated block.
 	 */
-	private static function parsed_block( array $block ): array {
+	public static function parsed_block( array $block ): array {
+		// Native readable blocks already carry exact saved markup and child slots.
+		if ( array_key_exists( 'blockName', $block ) ) {
+			return $block;
+		}
 		$name         = isset( $block['name'] ) ? (string) $block['name'] : '';
 		$attrs        = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
 		$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
@@ -1133,7 +1137,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 		$children = array();
 		foreach ( $inner_blocks as $child ) {
-			if ( is_array( $child ) && ! empty( $child['name'] ) ) {
+			if ( is_array( $child ) && ( ! empty( $child['name'] ) || ! empty( $child['blockName'] ) ) ) {
 				$children[] = self::parsed_block( $child );
 			}
 		}

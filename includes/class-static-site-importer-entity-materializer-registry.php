@@ -693,6 +693,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$key = (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
 				if ( isset( $sources[ $key ] ) ) {
 					$entity['form_intent'] = Static_Site_Importer_Form_Fallback_Contract::intent( $sources[ $key ] );
+					foreach ( array( 'readable_blocks', 'choice_groups' ) as $fact ) {
+						if ( is_array( $sources[ $key ][ $fact ] ?? null ) ) {
+							$entity[ $fact ] = $sources[ $key ][ $fact ];
+						}
+					}
 					if ( ! isset( $entity['html'] ) && is_string( $sources[ $key ]['html'] ?? null ) ) {
 						$entity['html'] = $sources[ $key ]['html'];
 					}
@@ -2475,6 +2480,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'controls'    => $controls,
 				'form_intent' => Static_Site_Importer_Form_Fallback_Contract::intent( $form ),
 			);
+			foreach ( array( 'readable_blocks', 'choice_groups' ) as $fact ) {
+				if ( is_array( $form[ $fact ] ?? null ) ) {
+					$row[ $fact ] = $form[ $fact ];
+				}
+			}
 			// Source HTML is inspected, never rendered, to retain description classes
 			// that older producers omit from control metadata.
 			if ( is_string( $form['html'] ?? null ) ) {

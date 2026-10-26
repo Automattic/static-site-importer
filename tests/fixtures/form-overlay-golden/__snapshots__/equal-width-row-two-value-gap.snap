@@ -5,12 +5,12 @@
 mapped
 
 === css ===
-sha256: c111e19b8dc18e64ab6bb5ad8aabcc055fade720ecc2294c8c761bbcf97d96ca
-/* Static Site Importer provider layout overlay: e1dd5165df02 */
+sha256: 9f1a8d4a8a1528dfe91c5707b8b0dd7ac1245cdafef3632a9698db4624e405ab
+/* Static Site Importer provider layout overlay: 7745df32e59e */
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{width:100%}
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5-wrap, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f-wrap{width:calc(50% - 20px);flex-grow:0;flex-shrink:0;flex-basis:calc(50% - 20px);margin-block-start:0!important}
 .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31-wrap, .ssi-form-d095fee786e4 .ssi-node-97b0fb7d822d{margin-block-start:0!important}
-.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;width:100%}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;padding:revert;border:revert;width:100%}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-758bcd0d5ff1{margin:0;font-weight:inherit;display:block}
 .ssi-form-d095fee786e4{pointer-events:auto}
 .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
@@ -22,21 +22,21 @@ sha256: c111e19b8dc18e64ab6bb5ad8aabcc055fade720ecc2294c8c761bbcf97d96ca
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 44e6776f096b2cf6df18182dd6d4caabf57b858586592c354eb4b9475684f100
-/* Static Site Importer editor control chrome: c71ab2639ff9 */
+sha256: e21e92d9c52fcee0d858f930b629a2c95955c41e6cf8f17e508295d35aedaa30
+/* Static Site Importer editor control chrome: 9fa52ed62820 */
 .editor-styles-wrapper .ssi-form-d095fee786e4{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:calc(50% - 20px);flex-grow:0;flex-shrink:0;flex-basis:calc(50% - 20px);margin-block-start:0!important}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-97b0fb7d822d{margin-block-start:0!important}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;padding:revert;border:revert;width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249 > label{margin:0;font-weight:inherit;padding:0;display:block}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249{display:block}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;padding:revert;border:revert;width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32 > label{margin:0;font-weight:inherit;padding:0;display:block}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32{display:block}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;padding:revert;border:revert;width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-758bcd0d5ff1 > label{margin:0;font-weight:inherit;padding:0;display:block}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-758bcd0d5ff1{display:block}

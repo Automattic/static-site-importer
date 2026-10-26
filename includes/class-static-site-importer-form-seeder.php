@@ -27,6 +27,7 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Layout_Projection' ) ) {
 }
 require_once __DIR__ . '/class-static-site-importer-form-mapping-plan.php';
 require_once __DIR__ . '/class-static-site-importer-form-plan-state.php';
+require_once __DIR__ . '/class-static-site-importer-form-readable-substitution.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -265,12 +266,20 @@ class Static_Site_Importer_Form_Seeder {
 	private static function plan_form( array $form, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
 		$state = self::normalized_plan_state( $form );
 		self::group_controls( $state );
+		$readable = Static_Site_Importer_Form_Readable_Substitution::supports( $state->form );
 		foreach ( $state->controls as $control_index => $control ) {
 			if ( is_array( $control ) ) {
+				if ( $readable && Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
+					// The field-box shell carries the wrapping label's classes.
+					unset( $control['label_class'] );
+				}
 				self::map_control( $state, $control_index, $control );
 			}
 		}
 
+		if ( $readable ) {
+			return self::readable_plan( $state, $available );
+		}
 		if ( empty( $state->field_blocks ) ) {
 			return self::skipped_plan( $state->form, $state->selector, $state->source_path, 'no_mappable_form_fields', array( 'skipped_types' => array_values( array_unique( array_filter( $state->skipped ) ) ) ) );
 		}
@@ -304,6 +313,93 @@ class Static_Site_Importer_Form_Seeder {
 			$state->host['shell'],
 			self::mapped_report_row( $state, $available, $maps['target'], $overlay, $visual_state )
 		);
+	}
+
+	/** Keep native topology and compile only the existing field-presentation surfaces. */
+	private static function readable_plan( Static_Site_Importer_Form_Plan_State $state, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
+		// The source form's own box stays a native group: Jetpack lays its form
+		// body out as a wrapping flex row and gives a group child the full row,
+		// so the group keeps the source form's layout around its children.
+		// The source form's classes live on that group, so the provider block
+		// carries only the layout scope.
+		$root                    = Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state );
+		$attrs                   = $root['attrs'];
+		$form_attrs              = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
+		$form_attrs['className'] = $state->scope;
+		unset( $attrs['tagName'] );
+		$block = array(
+			'name'        => 'jetpack/contact-form',
+			'attrs'       => $form_attrs,
+			'innerBlocks' => array(
+				array(
+					'name'        => 'core/group',
+					'attrs'       => $attrs,
+					'innerBlocks' => $root['innerBlocks'],
+				),
+			),
+		);
+
+		// No wrapper/layout facts enter the overlay. Its presentation destinations
+		// still own label paint, input sizing and the textarea rows policy.
+		$presentation_form                 = $state->form;
+		$presentation_form['layout_graph'] = array( 'nodes' => array() );
+		$state->presentation_descriptors   = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		$field_box_labels                  = array();
+		foreach ( $state->field_blocks as $control_index => $field_block ) {
+			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
+				continue;
+			}
+			// A field's own caption arrangement applies where the provider renders
+			// that caption before its control. Choice fields order their option
+			// labels natively, and an option group's caption is its legend.
+			if ( ! isset( $state->presentation_descriptors[ $control_index ] ) || null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) || in_array( $field_block['name'], array( 'jetpack/field-checkbox', 'jetpack/field-checkbox-multiple', 'jetpack/field-radio' ), true ) ) {
+				continue;
+			}
+			if ( Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_field_box_label( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index );
+				$field_box_labels[ $control_index ]                = true;
+			}
+			if ( true === ( $state->form['controls'][ $control_index ]['label_after_control'] ?? null ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
+			}
+		}
+		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
+		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
+		$maps    = self::target_maps(
+			$state,
+			array(
+				'provider_layout_targets' => array(),
+				'phone_popup_targets'     => array(),
+			),
+			$presentation_form,
+			''
+		);
+		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_field_errors(
+			Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ),
+			$state->scope
+		);
+		$receipt = array();
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'operations', $overlay['operations'] );
+		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'losses', array_merge( $overlay['losses'], $state->control_attribute_losses ) );
+		foreach ( $state->form['control_topology']['nodes'] ?? array() as $node ) {
+			if ( 'fieldset' === ( $node['tag'] ?? '' ) ) {
+				Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries(
+					$receipt,
+					'losses',
+					array(
+						array(
+							'dimension'   => 'presentation',
+							'reason_code' => 'semantic_wrapper_approximated',
+						),
+					)
+				);
+				break;
+			}
+		}
+		$receipt['status'] = 'applied';
+		$state->layout     = array( 'receipt' => $receipt );
+		return Static_Site_Importer_Form_Mapping_Plan::prepared( $state->form, $state->field_blocks, $block, null, self::mapped_report_row( $state, $available, $maps['target'], $overlay, array() ) );
 	}
 
 	/** Normalize the producer form and release the controls the provider will map. */
@@ -450,7 +546,7 @@ class Static_Site_Importer_Form_Seeder {
 				$state->submit_presentation[ $key ] = $parts;
 			}
 		}
-		if ( $state->has_topology ) {
+		if ( $state->has_topology || Static_Site_Importer_Form_Readable_Substitution::supports( $state->form ) ) {
 			$presentation_class                    = $presentation_descriptor['control_class'];
 			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $state->submit_text, trim( Static_Site_Importer_Form_Layout_Projection::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $state->submit_presentation );
 		}

@@ -124,6 +124,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						$resolve_args['runtime_entity_bindings'][ $index ][ $key ] = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolveMarkup( strtr( $binding[ $key ], $canonical_urls ), $references, $resolutions );
 					}
 				}
+				// The resolved fragment is the materialized block; its proof hash follows it.
+				if ( '' !== (string) ( $binding['materialized_block_hash'] ?? '' ) ) {
+					$resolve_args['runtime_entity_bindings'][ $index ]['materialized_block_hash'] = hash( 'sha256', (string) $resolve_args['runtime_entity_bindings'][ $index ]['replacement_block_markup'] );
+				}
 			}
 			$bound = Static_Site_Importer_Site_Plan_Preparation::prepare( $state['plan'], $resolve_args, $resolutions );
 			if ( 'prepared' !== ( $bound['status'] ?? '' ) ) {

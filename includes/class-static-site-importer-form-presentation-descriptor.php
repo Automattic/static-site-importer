@@ -334,19 +334,29 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					'selector'   => '.' . $scope . ( 'checkbox' === $type ? ' input.' : ' .' ) . $control_class . $inner_suffix,
 					'properties' => $properties,
 					// Every native control, the submit `<button>` included, takes its
-					// font family and line-height from the browser control default
-					// unless the source opts in (a reset's `font: inherit`), which
-					// the destination carries after this reset. Reverting releases
-					// the provider and theme button typography to that default.
+					// font family, line-height, padding and border from the browser
+					// control default unless the source authors them (a reset's
+					// `font: inherit`), which the destination carries after this
+					// reset. Reverting releases the provider and theme control
+					// typography and box to that default.
 					'resets'     => array_merge(
 						array(
 							'font-family' => 'revert',
 							'line-height' => 'revert',
+							'padding'     => 'revert',
+							'border'      => 'revert',
 						),
-						'submit' === $type ? array( 'min-height' => '0' ) : array(),
+						// Core lets a button link break inside a word, below the
+						// width a source `<button>` keeps for its caption.
+						'submit' === $type ? array(
+							'min-height' => '0',
+							'word-break' => 'normal',
+						) : array(),
 						'checkbox' === $type ? array(
 							'min-width' => '0',
 							'padding'   => '0',
+							// Jetpack zeroes the checkbox's default margin.
+							'margin'    => 'revert',
 						) : array(),
 						// Jetpack renders the native control with `appearance: none`,
 						// which removes the platform chevron the authored select had.
@@ -360,11 +370,15 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					$destination['priority'] = 'important';
 					// The editor's dropdown chrome is its toggle, the select wrapper
 					// itself, which keeps its own chevron: the nested-select suffix
-					// and the `appearance` reset are front-end-only.
+					// and the `appearance` reset are front-end-only. A `<select>`
+					// keeps a normal line height whatever the author states
+					// (`font: inherit` included); the toggle is not a select, so it
+					// is told so after the source facts.
 					$destination['editor'] = array(
 						'retarget'     => array( $inner_suffix, '' ),
 						'unset_resets' => array( 'appearance' ),
 						'placeholder'  => self::EDITOR_PLACEHOLDER_RESETS,
+						'forced'       => array( 'line-height' => 'normal' ),
 					);
 				}
 				$destinations[] = $destination;
@@ -687,6 +701,8 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * - `split`: a companion destination at the front-end selector carrying the
 	 *   listed layout properties (the label box), with its own resets;
 	 * - `placeholder`: a companion `::placeholder` reset destination;
+	 * - `forced`: declarations the native control keeps whatever the author
+	 *   states, restated on the editor stand-in in a rule after the source facts;
 	 * - `textarea_rows`: the part can address a textarea control, so it gets a
 	 *   companion realising that control's resolved
 	 *   `Static_Site_Importer_Form_Textarea_Rows::editor_resets()`, when there
@@ -697,7 +713,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * An emitted part with neither declaration, or with both, fails the editor
 	 * derivation.
 	 *
-	 * @return array<string,array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}>
+	 * @return array<string,array{drop?:bool,selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,forced?:array<string,string>,textarea_rows?:bool}>
 	 */
 	public static function editor_surface_table(): array {
 		$placeholder = self::EDITOR_PLACEHOLDER_RESETS;
@@ -714,9 +730,16 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'padding' => '0',
 			),
 		);
+		// The editor's submit link is RichText, not a `<button>`, so `revert`
+		// cannot reach the browser button default there: the editor states
+		// that default (font, padding, border) instead.
 		$button_font = array(
-			'unset_resets' => array( 'font-family', 'line-height' ),
-			'add_resets'   => array( 'font' => '-webkit-small-control' ),
+			'unset_resets' => array( 'font-family', 'line-height', 'padding', 'border' ),
+			'add_resets'   => array(
+				'font'    => '-webkit-small-control',
+				'padding' => '1px 6px',
+				'border'  => '2px outset buttonborder',
+			),
 		);
 		return array(
 			// Layout targets.
@@ -741,12 +764,20 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'placeholder'   => $placeholder,
 				'textarea_rows' => true,
 			),
-			'checkbox_control'          => array(),
 			// The editor renders the single checkbox and its label inside the
 			// option block, the field block's child, instead of a choice wrap.
 			'checkbox_layout'           => array( 'retarget' => array( '-wrap .contact-form__checkbox-wrap', ' > .wp-block-jetpack-option' ) ),
 			'sibling_stacked'           => array( 'placeholder' => $placeholder ),
 			'control_container'         => array(),
+			// The editor option block carries the control hook on its wrapper,
+			// around the native checkbox. Jetpack's editor nudges that checkbox
+			// down (`translateY(0.15em)`), which its front end does only for
+			// list styles, so the editor releases it.
+			'checkbox_control'          => array(
+				'replace'    => array( ' input.', ' .' ),
+				'retarget'   => array( '', ' > input.jetpack-field-option__checkbox' ),
+				'add_resets' => array( 'transform' => 'none' ),
+			),
 			// The submit button.
 			'submit_wrapper'            => array( 'placeholder' => $placeholder ),
 			'submit_link'               => $button_font,
@@ -757,8 +788,14 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			'label'                     => $label_box,
 			'wrapping_label_reset'      => $label_box,
 			'row_gap_label_reset'       => array( 'drop' => true ),
-			'choice_label'              => array(),
-			'choice_label_box'          => $label_box,
+			// The editor's standalone option block is the choice box: it carries
+			// the label class only as a choice-label marker, around the native
+			// checkbox and the label RichText.
+			'choice_label'              => array(
+				'replace'  => array( ' .', ' .ssi-source-choice-label--' ),
+				'retarget' => array( ' > label', ' > .jetpack-field-option__label-wrapper > .rich-text' ),
+			),
+			'choice_label_box'          => array( 'replace' => array( ' .', ' .ssi-source-choice-label--' ) ),
 			'required_marker'           => array(),
 		);
 	}
@@ -768,7 +805,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * the entry's own `editor` declaration, or else the editor table row.
 	 *
 	 * @param array<string,mixed> $entry A layout target or presentation destination.
-	 * @return array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}
+	 * @return array{drop?:bool,selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,forced?:array<string,string>,textarea_rows?:bool}
 	 * @throws LogicException When the part is missing or declares no realisation, or two.
 	 */
 	public static function editor_surface_part( array $entry ): array {
@@ -789,12 +826,21 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	/**
 	 * Apply a declared editor selector, or swap a declared front-end suffix.
 	 *
-	 * @param array{selector?:string,retarget?:array{0:string,1:string}} $surface Editor realisation.
+	 * @param array{selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string}} $surface Editor realisation.
 	 * @throws LogicException When the front-end selector lacks the declared suffix.
 	 */
 	private static function editor_selector( string $selector, array $surface, string $scope ): string {
 		if ( isset( $surface['selector'] ) ) {
 			return str_replace( '{scope}', $scope, $surface['selector'] );
+		}
+		if ( isset( $surface['replace'] ) ) {
+			list( $search, $replacement ) = $surface['replace'];
+			$at                           = strpos( $selector, $search );
+			if ( false === $at ) {
+				// ssi-error-class: programmer
+				throw new LogicException( 'A provider form overlay selector does not contain its declared editor replacement.' );
+			}
+			$selector = substr_replace( $selector, $replacement, $at, strlen( $search ) );
 		}
 		if ( ! isset( $surface['retarget'] ) ) {
 			return $selector;
@@ -889,6 +935,18 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 						'resets'     => $surface['placeholder'],
 					);
 				}
+				if ( isset( $surface['forced'] ) ) {
+					$extra[] = array_filter(
+						array(
+							'role'       => $destination['role'],
+							'selector'   => $destination['selector'],
+							'properties' => array(),
+							'resets'     => $surface['forced'],
+							'priority'   => $destination['priority'] ?? null,
+						),
+						static fn( $value ): bool => null !== $value
+					);
+				}
 				$textarea_resets = ! empty( $surface['textarea_rows'] ) && isset( $textareas[ $target['index'] ] ) ? $textareas[ $target['index'] ]->editor_resets() : array();
 				if ( array() !== $textarea_resets && ! empty( $destination['properties'] ) ) {
 					$extra[] = array(
@@ -900,7 +958,9 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				}
 				$editor[] = $destination;
 			}
-			$target['destinations'] = array_merge( $editor, $extra );
+			// Destinations sharing an editor box (a select and its wrapper) declare
+			// the same companion once.
+			$target['destinations'] = array_merge( $editor, array_values( array_unique( $extra, SORT_REGULAR ) ) );
 		}
 		unset( $target );
 		return $map;

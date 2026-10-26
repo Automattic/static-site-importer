@@ -5,8 +5,8 @@
 mapped
 
 === css ===
-sha256: ec6ca535b259f4be6d553742663a9b80513057cf7d1433c4bd00217fbce8eeee
-/* Static Site Importer provider layout overlay: 133b34944804 */
+sha256: 0f87c583d05cb8aab2a792e83705fae8db661f6a7cfe37f4601247aae8c82013
+/* Static Site Importer provider layout overlay: f2555d5d8642 */
 .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39, .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75, .ssi-form-d095fee786e4 .ssi-node-bbd608db426f, .ssi-form-d095fee786e4 .ssi-node-9b22e072d790, .ssi-form-d095fee786e4 .ssi-node-765c1a6a1f05, .ssi-form-d095fee786e4 .ssi-node-e44b2bfa6e5d, .ssi-form-d095fee786e4 .ssi-node-c0915621f085{box-sizing:border-box}
 .ssi-form-d095fee786e4 .ssi-node-11320f0d9563{border:1px solid #999;box-sizing:border-box}
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{display:block;width:100%}
@@ -19,7 +19,7 @@ sha256: ec6ca535b259f4be6d553742663a9b80513057cf7d1433c4bd00217fbce8eeee
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{border:1px solid #999}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;border:1px solid #999;box-sizing:border-box;display:block;padding:.5em 1em;width:100%}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;border:1px solid #999;box-sizing:border-box;display:block;padding:.5em 1em;width:100%;height:auto}
-.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{font-family:revert;line-height:revert;min-height:0;box-sizing:border-box}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{font-family:revert;line-height:revert;padding:revert;border:revert;min-height:0;word-break:normal;box-sizing:border-box}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{margin-block:0!important}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8{--jetpack--contact-form--input-height:auto}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form, .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){box-sizing:border-box}
@@ -37,8 +37,8 @@ sha256: ec6ca535b259f4be6d553742663a9b80513057cf7d1433c4bd00217fbce8eeee
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: e0733c623ae9c6a5a425a9d4b58fe331c72504876db97eb54df05dbfac51983d
-/* Static Site Importer editor control chrome: a009fe2fc7b6 */
+sha256: cce4398c61d7cc06fd2a717ce6c5e18f90560d947995f375507e72ebd51a8c2b
+/* Static Site Importer editor control chrome: 21b4bd6178d2 */
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{border:1px solid #999}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-bbd608db426f, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9b22e072d790, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-765c1a6a1f05, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-e44b2bfa6e5d, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0915621f085{box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-11320f0d9563{border:1px solid #999;box-sizing:border-box}
@@ -57,7 +57,7 @@ sha256: e0733c623ae9c6a5a425a9d4b58fe331c72504876db97eb54df05dbfac51983d
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{font-family:revert;line-height:revert;border:1px solid #999;box-sizing:border-box;display:block;padding:.5em 1em;width:100%;height:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c6f970270a27{min-height:0;height:calc(3lh + .5em + .5em + 1px + 1px)}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{font:-webkit-small-control;min-height:0;box-sizing:border-box}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{font:-webkit-small-control;min-height:0;word-break:normal;padding:1px 6px;border:2px outset buttonborder;box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8 > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8{--jetpack--contact-form--input-height:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-a9ef1aa222a8::placeholder{color:revert;opacity:revert}
