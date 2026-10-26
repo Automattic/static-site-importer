@@ -737,7 +737,7 @@
 	// A source `<input type=submit>` is emitted as a provider `<button>`. When an
 	// author rule negates `input`, the fallback names that control's source tag
 	// marker, and the projected stylesheet excludes the marker wherever it
-	// excludes the tag, so the emitted button must carry it. A source
+	// excludes the tag, so the rendered `<button>` (not Core's wrapper) must carry it. A source
 	// `<button>` keeps its tag and receives no marker.
 	$retag_submit_classes = static function ( string $submit_html ) use ( $artifact_compiler ): array {
 		$html       = '<style>.theme :not(a):not(input):not(textarea){color:#fff!important}.btn{display:block;width:100%;height:50px;border:0;background:#fff;color:#3c3c3c}</style><main class="theme"><form><div><label>Name *<input type="text" name="name"></label></div><div>' . $submit_html . '</div></form></main>';
@@ -745,7 +745,9 @@
 		$submit     = array_values( array_filter( $source['controls'] ?? array(), static fn( array $control ): bool => 'submit' === ( $control['type'] ?? '' ) ) )[0] ?? array();
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $source ) ) );
 		$row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
-		$classes    = 1 === preg_match( '/<!-- wp:button (\{.*?\}) \/?-->/', (string) ( $row['block_markup'] ?? '' ), $match ) ? (string) ( json_decode( $match[1], true )['className'] ?? '' ) : '';
+		$attrs      = 1 === preg_match( '/<!-- wp:button (\{.*?\}) \/?-->/', (string) ( $row['block_markup'] ?? '' ), $match ) ? (array) json_decode( $match[1], true ) : array();
+		$rendered   = Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( '<div class="wp-block-button ' . htmlspecialchars( (string) ( $attrs['className'] ?? '' ), ENT_QUOTES ) . '"><button type="submit" class="wp-block-button__link wp-element-button">Send</button></div>', array( 'attrs' => $attrs ) );
+		$classes    = 1 === preg_match( '/<button\b[^>]*\bclass="([^"]*)"/', $rendered, $button ) ? $button[1] : '';
 		return array(
 			'mapped'  => empty( $validation['errors'] ) && 'mapped' === ( $row['status'] ?? '' ),
 			'marker'  => (string) ( $submit['source_tag_marker'] ?? '' ),
@@ -754,7 +756,7 @@
 	};
 	$retag_input  = $retag_submit_classes( '<input type="submit" class="btn" value="Send">' );
 	$retag_button = $retag_submit_classes( '<button type="submit" class="btn">Send</button>' );
-	$assert( $retag_input['mapped'] && '' !== $retag_input['marker'] && in_array( $retag_input['marker'], $retag_input['classes'], true ), 'retagged-input-submit-carries-the-fallback-source-tag-marker', wp_json_encode( $retag_input ) );
+	$assert( $retag_input['mapped'] && '' !== $retag_input['marker'] && in_array( $retag_input['marker'], $retag_input['classes'], true ), 'retagged-input-submit-button-carries-the-fallback-source-tag-marker', wp_json_encode( $retag_input ) );
 	$assert( $retag_button['mapped'] && '' === $retag_button['marker'] && in_array( $retag_input['marker'], $retag_input['classes'], true ) && empty( array_filter( $retag_button['classes'], static fn( string $class_name ): bool => str_starts_with( $class_name, 'blocks-engine-source-' ) ) ), 'source-button-submit-carries-no-source-tag-marker', wp_json_encode( array( 'button' => $retag_button, 'input' => $retag_input ) ) );
 	// A sibling `for` label's authored margin spaces its caption from the
 	// control. The provider-default label reset is weaker than the captured label

@@ -502,11 +502,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
 		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? array_filter( $presentation['classes'], 'is_string' ) : array();
+		$source_tag     = isset( $presentation['source_tag'] ) && is_string( $presentation['source_tag'] ) ? $presentation['source_tag'] : '';
+		// The tag marker names the rendered control, not Core's wrapper, so it
+		// travels with the source classes the runtime moves onto the button.
+		if ( isset( $presentation['source_tag_marker'] ) && is_string( $presentation['source_tag_marker'] ) && '' !== $presentation['source_tag_marker'] && '' !== $source_tag && 'button' !== $source_tag ) {
+			$source_classes[] = $presentation['source_tag_marker'];
+		}
 		$source_markers = implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) );
 		$block_style    = isset( $presentation['block_attrs']['style'] ) && is_array( $presentation['block_attrs']['style'] ) ? $presentation['block_attrs']['style'] : array();
-		$source_tag     = isset( $presentation['source_tag'] ) && is_string( $presentation['source_tag'] ) ? $presentation['source_tag'] : '';
-		$tag_marker     = isset( $presentation['source_tag_marker'] ) && is_string( $presentation['source_tag_marker'] ) && '' !== $source_tag && 'button' !== $source_tag ? $presentation['source_tag_marker'] : '';
-		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name . ' ' . $tag_marker );
+		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name );
 		$attrs          = array(
 			'tagName'   => 'button',
 			'type'      => 'submit',
