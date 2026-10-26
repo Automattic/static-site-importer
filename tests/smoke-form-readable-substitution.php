@@ -35,7 +35,10 @@ foreach ( array( 'Topic', 'Booking', 'Days', 'Name', 'Email', 'Phone', 'Location
 	$checks[ 'copy: ' . $text ] = str_contains( $page, $text );
 }
 $source = $entities[0]['readable_blocks'][0];
-$actual = parse_blocks( $row['block_markup'] )[0];
+$provider = parse_blocks( $row['block_markup'] )[0];
+// The provider block carries only the form scope; the readable root is its one child.
+$checks['provider block carries only the scope'] = 'jetpack/contact-form' === $provider['blockName'] && array( 'className' ) === array_keys( $provider['attrs'] ) && 1 === count( $provider['innerBlocks'] );
+$actual = $provider['innerBlocks'][0];
 // Compare every unchanged block and every substituted leaf at its exact path.
 $compare = static function( array $before, array $after, string $path = 'root' ) use ( &$compare, &$checks ): void {
 	if ( isset( $before['form_control_index'] ) ) {
@@ -43,7 +46,16 @@ $compare = static function( array $before, array $after, string $path = 'root' )
 		$checks[ 'control at ' . $path ] = 14 === $index ? 'core/button' === $after['blockName'] && 'submit' === ( $after['attrs']['type'] ?? '' ) && '' !== trim( wp_strip_all_tags( $after['innerHTML'] ) ) : ( in_array( $index, array( 0, 1, 2, 9, 10, 11 ), true ) ? 'core/button' === $after['blockName'] : str_starts_with( $after['blockName'], 'jetpack/field-' ) );
 		return;
 	}
-	$checks[ 'wrapper at ' . $path ] = 'root' === $path ? 'jetpack/contact-form' === $after['blockName'] : $before['blockName'] === $after['blockName'] && $before['attrs'] === $after['attrs'] && $before['innerContent'] === $after['innerContent'];
+	// A fieldset's legend is stated once, as its group label, and renders as the group's first child.
+	if ( 'group' === ( $before['form_field']['kind'] ?? null ) ) {
+		$legend = $after['innerBlocks'][0] ?? array();
+		$checks[ 'legend at ' . $path ] = 'core/paragraph' === ( $legend['blockName'] ?? null ) && wp_strip_all_tags( $before['form_field']['label'] ) === trim( wp_strip_all_tags( $legend['innerHTML'] ) ) && $before['form_field']['label_attributes']['style'] === $legend['attrs']['style'];
+		if ( $checks[ 'legend at ' . $path ] ) {
+			array_shift( $after['innerBlocks'] );
+			array_splice( $after['innerContent'], array_search( null, $after['innerContent'], true ), 1 );
+		}
+	}
+	$checks[ 'wrapper at ' . $path ] = 'root' === $path ? 'core/group' === $after['blockName'] && array_diff_key( $before['attrs'], array( 'tagName' => true ) ) === $after['attrs'] : $before['blockName'] === $after['blockName'] && $before['attrs'] === $after['attrs'] && $before['innerContent'] === $after['innerContent'];
 	$checks[ 'child count at ' . $path ] = count( $before['innerBlocks'] ) === count( $after['innerBlocks'] );
 	foreach ( $before['innerBlocks'] as $i => $child ) {
 		$compare( $child, $after['innerBlocks'][ $i ] ?? array(), $path . '/' . $i );
@@ -60,9 +72,10 @@ foreach ( array( false, true ) as $multiple ) {
 		'choices' => array( array( 'label' => 'General', 'source_value' => 'general' ), array( 'label' => 'Bookings', 'source_value' => 'bookings' ), array( 'label' => 'Other', 'source_value' => 'other' ) ),
 		'observed_transition' => array( 'selected' => array( true, $multiple, false ) ),
 	) );
-	$captured['readable_blocks'][0]['innerBlocks'][1]['innerBlocks'][1]['form_choice_group_index'] = 0;
+	// A fieldset framing one captured choice group is that group's node.
+	$captured['readable_blocks'][0]['innerBlocks'][1]['form_choice_group_index'] = 0;
 	$choice_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $captured ) ) )['forms'][0];
-	$choice_tree = parse_blocks( $choice_row['block_markup'] )[0]['innerBlocks'][1]['innerBlocks'][1];
+	$choice_tree = parse_blocks( $choice_row['block_markup'] )[0]['innerBlocks'][0]['innerBlocks'][1];
 	$checks['captured choice ' . (int) $multiple] = 'mapped' === $choice_row['status'] && ( $multiple ? 'jetpack/field-checkbox-multiple' : 'jetpack/field-radio' ) === $choice_tree['blockName'] && str_contains( $choice_tree['attrs']['className'], 'is-style-button' ) && array( 'General', 'Bookings', 'Other' ) === $choice_tree['attrs']['options'];
 	// Every emitted provider block must be one Jetpack registers at runtime.
 	preg_match_all( '/<!-- wp:(jetpack\/[a-z0-9-]+)/', $row['block_markup'] . $choice_row['block_markup'], $emitted );
@@ -72,11 +85,11 @@ foreach ( array( false, true ) as $multiple ) {
 $hidden = $validated['forms'][0];
 $hidden['controls'][3]['type'] = 'hidden';
 $hidden_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $hidden ) ) )['forms'][0];
-$hidden_tree = parse_blocks( $hidden_row['block_markup'] )[0];
+$hidden_tree = parse_blocks( $hidden_row['block_markup'] )[0]['innerBlocks'][0];
 $checks['hidden bookkeeping dropped without dropping row'] = 'mapped' === $hidden_row['status'] && 2 === count( $hidden_tree['innerBlocks'][2]['innerBlocks'] );
 // A missing index must select the legacy path, not partially substitute a tree.
 $partial = $validated['forms'][0];
-unset( $partial['readable_blocks'][0]['innerBlocks'][2]['innerBlocks'][0]['form_control_index'] );
+unset( $partial['readable_blocks'][0]['innerBlocks'][2]['innerBlocks'][0]['innerBlocks'][0]['form_control_index'] );
 $checks['partial trees use legacy path'] = ! Static_Site_Importer_Form_Readable_Substitution::supports( $partial );
 $legacy = $validated['forms'][0];
 unset( $legacy['readable_blocks'] );

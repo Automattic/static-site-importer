@@ -252,9 +252,17 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$children = array();
 		$slots    = array();
 		$index    = 0;
+		$legend   = self::legend_block( $block );
 		foreach ( $block['innerContent'] ?? array() as $part ) {
 			if ( null !== $part ) {
 				$slots[] = $part;
+				if ( null !== $legend ) {
+					// The producer states a fieldset's legend once, as the group's
+					// label; it renders first, inside the group's opening markup.
+					$children[] = $legend;
+					$slots[]    = null;
+					$legend     = null;
+				}
 				continue;
 			}
 			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state );
@@ -263,8 +271,35 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				$slots[]    = null;
 			}
 		}
+		// A wrapper left holding nothing held only suppressed controls: it was
+		// their field box, which renders with them or not at all.
+		if ( 0 < $index && array() === $children ) {
+			return null;
+		}
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * A fieldset group's legend, as copy. A captured choice group carries it as
+	 * the provider field label instead, so only uncaptured groups render it.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 * @return array<string,mixed>|null
+	 */
+	private static function legend_block( array $block ): ?array {
+		$field = $block['form_field'] ?? null;
+		$text  = is_array( $field ) && 'group' === ( $field['kind'] ?? null ) && is_string( $field['label'] ?? null ) ? trim( html_entity_decode( wp_strip_all_tags( $field['label'] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) : '';
+		if ( '' === $text ) {
+			return null;
+		}
+		$attrs = is_array( $field['label_attributes'] ?? null ) ? array_intersect_key( $field['label_attributes'], array_flip( array( 'className', 'style' ) ) ) : array();
+		return Static_Site_Importer_Form_Field_Markup::parsed_block( array(
+			'name'    => 'core/paragraph',
+			'attrs'   => $attrs,
+			'wrapper' => 'paragraph',
+			'content' => $text,
+		) );
 	}
 }
