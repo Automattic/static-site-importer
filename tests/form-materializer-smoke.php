@@ -13,6 +13,23 @@ namespace Automattic\Jetpack\Forms\ContactForm {
 }
 
 namespace {
+	/** Retain the projection regressions against the older, unindexed producer contract. */
+	class SSI_Legacy_Form_Test_Compiler {
+		private array $result;
+
+		public function compile( array $input ): self {
+			$this->result = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $input )->toArray();
+			foreach ( $this->result['fallbacks'] ?? array() as $index => $fallback ) {
+				unset( $this->result['fallbacks'][ $index ]['readable_blocks'] );
+			}
+			return $this;
+		}
+
+		public function toArray(): array {
+			return $this->result;
+		}
+	}
+
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 	}
@@ -233,7 +250,7 @@ namespace {
 			$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 		}
 	};
-	$artifact_compiler = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
+	$artifact_compiler = SSI_Legacy_Form_Test_Compiler::class;
 	$layout_graph = static function ( array $nodes ): array {
 		return array( 'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(), 'nodes' => $nodes );
 	};

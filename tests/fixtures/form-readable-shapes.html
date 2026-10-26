@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Form shapes</title>
+<style>body{margin:0;font-family:system-ui,sans-serif}main{max-width:920px;margin:40px auto}input,select,textarea{box-sizing:border-box}</style></head><body><main>
+<h1>Enquiry</h1>
+<form data-x-submit="send" style="display:flex;flex-direction:column;gap:18px;border:1px solid #ddd;border-radius:24px;padding:28px">
+<h2 style="margin:0;font-size:22px">Tell us about you</h2>
+<fieldset style="border:0;margin:0;padding:0"><legend style="font-size:14px;font-weight:700;padding:0;margin-bottom:10px">Topic</legend><div style="display:flex;flex-wrap:wrap;gap:8px">
+<button type="button" data-x-click="t0" aria-pressed="false" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #ddd;background:#fff">General</button>
+<button type="button" data-x-click="t1" aria-pressed="true" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #111;background:#111;color:#fff">Bookings</button>
+<button type="button" data-x-click="t2" aria-pressed="false" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #ddd;background:#fff">Other</button>
+</div></fieldset>
+<div style="display:flex;flex-wrap:wrap;gap:16px">
+<label style="flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Name<input type="text" autocomplete="name" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"></label>
+<label style="flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Email<input type="email" autocomplete="email" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"></label>
+<label style="flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Phone<input type="tel" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"></label>
+</div>
+<fieldset style="border:0;margin:0;padding:0"><legend style="font-size:14px;font-weight:700;padding:0;margin-bottom:10px">Booking</legend>
+<div style="display:flex;flex-wrap:wrap;gap:16px;background:#f3f3f3;border-radius:16px;padding:18px">
+<label style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Location<select name="location" data-x-change="loc" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"><option value="a" selected>North</option><option value="b">South</option></select></label>
+<label style="flex:1 1 180px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Date<input type="date" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"></label>
+<label style="flex:1 1 120px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Guests<input type="number" min="1" style="min-height:48px;padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit"></label>
+</div></fieldset>
+<fieldset style="border:0;margin:0;padding:0"><legend style="font-size:14px;font-weight:700;padding:0;margin-bottom:10px">Days</legend><div style="display:flex;flex-wrap:wrap;gap:8px">
+<button type="button" data-x-click="d0" aria-pressed="true" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #111;background:#111;color:#fff">Mon</button>
+<button type="button" data-x-click="d1" aria-pressed="false" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #ddd;background:#fff">Tue</button>
+<button type="button" data-x-click="d2" aria-pressed="true" style="min-height:44px;padding:10px 18px;border-radius:999px;border:2px solid #111;background:#111;color:#fff">Sat</button>
+</div></fieldset>
+<label style="display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600">Message<textarea rows="5" style="padding:12px 14px;border:1.5px solid #777;border-radius:12px;font:inherit;resize:vertical"></textarea></label>
+<label style="display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.5"><input type="checkbox" style="width:22px;height:22px;margin:0;flex:0 0 auto"><span>I agree to the <a href="/privacy/">privacy policy</a>.</span></label>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px"><button type="submit" style="min-height:52px;background:#1d7a2b;color:#fff;border:0;font:inherit;font-weight:700;padding:14px 30px;border-radius:999px">Send</button><span style="color:#555;font-size:14px">We reply within two working days.</span></div>
+</form></main></body></html>

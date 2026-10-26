@@ -62,6 +62,7 @@
     { "path": "tests/smoke-form-context-spacing.php", "environment": "standalone-php" },
     { "path": "tests/form-context-spacing.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
     { "path": "tests/form-native-select.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-linked-placeholder-colors.php", "environment": "standalone-php" },
