@@ -1292,7 +1292,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > (?:label|\.ssi-node-[a-f0-9]{12})| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| > input\.jetpack-field-option__checkbox| select)?| \.ssi-source-choice-label--ssi-node-[a-f0-9]{12}(?: > \.jetpack-field-option__label-wrapper > \.rich-text)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > (?:label|\.ssi-node-[a-f0-9]{12})| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -1310,6 +1310,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
+			if ( 'transform:none' === $declaration ) {
+				continue;
+			}
 			if ( preg_match( '/^(--[a-z][a-z0-9-]{0,79}):(.+)$/D', $declaration, $alias ) ) {
 				if ( ! self::safe_presentation_value( $alias[2] ) ) {
 					return false;
@@ -1388,7 +1391,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| \.ssi-context-[a-f0-9]{12}| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| > input\.jetpack-field-option__checkbox)?| \.ssi-source-choice-label--ssi-node-[a-f0-9]{12}(?: > \.jetpack-field-option__label-wrapper > \.rich-text)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -1864,11 +1867,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'align-items', 'width', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'align-items', 'width', 'height', 'appearance', 'transform', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
-			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) ) {
+			// A transform reset may only release the provider's own nudge.
+			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) || ( 'transform' === $property && 'none' !== $value ) ) {
 				return false;
 			}
 		}

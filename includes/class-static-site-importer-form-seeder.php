@@ -266,13 +266,18 @@ class Static_Site_Importer_Form_Seeder {
 	private static function plan_form( array $form, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
 		$state = self::normalized_plan_state( $form );
 		self::group_controls( $state );
+		$readable = Static_Site_Importer_Form_Readable_Substitution::supports( $state->form );
 		foreach ( $state->controls as $control_index => $control ) {
 			if ( is_array( $control ) ) {
+				if ( $readable && Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
+					// The field-box shell carries the wrapping label's classes.
+					unset( $control['label_class'] );
+				}
 				self::map_control( $state, $control_index, $control );
 			}
 		}
 
-		if ( Static_Site_Importer_Form_Readable_Substitution::supports( $state->form ) ) {
+		if ( $readable ) {
 			return self::readable_plan( $state, $available );
 		}
 		if ( empty( $state->field_blocks ) ) {
@@ -339,11 +344,16 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_form                                   = $state->form;
 		$presentation_form['layout_graph']                   = array( 'nodes' => array() );
 		$state->presentation_descriptors                     = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		$field_box_labels = array();
 		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
+			} elseif ( isset( $state->presentation_descriptors[ $control_index ] ) && null === Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) && Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_field_box_label( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index );
+				$field_box_labels[ $control_index ]                = true;
 			}
 		}
+		$presentation_form['presentation_graph'] = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		$maps    = self::target_maps(
 			$state,
@@ -354,7 +364,10 @@ class Static_Site_Importer_Form_Seeder {
 			$presentation_form,
 			''
 		);
-		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ?? array() );
+		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_field_errors(
+			Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ?? array() ),
+			$state->scope
+		);
 		$receipt = array();
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'operations', $overlay['operations'] );
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'losses', array_merge( $overlay['losses'], $state->control_attribute_losses ) );

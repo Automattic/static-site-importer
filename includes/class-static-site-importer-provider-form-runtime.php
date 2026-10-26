@@ -850,7 +850,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 
 	/** Restore source ancestry outside the complete choice field and its label. */
 	private static function project_whole_choice_field( string $html, array $ancestors, array $choice_box, array $choice_label ): string {
-		if ( empty( $choice_box ) || strlen( $html ) > 262144 ) {
+		if ( ( empty( $choice_box ) && empty( $choice_label ) ) || strlen( $html ) > 262144 ) {
 			return $html;
 		}
 		$document = new \DOMDocument();

@@ -350,6 +350,8 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 						'checkbox' === $type ? array(
 							'min-width' => '0',
 							'padding'   => '0',
+							// Jetpack zeroes the checkbox's default margin.
+							'margin'    => 'revert',
 						) : array(),
 						// Jetpack renders the native control with `appearance: none`,
 						// which removes the platform chevron the authored select had.
@@ -700,7 +702,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * An emitted part with neither declaration, or with both, fails the editor
 	 * derivation.
 	 *
-	 * @return array<string,array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}>
+	 * @return array<string,array{drop?:bool,selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}>
 	 */
 	public static function editor_surface_table(): array {
 		$placeholder = self::EDITOR_PLACEHOLDER_RESETS;
@@ -751,9 +753,17 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'placeholder'   => $placeholder,
 				'textarea_rows' => true,
 			),
-			'checkbox_control'          => array(),
 			'sibling_stacked'           => array( 'placeholder' => $placeholder ),
 			'control_container'         => array(),
+			// The editor option block carries the control hook on its wrapper,
+			// around the native checkbox. Jetpack's editor nudges that checkbox
+			// down (`translateY(0.15em)`), which its front end does only for
+			// list styles, so the editor releases it.
+			'checkbox_control'          => array(
+				'replace'    => array( ' input.', ' .' ),
+				'retarget'   => array( '', ' > input.jetpack-field-option__checkbox' ),
+				'add_resets' => array( 'transform' => 'none' ),
+			),
 			// The submit button.
 			'submit_wrapper'            => array( 'placeholder' => $placeholder ),
 			'submit_link'               => $button_font,
@@ -764,8 +774,14 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			'label'                     => $label_box,
 			'wrapping_label_reset'      => $label_box,
 			'row_gap_label_reset'       => array( 'drop' => true ),
-			'choice_label'              => array(),
-			'choice_label_box'          => $label_box,
+			// The editor's standalone option block is the choice box: it carries
+			// the label class only as a choice-label marker, around the native
+			// checkbox and the label RichText.
+			'choice_label'              => array(
+				'replace'  => array( ' .', ' .ssi-source-choice-label--' ),
+				'retarget' => array( ' > label', ' > .jetpack-field-option__label-wrapper > .rich-text' ),
+			),
+			'choice_label_box'          => array( 'replace' => array( ' .', ' .ssi-source-choice-label--' ) ),
 			'required_marker'           => array(),
 		);
 	}
@@ -775,7 +791,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	 * the entry's own `editor` declaration, or else the editor table row.
 	 *
 	 * @param array<string,mixed> $entry A layout target or presentation destination.
-	 * @return array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}
+	 * @return array{drop?:bool,selector?:string,replace?:array{0:string,1:string},retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}
 	 * @throws LogicException When the part is missing or declares no realisation, or two.
 	 */
 	public static function editor_surface_part( array $entry ): array {
@@ -802,6 +818,15 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	private static function editor_selector( string $selector, array $surface, string $scope ): string {
 		if ( isset( $surface['selector'] ) ) {
 			return str_replace( '{scope}', $scope, $surface['selector'] );
+		}
+		if ( isset( $surface['replace'] ) ) {
+			list( $search, $replacement ) = $surface['replace'];
+			$at                           = strpos( $selector, $search );
+			if ( false === $at ) {
+				// ssi-error-class: programmer
+				throw new LogicException( 'A provider form overlay selector does not contain its declared editor replacement.' );
+			}
+			$selector = substr_replace( $selector, $replacement, $at, strlen( $search ) );
 		}
 		if ( ! isset( $surface['retarget'] ) ) {
 			return $selector;

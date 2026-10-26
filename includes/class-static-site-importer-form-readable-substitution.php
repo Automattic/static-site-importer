@@ -11,6 +11,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /** Native wrappers own topology; the provider owns only field semantics. */
 class Static_Site_Importer_Form_Readable_Substitution {
+	private const LABEL_TEXT_FACTS = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'letter_spacing', 'line_height', 'text_align', 'text_decoration', 'text_transform' );
+
+	/** How a field-box label arranges its caption and control. */
+	private const FIELD_BOX_ARRANGEMENT_FACTS = array( 'display', 'flex_direction', 'gap', 'align_items', 'justify_content' );
+
 	/** Older or partial producer trees must retain the projection path. */
 	public static function supports( array $form ): bool {
 		$tree = $form['readable_blocks'] ?? array();
@@ -46,6 +51,85 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		};
 		$walk( $tree[0] );
 		return $valid && count( $indices ) === count( $form['controls'] ?? array() ) && count( $groups ) === count( $form['choice_groups'] ?? array() );
+	}
+
+	/**
+	 * A source label that wraps its control is that field's box, which the
+	 * producer's field-box shell already states with the source classes. The
+	 * provider caption keeps only the label's text, the provider field
+	 * wrapper takes the shell's arrangement as if absent, and the box's
+	 * paint stays on the shell alone.
+	 *
+	 * @param array<string,mixed> $descriptor Field presentation descriptor.
+	 * @return array<string,mixed>
+	 */
+	public static function with_field_box_label( array $descriptor, string $scope, int $index ): array {
+		$destinations = array();
+		foreach ( $descriptor['destinations'] as $destination ) {
+			$part = $destination['part'] ?? null;
+			if ( in_array( $part, array( 'control_container', 'wrapping_label_reset' ), true ) ) {
+				continue;
+			}
+			if ( 'label' === $part ) {
+				$destination['properties'] = array_values( array_intersect( $destination['properties'], self::LABEL_TEXT_FACTS ) );
+			}
+			$destinations[] = $destination;
+		}
+		// The provider field wrapper arranges the caption and control as the
+		// source label did; the shell states the rest of that box.
+		$destinations[]             = array(
+			'part'       => 'field_box_wrapper',
+			'role'       => 'label',
+			// Jetpack renders the field block's class with a `-wrap` suffix.
+			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $index ) . '-wrap',
+			'properties' => self::FIELD_BOX_ARRANGEMENT_FACTS,
+			'resets'     => array(
+				'margin'     => '0',
+				'padding'    => '0',
+				'border'     => '0',
+				'background' => 'transparent',
+			),
+			'priority'   => 'important',
+			// The editor field block is `display: contents`; its control box holds the caption and control.
+			'editor'     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
+		);
+		$descriptor['destinations'] = $destinations;
+		return $descriptor;
+	}
+
+	/**
+	 * The presentation facts of each field-box label the provider carries: its
+	 * text on the caption, its arrangement on the field wrapper. The shell
+	 * states the rest of that box.
+	 *
+	 * @param array<string,mixed> $graph   Presentation graph.
+	 * @param array<int,true>     $indices Controls whose label is their field box.
+	 * @return array<string,mixed>
+	 */
+	public static function field_box_presentation( array $graph, array $indices ): array {
+		$text = array_flip( array_merge( self::LABEL_TEXT_FACTS, self::FIELD_BOX_ARRANGEMENT_FACTS ) );
+		foreach ( $graph['controls'] ?? array() as $key => $control ) {
+			if ( isset( $indices[ $control['index'] ?? -1 ] ) ) {
+				unset( $graph['controls'][ $key ]['control_container'] );
+				if ( is_array( $control['label']['styles'] ?? null ) ) {
+					$graph['controls'][ $key ]['label']['styles'] = array_intersect_key( $control['label']['styles'], $text );
+				}
+			}
+		}
+		foreach ( $graph['variants'] ?? array() as $key => $variant ) {
+			if ( isset( $indices[ $variant['index'] ?? -1 ] ) && in_array( $variant['role'] ?? null, array( 'label', 'control_container' ), true ) ) {
+				$patch = 'label' === $variant['role'] ? array_intersect_key( $variant['style_patch'] ?? array(), $text ) : array();
+				if ( array() === $patch ) {
+					unset( $graph['variants'][ $key ] );
+				} else {
+					$graph['variants'][ $key ]['style_patch'] = $patch;
+				}
+			}
+		}
+		if ( isset( $graph['variants'] ) ) {
+			$graph['variants'] = array_values( $graph['variants'] );
+		}
+		return $graph;
 	}
 
 	/**

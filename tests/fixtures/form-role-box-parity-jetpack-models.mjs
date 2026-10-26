@@ -326,28 +326,29 @@ function legacyLayoutClasses( layout ) {
 /**
  * Blocks Engine's generated layout shell in the editor (LayoutShellBlockGenerator
  * edit()): the authored wrapper chain, the outermost merged with useBlockProps
- * minus `block-editor-block-list__block`, around the inner-blocks layer that
- * Blocks Engine's support CSS makes `display: contents`.
+ * minus `block-editor-block-list__block`, and the innermost holding the inner
+ * blocks through useInnerBlocksProps.
  */
 function layoutShellEditorHtml( block, children ) {
 	const wrappers = block.attrs.wrappers ?? [];
-	let html = `<div class="blocks-engine-layout-shell-editor-inner-blocks block-editor-block-list__layout">${ children }</div>`;
+	let html = children;
 	for ( let index = wrappers.length - 1; index >= 0; index-- ) {
 		const { tagName = 'div', attributes = {} } = wrappers[ index ];
 		const attrs = { ...attributes };
+		const own = [];
 		if ( 0 === index ) {
-			attrs.class = classes( 'wp-block', `wp-block-${ block.name.replace( '/', '-' ) }`, attributes.class );
+			own.push( 'wp-block', `wp-block-${ block.name.replace( '/', '-' ) }` );
 			attrs[ 'data-type' ] = block.name;
 		}
-		const serialized = Object.entries( attrs ).map( ( [ key, value ] ) => ( true === value ? ` ${ key }` : ` ${ key }="${ escapeAttr( value ) }"` ) ).join( '' );
+		if ( wrappers.length - 1 === index ) {
+			own.push( 'block-editor-block-list__layout' );
+		}
+		attrs.class = classes( ...own, attributes.class );
+		const serialized = Object.entries( attrs ).filter( ( [ , value ] ) => '' !== value ).map( ( [ key, value ] ) => ( true === value ? ` ${ key }` : ` ${ key }="${ escapeAttr( value ) }"` ) ).join( '' );
 		html = `<${ tagName }${ serialized }>${ html }</${ tagName }>`;
 	}
 	return html;
 }
-
-// Blocks Engine's support CSS for the layout shell's editor inner-blocks layer
-// (EngineSupportCss: `:root :where(.wp-block-<ns>-layout-shell) .<layer>{display:contents}`).
-const LAYOUT_SHELL_EDITOR_CSS = ':root :where([class*="-layout-shell"]) .blocks-engine-layout-shell-editor-inner-blocks{display:contents}';
 
 /**
  * Jetpack's editor DOM for the seeded block tree, as each block's edit
@@ -478,7 +479,7 @@ export function frontDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
  * styles (default theme, or IMPORTED_THEME_LAYOUT_CSS).
  */
 export function editorDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
-	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_EDITOR_CSS, JETPACK_LAYOUT_CSS, JETPACK_EDITOR_PHONE_CSS, JETPACK_COMBOBOX_CSS, LAYOUT_SHELL_EDITOR_CSS ].join( '\n' );
+	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_EDITOR_CSS, JETPACK_LAYOUT_CSS, JETPACK_EDITOR_PHONE_CSS, JETPACK_COMBOBOX_CSS ].join( '\n' );
 	const blocks = form.blocks.map( ( block ) => editorBlockHtml( block ) ).join( '' );
 	return `<!doctype html><html><head><style>${ providerCss }</style><style>${ form.editorCss }</style></head>`
 		+ `<body class="editor-styles-wrapper block-editor-iframe__body"><div id="ssi-role-root" class="is-root-container is-layout-flow wp-block-post-content block-editor-block-list__layout">${ blocks }</div></body></html>`;
