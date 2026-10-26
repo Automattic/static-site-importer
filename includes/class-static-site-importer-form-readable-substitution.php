@@ -160,7 +160,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * @return array<string,mixed>
 	 */
 	public static function with_checkbox_layout( array $descriptor, string $scope, int $index, array $declarations ): array {
-		$descriptor['destinations'][] = array(
+		$descriptor['destinations'][]   = array(
 			'part'       => 'checkbox_layout',
 			'role'       => 'label',
 			'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ) . '-wrap .contact-form__checkbox-wrap',
