@@ -350,7 +350,10 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
 				continue;
 			}
-			if ( ! isset( $state->presentation_descriptors[ $control_index ] ) || null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) ) {
+			// A field's own caption arrangement applies where the provider renders
+			// that caption before its control. Choice fields order their option
+			// labels natively, and an option group's caption is its legend.
+			if ( ! isset( $state->presentation_descriptors[ $control_index ] ) || null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $state->form, $control_index ) || in_array( $field_block['name'], array( 'jetpack/field-checkbox', 'jetpack/field-checkbox-multiple', 'jetpack/field-radio' ), true ) ) {
 				continue;
 			}
 			if ( Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control_index ) ) {

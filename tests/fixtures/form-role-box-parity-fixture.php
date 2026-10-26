@@ -59,6 +59,12 @@ namespace {
 	 *   natively.
 	 * - `checkbox_row`: a flex row holding a checkbox and its sibling label.
 	 * - `country`: a phone field with a source country-picker trigger.
+	 * - `caption_order`: a label that wraps its text field, and an email input
+	 *   placed before its caption.
+	 *
+	 * Each source is also seeded without its readable tree, as `<name>_projection`:
+	 * that projection path still serves older or partial producer trees, and
+	 * is the only path that emits the layout-target parts.
 	 */
 	$sources = array(
 		'controls'    => '<style>*,::before,::after{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}'
@@ -108,6 +114,8 @@ namespace {
 			. '</form></main>',
 		'checkbox_row' => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.consent{display:flex;align-items:flex-start;gap:8px}.consent input{margin:0;width:16px;height:16px}</style>'
 			. '<main><form><div class="consent"><input type="checkbox" id="news" name="news"><label for="news">Send me news</label></div><button type="submit">Send</button></form></main>',
+		'caption_order' => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}form{display:grid;gap:16px;padding:16px}.wl{display:grid;gap:4px;font-size:14px;padding:8px;border:1px solid #d4d4d8}.wl input,.after input{height:36px;border:1px solid #71717a;padding:4px 8px}.after label{font-size:13px;color:#52525b}</style>'
+			. '<main><form><label class="wl">Name <input name="name"></label><div class="after"><input id="email" type="email" name="email"><label for="email">We only use this to reply</label></div><button type="submit">Send</button></form></main>',
 		'country'     => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.sourcegroup{display:flex;align-items:center;gap:8px}.globe{width:24px}.chevron{width:16px}.ph{display:flex;align-items:center;border:1px solid #999;background:#fff}.ph button{position:relative;flex-shrink:0;padding:6px 10px;border:0;background:#fafafa}.ph input{flex:1;border:0;padding:8px}</style>'
 			. '<main><form><div class="ph"><button type="button" aria-haspopup="listbox" aria-label="Phone country selector"><span class="sourcegroup"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></span></button><input type="tel" name="phone"></div><button type="submit">Send</button></form></main>',
 	);
@@ -211,8 +219,14 @@ namespace {
 			}
 		}
 		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $fallback ) ) );
-		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		$projected = $validated['forms'] ?? array();
+		unset( $projected[0]['readable_blocks'] );
+		foreach ( array( $name => $validated['forms'] ?? array(), $name . '_projection' => $projected ) as $variant => $seed_forms ) {
+		$row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $seed_forms ) )['forms'][0] ?? array();
 		if ( 'mapped' !== ( $row['status'] ?? null ) ) {
+			if ( $variant !== $name ) {
+				continue;
+			}
 			fwrite( STDERR, "source form {$name} did not map: " . wp_json_encode( array( 'status' => $row['status'] ?? null, 'reason' => $row['reason'] ?? null, 'losses' => $row['form_receipt_unaccepted_losses'] ?? null ) ) . "\n" );
 			exit( 1 );
 		}
@@ -221,7 +235,7 @@ namespace {
 		$writes   = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/theme', 'Role Box Parity', implode( "\n", $styles[1] ), array(), array(), array( $row['provider_layout_overlay_css'] ) );
 		$blocks   = ssi_role_box_parse_blocks( (string) $row['block_markup'] );
 		$forms[]  = array(
-			'name'      => $name,
+			'name'      => $variant,
 			'scope'     => substr( (string) $row['provider_layout_target_map']['scope'], 1 ),
 			'blocks'    => $blocks,
 			'frontHtml' => ssi_role_box_render_form( $blocks[0] ),
@@ -229,6 +243,7 @@ namespace {
 			'editorCss' => $writes['/theme/assets/css/editor-style.css'],
 			'instances' => ssi_role_box_instances( $row['provider_layout_target_map'] ),
 		);
+		}
 	}
 	$declared = array();
 	foreach ( ssi_editor_parts_declared( '.ssi-form-000000000000' ) as $part => $surface ) {

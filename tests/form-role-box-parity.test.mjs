@@ -36,17 +36,24 @@ const VIEWPORT = { width: 1200, height: 1600 };
 // takes padding from the role element too, for a box that paints nothing.
 // `margins` adds the block margins the part carries.
 const FIELD = ( n ) => `[data-jp-field-id$="-field-${ n }"]`;
+// Layout-target parts are emitted only by the projection path, which serves
+// producer trees without a complete readable form tree.
 const PAIRS = {
-	form: { form: 'controls', origin: 'form', front: 'form.jetpack-contact-form__form', editor: ':scope > [data-type="jetpack/contact-form"]' },
-	form_box: { form: 'form_box', origin: 'form-box', front: ':scope > .jetpack-contact-form-container', editor: ':scope > [data-type="jetpack/contact-form"]' },
-	native_form: { form: 'native_form', origin: 'form', front: 'form.jetpack-contact-form__form', editor: '[data-type="jetpack/contact-form"] > .jetpack-contact-form' },
-	native_form_box: { form: 'native_form', origin: 'form-box', front: ':scope > .jetpack-contact-form-container', editor: ':scope > [data-type="jetpack/contact-form"]' },
-	field_list: { form: 'field_list', origin: 'field-list', front: '.wp-block-jetpack-contact-form > .ssi-source-field-list:has([data-jp-field-id])', editor: '[data-type="jetpack/contact-form"] > .jetpack-contact-form' },
-	field: { form: 'controls', origin: 'field-5', front: FIELD( 5 ), editor: '[data-type="jetpack/field-checkbox"]' },
-	wrap: { form: 'controls', origin: 'wrapper-0', front: FIELD( 0 ), editor: '[data-type="jetpack/field-text"]' },
-	box: { form: 'controls', origin: 'control-0', front: `${ FIELD( 0 ) } input.grunion-field`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/input"]' },
-	submit_link_box: { form: 'form_box', origin: 'control-2', front: '.wp-block-button > .wp-block-button__link', editor: '[data-type="core/button"] > .wp-block-button__link' },
-	country_trigger: { form: 'country', origin: 'control-0', front: 'button.jetpack-combobox-trigger', editor: 'button.jetpack-combobox-trigger' },
+	form: { form: 'controls_projection', origin: 'form', front: 'form.jetpack-contact-form__form', editor: ':scope > [data-type="jetpack/contact-form"]' },
+	form_box: { form: 'form_box_projection', origin: 'form-box', front: ':scope > .jetpack-contact-form-container', editor: ':scope > [data-type="jetpack/contact-form"]' },
+	native_form: { form: 'native_form_projection', origin: 'form', front: 'form.jetpack-contact-form__form', editor: '[data-type="jetpack/contact-form"] > .jetpack-contact-form' },
+	native_form_box: { form: 'native_form_projection', origin: 'form-box', front: ':scope > .jetpack-contact-form-container', editor: ':scope > [data-type="jetpack/contact-form"]' },
+	field_list: { form: 'field_list_projection', origin: 'field-list', front: '.wp-block-jetpack-contact-form > .ssi-source-field-list:has([data-jp-field-id])', editor: '[data-type="jetpack/contact-form"] > .jetpack-contact-form' },
+	field: { form: 'controls_projection', origin: 'field-5', front: FIELD( 5 ), editor: '[data-type="jetpack/field-checkbox"]' },
+	wrap: { form: 'controls_projection', origin: 'wrapper-0', front: FIELD( 0 ), editor: '[data-type="jetpack/field-text"]' },
+	box: { form: 'controls_projection', origin: 'control-0', front: `${ FIELD( 0 ) } input.grunion-field`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/input"]' },
+	submit_link_box: { form: 'form_box_projection', origin: 'control-2', front: '.wp-block-button > .wp-block-button__link', editor: '[data-type="core/button"] > .wp-block-button__link' },
+	country_trigger: { form: 'country_projection', origin: 'control-0', front: 'button.jetpack-combobox-trigger', editor: 'button.jetpack-combobox-trigger' },
+	// A field's own box and caption order, for a label wrapping its field and
+	// a caption placed after its control.
+	field_box_wrapper: { form: 'caption_order', origin: 'control-0', front: FIELD( 0 ), editor: '[data-type="jetpack/field-text"] > .jetpack-field__control' },
+	caption_after_control_box: { form: 'caption_order', origin: 'control-1', front: FIELD( 1 ), editor: '[data-type="jetpack/field-email"] > .jetpack-field__control' },
+	caption_after_control: { form: 'caption_order', origin: 'control-1', front: `${ FIELD( 1 ) } label.grunion-field-label`, editor: '[data-type="jetpack/field-email"] .wp-block-jetpack-label' },
 	control: { form: 'controls', origin: 'control-0', front: `${ FIELD( 0 ) } input.grunion-field`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/input"]' },
 	sibling_stacked: { form: 'controls', origin: 'control-0', front: `${ FIELD( 0 ) } input.grunion-field`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/input"]', margins: true },
 	phone_primary: { form: 'controls', origin: 'control-2', front: `${ FIELD( 2 ) } input[type="tel"]`, editor: '[data-type="jetpack/phone-input"]' },
@@ -63,7 +70,7 @@ const PAIRS = {
 	control_container: { form: 'controls', origin: 'control-4', front: `${ FIELD( 4 ) } textarea`, editor: '[data-type="jetpack/field-textarea"]' },
 	checkbox_control: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } input[type="checkbox"]`, editor: 'input.jetpack-field-option__checkbox' },
 	choice_label: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } label.grunion-field-label`, editor: '.jetpack-field-option__label-wrapper > .rich-text' },
-	checkbox_layout: { form: 'checkbox_row', origin: 'checkbox-0', front: `${ FIELD( 0 ) } .contact-form__checkbox-wrap`, editor: '[data-type="jetpack/field-checkbox"] > [data-type="jetpack/option"]' },
+	checkbox_layout: { form: 'checkbox_row_projection', origin: 'checkbox-0', front: `${ FIELD( 0 ) } .contact-form__checkbox-wrap`, editor: '[data-type="jetpack/field-checkbox"] > [data-type="jetpack/option"]' },
 	choice_label_box: { form: 'controls', origin: 'control-5', front: `${ FIELD( 5 ) } .contact-form__checkbox-wrap`, editor: '[data-type="jetpack/field-checkbox"] .jetpack-field-option__label-wrapper > .rich-text', editorBox: '[data-type="jetpack/field-checkbox"] > [data-type="jetpack/option"]' },
 	label: { form: 'controls', origin: 'control-0', front: `${ FIELD( 0 ) } label.grunion-field-label`, editor: '[data-type="jetpack/field-text"] [data-type="jetpack/label"] > label', editorBox: '[data-type="jetpack/field-text"] [data-type="jetpack/label"]' },
 	wrapping_label_reset: { form: 'controls', origin: 'control-6', front: `${ FIELD( 6 ) } legend.grunion-field-label`, editor: '[data-type="jetpack/field-radio"] [data-type="jetpack/label"] > label', editorBox: '[data-type="jetpack/field-radio"] [data-type="jetpack/label"]', margins: true },
@@ -86,7 +93,6 @@ const TODO = {
 	country_trigger: 'https://github.com/Automattic/static-site-importer/issues/2170',
 	control_container: 'https://github.com/Automattic/static-site-importer/issues/2171',
 	checkbox_control: 'https://github.com/Automattic/static-site-importer/issues/2172',
-	choice_label: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	choice_label_box: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	checkbox_layout: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	label: 'https://github.com/Automattic/static-site-importer/issues/2173',
@@ -194,6 +200,14 @@ test( 'the pair table covers every declared, non-dropped form overlay part', () 
 	}
 	for ( const [ part, pair ] of Object.entries( PAIRS ) ) {
 		instanceFor( part, pair );
+	}
+	// Choice fields order their option labels natively, and an option group's
+	// caption is its legend: a radio group and a checkbox before its label
+	// take no caption arrangement of their own.
+	const captionParts = [ 'field_box_wrapper', 'caption_after_control_box', 'caption_after_control' ];
+	for ( const [ name, origins ] of [ [ 'controls', [ 'control-5', 'control-6', 'control-7' ] ], [ 'checkbox_row', [ 'control-0' ] ] ] ) {
+		const arranged = forms.find( ( form ) => form.name === name ).instances.filter( ( instance ) => captionParts.includes( instance.part ) && origins.includes( instance.origin ) );
+		assert.deepEqual( arranged.map( ( instance ) => `${ instance.part } ${ instance.origin }` ), [], `${ name }: choice fields take no caption arrangement` );
 	}
 } );
 

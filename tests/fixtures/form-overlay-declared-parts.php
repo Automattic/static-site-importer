@@ -45,7 +45,13 @@ function ssi_editor_parts_descriptor_destinations( string $scope, ?int $index = 
 							$descriptor = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $scope, $index ?? $counter % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label, $row_carried_label_margins );
 							// A submit standing for its source block row moves its box
 							// facts between destinations; both shapes reach the editor.
-							$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
+							$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ), Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $descriptor ) ) : array( $descriptor );
+							// A readable field adds its field-box and caption-order destinations.
+							if ( 'submit' !== $control_type && ! $choice_box ) {
+								$part_index = $index ?? $counter % 128;
+								$boxed      = Static_Site_Importer_Form_Readable_Substitution::with_field_box_label( $descriptor, $scope, $part_index );
+								array_push( $shapes, $boxed, Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $descriptor, $scope, $part_index, false ), Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $boxed, $scope, $part_index, true ) );
+							}
 							foreach ( $shapes as $shape ) {
 								foreach ( $shape['destinations'] as $destination ) {
 									$destinations[] = $destination;
