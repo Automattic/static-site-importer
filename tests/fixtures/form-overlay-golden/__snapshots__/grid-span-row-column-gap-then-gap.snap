@@ -90,7 +90,10 @@ total: 20
 {"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
 
 === receipt_losses ===
-total: 3
+total: 6
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"c66a8540955a4e3e0292d9d2a2946a9b907dec97d13254e71f21ae4577dc9877"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"f40389aae6a26145af5d3181bf34a05645486a5da6b794968bc9c943304eff97"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"5631c0bd4f1d37e88c6baaf1f0c421d55d7e5026be55bed4c3c2f6b887afa623"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"c852c69b0a7133fe68f6052ba47c4433b6bf68464d4b27c426a3d8b79f67db28"}
