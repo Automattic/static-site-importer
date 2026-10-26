@@ -312,17 +312,22 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Keep native topology and compile only the existing field-presentation surfaces. */
 	private static function readable_plan( Static_Site_Importer_Form_Plan_State $state, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
+		// The source form's own box stays a native group: Jetpack lays its form
+		// body out as a wrapping flex row and gives a group child the full row,
+		// so the group keeps the source form's layout around its children.
 		$root  = Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state );
 		$attrs = $root['attrs'];
 		unset( $attrs['tagName'] );
-		$provider_attrs     = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
-		$classes            = preg_split( '/\s+/', trim( ( $attrs['className'] ?? '' ) . ' ' . ( $provider_attrs['className'] ?? '' ) ) );
-		$attrs['className'] = implode( ' ', array_unique( array_filter( false === $classes ? array() : $classes ) ) );
-		$attrs              = array_replace_recursive( $provider_attrs, $attrs );
-		$block              = array(
+		$block = array(
 			'name'        => 'jetpack/contact-form',
-			'attrs'       => $attrs,
-			'innerBlocks' => $root['innerBlocks'],
+			'attrs'       => Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope ),
+			'innerBlocks' => array(
+				array(
+					'name'        => 'core/group',
+					'attrs'       => $attrs,
+					'innerBlocks' => $root['innerBlocks'],
+				),
+			),
 		);
 
 		// No wrapper/layout facts enter the overlay. Its presentation destinations

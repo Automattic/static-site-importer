@@ -358,6 +358,26 @@ namespace {
 			$class = trim( 'wp-block-group ' . (string) ( $block['attrs']['className'] ?? '' ) . ' ' . ssi_role_box_layout_classes( 'group', (array) ( $block['attrs']['layout'] ?? array() ), 'flow' ) );
 			return '<div class="' . ssi_role_box_esc( $class ) . '">' . $inner . '</div>';
 		}
+		// Blocks Engine's generated layout shell saves its authored wrapper
+		// chain (LayoutShellBlockGenerator savedContent()) around its children.
+		if ( str_ends_with( $block['name'], '/layout-shell' ) ) {
+			$open  = '';
+			$close = '';
+			foreach ( (array) ( $block['attrs']['wrappers'] ?? array() ) as $wrapper ) {
+				$tag = (string) ( $wrapper['tagName'] ?? 'div' );
+				$open .= '<' . $tag;
+				foreach ( (array) ( $wrapper['attributes'] ?? array() ) as $name => $value ) {
+					$open .= true === $value ? ' ' . $name : ' ' . $name . '="' . ssi_role_box_esc( (string) $value ) . '"';
+				}
+				$open .= '>';
+				$close = '</' . $tag . '>' . $close;
+			}
+			$inner = '';
+			foreach ( $block['innerBlocks'] as $child ) {
+				$inner .= ssi_role_box_render_block( $child );
+			}
+			return $open . $inner . $close;
+		}
 		fwrite( STDERR, 'unmodelled block ' . $block['name'] . "\n" );
 		exit( 1 );
 	}
