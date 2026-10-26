@@ -242,7 +242,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					),
 					'visual_diff'         => array(
 						'kind' => 'visual_diff',
-						'path' => '/tmp/validation/local-diff.png',
+						'path' => '/Users/chubes/Downloads/local-diff.png',
 					),
 					'block_validation'    => array(
 						'kind'          => 'gutenberg_block_validation',

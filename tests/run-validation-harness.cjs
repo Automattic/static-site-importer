@@ -155,7 +155,8 @@ function runStep( step ) {
     cwd: repoRoot,
     encoding: 'utf8',
     stdio: jsonMode ? 'pipe' : 'inherit',
-    env: process.env,
+    // Standalone PHP smokes load WordPress core from the target site.
+    env: { ...process.env, STATIC_SITE_IMPORTER_WP_ROOT: process.env.STATIC_SITE_IMPORTER_WP_ROOT || sitePath },
   } );
   const stepResult = {
     name: step.name,
