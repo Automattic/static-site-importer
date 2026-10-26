@@ -800,6 +800,11 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					$destination['properties'] = array_values( array_diff( $destination['properties'], $box_properties ) );
 				}
 				$destination['selector'] = self::editor_selector( $destination['selector'], $surface, $scope_selector );
+				// The editor has no checked option: a source-selected choice is painted as the field's default.
+				unset( $destination['checked'] );
+				if ( true === ( $surface['checked'] ?? false ) ) {
+					$destination['checked'] = $destination['selector'];
+				}
 				foreach ( $surface['add_resets'] ?? array() as $reset => $value ) {
 					$destination['resets'][ $reset ] = $value;
 				}

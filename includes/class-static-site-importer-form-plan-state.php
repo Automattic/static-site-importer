@@ -36,6 +36,8 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $suppressed_controls;
 	/** @var array<int,int> Trigger control index => hidden native carrier index. */
 	public array $choice_pairs;
+	/** @var array<int,array{controls:array<int,int>,row:?string,selected:array<int,?bool>}> Substituted captured choice groups. */
+	public array $choice_groups = array();
 	public array $submit_presentation;
 	public string $submit_text = 'Submit';
 

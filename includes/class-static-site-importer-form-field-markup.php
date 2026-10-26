@@ -782,7 +782,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '"' . ( '' !== $style ? ' style="' . self::escape_attribute( rtrim( $style, ';' ) ) . '"' : '' ) . '>';
 			$suffix = '</' . $tag . ">\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
-			$prefix = "\n<" . $wrapper . '>';
+			// A custom class is saved with the block's generated class, as useBlockProps.save() does.
+			$custom = is_string( $attrs['className'] ?? null ) ? trim( $attrs['className'] ) : '';
+			$prefix = "\n<" . $wrapper . ( '' !== $custom ? ' class="' . self::escape_attribute( 'wp-block-' . str_replace( '/', '-', $name ) . ' ' . $custom ) . '"' : '' ) . '>';
 			$suffix = '</' . $wrapper . ">\n";
 		}
 

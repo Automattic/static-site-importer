@@ -309,7 +309,16 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
-		$maps    = self::target_maps( $state, $presentation_form );
+		// Substituted choice groups paint their options and lay out their option list.
+		$choices                                             = Static_Site_Importer_Form_Readable_Substitution::choice_presentation( $state, $presentation_form['presentation_graph'] );
+		$state->presentation_descriptors                     = array_replace( $state->presentation_descriptors, $choices['descriptors'] );
+		$presentation_form['presentation_graph']['controls'] = array_merge(
+			array_values( array_filter( $presentation_form['presentation_graph']['controls'], static fn( array $control ): bool => ! isset( $choices['descriptors'][ $control['index'] ] ) ) ),
+			$choices['controls']
+		);
+		$presentation_form['presentation_graph']['variants'] = array_merge( $presentation_form['presentation_graph']['variants'] ?? array(), $choices['variants'] );
+		$presentation_form['layout_graph']['nodes']          = $choices['layout_nodes'];
+		$maps    = self::target_maps( $state, $presentation_form, $choices['layout_targets'] );
 		$overlay = Static_Site_Importer_Form_Presentation::collapse_inactive_field_errors(
 			// Core's editor does not run the server-side source-class transfer hook,
 			// so only the front end leaves class-owned submit colours to the live source rules.
@@ -578,11 +587,12 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @return array{target:array<string,mixed>,editor:array<string,mixed>}
 	 */
-	private static function target_maps( Static_Site_Importer_Form_Plan_State $state, array $overlay_form ): array {
+	private static function target_maps( Static_Site_Importer_Form_Plan_State $state, array $overlay_form, array $layout_targets ): array {
 		// The declared part of every target and destination drives the editor
 		// derivation only; the canonical map that is validated, compiled, and
 		// recorded carries none.
-		$part_map           = Static_Site_Importer_Form_Presentation::provider_layout_target_map( $overlay_form, $state->scope, $state->presentation_descriptors );
+		$part_map            = Static_Site_Importer_Form_Presentation::provider_layout_target_map( $overlay_form, $state->scope, $state->presentation_descriptors );
+		$part_map['targets'] = array_merge( $part_map['targets'], $layout_targets );
 		$target_map         = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( $part_map );
 		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		// The editor sizes a textarea from its resolved policy; a control whose

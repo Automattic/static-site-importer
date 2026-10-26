@@ -151,12 +151,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				'destinations' => array(),
 			);
 			foreach ( $destinations as $destination ) {
-				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'checked', 'properties', 'aliases', 'resets', 'priority' ) ) || ( isset( $destination['checked'] ) && ( ! is_string( $destination['checked'] ) || ! self::safe_selector( $destination['checked'], $map['scope'] ) ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
 				}
 				$clean['destinations'][] = array_filter( array(
 					'role'       => $destination['role'],
 					'selector'   => $destination['selector'],
+					'checked'    => $destination['checked'] ?? null,
 					'properties' => array_values( array_unique( $destination['properties'] ) ),
 					'aliases'    => empty( $destination['aliases'] ) ? null : $destination['aliases'],
 					'resets'     => empty( $destination['resets'] ) ? null : $destination['resets'],
@@ -885,6 +886,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( str_ends_with( $selector, ' select' ) ) {
 			return self::safe_selector( substr( $selector, 0, -strlen( ' select' ) ), $scope );
 		}
+		// A choice option while its own input is checked.
+		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}:has\(> input:checked\)$/D', $selector ) ) {
+			return true;
+		}
 		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}::placeholder$/D', $selector ) ) {
 			return true;
 		}
@@ -927,6 +932,12 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
 			return false;
+		}
+		if ( 'state' === ( $condition['kind'] ?? null ) ) {
+			return array(
+				'kind'  => 'state',
+				'state' => 'checked',
+			) === $condition;
 		}
 		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
 			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^' . self::MEDIA_FEATURE_QUERY . '$/D', $condition['query'] );
@@ -1249,9 +1260,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
 	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
+		$state       = 'state' === ( $condition['kind'] ?? null );
 		// The provider adds a flex item around the source button. Its percentage
 		// width must resolve against a full row, not a shrink-to-fit label box.
-		if ( isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
+		if ( ! $state && isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
 			$basis = '100%' === $styles['width'] ? '100%' : 'auto';
 			foreach ( $destinations as $destination ) {
 				$suffix = ' > .wp-block-button__link';
@@ -1264,6 +1276,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		}
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
+			// A state patch paints only the destinations that state a selector for it.
+			if ( $state ) {
+				if ( ! isset( $destination['checked'] ) ) {
+					continue;
+				}
+				$destination['selector'] = $destination['checked'];
+			}
 			$emit_styles = $styles;
 			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
 				$emit_styles = array_diff_key( $styles, array_flip( array( 'position', 'inset', 'top', 'right', 'bottom', 'left' ) ) );
@@ -1297,8 +1316,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
 			}
 			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
-			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
-			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
+			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
+			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
 		}
 		// A captured property outside every ordinary destination's own vocabulary
 		// (see `positioned_control_only_presentation_property_keys()`) is not a
