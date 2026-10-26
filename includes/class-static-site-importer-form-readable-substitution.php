@@ -69,7 +69,6 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					'options' => $options,
 				)
 			);
-			$field['name']               = $multiple ? 'jetpack/field-multiple-choice' : 'jetpack/field-single-choice';
 			$token                       = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $options );
 			$field['attrs']['className'] = trim( 'is-style-button ' . $token );
 			$state->mapped_types[]       = $field['name'];

@@ -63,7 +63,10 @@ foreach ( array( false, true ) as $multiple ) {
 	$captured['readable_blocks'][0]['innerBlocks'][1]['innerBlocks'][1]['form_choice_group_index'] = 0;
 	$choice_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $captured ) ) )['forms'][0];
 	$choice_tree = parse_blocks( $choice_row['block_markup'] )[0]['innerBlocks'][1]['innerBlocks'][1];
-	$checks['captured choice ' . (int) $multiple] = 'mapped' === $choice_row['status'] && ( $multiple ? 'jetpack/field-multiple-choice' : 'jetpack/field-single-choice' ) === $choice_tree['blockName'] && str_contains( $choice_tree['attrs']['className'], 'is-style-button' ) && array( 'General', 'Bookings', 'Other' ) === $choice_tree['attrs']['options'];
+	$checks['captured choice ' . (int) $multiple] = 'mapped' === $choice_row['status'] && ( $multiple ? 'jetpack/field-checkbox-multiple' : 'jetpack/field-radio' ) === $choice_tree['blockName'] && str_contains( $choice_tree['attrs']['className'], 'is-style-button' ) && array( 'General', 'Bookings', 'Other' ) === $choice_tree['attrs']['options'];
+	// Every emitted provider block must be one Jetpack registers at runtime.
+	preg_match_all( '/<!-- wp:(jetpack\/[a-z0-9-]+)/', $row['block_markup'] . $choice_row['block_markup'], $emitted );
+	$checks['registered provider blocks ' . (int) $multiple] = array() === array_diff( array_diff( array_unique( $emitted[1] ), array( 'jetpack/button' ) ), Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() );
 }
 // Suppression removes the child and its null slot, not its source ancestors.
 $hidden = $validated['forms'][0];
