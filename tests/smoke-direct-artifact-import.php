@@ -810,11 +810,11 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][
 			$reports['wordpress_site_plan_diagnostics'] = array(
 				array(
 					'code'             => 'wordpress_site_plan_invalid_declaration',
-					'message'          => 'WordPress site plan contains unresolved local browser reference ./luna.zip (staged at /Users/alice/private-site/website/luna.zip).',
+					'message'          => 'WordPress site plan contains unresolved local browser reference ./luna.zip (staged at /tmp/validation/private-site/website/luna.zip).',
 					'source_path'      => 'website/interactive/index.html',
 					'declaration_kind' => 'browser_reference',
 					'reason'           => 'unresolved_local_browser_reference',
-					'fields'           => array( 'attribute' => 'href', 'context' => 'page', 'value' => './luna.zip', 'resolved' => '/Users/alice/private-site/website/luna.zip' ),
+					'fields'           => array( 'attribute' => 'href', 'context' => 'page', 'value' => './luna.zip', 'resolved' => '/tmp/validation/private-site/website/luna.zip' ),
 					'severity'         => 'error',
 				),
 			);
@@ -834,10 +834,10 @@ $assert( 'static_site_importer_direct_artifact_phase_failed' === ( $compose_fail
 $assert( 'Materialization failed for website/interactive/index.html: WordPress site plan contains unresolved local browser reference ./luna.zip (staged at [path]).' === ( $compose_failed['error']['message'] ?? '' ), 'a failed composition must surface the plan diagnostic reason and source path in the CLI-facing message: ' . ( $compose_failed['error']['message'] ?? '' ) );
 $assert( 'unresolved_local_browser_reference' === ( $compose_diagnostic['reason'] ?? '' ) && 'website/interactive/index.html' === ( $compose_diagnostic['source_path'] ?? '' ) && array( 'attribute' => 'href', 'context' => 'page', 'value' => './luna.zip', 'resolved' => '[path]' ) === ( $compose_diagnostic['fields'] ?? null ), 'a failed composition must carry the plan diagnostic reason, source path, and fields into the receipt' );
 $assert( 'unresolved_local_browser_reference' === ( $compose_evidence['reason'] ?? '' ) && 'website/interactive/index.html' === ( $compose_evidence['source_path'] ?? '' ), 'a failed composition must persist the plan diagnostic in the run failure evidence' );
-$assert( ! str_contains( $compose_failed_json, 'invalid canonical plan' ) && ! str_contains( $compose_failed_json, '/Users/alice' ) && ! str_contains( $compose_failed_json, 'private-site' ), 'a failed composition must not be compacted, and absolute paths must be redacted' );
+$assert( ! str_contains( $compose_failed_json, 'invalid canonical plan' ) && ! str_contains( $compose_failed_json, '/tmp/validation' ) && ! str_contains( $compose_failed_json, 'private-site' ), 'a failed composition must not be compacted, and absolute paths must be redacted' );
 $compose_failed_id = (string) ( $compose_failed['error']['data']['import_id'] ?? '' );
 $compose_run_json  = (string) ( new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $compose_failed_id ) )->read_raw( 'run.json' );
-$assert( str_contains( $compose_run_json, 'unresolved_local_browser_reference' ) && ! str_contains( $compose_run_json, '/Users/alice' ), 'the durable run record must keep the redacted composition diagnostic' );
+$assert( str_contains( $compose_run_json, 'unresolved_local_browser_reference' ) && ! str_contains( $compose_run_json, '/tmp/validation' ), 'the durable run record must keep the redacted composition diagnostic' );
 $recovered_compose = Static_Site_Importer_Canonical_Import_Service::import( $resume( $compose_failed_id, 'plan' ) );
 $assert( ! empty( $recovered_compose['success'] ) && empty( $recovered_compose['continuation'] ), 'a failed composition must remain resumable from durable receipts' );
 

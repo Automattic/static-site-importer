@@ -2,7 +2,7 @@
 /**
  * End-to-end validation harness for the wordpress-is-dead fixture.
  *
- * Imports the fixture into the local Studio site, runs the PHP fidelity smokes,
+ * Imports the fixture into a disposable Studio site, runs the PHP fidelity smokes,
  * then validates generated theme artifacts through Gutenberg's JS block parser.
  */
 
@@ -16,16 +16,36 @@ const repoRoot = path.resolve( __dirname, '..' );
 const args = process.argv.slice( 2 );
 const skipImport = args.includes( '--skip-import' );
 const jsonMode = args.includes( '--json' );
-const sitePath = process.env.STATIC_SITE_IMPORTER_SITE_PATH || '/Users/chubes/Studio/intelligence-chubes4';
+const keepSite = args.includes( '--keep-site' );
+const ownsSite = ! process.env.STATIC_SITE_IMPORTER_SITE_PATH;
+const sitePath = process.env.STATIC_SITE_IMPORTER_SITE_PATH ||
+  fs.mkdtempSync( path.join( os.tmpdir(), 'static-site-importer-site-' ) );
+const results = [];
+let cleanedUp = false;
+let fixtureTempDir;
+
+// Also clean up if fixture preparation or another synchronous operation throws.
+process.on( 'exit', () => {
+  if ( ! cleanup() ) {
+    process.exitCode = 1;
+  }
+} );
 const wpCli = process.env.STATIC_SITE_IMPORTER_WP_CLI
   ? splitCommand( process.env.STATIC_SITE_IMPORTER_WP_CLI )
   : [ 'studio', 'wp', '--path', sitePath ];
 const themeDir = path.resolve(
   args.find( ( arg ) => ! arg.startsWith( '--' ) ) ||
     process.env.STATIC_SITE_IMPORTER_THEME_DIR ||
-    '/Users/chubes/Studio/intelligence-chubes4/wp-content/themes/wordpress-is-dead'
+    path.join( sitePath, 'wp-content/themes/wordpress-is-dead' )
 );
 const fixture = path.join( repoRoot, 'tests/fixtures/wordpress-is-dead/index.html' );
+if ( ownsSite && ! runStep( {
+  name: 'Create disposable Studio site',
+  command: 'studio',
+  args: [ 'site', 'create', '--path', sitePath, '--skip-browser' ],
+} ) ) {
+  finish( false, results );
+}
 const importFixture = skipImport ? fixture : prepareImportFixture( fixture );
 
 const steps = [
@@ -117,9 +137,15 @@ const steps = [
   },
 ].filter( Boolean );
 
-const results = [];
-
 for ( const step of steps ) {
+  if ( ! runStep( step ) ) {
+    finish( false, results );
+  }
+}
+
+finish( true, results );
+
+function runStep( step ) {
   if ( ! jsonMode ) {
     console.log( `\n==> ${ step.name }` );
   }
@@ -149,19 +175,49 @@ for ( const step of steps ) {
     if ( result.error ) {
       stepResult.error = result.error.message;
     }
-    finish( false, results );
+    return false;
   }
+
+  return true;
 }
 
-finish( true, results );
+function cleanup() {
+  if ( cleanedUp ) {
+    return true;
+  }
+  cleanedUp = true;
+
+  if ( fixtureTempDir ) {
+    fs.rmSync( fixtureTempDir, { recursive: true, force: true } );
+  }
+  if ( ! ownsSite ) {
+    return true;
+  }
+  if ( keepSite ) {
+    console.error( `Kept Studio site: ${ sitePath }` );
+    return true;
+  }
+
+  const deleted = runStep( {
+    name: 'Delete disposable Studio site',
+    command: 'studio',
+    args: [ 'site', 'delete', '--path', sitePath, '--no-files' ],
+  } );
+  fs.rmSync( sitePath, { recursive: true, force: true } );
+  if ( ! deleted ) {
+    console.error( `Studio site cleanup failed for: ${ sitePath }` );
+  }
+  return deleted;
+}
 
 function finish( ok, stepResults ) {
+  ok = cleanup() && ok;
   if ( jsonMode ) {
-    console.log( JSON.stringify( { ok, themeDir, steps: stepResults }, null, 2 ) );
+    console.log( JSON.stringify( { ok, sitePath, themeDir, steps: stepResults }, null, 2 ) );
   } else if ( ok ) {
     console.log( `\nOK: full validation harness passed (${ stepResults.length } steps)` );
   } else {
-    const failed = stepResults[ stepResults.length - 1 ];
+    const failed = stepResults.find( ( step ) => step.status !== 0 );
     console.error( `\nFAIL: ${ failed.name } exited with status ${ failed.status }` );
   }
 
@@ -174,8 +230,8 @@ function splitCommand( command ) {
 
 function prepareImportFixture( entryFile ) {
   const sourceDir = path.dirname( entryFile );
-  const tempDir = fs.mkdtempSync( path.join( os.tmpdir(), 'static-site-importer-validation-' ) );
-  const fixtureDir = path.join( tempDir, path.basename( sourceDir ) );
+  fixtureTempDir = fs.mkdtempSync( path.join( os.tmpdir(), 'static-site-importer-validation-' ) );
+  const fixtureDir = path.join( fixtureTempDir, path.basename( sourceDir ) );
 
   fs.cpSync( sourceDir, fixtureDir, { recursive: true } );
 
