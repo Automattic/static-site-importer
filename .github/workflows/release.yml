@@ -140,10 +140,6 @@ jobs:
             exit 0
           fi
           composer install --no-interaction --no-progress
-          # Golden form-overlay snapshots record SSI output for the pinned
-          # Blocks Engine. Regenerate them against the refreshed pins so main
-          # stays consistent; the pin commit's diff records any CSS change.
-          SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
           curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "${RUNNER_TEMP}"
           export STATIC_SITE_IMPORTER_WP_ROOT="${RUNNER_TEMP}/wordpress"
           homeboy review test --placement local static-site-importer --path .
@@ -158,7 +154,7 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add composer.json composer.lock tests/fixtures/form-overlay-golden/__snapshots__
+          git add composer.json composer.lock
           # fix(deps) is deliberate, not chore(deps): Homeboy's release
           # planner ignores chore commits for the version-bump floor, so a
           # solo chore-only refresh would never be releasable. This must
