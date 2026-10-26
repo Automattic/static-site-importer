@@ -497,14 +497,16 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param string $class_name Wrapper class list.
 	 * @param array<string, mixed> $presentation Source submit presentation: text
 	 *   label element classes and marker, captured leading and trailing inline icon parts,
-	 *   and provider block attrs.
+	 *   provider block attrs, and the source tag with its fallback source tag marker.
 	 * @return array<string, mixed>
 	 */
 	public static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
 		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? array_filter( $presentation['classes'], 'is_string' ) : array();
 		$source_markers = implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) );
 		$block_style    = isset( $presentation['block_attrs']['style'] ) && is_array( $presentation['block_attrs']['style'] ) ? $presentation['block_attrs']['style'] : array();
-		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name );
+		$source_tag     = isset( $presentation['source_tag'] ) && is_string( $presentation['source_tag'] ) ? $presentation['source_tag'] : '';
+		$tag_marker     = isset( $presentation['source_tag_marker'] ) && is_string( $presentation['source_tag_marker'] ) && '' !== $source_tag && 'button' !== $source_tag ? $presentation['source_tag_marker'] : '';
+		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name . ' ' . $tag_marker );
 		$attrs          = array(
 			'tagName'   => 'button',
 			'type'      => 'submit',

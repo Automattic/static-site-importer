@@ -441,6 +441,10 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! isset( $state->submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
 			$state->submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
 		}
+		// The provider emits every submit as a `<button>`; a retagged control
+		// carries the marker the projected stylesheet excludes with its tag.
+		$state->submit_presentation['source_tag']        = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+		$state->submit_presentation['source_tag_marker'] = isset( $control['source_tag_marker'] ) && is_string( $control['source_tag_marker'] ) ? trim( $control['source_tag_marker'] ) : '';
 		foreach ( self::submit_icons( $state->form, $control_index ) as $key => $parts ) {
 			if ( ! isset( $state->submit_presentation[ $key ] ) && ! empty( $parts ) ) {
 				$state->submit_presentation[ $key ] = $parts;
