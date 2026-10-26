@@ -38,10 +38,10 @@ test( 'linked frontend and editor stylesheets preserve source placeholder colour
 			await page.locator( 'textarea' ).focus();
 			const focused = await colours();
 			assert.equal( focused[ 1 ].color, 'rgb(190, 18, 60)' );
-			for ( const [ path, css ] of Object.entries( fixture.assets ) ) {
+			// One linked stylesheet serves both contexts.
+			for ( const [ path, css ] of Object.entries( fixture.assets ) ) for ( const context of [ fixture.css, fixture.editor ] ) {
 				linkedCss = css;
-				const editor = path.endsWith( '.editor.css' );
-				await page.setContent( `<link rel="stylesheet" href="https://fixture.test/${ path }"><style>${ provider }${ editor ? fixture.editor : fixture.css }</style><div class="editor-styles-wrapper"><form class="contact-form ${ scope }">${ controls }</form></div>` );
+				await page.setContent( `<link rel="stylesheet" href="https://fixture.test/${ path }"><style>${ provider }${ context }</style><div class="editor-styles-wrapper"><form class="contact-form ${ scope }">${ controls }</form></div>` );
 				await page.locator( 'link' ).evaluate( ( link ) => link.sheet ? undefined : new Promise( ( resolve ) => link.addEventListener( 'load', resolve, { once: true } ) ) );
 				assert.deepEqual( await colours(), base, path );
 				await page.locator( 'textarea' ).focus();

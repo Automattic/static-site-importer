@@ -117,13 +117,18 @@ total: 31
 {"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
 
 === receipt_losses ===
-total: 9
+total: 14
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"c66a8540955a4e3e0292d9d2a2946a9b907dec97d13254e71f21ae4577dc9877"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"f40389aae6a26145af5d3181bf34a05645486a5da6b794968bc9c943304eff97"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"5631c0bd4f1d37e88c6baaf1f0c421d55d7e5026be55bed4c3c2f6b887afa623"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"c852c69b0a7133fe68f6052ba47c4433b6bf68464d4b27c426a3d8b79f67db28"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"9477fa0b49bc0d80878343228e2b7872e125e6cb5d5cc2f1bbf9b72fe3434c81"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"cac5213ff3cebc4d47d405a078bacd8f93784967a96bcbef3db9fcb9ee93fe2a"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"7c23abd7ccdea165c8baa2f48f88ac5b3ae375cbe3f3edb00a21eeb849621f6d"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"7746a827e3d97bff9e506844717d749f7e5e679f6a83dc8625dd85f36066063f"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"79ed3c720d751dd50b2b2056e4a395ea2992607c1144e9e7fc0e1e615ac0c65a"}
 {"dimension":"layout","reason_code":"unsafe_layout_value","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4"}
 {"dimension":"layout","reason_code":"unsafe_layout_value","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4"}

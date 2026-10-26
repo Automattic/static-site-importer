@@ -1,5 +1,5 @@
 <?php
-/** Regression for #2306: linked source CSS and editor twins preserve placeholders. */
+/** Regression for #2306: linked source CSS preserves placeholders in the frontend and the editor. */
 // phpcs:ignoreFile -- Standalone CLI regression.
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php';
@@ -34,7 +34,7 @@ foreach ( $plan['writes'] as $write ) {
 	$checks[ $target . ' preserves authored placeholders' ] = str_contains( $assets[ $target ], 'input' . $scope . '::placeholder' );
 	$checks[ $target . ' does not duplicate provider overlay' ] = ! str_contains( $assets[ $target ], '::placeholder{color:revert}' );
 }
-$checks['linked frontend and editor assets emitted'] = 2 === count( $assets ) && 1 === count( array_filter( array_keys( $assets ), static fn( string $path ): bool => str_ends_with( $path, '.editor.css' ) ) );
+$checks['one linked stylesheet serves the frontend and the editor'] = 1 === count( $assets ) && array() === array_filter( array_keys( $assets ), static fn( string $path ): bool => str_ends_with( $path, '.editor.css' ) );
 $repeat_state = $state;
 foreach ( $repeat_state['resolved']['writes'] as &$write ) {
 	$path = $state['theme_dir'] . '/' . $write['target_path'];

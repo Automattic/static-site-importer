@@ -62,6 +62,8 @@ total: 9
 {"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
 
 === receipt_losses ===
-total: 2
+total: 4
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4"}
 {"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"c66a8540955a4e3e0292d9d2a2946a9b907dec97d13254e71f21ae4577dc9877"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"f40389aae6a26145af5d3181bf34a05645486a5da6b794968bc9c943304eff97"}
