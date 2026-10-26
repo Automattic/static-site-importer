@@ -288,7 +288,9 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
 				$inner_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
 				if ( '' !== $inner_suffix ) {
-					$wrapper_properties = array( 'display', 'width', 'min_width' );
+					// The wrapper is the item of the source container, so the
+					// control's own placement in that container belongs on it.
+					$wrapper_properties = array( 'display', 'width', 'min_width', 'align_self', 'justify_self', 'order', 'flex', 'flex_basis', 'flex_grow' );
 					if ( 'submit' === $type ) {
 						// Gutenberg's `is-layout-flex > * { margin:0 }` zeros a submit
 						// wrapper's authored class margin. Carry vertical spacing onto

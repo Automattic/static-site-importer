@@ -101,7 +101,8 @@ namespace {
 				. '<button type="submit">Send</button></form>',
 		),
 		// Label boxes that wrap their control and size a wrapping flex row, a
-		// consent checkbox with a link, and alternating painted field boxes.
+		// consent checkbox with a link, alternating painted field boxes, and a
+		// submit placed by its own align-self.
 		'label_boxes'      => array(
 			'*,::before,::after{box-sizing:border-box}.f{display:flex;flex-direction:column;gap:18px}.row{display:flex;flex-wrap:wrap;gap:16px}'
 				. '.row>label{flex:1 1 240px;display:flex;flex-direction:column;gap:6px;font-family:Verdana;font-size:16px;font-weight:600}'
@@ -112,7 +113,7 @@ namespace {
 				. '<label class="alt">Email<input name="email" type="email"></label>'
 				. '<label>Location<select name="loc"><option>North</option><option>South</option></select></label></div>'
 				. '<label class="consent"><input type="checkbox" name="ok"><span>I agree to the <a href="/privacy/">privacy policy</a>.</span></label>'
-				. '<button type="submit">Send</button></form>',
+				. '<button style="align-self:flex-end" type="submit">Send</button></form>',
 		),
 	);
 
