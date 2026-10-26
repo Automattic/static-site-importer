@@ -597,6 +597,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$exact_native_tree['operations']                 = array_merge( $s->operations, $exact_native_tree['operations'] );
 			$exact_native_tree['represented_layout_nodes']   = array_merge( array_keys( $hidden_nodes ), $exact_native_tree['represented_layout_nodes'] );
 			$exact_native_tree['represented_topology_nodes'] = array_merge( array_keys( $hidden_nodes ), $exact_native_tree['represented_topology_nodes'] );
+			self::carry_spacer_boxes( $exact_native_tree, $s );
 			return $exact_native_tree;
 		}
 		$s->collect_controls = static function ( array $node, bool $include_auxiliary = true ) use ( $s ): array {
@@ -671,7 +672,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 			}
 		}
-		return array(
+		$result = array(
 			'blocks'                        => $build( '$root' ),
 			'losses'                        => $s->losses,
 			'operations'                    => $s->operations,
@@ -689,6 +690,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'phone_popup_targets'           => $s->phone_popup_targets,
 			'grid_span_submit_controls'     => array_values( array_unique( $s->grid_span_submit_controls ) ),
 		);
+		self::carry_spacer_boxes( $result, $s );
+		return $result;
 	}
 
 	/**
@@ -2218,6 +2221,63 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'truncated' => ! empty( $graph['truncated'] ),
 			'nodes'     => $nodes,
 		);
+	}
+
+	/**
+	 * Carry copy-free sibling block space on the preceding projected box.
+	 *
+	 * Padding keeps the line box in flow without emitting placeholder copy or
+	 * allowing its block-end margin to collapse through the provider shell.
+	 *
+	 * @param array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,whole_field_controls?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>} $result
+	 * @param-out array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,whole_field_controls?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>} $result
+	 */
+	private static function carry_spacer_boxes( array &$result, Static_Site_Importer_Form_Topology_State $s ): void {
+		$siblings = array();
+		foreach ( $s->layout_nodes_by_id as $node ) {
+			$siblings[ $node['parent'] ?? '' ][] = $node;
+		}
+		foreach ( $siblings as $nodes ) {
+			usort( $nodes, static fn( array $left, array $right ): int => ( $left['order'] ?? 0 ) <=> ( $right['order'] ?? 0 ) );
+			$previous = null;
+			$spaces   = array();
+			foreach ( $nodes as $node ) {
+				if ( 'spacer' !== ( $node['kind'] ?? null ) || 'whitespace_only' !== ( $node['content'] ?? null ) ) {
+					$previous = $node;
+					continue;
+				}
+				$target = $previous['id'] ?? '';
+				if ( ! isset( $result['provider_layout_targets'][ $target ] ) ) {
+					$controls = is_array( $previous ) && is_callable( $s->collect_controls ) ? ( $s->collect_controls )( $previous ) : array();
+					$target   = 1 === count( $controls ) ? 'field-' . $controls[0] : '';
+				}
+				$styles = $node['presentation']['styles'] ?? array();
+				$layout = $node['layout'] ?? array();
+				$height = $layout['height'] ?? $styles['line_height'] ?? null;
+				if ( '' === $target || ! is_string( $height ) || null === self::resolved_gap_length( $height ) ) {
+					continue;
+				}
+				$parts = array( $height );
+				foreach ( array( 'margin_top', 'margin_bottom' ) as $fact ) {
+					$value   = $layout[ $fact ] ?? '0px';
+					$parts[] = '0' === $value ? '0px' : $value;
+				}
+				if ( array_filter( $parts, static fn( string $value ): bool => null === self::resolved_gap_length( $value ) ) ) {
+					continue;
+				}
+				$spaces[ $target ]                    = array_merge( $spaces[ $target ] ?? array(), $parts );
+				$result['overlay_node_targets'][]     = array(
+					'id'     => $target,
+					'layout' => array( 'padding_bottom' => 'calc(' . implode( ' + ', $spaces[ $target ] ) . ')' ),
+				);
+				$result['represented_layout_nodes'][] = (string) $node['id'];
+				$result['operations'][]               = array(
+					'dimension'   => 'layout',
+					'strategy'    => 'provider_spacer_block_space',
+					'target_hash' => hash( 'sha256', $node['id'] ),
+				);
+			}
+		}
 	}
 
 	/**

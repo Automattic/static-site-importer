@@ -762,3 +762,69 @@
 	// control. The provider-default label reset is weaker than the captured label
 	// rule, so that margin survives. A label that wraps its control is the field
 	// box the rebuilt row already spaces; its margin is released on the caption.
+
+	// Empty validation slots are geometry, not authored paragraphs (#2399).
+	$spacer_html = <<<'HTML'
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Contact</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;font-size:15px}
+form{width:350px;padding:3px 0 10px}
+.field label{display:block;line-height:18px}
+.input{display:block;width:100%;height:30px;border:1px solid #bbb;padding:0;margin:0;box-sizing:border-box}
+textarea.input{height:130px;padding:0}
+.error{display:block;line-height:14px;margin:0 0 2px 7px;font-size:12px;color:red}
+.consent{display:flex;gap:8px;margin:10px 8px 16px}
+.consent input{margin:0;width:13px;height:13px}
+.consent label{margin-top:-3px;line-height:18px}
+.btn{display:block;width:100%;height:50px;border:0}
+</style></head><body><main><h1>Contact</h1>
+<form>
+<div class="field"><label for="Name">Name *</label><input type="text" class="input" name="name" id="name"></div><span class="error">&nbsp;</span>
+<div class="field"><label for="Email">Email *</label><input type="email" class="input" name="email" id="email"></div><span class="error">&nbsp;</span>
+<div class="field"><label for="Message">Message *</label><textarea class="input" name="message" id="message"></textarea></div><span class="error">&nbsp;</span>
+<div class="consent"><input type="checkbox" name="consent" id="consent"><label for="consent">Yes, I want to receive news</label></div>
+<div><input type="submit" class="btn" value="Send"></div>
+</form></main></body></html>
+HTML;
+	foreach ( array(
+		'whitespace' => $spacer_html,
+		'real-copy'  => str_replace( '&nbsp;', 'Required', $spacer_html ),
+		'absent'     => str_replace( '<span class="error">&nbsp;</span>', '', $spacer_html ),
+		'resolved'   => str_replace( 'line-height:14px;margin:0 0 2px 7px', 'line-height:21px;margin:0 0 5px 7px', $spacer_html ),
+	) as $case => $html ) {
+		$source = ( ( new $artifact_compiler() )->compile( array(
+			'entrypoint' => 'contact.html',
+			'files'      => array( 'contact.html' => $html ),
+		) ) )->toArray()['fallbacks'][0] ?? array();
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $source ) ) );
+		$row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		$css        = (string) ( $row['provider_layout_overlay_css']['css'] ?? '' );
+
+		$expected   = 'resolved' === $case ? 'padding-bottom:calc(21px + 0px + 5px)' : 'padding-bottom:calc(14px + 0px + 2px)';
+		$has_space = 1 === preg_match( '/((?:\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}, ){2}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12})\{' . preg_quote( $expected, '/' ) . '\}/', $css, $spacer_rule );
+		if ( 'whitespace' === $case ) {
+			$original_space = $has_space;
+		}
+		if ( 'real-copy' === $case ) {
+			$copy_row = $row;
+		}
+		$unchanged = 'absent' !== $case || ( $copy_row['block_markup'] === $row['block_markup'] && $copy_row['provider_layout_overlay_css'] === $row['provider_layout_overlay_css'] );
+		$hooks_rendered = true;
+		if ( $has_space && preg_match_all( '/\.ssi-node-([a-f0-9]{12})/', $spacer_rule[1], $spacer_hooks ) ) {
+			foreach ( $spacer_hooks[1] as $hook ) {
+				$hooks_rendered = $hooks_rendered && str_contains( $row['block_markup'], 'ssi-node-' . $hook );
+			}
+		}
+		$assert(
+			empty( $validation['errors'] )
+				&& 'mapped' === ( $row['status'] ?? '' )
+				&& $original_space
+				&& $unchanged
+				&& $hooks_rendered
+				&& ( in_array( $case, array( 'whitespace', 'resolved' ), true )
+					? $has_space && ! str_contains( $row['block_markup'] ?? '', '&nbsp;' )
+					: ! str_contains( $css, 'padding-bottom:calc(' ) ),
+			'compiled-placeholder-block-space-' . $case,
+			wp_json_encode( $row )
+		);
+	}
