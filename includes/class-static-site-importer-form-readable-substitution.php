@@ -210,12 +210,40 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					'font'       => 'inherit',
 				);
 			} elseif ( 'submit_link' === $part ) {
-				$descriptor['destinations'][ $index ]['resets'] += array(
+				// The editor repeats the wrapper classes on its RichText link.
+				// Keep the button paint above the wrapper's box neutralization.
+				$descriptor['destinations'][ $index ]['priority'] = 'important';
+				$descriptor['destinations'][ $index ]['resets']  += array(
 					// A block <button> still shrinks to its content.
 					'display' => 'block',
 					'width'   => '100%',
 					'margin'  => '0',
 				);
+			}
+		}
+		// Source classes also reach this wrapper for native item placement.
+		// Their paint (including padding) must only reach the inner button,
+		// even when the imported stylesheet scopes those classes more tightly.
+		foreach ( $descriptor['destinations'] as $destination ) {
+			if ( 'submit_wrapper' === ( $destination['part'] ?? null ) ) {
+				$descriptor['destinations'][] = array(
+					'part'       => 'source_submit_wrapper_paint_reset',
+					'role'       => 'control',
+					'selector'   => $destination['selector'],
+					'properties' => array(),
+					'resets'     => array(
+						'padding'    => '0',
+						'border'     => '0',
+						'background' => 'transparent',
+					),
+					'priority'   => 'important',
+					// Editor RichText repeats the wrapper's classes on the link.
+					// Its existing normal-priority resets let link paint win there.
+					'editor'     => array(
+						'drop' => true,
+					),
+				);
+				break;
 			}
 		}
 		return $descriptor;

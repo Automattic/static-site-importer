@@ -34,6 +34,10 @@ namespace {
 		. '.btn{background-color:#18181b;color:#fff;padding:12px 24px;border:0;font-size:16px}';
 	$input    = 'w-full px-4 py-3 border';
 	$cases    = array(
+		'full_width_submit' => array(
+			'*,::before,::after{box-sizing:border-box}.send{width:100%;padding:5px 10px!important}',
+			'<form style="width:100%;padding:0"><input name="name" aria-label="Name" style="width:100%"><div style="padding:0"><button class="send" type="submit">Send</button></div></form>',
+		),
 		// A stacked form whose first row is a responsive two-column grid.
 		'two_column_grid'  => array(
 			$tailwind,

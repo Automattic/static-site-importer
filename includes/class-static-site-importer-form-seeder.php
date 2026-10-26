@@ -331,12 +331,14 @@ class Static_Site_Importer_Form_Seeder {
 			'innerBlocks' => array( $root ),
 		);
 
-		// No wrapper/layout facts enter the overlay. Its presentation destinations
-		// still own label paint, input sizing and the textarea rows policy.
+		// Native shells retain wrapper layout. The checkbox's two-item layout,
+		// however, belongs inside the provider field, not on that source shell.
+		$state->layout['receipt']          = array();
 		$presentation_form                 = $state->form;
 		$presentation_form['layout_graph'] = array( 'nodes' => array() );
-		$state->presentation_descriptors   = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
-		$field_box_labels                  = array();
+		self::seed_label_layout_targets( $state, $presentation_form['layout_graph'], Static_Site_Importer_Form_Layout_Projection::checkbox_label_layout_targets( $state->form ) );
+		$state->presentation_descriptors = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		$field_box_labels                = array();
 		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
@@ -371,7 +373,7 @@ class Static_Site_Importer_Form_Seeder {
 			Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'] ),
 			$state->scope
 		);
-		$receipt = array();
+		$receipt = $state->layout['receipt'];
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'operations', $overlay['operations'] );
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'losses', array_merge( $overlay['losses'], $state->control_attribute_losses ) );
 		foreach ( $state->form['control_topology']['nodes'] ?? array() as $node ) {
@@ -723,7 +725,13 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			self::upsert_overlay_node( $overlay_graph, $target );
 		}
-		foreach ( array_merge( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $state->form ), Static_Site_Importer_Form_Layout_Projection::checkbox_label_layout_targets( $state->form ) ) as $target ) {
+		self::seed_label_layout_targets( $state, $overlay_graph, array_merge( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $state->form ), Static_Site_Importer_Form_Layout_Projection::checkbox_label_layout_targets( $state->form ) ) );
+		return $overlay_graph;
+	}
+
+	/** Install derived label/control relationships on either mapping path. */
+	private static function seed_label_layout_targets( Static_Site_Importer_Form_Plan_State $state, array &$overlay_graph, array $targets ): void {
+		foreach ( $targets as $target ) {
 			$control_index = $target['control'];
 			$layout_patch  = $target['layout'];
 			// Jetpack renders a label and input as siblings in its field wrapper.
@@ -763,7 +771,6 @@ class Static_Site_Importer_Form_Seeder {
 				)
 			);
 		}
-		return $overlay_graph;
 	}
 
 	/** Index the source layout graph's nodes by id. */
