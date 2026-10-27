@@ -203,6 +203,14 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					}
 					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
+					if ( 'submit' === $type ) {
+						// The link is the source button's inner box, so the button's own
+						// display fact reaches it too, beside the justify-content and
+						// align-items facts it already carries. The compiler blockifies it
+						// to the link's inner display type; the wrapper keeps the item
+						// placement display it holds above.
+						$properties[] = 'display';
+					}
 				}
 				$destination = array(
 					'part'       => self::control_part( $type ),

@@ -261,7 +261,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				// Keep the button paint above the wrapper's box neutralization.
 				$descriptor['destinations'][ $index ]['priority'] = 'important';
 				$descriptor['destinations'][ $index ]['resets']  += array(
-					// A block <button> still shrinks to its content.
+					// A block <button> still shrinks to its content. The button's own
+					// display fact reaches the link too, blockified on compile, and
+					// leaves this reset standing for every non-flex, non-grid button.
 					'display' => 'block',
 					'width'   => '100%',
 					'margin'  => '0',

@@ -1286,6 +1286,19 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$emit_styles = $styles;
 			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
 				$emit_styles = array_diff_key( $styles, array_flip( array( 'position', 'inset', 'top', 'right', 'bottom', 'left' ) ) );
+				// The link is the source button's inner box, so its display is the
+				// button's own, blockified the way CSS blockifies the item of a flex
+				// or grid container and an absolutely positioned box. A display that
+				// blockifies back to `block` is the destination reset's own value, so
+				// the fact drops and the reset keeps stating it.
+				if ( isset( $emit_styles['display'] ) && is_string( $emit_styles['display'] ) ) {
+					$blockified = self::blockified_display( $emit_styles['display'] );
+					if ( 'block' === $blockified ) {
+						unset( $emit_styles['display'] );
+					} else {
+						$emit_styles['display'] = $blockified;
+					}
+				}
 			}
 			$source_declarations = self::presentation_declarations( $emit_styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
 			$reset_declarations  = array();
@@ -1294,8 +1307,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			// otherwise overrides a complete base font family or line-height.
 			foreach ( null === $condition && $emit_resets ? ( $destination['resets'] ?? array() ) : array() as $property => $value ) {
 				// An explicit source declaration is authoritative over a provider-default
-				// neutralization at the same destination.
-				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
+				// neutralization at the same destination, as emitted: the submit link's
+				// display fact is its blockified form, and one blockified back to
+				// `block` was dropped above so the reset keeps stating it.
+				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $emit_styles ) ) {
 					continue;
 				}
 				$reset_declarations[] = $property . ':' . $value;
@@ -1331,6 +1346,15 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( array_diff( array_keys( $styles ), $represented, self::positioned_control_only_presentation_property_keys() ) ) {
 			$losses[] = self::presentation_loss( 'provider_structure_mismatch', $index, $role );
 		}
+	}
+
+	/** The blockified inner display type a submit link takes from its source button. */
+	private static function blockified_display( string $display ): string {
+		return match ( strtolower( trim( $display ) ) ) {
+			'flex', 'inline-flex' => 'flex',
+			'grid', 'inline-grid' => 'grid',
+			default               => 'block',
+		};
 	}
 
 	private static function safe_presentation_aliases( mixed $aliases, array $properties ): bool {
