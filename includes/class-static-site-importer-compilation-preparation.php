@@ -184,7 +184,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $plan, $artifact );
-		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $plan );
+		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $plan, $artifact );
 		$inventory_plan                                = $plan;
 		$inventory_plan['compiler_diagnostics']        = is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array();
 		$interaction_inventory                         = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact, $inventory_plan );
