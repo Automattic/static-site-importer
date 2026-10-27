@@ -582,7 +582,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				// Each batch is durable before the next starts, so a host whose runtime
 				// is not bounded by a request deadline can compile several per step.
 				// Batch-local checkpoint reads are released between batches.
-				$batches = 0;
+				$run['work']['compile_policy'] = array(
+					'compile_workers' => $policy['compile_workers'],
+					'compile_memory'  => $policy['compile_memory'] ?? null,
+				);
+				$batches                       = 0;
 				do {
 					self::$checkpoint_read_cache = array_filter(
 						self::$checkpoint_read_cache,
@@ -1207,6 +1211,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'page_prepare_passes'               => (int) ( $run['work']['page_prepare_passes'] ?? 0 ),
 				'page_plans_prepared'               => (int) ( $run['work']['page_plans_prepared'] ?? 0 ),
 				'compile_batches'                   => (int) ( $run['work']['compile_batches'] ?? 0 ),
+				'compile_policy'                    => $run['work']['compile_policy'] ?? null,
 				'pages_compiled'                    => (int) ( $run['work']['pages_compiled'] ?? 0 ),
 				'page_compile_counts'               => $counts,
 				'compositions'                      => (int) ( $run['work']['compositions'] ?? 0 ),

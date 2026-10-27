@@ -522,6 +522,7 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 $successful_fanout_shards = array();
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
 	static function ( array $policy ) use ( &$successful_fanout_shards ): array {
+		$policy['compile_memory']      = array( 'available_bytes' => 2800000000, 'budget_bytes' => 1024000000, 'reserve_bytes' => 300000000 );
 		$policy['compile_fanout_pages'] = 4;
 		$policy['compile_workers']     = 2;
 		$policy['compile_shard_pages'] = 2;
@@ -540,6 +541,7 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 );
 $fanout_succeeded = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $successful_fanout_work = $fanout_succeeded['artifact_run']['work'] ?? array();
+$assert( array( 'compile_workers' => 2, 'compile_memory' => array( 'available_bytes' => 2800000000, 'budget_bytes' => 1024000000, 'reserve_bytes' => 300000000 ) ) === ( $successful_fanout_work['compile_policy'] ?? null ), 'run evidence must retain the filtered worker count and memory sizing inputs' );
 $assert( ! empty( $fanout_succeeded['success'] ) && empty( $fanout_succeeded['continuation'] ) && array( 2, 1 ) === ( $successful_fanout_shards[0] ?? null ) && 2 === ( $successful_fanout_work['compile_batches'] ?? 0 ) && array( 1, 1, 1 ) === ( $successful_fanout_work['page_compile_counts'] ?? null ), 'successful bounded fan-out must adopt every immutable worker receipt before the coordinator composes the result' );
 
 $fanout_shards = array();

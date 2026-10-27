@@ -1203,6 +1203,7 @@ $reset_oom_state();
 // The smallest units a retried runtime works in.
 $base_policy = array( 'compile_fanout_pages' => 2, 'compile_workers' => 1, 'compile_shard_pages' => 2, 'compile_fanout' => null, 'compile_in_process_pages' => 1, 'compile_batches_per_invocation' => 1 );
 $normal      = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
+$assert( $normal['compile_workers'] === static_site_importer_cli_compile_worker_count( $normal['compile_memory']['available_bytes'], $normal['compile_memory']['budget_bytes'], $normal['compile_memory']['reserve_bytes'] ) && $normal['compile_fanout_pages'] === $normal['compile_workers'] * $normal['compile_shard_pages'], 'normal-policy-sizes-workers-and-batches-from-reported-memory-inputs' );
 static_site_importer_cli_constrained_runtime( true );
 $small = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
 static_site_importer_cli_constrained_runtime( false );

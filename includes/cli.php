@@ -73,6 +73,53 @@ if ( ! function_exists( 'static_site_importer_cli_constrained_runtime' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_compile_worker_count' ) ) {
+	/** Size compile concurrency from byte budgets, without reading runtime state. */
+	function static_site_importer_cli_compile_worker_count( ?int $available, int $budget, int $reserve ): int {
+		return null === $available ? 4 : min( 4, max( 1, (int) floor( ( $available - $reserve ) / max( 1, $budget ) ) ) );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_cgroup_available_bytes' ) ) {
+	/** Read the current cgroup v2's remaining memory under its actual mount. */
+	function static_site_importer_cli_cgroup_available_bytes(): ?int {
+		$mounts = @file_get_contents( '/proc/self/mountinfo' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Optional Linux runtime probe.
+		$groups = @file_get_contents( '/proc/self/cgroup' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Optional Linux runtime probe.
+		if ( ! is_string( $mounts ) || ! is_string( $groups ) || ! preg_match( '/^0::(.*)$/m', $groups, $group ) ) {
+			return null;
+		}
+		foreach ( explode( "\n", $mounts ) as $mount ) {
+			if ( ! str_contains( $mount, ' - cgroup2 ' ) ) {
+				continue;
+			}
+			$fields     = explode( ' ', $mount );
+			$root       = stripcslashes( $fields[3] );
+			$path       = stripcslashes( $fields[4] );
+			$group_path = trim( $group[1] );
+			if ( '/' !== $root && str_starts_with( $group_path, $root . '/' ) ) {
+				$group_path = substr( $group_path, strlen( $root ) );
+			} elseif ( $group_path === $root ) {
+				$group_path = '/';
+			}
+			$path .= '/' . ltrim( $group_path, '/' );
+			$limit = @file_get_contents( $path . '/memory.max' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Optional cgroup runtime probe.
+			$used  = @file_get_contents( $path . '/memory.current' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Optional cgroup runtime probe.
+			if ( is_string( $limit ) && is_string( $used ) && ctype_digit( trim( $limit ) ) && ctype_digit( trim( $used ) ) ) {
+				return max( 0, (int) trim( $limit ) - (int) trim( $used ) );
+			}
+		}
+		return null;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_meminfo_available_bytes' ) ) {
+	/** Read host MemAvailable independently of cgroup support. */
+	function static_site_importer_cli_meminfo_available_bytes(): ?int {
+		$meminfo = @file_get_contents( '/proc/meminfo' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Optional Linux runtime probe.
+		return is_string( $meminfo ) && preg_match( '/^MemAvailable:\s+(\d+)\s+kB$/m', $meminfo, $match ) ? (int) $match[1] * 1024 : null;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) ) {
 	/**
 	 * Use fanout only when this CLI runtime can launch receipt workers.
@@ -92,9 +139,20 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 			return $policy;
 		}
 		if ( function_exists( 'proc_open' ) && ! empty( $_SERVER['argv'][0] ) ) {
-			$policy['compile_fanout_pages'] = 20;
-			$policy['compile_workers']      = 4;
+			$cgroup                         = static_site_importer_cli_cgroup_available_bytes();
+			$meminfo                        = static_site_importer_cli_meminfo_available_bytes();
+			$available                      = null === $cgroup ? $meminfo : ( null === $meminfo ? $cgroup : min( $cgroup, $meminfo ) );
+			$limit                          = ini_parse_quantity( (string) ini_get( 'memory_limit' ) );
+			$budget                         = 0 < $limit ? $limit : 768 * 1024 * 1024;
+			$reserve                        = memory_get_usage( true ) + 64 * 1024 * 1024;
+			$policy['compile_memory']       = array(
+				'available_bytes' => $available,
+				'budget_bytes'    => $budget,
+				'reserve_bytes'   => $reserve,
+			);
+			$policy['compile_workers']      = static_site_importer_cli_compile_worker_count( $available, $budget, $reserve );
 			$policy['compile_shard_pages']  = 4;
+			$policy['compile_fanout_pages'] = $policy['compile_workers'] * $policy['compile_shard_pages'];
 			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
 			// Receipt workers are separate processes, so the host step stays small;
 			// keep compiling until the invocation deadline instead of one batch per step.
