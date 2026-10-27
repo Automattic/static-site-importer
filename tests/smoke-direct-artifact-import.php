@@ -49,6 +49,12 @@ function remove_filter( string $hook, callable $callback ): bool {
 	}
 	return false;
 }
+function add_action( string $hook, callable $callback ): void {
+	$GLOBALS['ssi_direct_actions'][ $hook ][] = $callback;
+}
+function remove_action( string $hook, callable $callback ): void {
+	$GLOBALS['ssi_direct_actions'][ $hook ] = array_values( array_filter( $GLOBALS['ssi_direct_actions'][ $hook ] ?? array(), static fn ( $registered ): bool => $registered !== $callback ) );
+}
 function do_action( string $hook, ...$args ): void {
 	foreach ( $GLOBALS['ssi_direct_actions'][ $hook ] ?? array() as $callback ) {
 		$callback( ...$args );
@@ -1129,6 +1135,83 @@ $batched_input['slug'] = 'direct-artifact-batched-fixture';
 $batched               = Static_Site_Importer_Canonical_Import_Service::import( $batched_input );
 $batched_work          = $batched['artifact_run']['work'] ?? array();
 $assert( ! empty( $batched['success'] ) && 3 === ( $batched_work['pages_compiled'] ?? 0 ) && 3 === ( $batched_work['compile_batches'] ?? 0 ) && 'pages_remaining' !== ( $batched['continuation_reason'] ?? '' ), 'a multi-batch policy compiles every pending batch in one invocation, each batch durable on its own' );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+
+// The fresh-runtime parent must forward progress before the child exits, not
+// wait for runcommand() to return its buffered stdout.
+$assert( null === static_site_importer_cli_decode_import_step( wp_json_encode( array( 'schema' => 'static-site-importer/import-cli-progress/v1', 'phase' => 'compile_pages' ) ) ), 'progress without a final result must not hide a failed or killed child runtime' );
+$progress_child = $test_root . '/progress-child.php';
+$progress_ack = $test_root . '/progress-ack';
+file_put_contents( $progress_child, '<?php
+$record = json_encode(array("schema" => "static-site-importer/import-cli-progress/v1", "phase" => "compile_pages", "import_id" => "fixture", "completed_units" => 2, "total_units" => 6)) . "\\n";
+fwrite(STDOUT, substr($record, 0, 20));
+fwrite(STDERR, str_repeat("x", 100000));
+fwrite(STDOUT, substr($record, 20));
+fflush(STDOUT);
+$deadline = microtime(true) + 5;
+while (!file_exists($argv[1]) && microtime(true) < $deadline) { usleep(10000); }
+echo json_encode(array("success" => file_exists($argv[1]))) . "\\n";
+' );
+$_SERVER['argv'][0] = $progress_child;
+$child_progress = array();
+$acknowledge = static function ( array $result ) use ( &$child_progress, $progress_ack ): void {
+	$child_progress[] = static_site_importer_cli_import_progress( $result, 1, microtime( true ), 'heartbeat' );
+	touch( $progress_ack );
+};
+add_action( 'static_site_importer_direct_artifact_progress', $acknowledge );
+try {
+	$child = static_site_importer_cli_run_import_process( array( 'command' => escapeshellarg( $progress_ack ) ) );
+} finally {
+	remove_action( 'static_site_importer_direct_artifact_progress', $acknowledge );
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
+$assert( ! empty( static_site_importer_cli_decode_import_step( $child->stdout )['success'] ) && 0 === $child->return_code && 100000 === strlen( $child->stderr ) && array( 2 ) === array_column( $child_progress, 'completed_units' ), 'fresh-runtime progress must reach the existing publication seam while the child runs and both pipes drain' );
+
+// Observe the ordinary CLI publication callback while one multi-batch step is
+// still on the stack, including preparation and the final fanout batch.
+$progress_input = $input( 'plan' );
+$progress_input['slug'] = 'fanout-progress-fixture';
+foreach ( array( 'extra-one.html', 'extra-two.html', 'extra-three.html' ) as $name ) {
+	$progress_input['source']['files'][] = array( 'path' => 'website/' . $name, 'content' => '<!doctype html><html><body><h1>Extra page</h1></body></html>' );
+}
+$published_progress = array();
+$step_returned = false;
+$fanout_calls = 0;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static function ( array $policy ) use ( &$fanout_calls, &$published_progress, $assert ): array {
+		return array_merge( $policy, array(
+			'compile_fanout_pages' => 2,
+			'compile_workers' => 2,
+			'compile_shard_pages' => 1,
+			'compile_batches_per_invocation' => 1000,
+			'compile_fanout' => static function ( string $import_id, array $shards ) use ( &$fanout_calls, &$published_progress, $assert ) {
+				$assert( 2 * $fanout_calls === ( end( $published_progress )['completed_units'] ?? -1 ), 'each fanout starts after the previous batch progress was published' );
+				++$fanout_calls;
+				foreach ( $shards as $ids ) {
+					$result = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $ids );
+					if ( is_wp_error( $result ) ) {
+						return $result;
+					}
+				}
+				return true;
+			},
+		) );
+	},
+);
+static_site_importer_cli_run_import_host(
+	$progress_input,
+	static function ( array $request ) use ( &$step_returned ): array {
+		$result = Static_Site_Importer_Canonical_Import_Service::import( $request );
+		$step_returned = true;
+		return $result;
+	},
+	1,
+	static function ( array $progress ) use ( &$published_progress, &$step_returned, $assert ): void {
+		$assert( ! $step_returned, 'compile progress must publish before the step returns' );
+		$published_progress[] = $progress;
+	}
+);
+$assert( 3 === $fanout_calls && array( 0, 2, 4, 6 ) === array_column( $published_progress, 'completed_units' ) && array( 6 ) === array_values( array_unique( array_column( $published_progress, 'total_units' ) ) ) && array( 'compile_pages' ) === array_values( array_unique( array_column( $published_progress, 'phase' ) ) ), 'the existing CLI progress record must announce planned pages after preparation and advancing receipts once per fanout batch' );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
 
 // A single inline page used to skip preparation and propagate the dependency

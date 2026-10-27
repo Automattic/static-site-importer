@@ -577,6 +577,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					}
 				}
 
+				self::publish_compile_progress( $run );
+
 				// Each batch is durable before the next starts, so a host whose runtime
 				// is not bounded by a request deadline can compile several per step.
 				// Batch-local checkpoint reads are released between batches.
@@ -678,6 +680,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						}
 					}
 					}
+					self::publish_compile_progress( $run );
 					++$batches;
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
@@ -1141,6 +1144,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$run['progress']['updated_at']          = $run['progress']['phase_started_at'];
 		$write                                  = self::write_run( $workspace, $run );
 		return is_wp_error( $write ) ? $write : $run;
+	}
+
+	/** Publish bounded coordinator progress through the ordinary continuation seam. */
+	private static function publish_compile_progress( array $run ): void {
+		$run['phase'] = 'compile_pages';
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'static_site_importer_direct_artifact_progress', self::continuation( $run, 'pages_remaining' ) );
+		}
 	}
 
 	private static function continuation( array $run, string $reason ): array {

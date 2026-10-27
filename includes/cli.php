@@ -1224,7 +1224,7 @@ if ( ! function_exists( 'static_site_importer_cli_decode_import_step' ) ) {
 		}
 		for ( $index = count( $lines ) - 1; $index >= 0; --$index ) {
 			$decoded = json_decode( $lines[ $index ], true );
-			if ( is_array( $decoded ) && ! array_is_list( $decoded ) ) {
+			if ( is_array( $decoded ) && ! array_is_list( $decoded ) && 'static-site-importer/import-cli-progress/v1' !== ( $decoded['schema'] ?? '' ) ) {
 				return $decoded;
 			}
 		}
@@ -1267,6 +1267,98 @@ if ( ! function_exists( 'static_site_importer_cli_write_step_request' ) ) {
 	}
 }
 
+/** Drain both child pipes while forwarding the existing typed progress records. */
+function static_site_importer_cli_run_import_process( array $spec ) {
+	// Lightweight CLI hosts may provide only the runcommand adapter.
+	// @phpstan-ignore function.alreadyNarrowedType
+	if ( ! method_exists( 'WP_CLI', 'get_runner' ) || ! function_exists( 'proc_open' ) ) {
+		return WP_CLI::runcommand( $spec['command'], $spec['options'] );
+	}
+	$command = escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( (string) $_SERVER['argv'][0] );
+	// Preserve the same runtime flags as runcommand(), including --require.
+	if ( function_exists( 'WP_CLI\Utils\assoc_args_to_str' ) ) {
+		// @phpstan-ignore class.notFound (WP-CLI's Configurator is provided by the CLI runtime.)
+		list( , , $runtime_config ) = WP_CLI::get_configurator()->parse_args( array_slice( (array) $_SERVER['argv'], 1 ) );
+		foreach ( $runtime_config as $key => $value ) {
+			if ( preg_match( '|^--' . preg_quote( $key, '|' ) . '=?|', $spec['command'] ) ) {
+				unset( $runtime_config[ $key ] );
+			}
+		}
+		$command .= ' ' . \WP_CLI\Utils\assoc_args_to_str( $runtime_config );
+	}
+	$descriptors = array(
+		0 => STDIN,
+		1 => array( 'pipe', 'w' ),
+		2 => array( 'pipe', 'w' ),
+	);
+	$process     = proc_open( $command . ' ' . $spec['command'], $descriptors, $pipes ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- Isolated CLI step with live progress.
+	if ( ! is_resource( $process ) ) {
+		return (object) array(
+			'stdout'      => '',
+			'stderr'      => 'Could not start import runtime.',
+			'return_code' => 1,
+		);
+	}
+	$output = array(
+		1 => '',
+		2 => '',
+	);
+	$line   = '';
+	foreach ( $pipes as $pipe ) {
+		stream_set_blocking( $pipe, false );
+	}
+	while ( ! empty( $pipes ) ) {
+		$read   = array_values( $pipes );
+		$write  = null;
+		$except = null;
+		if ( false === stream_select( $read, $write, $except, null ) ) {
+			break;
+		}
+		foreach ( $read as $pipe ) {
+			$index             = array_search( $pipe, $pipes, true );
+			$bytes             = (string) stream_get_contents( $pipe );
+			$output[ $index ] .= $bytes;
+			if ( 1 === $index ) {
+				$line .= $bytes;
+				$end   = strpos( $line, "\n" );
+				while ( false !== $end ) {
+					$record = json_decode( substr( $line, 0, $end ), true );
+					$line   = substr( $line, $end + 1 );
+					if ( is_array( $record ) && 'static-site-importer/import-cli-progress/v1' === ( $record['schema'] ?? '' ) ) {
+						$progress = array(
+							'page_count'    => $record['total_units'] ?? 0,
+							'receipt_count' => $record['completed_units'] ?? 0,
+						);
+						do_action(
+							'static_site_importer_direct_artifact_progress',
+							array(
+								'import_id'    => $record['import_id'] ?? '',
+								'artifact_run' => array(
+									'phase'    => $record['phase'] ?? '',
+									'progress' => $progress,
+								),
+							)
+						);
+					}
+					$end = strpos( $line, "\n" );
+				}
+			}
+			if ( feof( $pipe ) ) {
+				fclose( $pipe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Child pipe cleanup.
+				unset( $pipes[ $index ] );
+			}
+		}
+	}
+	foreach ( $pipes as $pipe ) {
+		fclose( $pipe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Child pipe cleanup.
+	}
+	return (object) array(
+		'stdout'      => $output[1],
+		'stderr'      => $output[2],
+		'return_code' => proc_close( $process ),
+	);
+}
+
 if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime_once' ) ) {
 	/**
 	 * Run one fresh runtime and report whether the kernel killed it.
@@ -1290,7 +1382,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime_once'
 				);
 			}
 			$spec    = static_site_importer_cli_import_fresh_runtime_spec( $path );
-			$raw     = WP_CLI::runcommand( $spec['command'], $spec['options'] );
+			$raw     = static_site_importer_cli_run_import_process( $spec );
 			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
 			$stderr  = is_object( $raw ) ? trim( (string) ( $raw->stderr ?? '' ) ) : '';
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
@@ -1551,7 +1643,21 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			if ( is_array( $previous ) && null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
 			}
-			$result = $invoke( $input );
+			$publish = static function ( array $progress ) use ( $emit_progress, $steps, $started_at, $resume_command ): void {
+				if ( null !== $emit_progress ) {
+					$emit_progress( static_site_importer_cli_import_progress( $progress, $steps, $started_at, 'heartbeat', $resume_command ) );
+				}
+			};
+			if ( function_exists( 'add_action' ) ) {
+				add_action( 'static_site_importer_direct_artifact_progress', $publish );
+			}
+			try {
+				$result = $invoke( $input );
+			} finally {
+				if ( function_exists( 'remove_action' ) ) {
+					remove_action( 'static_site_importer_direct_artifact_progress', $publish );
+				}
+			}
 			if ( empty( $result['continuation'] ) ) {
 				return static_site_importer_cli_import_receipt( $result, $steps );
 			}
@@ -1654,14 +1760,23 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			return;
 		}
 		if ( isset( $assoc_args['single-step'] ) ) {
-			$state_path = isset( $assoc_args['state'] ) ? (string) $assoc_args['state'] : '';
-			if ( '' === $state_path ) {
-				static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
-				return;
+			$started_at = microtime( true );
+			$publish    = static function ( array $result ) use ( $started_at ): void {
+				static_site_importer_cli_emit_import_progress( static_site_importer_cli_import_progress( $result, 1, $started_at, 'heartbeat' ) );
+			};
+			add_action( 'static_site_importer_direct_artifact_progress', $publish );
+			try {
+				$state_path = isset( $assoc_args['state'] ) ? (string) $assoc_args['state'] : '';
+				if ( '' === $state_path ) {
+					static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+					return;
+				}
+				static_site_importer_cli_emit_import_step(
+					static_site_importer_cli_run_stateful_import_step( $input, $state_path )
+				);
+			} finally {
+				remove_action( 'static_site_importer_direct_artifact_progress', $publish );
 			}
-			static_site_importer_cli_emit_import_step(
-				static_site_importer_cli_run_stateful_import_step( $input, $state_path )
-			);
 			return;
 		}
 		$max_steps      = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
