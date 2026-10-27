@@ -193,26 +193,64 @@ $assert( in_array( $skipped_asset_finding, $intake_persisted['diagnostics'] ?? a
 $intake_summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $intake_persisted, array() );
 $assert( 'non_static_extension' === ( array_column( $intake_summary['diagnostics'] ?? array(), 'reason_code', 'source_path' )['website/assets/style.php'] ?? '' ), 'compact-summary-surfaces-skipped-archive-asset-finding' );
 
+$unsafe_layout_artifact = array( 'files' => array( 'website/index.html' => '<div id="changed"></div>' ) );
 $unsafe_layout_plan = array(
 	'quality'     => array( 'metrics' => array( 'block_count' => 179, 'diagnostic_count' => 1 ) ),
 	'diagnostics' => array( array( 'code' => 'author_layout_topology_changed', 'source_path' => 'website/index.html', 'selector' => 'div:nth-of-type(1)' ) ),
 	'assets'      => array( array( 'source' => 'engine-support', 'content' => '.fixed-height{height:50px !important}' ) ),
-	'pages'       => array( array( 'source_path' => 'website/index.html', 'resolved_block_markup' => '<div class="fixed-height blocks-engine-css-owned-layout"></div>' ) ),
+	'pages'       => array( array( 'source_path' => 'website/index.html', 'resolved_block_markup' => '<div id="changed" class="fixed-height blocks-engine-css-owned-layout"></div>' ) ),
 );
-$unsafe_layout_diagnostics = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $unsafe_layout_plan );
+$unsafe_layout_diagnostics = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $unsafe_layout_plan, $unsafe_layout_artifact );
 $assert( 1 === count( $unsafe_layout_diagnostics ) && 50 === ( $unsafe_layout_diagnostics[0]['context']['fixed_height_px'] ?? 0 ), 'fixed-height-on-topology-changed-css-container-is-unsafe-layout-evidence' );
 $safe_topology_plan = $unsafe_layout_plan;
 $safe_topology_plan['assets'][0]['content'] = '.fixed-height{height:auto !important}';
-$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $safe_topology_plan ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $safe_topology_plan, $unsafe_layout_artifact ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
 $min_height_plan = $unsafe_layout_plan;
 $min_height_plan['assets'][0]['content'] = '.fixed-height{min-height:640px !important}';
-$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $min_height_plan ), 'min-height-floor-on-topology-changed-css-container-is-not-unsafe-layout-evidence' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $min_height_plan, $unsafe_layout_artifact ), 'min-height-floor-on-topology-changed-css-container-is-not-unsafe-layout-evidence' );
 $page_scope_coincidence_plan = $unsafe_layout_plan;
-$page_scope_coincidence_plan['pages'][0]['resolved_block_markup'] = '<div class="topology-target blocks-engine-css-owned-layout"></div><div class="fixed-height blocks-engine-css-owned-layout"></div>';
-$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );
+$page_scope_coincidence_plan['pages'][0]['resolved_block_markup'] = '<div id="changed" class="topology-target blocks-engine-css-owned-layout"></div><div class="fixed-height blocks-engine-css-owned-layout"></div>';
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan, $unsafe_layout_artifact ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );
 $legacy_topology_plan = $unsafe_layout_plan;
 unset( $legacy_topology_plan['diagnostics'][0]['selector'] );
-$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $legacy_topology_plan ), 'topology-warning-without-definite-container-contract-is-not-unsafe-layout-evidence' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $legacy_topology_plan, $unsafe_layout_artifact ), 'topology-warning-without-definite-container-contract-is-not-unsafe-layout-evidence' );
+
+// Compile through the public API: chrome moves into a part, so its source path
+// would resolve to the unrelated fixed-height button in post content.
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+$shifted_artifact = array(
+	'entrypoint' => 'index.html',
+	'files' => array(
+		'index.html' => file_get_contents( __DIR__ . '/fixtures/topology-coordinate-space.html' ),
+		'chat.svg' => '<svg xmlns="http://www.w3.org/2000/svg"/>',
+	),
+);
+$shifted_result = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $shifted_artifact )->toArray();
+$shifted_plan = $shifted_result['source_reports']['wordpress_site_plan'];
+$shifted_topology = array_values( array_filter( $shifted_plan['diagnostics'], static fn( array $row ): bool => 'author_layout_topology_changed' === $row['code'] ) );
+$assert( ! empty( $shifted_topology ) && 'div:nth-of-type(1) > div:nth-of-type(1)' === $shifted_topology[0]['selector'] && ! empty( $shifted_plan['template_parts'] ), 'reduced-page-produces-source-relative-topology-evidence-and-extracted-chrome' );
+$shifted_targets = Static_Site_Importer_Diagnostic_Projection::topology_selector_elements( $shifted_plan['pages'][0]['canonical_block_markup'], $shifted_topology[0]['selector'] );
+$assert( 1 === count( $shifted_targets ) && 'button' === $shifted_targets[0]->getAttribute( 'id' ), 'source-selector-in-post-coordinates-hits-unrelated-button' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $shifted_plan, $shifted_artifact ), 'source-chrome-selector-does-not-identify-post-content-button' );
+foreach ( array( 'missing', 'duplicate-source', 'duplicate-output' ) as $identity_case ) {
+	$identity_plan = $unsafe_layout_plan;
+	$identity_artifact = $unsafe_layout_artifact;
+	if ( 'missing' === $identity_case ) {
+		$identity_artifact = array();
+	} elseif ( 'duplicate-source' === $identity_case ) {
+		$identity_artifact['files']['website/index.html'] .= '<div id="changed"></div>';
+	} else {
+		$identity_plan['pages'][0]['resolved_block_markup'] .= '<div id="changed"></div>';
+	}
+	$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $identity_plan, $identity_artifact ), 'unproven-container-identity-is-not-fatal-' . $identity_case );
+}
+$multi_page_plan = $unsafe_layout_plan;
+$multi_page_plan['pages'][] = array_merge( $unsafe_layout_plan['pages'][0], array( 'source_path' => 'website/second.html' ) );
+$multi_page_plan['diagnostics'][] = array_merge( $unsafe_layout_plan['diagnostics'][0], array( 'source_path' => 'website/second.html' ) );
+$multi_page_plan['diagnostics'][] = $multi_page_plan['diagnostics'][0];
+$multi_page_artifact = $unsafe_layout_artifact;
+$multi_page_artifact['files']['website/second.html'] = $unsafe_layout_artifact['files']['website/index.html'];
+$assert( array( 'website/index.html', 'website/second.html' ) === array_column( Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $multi_page_plan, $multi_page_artifact ), 'source_path' ), 'unsafe-class-is-reported-on-each-page-without-duplicates' );
 
 $unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'wordpress_site_plan' => $unsafe_layout_plan ) ) );
 $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $unsafe_report, array( 'fail_on_quality' => true ) );

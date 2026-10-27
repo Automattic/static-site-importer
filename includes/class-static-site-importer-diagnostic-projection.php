@@ -538,11 +538,15 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 * Detect a concrete layout hazard in the materialized plan without claiming a
 	 * browser comparison has occurred. A topology warning alone is reportable but
 	 * acceptable; generated fixed height on that CSS-owned container is unsafe.
+	 * Source selectors must never be evaluated against converted post content.
+	 * Until Blocks Engine's diagnostic carries a stable output container identity,
+	 * require a unique source/output ID; missing identity is not fatal evidence.
 	 *
 	 * @param array<string,mixed> $plan Canonical WordPress site plan.
+	 * @param array<string,mixed> $artifact Source website artifact, in selector coordinates.
 	 * @return array<int,array<string,mixed>> Unsafe layout diagnostics.
 	 */
-	public static function unsafe_layout_constraint_diagnostics( array $plan ): array {
+	public static function unsafe_layout_constraint_diagnostics( array $plan, array $artifact = array() ): array {
 		$topology_selectors = array();
 		foreach ( is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array() as $diagnostic ) {
 			if ( ! is_array( $diagnostic ) || 'author_layout_topology_changed' !== ( $diagnostic['code'] ?? '' ) || ! is_scalar( $diagnostic['source_path'] ?? null ) || ! is_string( $diagnostic['selector'] ?? null ) || '' === $diagnostic['selector'] ) {
@@ -570,23 +574,35 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		$diagnostics = array();
+		$sources     = self::artifact_file_contents( $artifact );
 		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $page ) {
 			if ( ! is_array( $page ) || ! isset( $topology_selectors[ $page['source_path'] ?? '' ] ) ) {
 				continue;
 			}
-			$markup = (string) ( $page['resolved_block_markup'] ?? $page['canonical_block_markup'] ?? '' );
+			$source   = $sources[ $page['source_path'] ] ?? '';
+			$markup   = (string) ( $page['resolved_block_markup'] ?? $page['canonical_block_markup'] ?? '' );
+			$reported = array();
 			foreach ( array_keys( $topology_selectors[ (string) $page['source_path'] ] ) as $selector ) {
-				foreach ( self::topology_selector_elements( $markup, $selector ) as $element ) {
+				foreach ( self::topology_selector_elements( $source, $selector ) as $source_element ) {
+					// Structural paths cannot cross shell extraction or block conversion.
+					// Only a unique source/output ID proves this is the same container.
+					$id             = $source_element->getAttribute( 'id' );
+					$source_matches = self::topology_identity_elements( $source, $id );
+					$targets        = self::topology_identity_elements( $markup, $id );
+					if ( 1 !== count( $source_matches ) || 1 !== count( $targets ) ) {
+						continue;
+					}
+					$element = $targets[0];
 					$classes = preg_split( '/\s+/', (string) $element->getAttribute( 'class' ) );
 					$classes = is_array( $classes ) ? $classes : array();
 					if ( ! in_array( 'blocks-engine-css-owned-layout', $classes, true ) ) {
 						continue;
 					}
 					foreach ( $classes as $class ) {
-						if ( ! isset( $fixed_heights[ $class ] ) ) {
+						if ( ! isset( $fixed_heights[ $class ] ) || isset( $reported[ $class ] ) ) {
 							continue;
 						}
-						$diagnostics[] = array(
+						$diagnostics[]      = array(
 							'type'         => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
 							'code'         => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
 							'severity'     => 'error',
@@ -599,7 +615,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 							),
 							'message'      => sprintf( 'Generated layout support pins CSS-owned container .%1$s to %2$dpx after its direct-child topology changed. This fixed constraint can clip or collapse the materialized layout and is not safe to admit without a layout repair.', $class, $fixed_heights[ $class ] ),
 						);
-						unset( $fixed_heights[ $class ] );
+						$reported[ $class ] = true;
 					}
 				}
 			}
@@ -610,7 +626,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 
 	/**
 	 * Resolve the definite structural selector emitted by Blocks Engine topology
-	 * evidence against the converted page markup. Page-level coincidence is not
+	 * evidence against the source document. Page-level coincidence is not
 	 * enough to prove that a fixed height constrains the changed container.
 	 *
 	 * @return array<int,DOMElement>
@@ -629,7 +645,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 
 		$document = new DOMDocument();
 		$previous = libxml_use_internal_errors( true );
-		$loaded   = $document->loadHTML( '<!DOCTYPE html><html><body>' . $markup . '</body></html>' );
+		$loaded   = $document->loadHTML( '' !== $markup ? $markup : '<html><body></body></html>' );
 		libxml_clear_errors();
 		libxml_use_internal_errors( $previous );
 		if ( ! $loaded ) {
@@ -648,6 +664,32 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		return $elements;
+	}
+
+	/**
+	 * Find an exact ID without interpolating author input into an XPath expression.
+	 *
+	 * @return array<int,DOMElement>
+	 */
+	private static function topology_identity_elements( string $markup, string $id ): array {
+		if ( '' === $id || '' === $markup ) {
+			return array();
+		}
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $document->loadHTML( $markup );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return array();
+		}
+		$matches = array();
+		foreach ( $document->getElementsByTagName( '*' ) as $element ) {
+			if ( $element->getAttribute( 'id' ) === $id ) {
+				$matches[] = $element;
+			}
+		}
+		return $matches;
 	}
 
 	/**
