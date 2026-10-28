@@ -28,7 +28,7 @@ working directory. The legacy single-route CLI remains available; it is not the
 unified acceptance contract.
 
 The command writes `OUTPUT/existing-runtime-acceptance.json`, schema
-`static-site-importer/existing-runtime-acceptance/v1`, with retained artifacts,
+`static-site-importer/existing-runtime-acceptance/v2`, with retained artifacts,
 SHA-256 references, identities, scope, stage-owned failures and pending reasons.
 Exit status is zero only for `accepted`. `failed` takes precedence over `pending`.
 Missing browser/auth/evidence is pending; measured HTTP/runtime fatals fail.
@@ -164,6 +164,56 @@ authenticated editor ID. `import-report.json` must be the real SSI
 `static-site-importer/import-report/v1` for that import run. Only a hash-verified
 numeric `quality.fallback_count === 0` can pass conversion quality. A caller
 boolean cannot replace measurement.
+
+## Outcome checks (Refs #2431)
+
+V2 replaces the v1 acceptance predicate: missing outcome evidence now prevents
+acceptance. One hash-bound `artifacts/outcomes.json` report uses
+`static-site-importer/outcome-checks/v1`, with `pass`, `fail` or `unsupported`
+and evidence for `link_graph`, `block_validity`, and `head_singletons`.
+Failures fail the aggregate; unsupported required checks leave it pending.
+The portable consumer rechecks the retained report and import/origin/route binding.
+
+Supply `outcomes` in the same caller config:
+
+```js
+outcomes: {
+  sourceHosts: ['source.example', 'cdn.source.example'], // exhaustive source + CDN hosts
+  aliases: ['/old-path/'], // exhaustive aliases; [] explicitly means none
+  telemetryMarkers: ['source-analytics'], // source telemetry fingerprints; [] means none
+  collectInventory: async ({page, candidateOrigin}) => {
+    // Execute lib/outcome-inventory.php inside this imported WordPress runtime,
+    // then return ssi_collect_outcome_inventory() as decoded JSON. The caller
+    // owns transport (e.g. WP CLI eval-file), just as it owns authentication.
+  },
+},
+```
+
+The shipped PHP collector enumerates all five post types across statuses and
+effective file-backed templates/parts. It calls real `parse_blocks()` and accounts
+for balanced block comments separately because the core parser tolerates malformed
+closing delimiters. Link scanning covers raw content, navigation, templates, parts
+and logged-out head output. Alias probes disable automatic redirects and require
+one destination-host redirect followed by a 200; chains and cycles fail.
+Head probes require every declared singleton and destination-origin URL values.
+Robots/generator/pingback metadata is conservatively rejected regardless of
+provenance; caller-declared telemetry fingerprints are rejected too.
+
+`node tests/acceptance/outcome-runner.mjs` imports a neutral HTML artifact into a
+**fresh disposable** WordPress 7.1+ runtime via the real compiler/materializer,
+then calls the public acceptance runner and portable consumer. Supply
+`STATIC_SITE_IMPORTER_WP_CLI`, `SSI_OUTCOME_ORIGIN` (the served HTTP origin), and
+`SSI_OUTCOME_DISPOSABLE=1`. It demonstrates a passing outcome baseline and failing
+link, malformed navigation delimiter, and duplicate canonical regressions.
+It deliberately does not fabricate DLA/editor evidence: unrelated gates stay pending.
+
+Remaining slices: fixed real-source corpus and release matrix; CSS links and
+shared-chrome anchors; installed-editor validation for every document (the existing
+Gate C still validates mapped route posts); controls/forms/readability/full-document
+checks; theme-switch independence. These are outside this first check set and
+are not certified by its pass result. No legacy comparator or editor save gate is
+retired: the new outcome set replaces only the former outcome-free aggregate
+acceptance predicate.
 
 ## Gate C and reusable evidence
 
