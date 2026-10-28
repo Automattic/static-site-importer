@@ -122,7 +122,22 @@ $assert( 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $unkn
 $assert( array( 'form.message' ) === array_column( Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $unknown_forms, $unknown_plan ), 'selector' ), 'Only unknown POST with contact evidence reaches the provider' );
 $unknown_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $unknown_forms ) );
 $assert( array( 'form.message' ) === array_column( $unknown_validated['forms'], 'selector' ), 'Direct validation excludes unknown choices but keeps name/email/message' );
-$assert( ! Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $unknown_forms[0] ) && Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $unknown_forms[1] ), 'Unknown choices are not tracked as contact-form loss' );
+$assert( Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $unknown_forms[0] ) && Static_Site_Importer_Quality_Gates::is_form_fallback_diagnostic( $unknown_forms[1] ), 'Unknown choices remain tracked fallbacks without a contact-provider route' );
+$unknown_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality' => array( 'fallback_count' => 1 ),
+		'diagnostics' => array( $unknown_forms[0] ),
+	)
+);
+$unknown_receipt = array(
+	'schema' => 'static-site-importer/quality-resolution-receipt/v1',
+	'status' => 'completed',
+	'provider' => 'jetpack',
+	'fallback_reconciliation_identity' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $unknown_forms[0] ),
+	'fallback_hash' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $unknown_forms[0] ),
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $unknown_report, array( $unknown_receipt ) );
+$assert( 1 === ( $unknown_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $unknown_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ) && array() === ( $unknown_report['quality_resolutions']['resolutions'][0]['receipt'] ?? null ), 'Unknown choices stay counted and unresolved and reject contact-provider receipts' );
 $choice_report = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unknown_forms[0] ) ) );
 $assert( array() === $choice_report['forms'] && 'empty_validated_manifest' === $choice_report['reason'], 'Choice-only POST creates no jetpack/contact-form even when passed directly to the seeder' );
 foreach ( array( array( 'tag' => 'input', 'type' => 'email' ), array( 'tag' => 'input', 'type' => 'text' ), array( 'tag' => 'textarea' ), array( 'tag' => 'input' ) ) as $control ) {
