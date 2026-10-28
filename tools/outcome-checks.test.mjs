@@ -16,8 +16,9 @@ test('outcome report detects independent regressions, chains and cycles', async 
     res.end(`<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="${origin}/"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="${origin}/"><meta property="og:image" content="${origin}/image.png">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body>Imported fixture</body></html>`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ headless: true });
+  let browser;
   try {
+    browser = await chromium.launch({ headless: true });
     const candidateOrigin = `http://127.0.0.1:${server.address().port}`;
     const run = () => runOutcomeChecks({ browser, candidateOrigin, routes: ['/'], importRunId: 'fixture', config: { sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias'], telemetryMarkers: ['source-analytics'], collectInventory: async () => ({ schema: 'static-site-importer/outcome-inventory/v1', types: ['post', 'page', 'wp_template', 'wp_template_part', 'wp_navigation'], documents: [{ id: 1, type: 'wp_navigation', content: regression === 'source' ? '<a href="https://SOURCE.example/path">Bad</a>' : regression === 'cdn' ? '<img src="//cdn.source.example/image.png">' : regression === 'link' ? '<a href="/?page_id=1">Bad</a>' : '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } }] }) } });
     const passing = await run();
@@ -33,5 +34,5 @@ test('outcome report detects independent regressions, chains and cycles', async 
     const missing = await runOutcomeChecks({ browser, candidateOrigin, routes: ['/'] });
     assert.equal(missing.checks.block_validity.status, 'unsupported');
     assert.equal(outcomeGate(missing).status, 'pending');
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
