@@ -6,6 +6,7 @@
  */
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 if ( ! function_exists( 'wp_insert_attachment' ) ) {
 	throw new RuntimeException( 'This smoke requires a loaded disposable WordPress runtime.' );
@@ -52,7 +53,19 @@ foreach ( $artifact['files'] as $path => $bytes ) {
 			'content' => $bytes,
 		);
 }
-$plan    = ( new ArtifactCompiler() )->compile( $compiler_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$plan = ( new ArtifactCompiler() )->compile( $compiler_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+foreach ( $plan['assets'] as $asset ) {
+	if ( 'block.png' === basename( $asset['source_path'] ) ) {
+		$featured_token                              = $asset['token'];
+		$plan['pages'][0]['metadata']['featured_image'] = array(
+			'asset_token' => $featured_token,
+			'alt'         => 'Block artwork',
+			'target_path' => $asset['target_path'],
+		);
+		break;
+	}
+}
+$plan['plan_identity'] = WordPressSitePlan::planIdentity( $plan );
 $dir     = get_theme_root() . '/' . $slug;
 $args    = array(
 	'slug'                         => $slug,
@@ -114,19 +127,28 @@ try {
 			'meta_value'  => $plan['pages'][0]['reconciliation_identity'],
 		)
 	);
+	$resolved_featured = (int) ( $receipt['transaction']->state['resolved']['resolution']['attachment_resolutions'][ $featured_token ]['id'] ?? 0 );
+	$assert( $ids['block.png'] === $resolved_featured, 'Featured image token must resolve to the content attachment.' );
+	$assert( ! empty( $posts ) && $resolved_featured === (int) get_post_thumbnail_id( $posts[0]->ID ), 'Featured image must use the resolved Media Library attachment.' );
 	$content = ! empty( $posts ) ? $posts[0]->post_content : '';
 	foreach ( $ids as $id ) {
 		$assert( str_contains( $content, 'wp-image-' . $id ) && str_contains( $content, '"id":' . $id ), 'Core image binding must survive post-write materialization.' );
 	}
 	$blocks = parse_blocks( $content );
 	$assert( ! empty( $blocks ) && serialize_blocks( $blocks ) === $content, 'Bound blocks must parse and round-trip.' );
-	$css = '';
+	$references_attachment = false;
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
 		if ( 'css' === $file->getExtension() ) {
-			$css .= file_get_contents( $file->getPathname() );
+			preg_match_all( '/url\(\s*[\'\"]?([^\'\"\s)]+)[\'\"]?\s*\)/', file_get_contents( $file->getPathname() ), $urls );
+			foreach ( $urls[1] as $url ) {
+				$resolved_file = realpath( dirname( $file->getPathname() ) . '/' . rawurldecode( $url ) );
+				if ( $url === wp_get_attachment_url( $ids['dual.png'] ) || ( false !== $resolved_file && $resolved_file === realpath( get_attached_file( $ids['dual.png'] ) ) ) ) {
+					$references_attachment = true;
+				}
+			}
 		}
 	}
-	$assert( str_contains( $css, wp_get_attachment_url( $ids['dual.png'] ) ), 'Dual-use CSS must reference the attachment URL.' );
+	$assert( $references_attachment, 'Dual-use CSS must reference the attachment URL.' );
 	// A repeated import reuses the content-addressed attachments. Its rollback
 	// must restore content without deleting media owned by the first import.
 	$repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array_merge( $args, array( 'overwrite' => true ) ) );

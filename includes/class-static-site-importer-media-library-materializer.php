@@ -94,8 +94,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				return $error;
 			}
 			if ( '' !== $featured_path ) {
-				$relative = self::theme_relative_asset( $theme_uri . '/' . $featured_path, $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
-				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
+				// Plan-owned media already has an attachment; explicit provider
+				// paths still take precedence and resolve from the theme.
+				$token    = (string) ( $featured_image['asset_token'] ?? '' );
+				$featured = empty( $page['provider_featured_image_target_path'] ) ? (int) ( $state['resolved']['resolution']['attachment_resolutions'][ $token ]['id'] ?? 0 ) : 0;
+				if ( $featured <= 0 ) {
+					$relative = self::theme_relative_asset( $theme_uri . '/' . $featured_path, $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
+					$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
+				}
 				if ( null !== $error || $featured <= 0 ) {
 					return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
 				}
