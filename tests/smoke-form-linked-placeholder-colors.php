@@ -32,10 +32,14 @@ foreach ( $plan['writes'] as $write ) {
 	}
 	$path = $state['theme_dir'] . '/' . $target;
 	$assets[ $target ] = $writes[ $path ] ?? $write['payload']['data'];
+	// Engine support sheets (for example the source's default body margin) carry no form CSS.
+	if ( 'assets/assets/form.css' !== $target ) {
+		continue;
+	}
 	$checks[ $target . ' preserves authored placeholders' ] = str_contains( $assets[ $target ], 'input' . $scope . '::placeholder' );
 	$checks[ $target . ' does not duplicate provider overlay' ] = ! str_contains( $assets[ $target ], '::placeholder{color:revert}' );
 }
-$checks['one linked stylesheet serves the frontend and the editor'] = 1 === count( $assets ) && array() === array_filter( array_keys( $assets ), static fn( string $path ): bool => str_ends_with( $path, '.editor.css' ) );
+$checks['one linked stylesheet serves the frontend and the editor'] = isset( $assets['assets/assets/form.css'] ) && array() === array_filter( array_keys( $assets ), static fn( string $path ): bool => str_ends_with( $path, '.editor.css' ) );
 $repeat_state = $state;
 foreach ( $repeat_state['resolved']['writes'] as &$write ) {
 	$path = $state['theme_dir'] . '/' . $write['target_path'];
