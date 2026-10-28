@@ -33,9 +33,10 @@ for attempt in $(seq 1 60); do
 done
 if test "$ready" != 1; then exit 1; fi
 "${wp[@]}" core install --url="http://127.0.0.1:$port" --title='Native redirect acceptance' --admin_user=admin --admin_password=password --admin_email=admin@example.test --skip-email
-"${wp[@]}" rewrite structure '/%postname%/' --hard
+# Start on core's plain permalinks, as a fresh CLI install does: the import
+# itself must establish the pretty routes its source paths need (#2426). The
+# image's default .htaccess already routes them to WordPress.
 "${wp[@]}" plugin activate static-site-importer
-"${wp[@]}" eval '$GLOBALS["is_apache"] = true; add_filter("got_rewrite", "__return_true"); flush_rewrite_rules(true);'
 # Hosts such as Studio run the canonical CLI without --user; prove that operator path.
 "${wp_operator[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php | tee "$evidence/native.jsonl"
 # Unauthenticated web callers remain refused by both SSI and the provider.

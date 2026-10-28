@@ -360,6 +360,7 @@ class SSI_Plan_Test_Rewrite extends WP_Rewrite {
 	public function get_extra_permastruct( $taxonomy ) { return ( 'post_tag' === $taxonomy ? (string) get_option( 'tag_base', 'tag' ) : (string) get_option( 'category_base', 'category' ) ) . '/%' . ( 'post_tag' === $taxonomy ? 'post_tag' : 'category' ) . '%'; }
 	public function get_author_permastruct() { return 'author/%author%'; }
 	public function get_search_permastruct() { return '?s=%search%'; }
+	public function using_permalinks() { return true; }
 }
 $GLOBALS['wp_rewrite'] = new SSI_Plan_Test_Rewrite();
 function create_initial_taxonomies(): void {}
