@@ -65,6 +65,8 @@ $request['source']['files'][] = array(
 $plain                        = $import( $request );
 $assert( true === ( $plain['success'] ?? false ), 'Ordinary import completes.' );
 $assert( is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Ordinary source documents install their sole continuity provider.' );
+// The import ran in a child process; load its permalink structure here.
+$GLOBALS['wp_rewrite']->init();
 $request['source']['files'][] = array(
 	'path'    => 'website/_redirects',
 	// Redirection stores sources decoded; a percent-encoded UTF-8 alias must

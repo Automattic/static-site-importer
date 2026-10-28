@@ -199,7 +199,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				)
 			)
 		);
-		$handoffs                      = self::apply_whole_page_handoffs( $state );
+		if ( ! self::serve_source_routes( $state ) ) {
+			return self::failed_receipt( $state, 'permalink_structure_not_applied' );
+		}
+		$handoffs = self::apply_whole_page_handoffs( $state );
 		if ( is_wp_error( $handoffs ) ) {
 			return self::failed_receipt_from_error( $state, $handoffs );
 		}
@@ -2266,6 +2269,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		) : array( 'exists' => false );
 	}
 
+	/**
+	 * Source routes are pretty paths. Under plain permalinks every page, link
+	 * and redirect target would resolve to ?page_id=N, which a pretty-permalink
+	 * destination canonicalizes back into a redirect loop.
+	 */
+	public static function serve_source_routes( array &$state ): bool {
+		global $wp_rewrite;
+		if ( ! $wp_rewrite instanceof WP_Rewrite || $wp_rewrite->using_permalinks() ) {
+			return true;
+		}
+		self::journal_option( $state, 'permalink_structure' );
+		$wp_rewrite->set_permalink_structure( '/%postname%/' );
+		flush_rewrite_rules( false );
+		$state['applied']['operations'][] = array(
+			'kind'        => 'set_permalink_structure',
+			'reason_code' => 'source_routes_require_pretty_permalinks',
+			'to'          => '/%postname%/',
+		);
+		return $wp_rewrite->using_permalinks();
+	}
+
 	/** Move core rewrite bases that would route an imported page path to an archive. */
 	public static function keep_page_routes_reachable( array &$state ): bool {
 		// Without a rewrite engine there are no pretty routes to shadow.
@@ -2582,7 +2606,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				self::record_rollback_failure( $state, 'option', (string) $option, $error );
 			}
 		}
-		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) ) {
+		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) || isset( $options['permalink_structure'] ) ) {
 			delete_option( 'rewrite_rules' );
 		}
 	}
