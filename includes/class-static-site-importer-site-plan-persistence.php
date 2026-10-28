@@ -202,7 +202,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::serve_source_routes( $state ) ) {
 			return self::failed_receipt( $state, 'permalink_structure_not_applied' );
 		}
-		$handoffs                      = self::apply_whole_page_handoffs( $state );
+		$handoffs = self::apply_whole_page_handoffs( $state );
 		if ( is_wp_error( $handoffs ) ) {
 			return self::failed_receipt_from_error( $state, $handoffs );
 		}
