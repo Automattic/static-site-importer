@@ -1,0 +1,21 @@
+{
+  "entrypoint": "website/index.html",
+  "files": [
+    {
+      "path": "website/index.html",
+      "content": "<!DOCTYPE html><html><head><title>Image record fixture</title><link rel=\"icon\" href=\"/media/garden-logo.webp\"><link rel=\"stylesheet\" href=\"/site.css\"></head><body><main><h1>Image record fixture</h1><a href=\"/media/garden-logo.webp\" data-lightbox=\"garden\"><img alt=\"Transparent garden logo\" src=\"/media/garden-logo.webp\" srcset=\"/media/garden-logo.webp 203w, /media/garden-logo.webp 67w\"></a><div class=\"hero\">Garden</div></main></body></html>"
+    },
+    {
+      "path": "website/media/garden-logo.webp",
+      "content_base64": "UklGRlwCAABXRUJQVlA4WAoAAAAwAAAAygAAWQAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZBTFBIGQAAAAEPMP8REYJM2qYO6l/tvkoYEf2fgGXpTwgAVlA4IEwAAAAwBwCdASrLAFoAPm02mUmkIyKhIGgAgA2JaW7hdUAAO6HVUmyYh1VJsmIdVSbJiHVUmyYh1VJsmIdVSbJiHVUmyCAA/v+sAAAAAAAA"
+    },
+    {
+      "path": "website/site.css",
+      "content": ".hero { background-image: url('/media/garden-logo.webp'); height:90px; }"
+    },
+    {
+      "path": "capture-receipt.json",
+      "content": "{\"schema\":\"blocks-engine-capture/capture-receipt/v1\",\"websiteRoot\":\"website\",\"assets\":[{\"sourceUrl\":\"https://example.org/garden-logo.webp\",\"source_url\":\"https://example.org/garden-logo.webp\",\"source_urls\":[\"https://example.org/_next/image?url=%2Fpreview.webp&w=203&q=75\",\"https://example.org/preview.webp\",\"https://example.org/_next/image?url=%2Fpreview.webp&w=67&q=75\",\"https://example.org/garden-logo.webp\"],\"references\":[{\"kind\":\"CSS\",\"document_url\":\"https://example.org/site.css\",\"location\":\"declaration:0:background-image\",\"source_url\":\"https://example.org/_next/image?url=%2Fpreview.webp&w=203&q=75\"},{\"kind\":\"head\",\"document_url\":\"https://example.org/\",\"location\":\"link:0\",\"source_url\":\"https://example.org/_next/image?url=%2Fpreview.webp&w=67&q=75\"},{\"kind\":\"content\",\"document_url\":\"https://example.org/\",\"location\":\"anchor:0:href\",\"source_url\":\"https://example.org/garden-logo.webp\"},{\"kind\":\"content\",\"document_url\":\"https://example.org/\",\"location\":\"image:0:src\",\"source_url\":\"https://example.org/_next/image?url=%2Fpreview.webp&w=67&q=75\"},{\"kind\":\"content\",\"document_url\":\"https://example.org/\",\"location\":\"image:0:srcset:0\",\"source_url\":\"https://example.org/_next/image?url=%2Fpreview.webp&w=67&q=75\"},{\"kind\":\"content\",\"document_url\":\"https://example.org/\",\"location\":\"image:0:srcset:1\",\"source_url\":\"https://example.org/_next/image?url=%2Fpreview.webp&w=203&q=75\"}],\"original\":{\"source_url\":\"https://example.org/garden-logo.webp\",\"content_type\":\"image/webp\",\"width\":203,\"height\":90,\"alpha\":true,\"sha256\":\"f0e38ddf7c1303f22973545c008e8a98b77515bb0b01d5848cd64ae5ab4c6f6f\"},\"path\":\"website/media/garden-logo.webp\"},{\"sourceUrl\":\"https://example.org/site.css\",\"path\":\"website/site.css\",\"source_url\":\"https://example.org/site.css\"}]}"
+    }
+  ]
+}
