@@ -1032,7 +1032,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite(
 			html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
 			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
-				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, true );
+				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
 				if ( null !== $error || $id <= 0 ) {
 					return $url;
 				}
