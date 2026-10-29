@@ -27,28 +27,28 @@ require_once __DIR__ . '/class-static-site-importer-ico-asset.php';
  */
 final class Static_Site_Importer_Media_Library_Materializer {
 
-	public const SOURCE_ASSET_META_KEY = '_static_site_importer_source_asset';
+	public const SOURCE_ASSET_META_KEY  = '_static_site_importer_source_asset';
 	public const SOURCE_RECORD_META_KEY = '_static_site_importer_asset_record';
 
 	private const RASTER_EXTENSIONS = array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif' );
 
 	/** Portable upload extension for each verified non-image content type. */
 	private const RESOURCE_CONTENT_TYPE_EXTENSIONS = array(
-		'font/woff2' => 'woff2',
-		'font/woff'  => 'woff',
-		'font/ttf'   => 'ttf',
-		'font/otf'   => 'otf',
-		'application/pdf' => 'pdf',
-		'application/zip' => 'zip',
-		'application/gzip' => 'gz',
+		'font/woff2'                  => 'woff2',
+		'font/woff'                   => 'woff',
+		'font/ttf'                    => 'ttf',
+		'font/otf'                    => 'otf',
+		'application/pdf'             => 'pdf',
+		'application/zip'             => 'zip',
+		'application/gzip'            => 'gz',
 		'application/x-7z-compressed' => '7z',
-		'application/rtf' => 'rtf',
+		'application/rtf'             => 'rtf',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
-		'video/mp4'  => 'mp4',
-		'video/webm' => 'webm',
-		'video/ogg'  => 'ogv',
+		'video/mp4'                   => 'mp4',
+		'video/webm'                  => 'webm',
+		'video/ogg'                   => 'ogv',
 	);
 
 	/**

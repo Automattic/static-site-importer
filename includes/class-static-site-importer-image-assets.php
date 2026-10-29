@@ -13,7 +13,7 @@ defined( 'ABSPATH' ) || exit;
 
 /** Carries verified capture records, not URL-shaped rendition guesses. */
 final class Static_Site_Importer_Image_Assets {
-	private const KINDS = array( 'image', 'font', 'document', 'video' );
+	private const KINDS                  = array( 'image', 'font', 'document', 'video' );
 	private const IMAGE_CONTENT_TYPES    = array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml' );
 	private const FONT_CONTENT_TYPES     = array( 'font/woff2', 'font/woff', 'font/ttf', 'font/otf' );
 	private const DOCUMENT_CONTENT_TYPES = array(
@@ -147,7 +147,7 @@ final class Static_Site_Importer_Image_Assets {
 		// (or an attachment-bound resource claiming theme ownership) is conflicting
 		// evidence, and capture owns this decision.
 		$owner = $record['destination_owner'] ?? ( 'font' === $kind ? 'theme' : 'media-library' );
-		if ( $owner !== self::destination_owner( $record ) ) {
+		if ( self::destination_owner( $record ) !== $owner ) {
 			return false;
 		}
 		$original = $record['original'] ?? null;
@@ -252,20 +252,26 @@ final class Static_Site_Importer_Image_Assets {
 		return $sniffed === $original['content_type'];
 	}
 
+	/** First value unpacked from a fixed-width binary field, or -1 when unreadable. */
+	private static function unpacked( string $format, string $bytes ): int {
+		$values = unpack( $format, $bytes );
+		return is_array( $values ) ? (int) $values[1] : -1;
+	}
+
 	/** Signature of WOFF/WOFF2/sfnt font bytes, mirroring the capture producer's verifier. */
 	private static function font_content_type( string $bytes ): ?string {
 		if ( strlen( $bytes ) < 12 ) {
 			return null;
 		}
-		$tables = unpack( 'n', substr( $bytes, 4, 2 ) )[1];
-		if ( strlen( $bytes ) >= 48 && unpack( 'n', substr( $bytes, 12, 2 ) )[1] > 0 && unpack( 'N', substr( $bytes, 8, 4 ) )[1] === strlen( $bytes ) ) {
+		$tables = self::unpacked( 'n', substr( $bytes, 4, 2 ) );
+		if ( strlen( $bytes ) >= 48 && self::unpacked( 'n', substr( $bytes, 12, 2 ) ) > 0 && strlen( $bytes ) === self::unpacked( 'N', substr( $bytes, 8, 4 ) ) ) {
 			return 'wOF2' === substr( $bytes, 0, 4 ) ? 'font/woff2' : ( 'wOFF' === substr( $bytes, 0, 4 ) ? 'font/woff' : null );
 		}
 		if ( $tables > 0 && $tables <= 512 && strlen( $bytes ) >= 12 + $tables * 16 ) {
 			if ( 'OTTO' === substr( $bytes, 0, 4 ) ) {
 				return 'font/otf';
 			}
-			if ( 0x00010000 === unpack( 'N', substr( $bytes, 0, 4 ) )[1] || 'true' === substr( $bytes, 0, 4 ) ) {
+			if ( 0x00010000 === self::unpacked( 'N', substr( $bytes, 0, 4 ) ) || 'true' === substr( $bytes, 0, 4 ) ) {
 				return 'font/ttf';
 			}
 		}
@@ -277,7 +283,7 @@ final class Static_Site_Importer_Image_Assets {
 		if ( str_starts_with( $bytes, '%PDF-' ) && str_contains( substr( $bytes, -1024 ), '%%EOF' ) ) {
 			return 'application/pdf';
 		}
-		if ( strlen( $bytes ) >= 22 && 0x04034b50 === unpack( 'V', substr( $bytes, 0, 4 ) )[1] ) {
+		if ( strlen( $bytes ) >= 22 && 0x04034b50 === self::unpacked( 'V', substr( $bytes, 0, 4 ) ) ) {
 			// OOXML packages declare their document kind in the ZIP member inventory.
 			if ( str_contains( $bytes, '[Content_Types].xml' ) ) {
 				if ( str_contains( $bytes, 'word/document.xml' ) ) {
@@ -309,7 +315,7 @@ final class Static_Site_Importer_Image_Assets {
 		if ( strlen( $bytes ) >= 16 && 'ftyp' === substr( $bytes, 4, 4 ) ) {
 			return 'video/mp4';
 		}
-		if ( strlen( $bytes ) >= 16 && 0x1a45dfa3 === unpack( 'N', substr( $bytes, 0, 4 ) )[1] && str_contains( substr( $bytes, 0, 4096 ), 'webm' ) ) {
+		if ( strlen( $bytes ) >= 16 && 0x1a45dfa3 === self::unpacked( 'N', substr( $bytes, 0, 4 ) ) && str_contains( substr( $bytes, 0, 4096 ), 'webm' ) ) {
 			return 'video/webm';
 		}
 		if ( strlen( $bytes ) >= 4 && 'OggS' === substr( $bytes, 0, 4 ) && str_contains( $bytes, 'theora' ) ) {
