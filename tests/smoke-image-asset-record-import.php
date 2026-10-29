@@ -48,7 +48,7 @@ try {
 	$intermediate = imagecreatefromwebp( dirname( get_attached_file( $id ) ) . '/' . $size['file'] );
 	$assert( imagecolorsforindex( $intermediate, imagecolorat( $intermediate, imagesx( $intermediate ) - 1, 0 ) )['alpha'] > 0, 'Generated WordPress size must preserve transparent pixels.' );
 	imagedestroy( $intermediate );
-	$assert( $record === array_intersect_key( get_post_meta( $id, '_static_site_importer_image_asset', true ), $record ), 'Source aliases and categorized references must remain on the attachment.' );
+	$assert( $record === array_intersect_key( get_post_meta( $id, '_static_site_importer_asset_record', true ), $record ), 'Source aliases and categorized references must remain on the attachment.' );
 	$content = get_post_field( 'post_content', reset( $state['source_ids'] ) );
 	$assert( str_contains( $content, '"id":' . $id ) && str_contains( $content, 'wp-image-' . $id ), 'Editable core image must bind its attachment.' );
 	$assert( str_contains( $content, '"lightbox":{"enabled":true}' ) && str_contains( $content, 'src="' . $url . '"' ), 'Native lightbox must use the same attachment.' );

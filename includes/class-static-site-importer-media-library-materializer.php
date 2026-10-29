@@ -10,24 +10,46 @@ defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/class-static-site-importer-ico-asset.php';
 
 /**
- * Moves plan-owned images into the Media Library.
+ * Moves plan-owned media into the Media Library; capture-owned fonts stay
+ * theme-owned and are verified before the theme package is written.
  *
  * The site plan resolves every image to a file the generated theme ships, so
  * after an import an owner sees an empty Media Library and image blocks with
  * no attachment. Raster files referenced by materialized page content — a
  * core/image, core/cover, or core/media-text block, or an img inside another
  * block's saved markup — become attachments. Identical bytes share one
- * attachment for legacy plans; capture records instead own resource identity.
- * Native blocks are bound the way the editor binds an uploaded
- * image: media id, `wp-image-{id}` class, attachment URL. Theme chrome
- * (template parts), SVG icons, and CSS backgrounds stay theme-owned design
- * assets.
+ * attachment for legacy plans; capture records instead own resource identity,
+ * one attachment per recorded image, document or video. Native blocks are
+ * bound the way the editor binds an uploaded image: media id,
+ * `wp-image-{id}` class, attachment URL. Theme chrome (template parts), SVG
+ * icons, and CSS backgrounds stay theme-owned design assets; recorded fonts
+ * stay theme-owned because theme.json fontFace owns them.
  */
 final class Static_Site_Importer_Media_Library_Materializer {
 
-	public const SOURCE_ASSET_META_KEY = '_static_site_importer_source_asset';
+	public const SOURCE_ASSET_META_KEY  = '_static_site_importer_source_asset';
+	public const SOURCE_RECORD_META_KEY = '_static_site_importer_asset_record';
 
 	private const RASTER_EXTENSIONS = array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif' );
+
+	/** Portable upload extension for each verified non-image content type. */
+	private const RESOURCE_CONTENT_TYPE_EXTENSIONS = array(
+		'font/woff2'                  => 'woff2',
+		'font/woff'                   => 'woff',
+		'font/ttf'                    => 'ttf',
+		'font/otf'                    => 'otf',
+		'application/pdf'             => 'pdf',
+		'application/zip'             => 'zip',
+		'application/gzip'            => 'gz',
+		'application/x-7z-compressed' => '7z',
+		'application/rtf'             => 'rtf',
+		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+		'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+		'video/mp4'                   => 'mp4',
+		'video/webm'                  => 'webm',
+		'video/ogg'                   => 'ogv',
+	);
 
 	/**
 	 * Bind page image blocks to Media Library attachments.
@@ -471,11 +493,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $attachments[ $relative ];
 		}
 		$file   = $theme_dir . '/' . $relative;
-		$record = $state['staged_image_records'][ $relative ] ?? null;
+		$record = $state['staged_resource_records'][ $relative ] ?? null;
 		if ( is_array( $record ) ) {
 			require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 			if ( ! Static_Site_Importer_Image_Assets::verify( $file, $record ) ) {
-				$error = new WP_Error( 'image_resource_unresolved', 'The staged image does not match its capture record.' );
+				$error = new WP_Error( 'image_resource_unresolved', 'The staged resource does not match its capture record.' );
 				return 0;
 			}
 			$identity                 = basename( $theme_dir ) . '#resource#' . hash( 'sha256', $record['original']['source_url'] . '#' . $record['original']['sha256'] );
@@ -506,10 +528,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @return array|WP_Error Token resolutions or an upload failure.
 	 */
 	public static function resolve_plan_assets( array &$state ) {
+		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 		$by_source = array_column( $state['plan']['assets'] ?? array(), null, 'source_path' );
 		foreach ( $state['args']['image_asset_records'] ?? array() as $source => $record ) {
-			if ( 'media_library' !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
-				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare Media Library ownership for every recorded image.', array( 'source_path' => $source ) );
+			if ( Static_Site_Importer_Image_Assets::plan_destination( $record ) !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
+				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare each recorded resource its capture-owned destination.', array( 'source_path' => $source ) );
 			}
 		}
 		$assets = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) );
@@ -532,7 +555,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				}
 				$record = $state['args']['image_asset_records'][ $asset['source_path'] ] ?? null;
 				if ( is_array( $record ) ) {
-					$state['staged_image_records'][ $relative ] = $record;
+					$state['staged_resource_records'][ $relative ] = $record;
 				}
 				$files[] = $dir . '/' . $relative;
 				$result  = Static_Site_Importer_Site_Plan_Persistence::write_file( $dir, $write, $state['payload_reader'] ?? null );
@@ -565,8 +588,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				// Artwork WordPress cannot hold as an attachment (unproven SVG or
 				// ICO, non-image bytes) keeps its unresolved theme destination.
 				if ( ! $id ) {
-					if ( isset( $state['staged_image_records'][ $asset['target_path'] ] ) ) {
-						return new WP_Error( 'image_resource_unresolved', 'The recorded original could not become an attachment.' );
+					if ( isset( $state['staged_resource_records'][ $asset['target_path'] ] ) ) {
+						return new WP_Error( 'image_resource_unresolved', 'The recorded original could not become its declared destination.' );
 					}
 					continue;
 				}
@@ -612,6 +635,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local theme file written by this import.
 		if ( false === $bytes ) {
 			return 0;
+		}
+		if ( null !== $record && 'image' !== Static_Site_Importer_Image_Assets::kind( $record ) ) {
+			return self::resource_attachment_for( $bytes, $relative, $identity, $state, $error, $record );
 		}
 		$svg = 'svg' === strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) ? self::svg_asset_metadata( $file ) : null;
 		if ( null !== $svg && 'supported' !== $svg['status'] ) {
@@ -716,13 +742,120 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		update_post_meta( $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
 		if ( null !== $record ) {
-			update_post_meta( $attachment_id, '_static_site_importer_image_asset', $record );
+			update_post_meta( $attachment_id, self::SOURCE_RECORD_META_KEY, $record );
 		}
 		if ( '' !== trim( $alt ) ) {
 			update_post_meta( $attachment_id, '_wp_attachment_image_alt', wp_strip_all_tags( $alt ) );
 		}
 
 		return (int) $attachment_id;
+	}
+
+	/**
+	 * Upload one verified non-image capture record as a single Media Library
+	 * attachment: documents and video are attachment-bound media.
+	 *
+	 * The staged bytes were already signature-verified against the record, so
+	 * the record's content type is the upload MIME; only that one verified
+	 * extension is admitted during this synchronous upload. No WordPress
+	 * renditions exist for documents, archives or video, and captured fonts
+	 * never arrive here: theme.json fontFace keeps them theme-owned.
+	 *
+	 * @param string              $bytes    Verified staged bytes.
+	 * @param string              $relative Staged asset path (diagnostics).
+	 * @param string              $identity Content- and source-scoped attachment identity.
+	 * @param array<string,mixed> $state    Transaction state.
+	 * @param WP_Error|null       $error    Set when the upload or insert fails.
+	 * @param array<string,mixed> $record   Verified capture record.
+	 */
+	private static function resource_attachment_for( string $bytes, string $relative, string $identity, array &$state, ?WP_Error &$error, array $record ): int {
+		$mime      = (string) ( $record['original']['content_type'] ?? '' );
+		$extension = self::RESOURCE_CONTENT_TYPE_EXTENSIONS[ $mime ] ?? '';
+		if ( '' === $mime || '' === $extension ) {
+			// Verified bytes without a portable extension keep their unresolved
+			// theme destination rather than an ambiguous attachment.
+			return 0;
+		}
+		$stem = rawurldecode( (string) wp_parse_url( (string) ( $record['original']['source_url'] ?? '' ), PHP_URL_PATH ) );
+		$stem = pathinfo( $stem, PATHINFO_FILENAME );
+		$stem = '' !== trim( (string) $stem ) ? (string) $stem : pathinfo( $relative, PATHINFO_FILENAME );
+		// Admit exactly the verified extension and MIME during this upload;
+		// ordinary uploads keep WordPress's existing MIME policy.
+		$admitted = static function ( array $mimes ) use ( $extension, $mime ): array {
+			$mimes[ $extension ] = $mime;
+			return $mimes;
+		};
+		add_filter( 'upload_mimes', $admitted );
+		try {
+			$upload = wp_upload_bits( sanitize_file_name( $stem . '.' . $extension ), null, $bytes );
+		} finally {
+			remove_filter( 'upload_mimes', $admitted );
+		}
+		if ( ! empty( $upload['error'] ) ) {
+			$error = new WP_Error( 'media_library_upload_failed', 'An imported resource could not be added to the Media Library.', array( 'source_asset' => $relative ) );
+			return 0;
+		}
+		$attachment_id = wp_insert_attachment(
+			array(
+				'post_mime_type' => $mime,
+				'post_title'     => trim( str_replace( array( '-', '_' ), ' ', $stem ) ),
+				'post_content'   => '',
+				'post_status'    => 'inherit',
+			),
+			$upload['file'],
+			0,
+			true
+		);
+		if ( is_wp_error( $attachment_id ) ) {
+			wp_delete_file( $upload['file'] );
+			$error = new WP_Error( 'media_library_attachment_failed', 'An imported resource could not be registered as an attachment.', array( 'source_asset' => $relative ) );
+			return 0;
+		}
+		// Journaled apart from pages: receipts and asset scoping read applied
+		// posts as page content. Rollback deletes these with their files.
+		$state['applied']['attachments'][] = (int) $attachment_id;
+		wp_update_attachment_metadata(
+			(int) $attachment_id,
+			array(
+				'file'     => _wp_relative_upload_path( $upload['file'] ),
+				'filesize' => strlen( $bytes ),
+				'sizes'    => array(),
+			)
+		);
+		update_post_meta( (int) $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
+		update_post_meta( (int) $attachment_id, self::SOURCE_RECORD_META_KEY, $record );
+		return (int) $attachment_id;
+	}
+
+	/**
+	 * Verify theme-owned capture records against the exact bytes the plan is
+	 * about to write: captured fonts stay theme-owned, and their digest and
+	 * byte-sniffed MIME must match before any theme file lands.
+	 *
+	 * @param array<string,mixed> $state Transaction state after resolution.
+	 * @return true|WP_Error
+	 */
+	public static function verify_record_theme_writes( array $state ) {
+		$by_source = array_column( $state['plan']['assets'] ?? array(), null, 'source_path' );
+		$writes    = array_column( $state['resolved']['writes'] ?? array(), null, 'target_path' );
+		foreach ( $state['args']['image_asset_records'] ?? array() as $source => $record ) {
+			if ( 'theme' !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
+				continue;
+			}
+			$write = $writes[ (string) ( $by_source[ $source ]['target_path'] ?? '' ) ] ?? null;
+			if ( ! is_array( $write ) || 'theme_asset' !== ( $write['kind'] ?? '' ) ) {
+				return new WP_Error( 'image_resource_unresolved', 'The recorded theme asset is missing its declared theme write.', array( 'source_path' => $source ) );
+			}
+			require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+			$bytes = Static_Site_Importer_Site_Plan_Persistence::write_payload_bytes( $write, $state['payload_reader'] ?? null );
+			if ( is_wp_error( $bytes ) ) {
+				return $bytes;
+			}
+			if ( ! is_string( $bytes ) || ! Static_Site_Importer_Image_Assets::verify_bytes( $bytes, $record ) ) {
+				return new WP_Error( 'image_resource_unresolved', 'The staged theme asset does not match its capture record.', array( 'source_path' => $source ) );
+			}
+		}
+		return true;
 	}
 
 	/** Inspect bounded local ICO bytes before any upload or identity mutation. */
