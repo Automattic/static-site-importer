@@ -906,13 +906,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$parent = 0;
 		}
 		$user_id        = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-		$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
 		$post           = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
 			'post_author'  => $page['materialized_post_author'] ?? ( $user_id > 0 ? $user_id : 1 ),
 			'post_type'    => $post_type,
 			'post_status'  => (string) ( $page['materialized_post_status'] ?? 'publish' ),
-			'post_title'   => '' !== $document_title ? $document_title : (string) $page['title'],
+			'post_title'   => (string) $page['title'],
 			'post_name'    => (string) $page['slug'],
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),

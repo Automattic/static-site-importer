@@ -188,7 +188,9 @@ if ( ! is_wp_error( $result ) ) {
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();
 	$GLOBALS['wp_query']  = $previous_query;
-	$assert( 'Ember & Rye – Bakery' === get_post_field( 'post_title', $page_id ), 'single-page-native-title-matches-document-metadata' );
+	$route_title = (string) get_post_field( 'post_title', $page_id );
+	$assert( '' !== $route_title && 'Ember & Rye – Bakery' !== $route_title, 'single-page-post-title-is-the-route-title-not-the-branded-document-title', $route_title );
+	$assert( str_contains( $rendered_route_title, $route_title ), 'core-title-formats-the-native-route-title', $rendered_route_title );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -302,8 +304,8 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 		$rendered_title      = wp_get_document_title();
 		$GLOBALS['wp_query'] = $previous_query;
 		$assert( $expected_title === ( $provenance['document_title'] ?? '' ), 'multi-page-provenance-retains-' . sanitize_key( $source_path ) . '-title' );
-		$assert( $route_page instanceof WP_Post && $expected_title === $route_page->post_title, 'multi-page-native-title-owns-' . sanitize_key( $source_path ) );
-		$assert( str_contains( $rendered_title, $expected_title ), 'core-title-includes-native-route-title', $rendered_title );
+		$assert( $route_page instanceof WP_Post && '' !== $route_page->post_title && $expected_title !== $route_page->post_title, 'multi-page-post-title-is-the-route-title-for-' . sanitize_key( $source_path ), $route_page->post_title ?? '' );
+		$assert( $route_page instanceof WP_Post && str_contains( $rendered_title, $route_page->post_title ), 'core-title-formats-native-route-title', $rendered_title );
 	}
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $multi_report['import_validation_result']['schema'] ?? '' ), 'theme-report-persists-finalized-validation-result' );
 	$assert( $multi_report['import_validation_result'] === $multi_validation, 'theme-validation-sidecar-matches-finalized-report-contract' );

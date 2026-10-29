@@ -2,8 +2,10 @@
 
 Refs #2430 (second slice; the issue remains open).
 
-At materialization, the source document title becomes `post_title` (falling back
-to the plan title when absent). A plain meta description becomes `post_excerpt`,
+At materialization, `post_title` stays the plan's route title: the name page lists,
+menus and the editor show. The source document title (which usually carries a
+brand suffix) is recorded in provenance and written to a registered SEO title
+field, so core never renders a doubled site name. A plain meta description becomes `post_excerpt`,
 with `og:description`, then `twitter:description` as fallbacks. An explicit plan
 excerpt remains the fallback when no document description exists. Text is decoded
 and stripped of markup before storage.

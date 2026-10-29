@@ -30,7 +30,7 @@ if ( in_array( $phase, array( 'import', 'reimport' ), true ) ) {
 	) as $path => $title ) {
 		$files[] = array(
 			'path'    => 'website/' . $path,
-			'content' => '<!doctype html><html lang="en"><head><title>' . $title . '</title><meta name="description" content="Authored description for ' . $title . '"><meta property="og:image" content="assets/social.png">' . $head . '</head><body><header><nav><a href="index.html">Home</a><a href="about.html">About</a></nav></header><main><h1>' . $title . '</h1><p>Persistent garden content.</p><img src="assets/content.png" alt="Garden artwork"></main></body></html>',
+			'content' => '<!doctype html><html lang="en"><head><title>' . $title . ' | Garden</title><meta name="description" content="Authored description for ' . $title . '"><meta property="og:image" content="assets/social.png">' . $head . '</head><body><header><nav><a href="index.html">Home</a><a href="about.html">About</a></nav></header><main><h1>' . $title . '</h1><p>Persistent garden content.</p><img src="assets/content.png" alt="Garden artwork"></main></body></html>',
 		);
 	}
 	$files[]     = array(
@@ -139,7 +139,7 @@ foreach ( $pages as $page ) {
 	$assert( 'Authored description for ' . $page->post_title === $page->post_excerpt, 'Description belongs to excerpt.' );
 	$image = get_post_thumbnail_id( $id );
 	$assert( $image > 0 && 'attachment' === get_post_type( $image ), 'Social image belongs to a Media Library attachment.' );
-	$assert( get_post_meta( $id, 'jetpack_seo_html_title', true ) === $page->post_title, 'Registered platform title is written.' );
+	$assert( $page->post_title . ' | Garden' === get_post_meta( $id, 'jetpack_seo_html_title', true ), 'The branded document title belongs to the registered SEO title; post_title stays the route title.' );
 	$assert( get_post_meta( $id, 'advanced_seo_description', true ) === $page->post_excerpt, 'Registered platform description is written.' );
 	$snapshot['pages'][] = array(
 		'id'              => $id,
