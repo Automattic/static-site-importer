@@ -130,6 +130,11 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				'files'                        => $state['applied']['files'],
 				'operations'                   => $state['applied']['operations'],
 				'site_identity'                => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
+				'site_language'                => $state['applied']['site_language'] ?? array( 'status' => 'not_requested' ),
+				'route_languages'              => $state['applied']['route_languages'] ?? array(
+					'status' => 'not_requested',
+					'routes' => array(),
+				),
 				'image_assets'                 => self::image_assets( $state ),
 				'runtime_declarations'         => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization'         => $state['applied']['font_materialization'] ?? array(

@@ -37,6 +37,9 @@ if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Whole_Page_Handoff' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-whole-page-handoff.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Site_Language' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-language.php';
+}
 
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
@@ -406,6 +409,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $platform_metadata ) ) {
 			return self::failed_receipt_from_error( $state, $platform_metadata );
 		}
+		// Route-owner metadata: source languages that differ from the site
+		// language are recorded on the imported post, never rendered.
+		$state['applied']['route_languages'] = Static_Site_Importer_Site_Language::materialize_route_languages( $state );
 		$state['applied']['media_library'] = $media_library;
 		$font_materialization              = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
@@ -474,6 +480,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return self::failed_receipt_from_error( $state, $identity );
 			}
 			$state['applied']['site_identity'] = $identity;
+			// Site identity: the source document language becomes the WPLANG
+			// owner through the core language-pack path. Never fails; a pack
+			// that cannot be installed keeps the site default and records an
+			// owner-handoff decision.
+			$state['applied']['site_language'] = Static_Site_Importer_Site_Language::materialize_site_language( $state );
 			if ( ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
 				if ( ! self::write_option( 'use_smilies', false ) ) {
 					return self::failed_receipt( $state, 'disable_smilies_not_applied' );
@@ -2288,7 +2299,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' !== $stylesheet ) {
 			self::journal_option( $state, 'theme_mods_' . $stylesheet );
 		}
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_icon', 'site_logo' ) as $option ) {
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_icon', 'site_logo', 'WPLANG' ) as $option ) {
 			self::journal_option( $state, $option );
 		}
 	}
@@ -2437,6 +2448,26 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			} catch ( Throwable $error ) {
 				self::record_rollback_failure( $state, 'route_seo', (string) $post_id, $error );
+			}
+		}
+		foreach ( $state['rollback']['route_language'] ?? array() as $post_id => $before ) {
+			try {
+				$key = Static_Site_Importer_Site_Language::ROUTE_META_KEY;
+				if ( ! empty( $before['exists'] ) ) {
+					update_post_meta( (int) $post_id, $key, wp_slash( (string) $before['value'] ) );
+					if ( get_post_meta( (int) $post_id, $key, true ) !== $before['value'] ) {
+						// ssi-error-class: operational
+						throw new RuntimeException( 'materialization_rollback_route_language_restore_failed' );
+					}
+				} else {
+					delete_post_meta( (int) $post_id, $key );
+					if ( metadata_exists( 'post', (int) $post_id, $key ) ) {
+						// ssi-error-class: operational
+						throw new RuntimeException( 'materialization_rollback_route_language_delete_failed' );
+					}
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'route_language', (string) $post_id, $error );
 			}
 		}
 		foreach ( $state['rollback']['taxonomy_post_meta'] ?? array() as $post_id => $before ) {

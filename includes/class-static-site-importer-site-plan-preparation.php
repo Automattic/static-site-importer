@@ -17,6 +17,9 @@ require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Site_Language' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-language.php';
+}
 
 /** Validates, resolves, and admits a plan before persistence. */
 final class Static_Site_Importer_Site_Plan_Preparation {
@@ -682,6 +685,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$state['viewport_overlay']      = $viewport_overlay;
 		$state['internal_link_overlay'] = $internal_link_overlay;
 		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ) );
+		// Language ownership: the composed runtime never replays a source
+		// <html lang>; core's language_attributes() emits the site language.
+		Static_Site_Importer_Site_Language::compose_runtime_ownership( $state );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
 				// ssi-error-class: integrity

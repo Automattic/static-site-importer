@@ -80,6 +80,9 @@ $empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes
 $assert( str_starts_with( $empty_bootstrap, '<?php' ) && str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'embedded-fonts.css' ), 'plans without a canonical bootstrap or materialized font faces synthesize browser readiness without registering a nonexistent stylesheet' );
 $assert( str_contains( $empty_bootstrap, "add_theme_support( 'editor-styles' )" ) && str_contains( $empty_bootstrap, "add_editor_style( 'assets/css/editor-style.css' )" ), 'generated themes register their dedicated stylesheet for the block editor independently of font materialization' );
 $assert( str_contains( $empty_bootstrap, "wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri()" ), 'generated themes load their materialized root stylesheet on the frontend independently of font materialization' );
+$verification_guard = (string) strpos( $empty_bootstrap, "'font-readiness' === \$static_site_importer_verify" );
+$readiness_enqueue  = (string) strpos( $empty_bootstrap, "wp_enqueue_script( 'static-site-importer-font-readiness'" );
+$assert( '0' !== $verification_guard && '' !== $readiness_enqueue && $readiness_enqueue > $verification_guard, 'the readiness probe is verification-only: it enqueues only when the verification runtime sends static_site_importer_verify=font-readiness, never on the logged-out public front end' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';

@@ -169,6 +169,7 @@
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation-cascade.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-site-language.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ico-site-identity.php", "environment": "standalone-php" },
     { "path": "tests/smoke-source-normalizer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-import-runtime.php", "environment": "standalone-php" },

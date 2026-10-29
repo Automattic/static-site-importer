@@ -308,6 +308,7 @@
           "tests/smoke-runtime-form-entity-degraded.php",
           "tests/smoke-shared-resource-plan.php",
           "tests/smoke-site-identity.php",
+          "tests/smoke-site-language.php",
           "tests/smoke-source-findings-equivalence.php",
           "tests/smoke-source-findings.php",
           "tests/smoke-redirection-routes.php",
