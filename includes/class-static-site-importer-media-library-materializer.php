@@ -64,6 +64,38 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$featured_path = $featured_image['target_path'];
 				$featured_alt  = is_string( $featured_image['alt'] ?? null ) ? $featured_image['alt'] : '';
 			}
+			$social_id = 0;
+			if ( '' === $featured_path ) {
+				foreach ( Static_Site_Importer_Route_Head_Metadata::from_page( $page, $state['resolved'] ) as $tag ) {
+					if ( ! in_array( $tag['key'], array( 'og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src' ), true ) ) {
+						continue;
+					}
+					$social_id = function_exists( 'attachment_url_to_postid' ) ? (int) attachment_url_to_postid( $tag['content'] ) : 0;
+					if ( $social_id > 0 ) {
+						break;
+					}
+					$relative = self::theme_relative_asset( $tag['content'], $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
+					if ( null !== $relative ) {
+						foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+							if ( ( $asset['target_path'] ?? '' ) === $relative ) {
+								$social_id = (int) ( $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ]['id'] ?? 0 );
+								break;
+							}
+						}
+						if ( $social_id <= 0 ) {
+							$featured_path = $relative;
+						}
+						break;
+					}
+					return new WP_Error( 'route_social_image_unresolved', 'The authored social image must resolve to an imported Media Library asset.' );
+				}
+			}
+			if ( $social_id > 0 ) {
+				set_post_thumbnail( $post_id, $social_id );
+				if ( (int) get_post_thumbnail_id( $post_id ) !== $social_id ) {
+					return new WP_Error( 'route_social_image_write_failed' );
+				}
+			}
 			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && '' === $featured_path ) ) {
 				continue;
 			}
@@ -192,6 +224,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				continue;
 			}
 			$id = 'icon' === $field && empty( $evidence['icon'] ) ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
+			if ( $id <= 0 && is_string( $source ) ) {
+				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+					if ( ( $asset['source_path'] ?? null ) === $source ) {
+						$id = (int) ( $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ]['id'] ?? 0 );
+						break;
+					}
+				}
+			}
 			if ( $id <= 0 && ! empty( $evidence[ $field ] ) ) {
 				$write = null;
 				foreach ( $state['resolved']['writes'] ?? array() as $candidate ) {
@@ -987,16 +1027,19 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		// Candidate commas belong to the shared producer parser, not the URL
 		// scanner used for arbitrary markup. Descriptorless candidates end in
 		// commas while URL-internal commas remain part of the asset identity.
-		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite( html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
-			$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, true );
-			if ( null !== $error || $id <= 0 ) {
-				return $url;
+		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite(
+			html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
+			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
+				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, true );
+				if ( null !== $error || $id <= 0 ) {
+					return $url;
+				}
+				// Core may replace attachment "full" with a scaled upload. Authored
+				// descriptors and pixel identity belong to the original image bytes.
+				$canonical = wp_get_original_image_url( $id );
+				return is_string( $canonical ) && '' !== $canonical ? $canonical : $url;
 			}
-			// Core may replace attachment "full" with a scaled upload. Authored
-			// descriptors and pixel identity belong to the original image bytes.
-			$canonical = wp_get_original_image_url( $id );
-			return is_string( $canonical ) && '' !== $canonical ? $canonical : $url;
-		} );
+		);
 	}
 
 	/**

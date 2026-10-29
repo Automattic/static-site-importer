@@ -172,7 +172,6 @@ Static_Site_Importer_Entity_Materializer_Registry::register_presentations();
 Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
 Static_Site_Importer_Layout_Release::register();
 Static_Site_Importer_Layout_Marker_Filter::register();
-Static_Site_Importer_Route_Document_Metadata::register();
 Static_Site_Importer_Product_Grid_Runtime::register();
 Static_Site_Importer_Woo_Product_Listing_Materializer::register();
 Static_Site_Importer_Route_Head_Metadata::register();

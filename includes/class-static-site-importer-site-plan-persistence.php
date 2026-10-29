@@ -181,11 +181,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['failure_reason'] = $error->getMessage();
 			return is_array( $runtime_payload ) || ! empty( $resolutions ) ? self::failed_receipt( $state, $error->getMessage() ) : Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
 		}
-		$args                        = $state['args'];
-		$font_overlay                = $state['font_overlay'];
-		$viewport_overlay            = $state['viewport_overlay'];
-		$route_title_overlay         = $state['route_title_overlay'] ?? array();
-		$route_head_metadata_overlay = $state['route_head_metadata_overlay'] ?? array();
+		$args                  = $state['args'];
+		$font_overlay          = $state['font_overlay'];
+		$viewport_overlay      = $state['viewport_overlay'];
+		$internal_link_overlay = $state['internal_link_overlay'] ?? array();
 
 		$state['source_route_aliases'] = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths(
 			isset( $args['source_route_aliases'] ) && is_array( $args['source_route_aliases'] ) ? $args['source_route_aliases'] : array(),
@@ -274,7 +273,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
 			}
-			$head_metadata = Static_Site_Importer_Route_Head_Metadata::from_page( $page, is_array( $state['resolved'] ?? null ) ? $state['resolved'] : array() );
 			// Retain route-scoped, materialized document script references for a
 			// portable export. Store declarations, never executable source bytes.
 			$document_scripts = array();
@@ -290,9 +288,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			if ( array() !== $document_scripts ) {
 				$provenance['document_scripts'] = $document_scripts;
-			}
-			if ( array() !== $head_metadata ) {
-				$provenance['head_metadata'] = $head_metadata;
 			}
 			if ( ! self::write_post_meta( $post, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
 				return self::failed_receipt( $state, 'materialization_provenance_metadata_write_failed' );
@@ -407,6 +402,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $media_library ) ) {
 			return self::failed_receipt_from_error( $state, $media_library );
 		}
+		$platform_metadata = Static_Site_Importer_Route_Head_Metadata::materialize_platform_fields( $state );
+		if ( is_wp_error( $platform_metadata ) ) {
+			return self::failed_receipt_from_error( $state, $platform_metadata );
+		}
 		$state['applied']['media_library'] = $media_library;
 		$font_materialization              = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
@@ -418,17 +417,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $viewport_materialization );
 		}
 		$state['applied']['viewport_metadata'] = $viewport_materialization;
-		$route_title_materialization           = self::apply_route_title_overlay( $state, $route_title_overlay );
-		if ( is_wp_error( $route_title_materialization ) ) {
-			return self::failed_receipt_from_error( $state, $route_title_materialization );
+		$internal_link_materialization         = self::apply_internal_link_overlay( $state, $internal_link_overlay );
+		if ( is_wp_error( $internal_link_materialization ) ) {
+			return self::failed_receipt_from_error( $state, $internal_link_materialization );
 		}
-		$state['applied']['route_document_titles'] = $route_title_materialization;
-		$route_head_metadata_materialization       = self::apply_route_head_metadata_overlay( $state, $route_head_metadata_overlay );
-		if ( is_wp_error( $route_head_metadata_materialization ) ) {
-			return self::failed_receipt_from_error( $state, $route_head_metadata_materialization );
-		}
-		$state['applied']['route_head_metadata'] = $route_head_metadata_materialization;
-		$svg_receipts                            = self::verify_svg_font_materialization( $state );
+		$state['applied']['internal_links'] = $internal_link_materialization;
+		$svg_receipts                       = self::verify_svg_font_materialization( $state );
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
@@ -551,23 +545,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$user_id  = (int) get_current_user_id();
 			$status   = 'creation_disabled';
 			if ( $allow ) {
-				$marked = get_users( array(
-					'meta_key'   => '_static_site_importer_source_author',
-					'meta_value' => $identity,
-					'number'     => 1,
-					'fields'     => 'ID',
-				) );
+				$marked = get_users(
+					array(
+						'meta_key'   => '_static_site_importer_source_author',
+						'meta_value' => $identity,
+						'number'     => 1,
+						'fields'     => 'ID',
+					)
+				);
 				if ( $marked ) {
 					$user_id = (int) $marked[0];
 					$status  = 'reused';
 				} else {
-					$inserted = wp_insert_user( array(
-						'user_login'    => sanitize_user( $entity['slug'], true ),
-						'user_nicename' => $entity['slug'],
-						'display_name'  => $entity['name'],
-						'user_pass'     => wp_generate_password(),
-						'user_email'    => '',
-					) );
+					$inserted = wp_insert_user(
+						array(
+							'user_login'    => sanitize_user( $entity['slug'], true ),
+							'user_nicename' => $entity['slug'],
+							'display_name'  => $entity['name'],
+							'user_pass'     => wp_generate_password(),
+							'user_email'    => '',
+						)
+					);
 					if ( is_wp_error( $inserted ) ) {
 						$status = $inserted->get_error_code();
 					} else {
@@ -648,10 +646,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$existing = term_exists( $entity['slug'], $taxonomy );
 			$created  = false;
 			if ( ! $existing ) {
-				$inserted = wp_insert_term( $entity['name'], $taxonomy, array(
-					'slug'   => $entity['slug'],
-					'parent' => $parent,
-				) );
+				$inserted = wp_insert_term(
+					$entity['name'],
+					$taxonomy,
+					array(
+						'slug'   => $entity['slug'],
+						'parent' => $parent,
+					)
+				);
 				if ( is_wp_error( $inserted ) ) {
 					return $inserted;
 				}
@@ -903,18 +905,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		} else {
 			$parent = 0;
 		}
-		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-		$post    = array(
+		$user_id        = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+		$post           = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
 			'post_author'  => $page['materialized_post_author'] ?? ( $user_id > 0 ? $user_id : 1 ),
 			'post_type'    => $post_type,
 			'post_status'  => (string) ( $page['materialized_post_status'] ?? 'publish' ),
-			'post_title'   => (string) $page['title'],
+			'post_title'   => '' !== $document_title ? $document_title : (string) $page['title'],
 			'post_name'    => (string) $page['slug'],
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
-		if ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {
+		$description    = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
+		if ( '' !== $description ) {
+			$post['post_excerpt'] = wp_slash( $description );
+		} elseif ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {
 			if ( ! is_string( $page['metadata']['excerpt'] ) ) {
 				return new WP_Error( 'invalid_source_excerpt', 'The source-backed post excerpt must be a string.' );
 			}
@@ -1691,7 +1697,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/** @param array<string,mixed> $overlay */
-	public static function apply_route_title_overlay( array &$state, array $overlay ) {
+	public static function apply_internal_link_overlay( array &$state, array $overlay ) {
 		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
 			return array(
 				'status' => (string) ( $overlay['status'] ?? 'not_requested' ),
@@ -1703,7 +1709,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$target  = (string) ( $write['target_path'] ?? '' );
 			$content = (string) ( $write['content'] ?? '' );
 			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
-				return new WP_Error( 'static_site_importer_route_document_title_materialization_invalid' );
+				return new WP_Error( 'static_site_importer_internal_link_materialization_invalid' );
 			}
 			$path = $state['theme_dir'] . '/' . $target;
 			self::journal_file( $state, $path );
@@ -1717,55 +1723,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'data'     => $content,
 					),
 					'payload_hash'            => hash( 'sha256', $content ),
-					'reconciliation_identity' => hash( 'sha256', "route-document-titles\n" . $target ),
-				)
-			);
-			if ( is_wp_error( $result ) ) {
-				return $result;
-			}
-			$reports[] = $result;
-			foreach ( $state['applied']['files'] as $index => $file ) {
-				if ( ( $file['target_path'] ?? null ) === $target ) {
-					$state['applied']['files'][ $index ] = $result;
-					continue 2;
-				}
-			}
-			$state['applied']['files'][] = $result;
-		}
-		return array(
-			'status' => 'completed',
-			'files'  => $reports,
-		);
-	}
-
-	/** @param array<string,mixed> $overlay */
-	public static function apply_route_head_metadata_overlay( array &$state, array $overlay ) {
-		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
-			return array(
-				'status' => (string) ( $overlay['status'] ?? 'not_requested' ),
-				'files'  => array(),
-			);
-		}
-		$reports = array();
-		foreach ( $overlay['writes'] ?? array() as $write ) {
-			$target  = (string) ( $write['target_path'] ?? '' );
-			$content = (string) ( $write['content'] ?? '' );
-			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
-				return new WP_Error( 'static_site_importer_route_head_metadata_materialization_invalid' );
-			}
-			$path = $state['theme_dir'] . '/' . $target;
-			self::journal_file( $state, $path );
-			$result = self::write_file(
-				$state['theme_dir'],
-				array(
-					'target_path'             => $target,
-					'source_path'             => (string) ( $write['source_path'] ?? $target ),
-					'payload'                 => array(
-						'encoding' => 'utf8',
-						'data'     => $content,
-					),
-					'payload_hash'            => hash( 'sha256', $content ),
-					'reconciliation_identity' => hash( 'sha256', "route-head-metadata\n" . $target ),
+					'reconciliation_identity' => hash( 'sha256', "internal-links\n" . $target ),
 				)
 			);
 			if ( is_wp_error( $result ) ) {
@@ -2464,6 +2422,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			} catch ( Throwable $error ) {
 				self::record_rollback_failure( $state, 'taxonomy_membership', (string) $membership['post_id'], $error );
+			}
+		}
+		foreach ( $state['rollback']['route_seo'] ?? array() as $post_id => $fields ) {
+			try {
+				foreach ( $fields as $key => $values ) {
+					delete_post_meta( (int) $post_id, $key );
+					foreach ( $values as $value ) {
+						add_post_meta( (int) $post_id, $key, wp_slash( $value ) );
+					}
+					if ( get_post_meta( (int) $post_id, $key, false ) !== $values ) {
+						// ssi-error-class: operational
+						throw new RuntimeException( 'materialization_rollback_route_seo_restore_failed' );
+					}
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'route_seo', (string) $post_id, $error );
 			}
 		}
 		foreach ( $state['rollback']['taxonomy_post_meta'] ?? array() as $post_id => $before ) {

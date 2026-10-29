@@ -1,6 +1,6 @@
 <?php
 /**
- * Persists per-page descriptive head metadata and emits it on wp_head.
+ * Materializes route descriptions into native owners; projects native head data.
  *
  * @package StaticSiteImporter
  */
@@ -24,27 +24,16 @@ if ( ! class_exists( WordPressSitePlanResolver::class ) && is_readable( dirname(
 
 final class Static_Site_Importer_Route_Head_Metadata {
 	private const PROVENANCE_META_KEY = '_static_site_importer_provenance';
-	private const PROVENANCE_SCHEMA   = 'static-site-importer/page-provenance/v1';
 	private const TEXT_LIMIT          = 1000;
 	private const URL_LIMIT           = 2048;
 
 	/** @var array<string,true> */
-	private const TEXT_NAMES = array(
-		'description'                => true,
-		'apple-mobile-web-app-title' => true,
-	);
-
-	/** @var array<string,true> */
 	private const URL_KEYS = array(
-		'og:audio'            => true,
 		'og:image'            => true,
 		'og:image:secure_url' => true,
 		'og:image:url'        => true,
-		'og:url'              => true,
-		'og:video'            => true,
 		'twitter:image'       => true,
 		'twitter:image:src'   => true,
-		'twitter:url'         => true,
 	);
 
 	public static function register(): void {
@@ -59,69 +48,93 @@ final class Static_Site_Importer_Route_Head_Metadata {
 			return;
 		}
 
-		$provenance = json_decode( (string) get_post_meta( get_queried_object_id(), self::PROVENANCE_META_KEY, true ), true );
-		if ( ! is_array( $provenance ) || self::PROVENANCE_SCHEMA !== ( $provenance['schema'] ?? null ) || ! is_array( $provenance['head_metadata'] ?? null ) ) {
+		$post_id = get_queried_object_id();
+		if ( '' === (string) get_post_meta( $post_id, self::PROVENANCE_META_KEY, true ) ) {
 			return;
 		}
-
 		$GLOBALS['static_site_importer_head_metadata_emitted'] = true;
-		self::emit_tags( $provenance['head_metadata'] );
+		$tags = array(
+			array(
+				'attr'    => 'name',
+				'key'     => 'description',
+				'content' => get_post_field( 'post_excerpt', $post_id ),
+			),
+			array(
+				'attr'    => 'property',
+				'key'     => 'og:title',
+				'content' => get_the_title( $post_id ),
+			),
+			array(
+				'attr'    => 'property',
+				'key'     => 'og:description',
+				'content' => get_post_field( 'post_excerpt', $post_id ),
+			),
+			array(
+				'attr'    => 'property',
+				'key'     => 'og:url',
+				'content' => get_permalink( $post_id ),
+				'kind'    => 'url',
+			),
+			array(
+				'attr'    => 'property',
+				'key'     => 'og:image',
+				'content' => (string) get_the_post_thumbnail_url( $post_id, 'full' ),
+				'kind'    => 'url',
+			),
+		);
+		self::emit_tags( $tags );
+	}
+
+	/** @param array<string,mixed> $page */
+	public static function description_from_page( array $page ): string {
+		$tags = self::from_page( $page );
+		foreach ( array( 'description', 'og:description', 'twitter:description' ) as $key ) {
+			foreach ( $tags as $tag ) {
+				if ( $key === $tag['key'] ) {
+					return $tag['content'];
+				}
+			}
+		}
+		return '';
 	}
 
 	/**
-	 * Materialize a portable wp_head emitter into the generated theme.
+	 * Write registered platform SEO owners, alongside the native post fields.
+	 * Jetpack consumes the featured image itself; never copy a source image URL
+	 * into an SEO override. Unknown plugin storage is not guessed.
 	 *
-	 * @param array<string,mixed> $resolved_plan
-	 * @param array<string,mixed> $bootstrap_overlay
-	 * @return array<string,mixed>
+	 * @param array<string,mixed> $state
+	 * @return true|WP_Error
 	 */
-	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array() ): array {
-		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
-		$marker    = '/* Static Site Importer authored route head metadata. */';
-		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$bootstrap .= "\n{$marker}\n" . <<<'PHP'
-add_action( 'wp_head', static function (): void {
-	if ( ! empty( $GLOBALS['static_site_importer_head_metadata_emitted'] ) ) {
-		return;
-	}
-	if ( defined( 'WPSEO_VERSION' ) || defined( 'RANK_MATH_VERSION' ) || defined( 'THE_SEO_FRAMEWORK_VERSION' ) || defined( 'AIOSEO_VERSION' ) || ( function_exists( 'has_action' ) && has_action( 'wp_head', 'jetpack_og_tags' ) ) ) {
-		return;
-	}
-	if ( ! is_singular() && ! is_front_page() ) {
-		return;
-	}
-	$provenance = json_decode( (string) get_post_meta( get_queried_object_id(), '_static_site_importer_provenance', true ), true );
-	if ( ! is_array( $provenance ) || 'static-site-importer/page-provenance/v1' !== ( $provenance['schema'] ?? null ) || ! is_array( $provenance['head_metadata'] ?? null ) ) {
-		return;
-	}
-	$GLOBALS['static_site_importer_head_metadata_emitted'] = true;
-	foreach ( $provenance['head_metadata'] as $tag ) {
-		if ( ! is_array( $tag ) || ! is_string( $tag['attr'] ?? null ) || ! is_string( $tag['key'] ?? null ) || ! is_string( $tag['content'] ?? null ) ) {
-			continue;
+	public static function materialize_platform_fields( array &$state ) {
+		if ( ! function_exists( 'get_registered_meta_keys' ) ) {
+			return true;
 		}
-		$attr    = $tag['attr'];
-		$key     = $tag['key'];
-		$content = 'url' === ( $tag['kind'] ?? 'text' ) ? esc_url( $tag['content'] ) : $tag['content'];
-		if ( '' === $content || ! in_array( $attr, array( 'name', 'property' ), true ) ) {
-			continue;
+		foreach ( $state['ordered_pages'] ?? array() as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
+			$id = (int) ( $state['source_ids'][ $page['source_path'] ] ?? 0 );
+			if ( $id <= 0 ) {
+				continue;
+			}
+			$registered  = array_merge( get_registered_meta_keys( 'post' ), get_registered_meta_keys( 'post', (string) get_post_type( $id ) ) );
+			$description = self::description_from_page( $page );
+			$values      = array(
+				'jetpack_seo_html_title'   => Static_Site_Importer_Route_Document_Metadata::title_from_page( $page ),
+				'advanced_seo_description' => '' !== $description ? $description : (string) ( $page['metadata']['excerpt'] ?? '' ),
+			);
+			foreach ( $values as $key => $value ) {
+				if ( ! isset( $registered[ $key ] ) || '' === $value ) {
+					continue;
+				}
+				$state['rollback']['route_seo'][ $id ][ $key ] = get_post_meta( $id, $key, false );
+				if ( ! Static_Site_Importer_Site_Plan_Persistence::write_post_meta( $id, $key, $value ) ) {
+					return new WP_Error( 'route_seo_write_failed', 'The registered SEO owner rejected authored metadata.' );
+				}
+			}
 		}
-		echo '<meta ' . esc_attr( $attr ) . '="' . esc_attr( $key ) . '" content="' . esc_attr( $content ) . '" />' . "\n";
-	}
-}, 1 );
-PHP;
-		}
-
-		return array(
-			'status' => 'materialized',
-			'writes' => array(
-				array(
-					'target_path' => 'functions.php',
-					'content'     => $bootstrap,
-					'encoding'    => 'utf8',
-					'source_path' => 'static-site-importer/route-head-metadata',
-				),
-			),
-		);
+		return true;
 	}
 
 	/**
@@ -208,26 +221,6 @@ PHP;
 			|| ( function_exists( 'has_action' ) && (bool) has_action( 'wp_head', 'jetpack_og_tags' ) );
 	}
 
-	/** @param array<string,mixed> $resolved_plan @param array<string,mixed> $overlay */
-	private static function bootstrap_content( array $resolved_plan, array $overlay ): string {
-		foreach ( array_reverse( $overlay['writes'] ?? array() ) as $write ) {
-			if ( is_array( $write ) && 'functions.php' === ( $write['target_path'] ?? null ) && is_string( $write['content'] ?? null ) ) {
-				return $write['content'];
-			}
-		}
-		foreach ( $resolved_plan['writes'] ?? array() as $write ) {
-			if ( ! is_array( $write ) || 'functions.php' !== ( $write['target_path'] ?? null ) || ! is_array( $write['payload'] ?? null ) ) {
-				continue;
-			}
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared plan payload encoding.
-			$content = 'base64' === ( $write['payload']['encoding'] ?? 'utf8' ) ? base64_decode( (string) ( $write['payload']['data'] ?? '' ), true ) : $write['payload']['data'] ?? null;
-			if ( is_string( $content ) && str_starts_with( ltrim( $content ), '<?php' ) ) {
-				return $content;
-			}
-		}
-
-		return "<?php\n";
-	}
 
 	/**
 	 * @param array<string,mixed> $row
@@ -269,17 +262,11 @@ PHP;
 		if ( '' === $attr || '' === $key ) {
 			return null;
 		}
-		if ( 'name' === $attr ) {
-			if ( isset( self::TEXT_NAMES[ $key ] ) ) {
-				return 'text';
-			}
-			if ( str_starts_with( $key, 'twitter:' ) ) {
-				return isset( self::URL_KEYS[ $key ] ) ? 'url' : 'text';
-			}
-			return null;
+		if ( isset( self::URL_KEYS[ $key ] ) ) {
+			return 'url';
 		}
-		if ( 'property' === $attr && ( str_starts_with( $key, 'og:' ) || str_starts_with( $key, 'twitter:' ) ) ) {
-			return isset( self::URL_KEYS[ $key ] ) ? 'url' : 'text';
+		if ( in_array( $key, array( 'description', 'og:description', 'twitter:description' ), true ) ) {
+			return 'text';
 		}
 
 		return null;
@@ -320,14 +307,10 @@ PHP;
 	 * @param array<string,mixed> $resolved_plan
 	 */
 	private static function resolve_reference( string $content, array $page, array $resolved_plan ): string {
-		if ( self::is_absolute_http_url( $content ) ) {
-			return $content;
-		}
-
 		$tokens    = is_array( $resolved_plan['reference_tokens'] ?? null ) ? $resolved_plan['reference_tokens'] : array();
 		$theme_uri = is_string( $resolved_plan['resolution']['theme_uri'] ?? null ) ? $resolved_plan['resolution']['theme_uri'] : '';
 		if ( array() === $tokens || '' === $theme_uri || ! class_exists( AssetReferenceCanonicalizer::class ) || ! class_exists( WordPressSitePlanResolver::class ) ) {
-			return '';
+			return self::absolute_http_url( $content );
 		}
 
 		$prefix = class_exists( WordPressSitePlan::class ) ? WordPressSitePlan::TOKEN_PREFIX : '{{wordpress-site-plan:asset:';
@@ -358,7 +341,7 @@ PHP;
 			unset( $error );
 		}
 
-		return '';
+		return self::absolute_http_url( $content );
 	}
 
 	/** @return array<int,string> */
@@ -417,7 +400,7 @@ PHP;
 
 	/** @param array<string,mixed> $diagnostic */
 	private static function persisted_diagnostic( array $diagnostic ): array {
-		$diagnostic['message']       = 'Named head metadata was persisted per page as post meta and is emitted on wp_head.';
+		$diagnostic['message']       = 'Route title, description and social image are materialized into native WordPress fields; other source social tags are not replayed.';
 		$diagnostic['constraints']   = 'report_only';
 		$diagnostic['severity']      = 'info';
 		$diagnostic['code']          = 'named_head_metadata_persisted';

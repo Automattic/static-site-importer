@@ -86,11 +86,21 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return $retained;
 		}
-		$site_identity               = Static_Site_Importer_Site_Identity::resolve( array_merge( $args, array(
-			'artifact'       => $artifact,
-			'payload_reader' => self::payload_reader( $workspace ),
-		) ) );
-		$artifact['block_namespace'] = $site_identity['block_namespace'];
+		$site_identity                         = Static_Site_Importer_Site_Identity::resolve(
+			array_merge(
+				$args,
+				array(
+					'artifact'       => $artifact,
+					'payload_reader' => self::payload_reader( $workspace ),
+				)
+			)
+		);
+		$args['native_site_identity_evidence'] = Static_Site_Importer_Site_Identity::evidence_from_website_artifact(
+			$artifact,
+			self::payload_reader( $workspace ),
+			(string) ( $args['site_tagline'] ?? '' )
+		);
+		$artifact['block_namespace']           = $site_identity['block_namespace'];
 		unset( $args['_static_site_importer_payload_reader'] );
 		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                              = $policy['artifact'];
@@ -329,10 +339,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( is_wp_error( $valid ) ) {
 					return $valid;
 				}
-				$checkpoint = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
-					'page_id' => $page_id,
-					'receipt' => $receipt[ $page_id ],
-				) );
+				$checkpoint = self::publish_checkpoint(
+					$workspace,
+					$run,
+					'receipt',
+					self::page_file( 'receipts', $page_id ),
+					array(
+						'page_id' => $page_id,
+						'receipt' => $receipt[ $page_id ],
+					)
+				);
 				if ( is_wp_error( $checkpoint ) ) {
 					return $checkpoint;
 				}
@@ -518,10 +534,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 							return self::fail( $workspace, $run, 'prepare_pages', $validated, array( $page_id ) );
 						}
 						$relative = self::page_file( 'page-plans', $page_id );
-						$ref      = self::publish_checkpoint( $workspace, $run, 'page_plan', $relative, array(
-							'page_id' => $page_id,
-							'plan'    => $page_plan,
-						) );
+						$ref      = self::publish_checkpoint(
+							$workspace,
+							$run,
+							'page_plan',
+							$relative,
+							array(
+								'page_id' => $page_id,
+								'plan'    => $page_plan,
+							)
+						);
 						if ( is_wp_error( $ref ) ) {
 							return self::fail( $workspace, $run, 'prepare_pages', $ref, array( $page_id ) );
 						}
@@ -660,10 +682,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						$run['work']['compile_batches'] = (int) $run['work']['compile_batches'] + 1;
 						foreach ( $batch_ids as $page_id ) {
 							$receipt = $batch[ $page_id ];
-							$ref     = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
-								'page_id' => $page_id,
-								'receipt' => $receipt,
-							) );
+							$ref     = self::publish_checkpoint(
+								$workspace,
+								$run,
+								'receipt',
+								self::page_file( 'receipts', $page_id ),
+								array(
+									'page_id' => $page_id,
+									'receipt' => $receipt,
+								)
+							);
 							if ( is_wp_error( $ref ) ) {
 								return self::fail( $workspace, $run, 'compile_pages', $ref, $batch_ids );
 							}
@@ -746,10 +774,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::$checkpoint_read_cache = array();
 				gc_collect_cycles();
 				gc_mem_caches();
-				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
-					'result'        => $composed,
-					'terminal_work' => $metrics,
-				) );
+				$ref = self::publish_checkpoint(
+					$workspace,
+					$run,
+					'composed',
+					'composed-result.json',
+					array(
+						'result'        => $composed,
+						'terminal_work' => $metrics,
+					)
+				);
 				if ( is_wp_error( $ref ) ) {
 					return self::fail( $workspace, $run, 'compose', $ref, $run['page_ids'] );
 				}
@@ -1744,7 +1778,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'] );
+		unset( $args['native_site_identity_evidence'], $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
