@@ -1,4 +1,4 @@
-# Capture resource records → WordPress attachments and theme-owned fonts
+# Capture resource records → WordPress attachments and verified theme files
 
 Refs Automattic/data-liberation-agent#1035 (keep open).
 
@@ -21,8 +21,9 @@ documents and video verify by byte signature (WOFF/WOFF2/sfnt, PDF/ZIP/OOXML/
 gzip/7z/RTF, MP4/WebM/Theora) against the declared content type. Missing,
 conflicting or unverified originals fail with `image_resource_unresolved`; they
 never fall back to an optimizer response or placeholder. The compiler must
-declare each recorded resource its capture-owned destination — theme files for
-fonts, `media_library` for every other kind. An unsupported ownership
+declare recorded image destinations according to their consumers: images with a
+block consumer use `media_library`; head-only and CSS-only images stay `theme`.
+Fonts stay theme-owned; documents and video remain attachment-bound. An unsupported ownership
 declaration fails explicitly rather than claiming a successful destination, and
 theme-owned records verify their exact declared write bytes immediately before
 the theme package materializes.
@@ -38,7 +39,7 @@ For admitted media assets:
 - attachment meta `_static_site_importer_asset_record` retains original facts,
   aliases and categorized references; `completed.image_assets` in the public
   materialization receipt adds `destination.attachment_id` and `destination.url`
-  for the attachment-backed kinds (theme-owned fonts appear only as theme files);
+  for attachment-backed records (theme-owned fonts and images appear only as theme files);
 - captured inline srcset descriptors for the same resource are removed before
   compile, producing native image blocks rather than raw responsive-media;
   independently identified candidates are not collapsed;
@@ -82,12 +83,12 @@ WebM video with poster, all linked from content and navigation. Refresh it with
 WordPress: one attachment per document, download and video with every content,
 navigation and CSS reference rewritten, four verified theme-owned font files
 behind theme.json fontFace, and an explicitly failed import for a lying digest.
+The standalone record test also exercises head-only recorded image theme writes,
+block-consumed image attachments, and digest/MIME rejection through the real
+materialization helpers with a stubbed WordPress upload/database boundary.
 
 ## Follow-up slices
 
-- Blocks Engine destination ownership for CSS-only and head-only records. Its
-  current plan validator requires destinations to follow block consumers; SSI
-  must not fabricate a block consumer or mutate an approved plan to bypass it.
 - Record-owned picture/art-direction conversion and broader Cover/Media & Text
   fixtures; the existing native resolver bindings remain in use.
 - Document and video WordPress metadata enrichment (duration, dimensions),
