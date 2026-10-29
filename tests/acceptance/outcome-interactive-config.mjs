@@ -16,5 +16,5 @@ export const interactiveConfig = {
     disclosure: { trigger: '#fixture-disclosure summary', target: '#fixture-disclosure', attribute: 'open', expected: '' },
     information: { trigger: '#fixture-nav a' },
   },
-  forms: { contact: { selector: '#fixture-form', provider: 'fixture-local', fields: { Email: 'reader@example.test' }, successSelector: '#fixture-success' } },
+  forms: { contact: { selector: '#fixture-form', provider: 'fixture-local', fields: { Email: 'reader@example.test' }, successSelector: '#fixture-success', absentControls: ['input[type="file"]', 'select[multiple]', 'input[type="color"]'] } },
 };

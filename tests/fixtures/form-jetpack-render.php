@@ -199,13 +199,18 @@ function ssi_role_box_render_field( array $block ): string {
 			$select_class = preg_replace( "/class=['\"]([^'\"]*)['\"]/", 'class="contact-form__select-wrapper $1"', $field_class );
 			$html        .= $render_label( 'select', $id ) . '<div ' . $select_class . " style='" . ssi_role_box_esc( $input_style ) . "'>\t<span class='contact-form__select-element-wrapper'><select name='" . ssi_role_box_esc( $id ) . "' id='" . ssi_role_box_esc( $id ) . "'>\n\t\t<option value=''>Select an option</option>\n";
 			foreach ( (array) ( $attrs['options'] ?? array() ) as $option ) {
-				$html .= "\t\t<option value='" . ssi_role_box_esc( (string) $option ) . "'>" . ssi_role_box_esc( (string) $option ) . "</option>\n";
+				// render_select_field() marks the field's default option selected;
+				// get_field_value() supplies the default for logged-out visitors.
+				$defaulted = isset( $attrs['defaultValue'] ) && (string) $attrs['defaultValue'] === (string) $option ? " selected='selected'" : '';
+				$html     .= "\t\t<option value='" . ssi_role_box_esc( (string) $option ) . "'" . $defaulted . ">" . ssi_role_box_esc( (string) $option ) . "</option>\n";
 			}
 			$html .= "\t</select><span class='jetpack-field-dropdown__icon'></span></span>\n</div>\n" . ssi_role_box_error_div( $id, 'select' );
 			break;
 		case 'checkbox':
 			$checkbox_label = 'grunion-field-label checkbox' . ( '' !== $option_cls ? ' ' . $option_cls : '' );
-			$html          .= "<div class='contact-form__checkbox-wrap' style='' ><input id='" . ssi_role_box_esc( $id ) . "' type='checkbox' name='" . ssi_role_box_esc( $id ) . "' value='Yes' " . $field_class . ( $required ? "required aria-required='true'" : '' ) . "/> \n<label for='" . ssi_role_box_esc( $id ) . "' class='" . ssi_role_box_esc( $checkbox_label ) . "' style=''>" . $label . $required_mark() . "</label>\n<div class='clear-form'></div>\n</div>" . ssi_role_box_error_div( $id, 'checkbox' );
+			// render_checkbox_field() ticks the box when the field has a default.
+			$defaulted = ! empty( $attrs['defaultValue'] ) ? " checked='checked'" : '';
+			$html      .= "<div class='contact-form__checkbox-wrap' style='' ><input id='" . ssi_role_box_esc( $id ) . "' type='checkbox' name='" . ssi_role_box_esc( $id ) . "' value='Yes' " . $field_class . ( $required ? "required aria-required='true'" : '' ) . $defaulted . "/> \n<label for='" . ssi_role_box_esc( $id ) . "' class='" . ssi_role_box_esc( $checkbox_label ) . "' style=''>" . $label . $required_mark() . "</label>\n<div class='clear-form'></div>\n</div>" . ssi_role_box_error_div( $id, 'checkbox' );
 			break;
 		case 'radio':
 			$legend = $label_shown ? '<legend class="' . ssi_role_box_esc( 'grunion-field-label' . ( '' !== $label_cls ? ' ' . $label_cls : '' ) ) . '"><span class="grunion-label-text">' . $label . '</span>' . ( $required ? '<span class="grunion-label-required">' . $required_tx . '</span>' : '' ) . "</legend>\n" : '';

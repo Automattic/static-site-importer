@@ -412,6 +412,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			);
 		}
 		$state->mapped_types[] = $field['name'];
+		foreach ( self::control_indices( $block ) as $control_index ) {
+			$state->record_mapped( $control_index, $field['name'] );
+		}
 		return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 	}
 

@@ -125,10 +125,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) ) {
 				continue;
 			}
-			$first    = $controls[ $members[0] ] ?? null;
-			$name     = is_array( $first ) ? trim( (string) ( $first['name'] ?? '' ) ) : '';
-			$options  = array();
-			$required = false;
+			$first          = $controls[ $members[0] ] ?? null;
+			$name           = is_array( $first ) ? trim( (string) ( $first['name'] ?? '' ) ) : '';
+			$options        = array();
+			$checked_labels = array();
+			$required       = false;
 			foreach ( $members as $control_index ) {
 				$control = $controls[ $control_index ] ?? null;
 				if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || trim( (string) ( $control['name'] ?? '' ) ) !== $name ) {
@@ -139,7 +140,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 					$unambiguous_shape = false;
 					break;
 				}
-				$option    = self::control_text( array( 'label' => $control['label'] ) );
+				$option = self::control_text( array( 'label' => $control['label'] ) );
+				if ( ! empty( $control['checked'] ) ) {
+					$checked_labels[] = $option;
+				}
 				$options[] = $option;
 				$required  = $required || ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) );
 			}
@@ -151,6 +155,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$group_control['text']    = $legends[ $fieldset['id'] ];
 			$group_control['label']   = $legends[ $fieldset['id'] ];
 			$group_control['options'] = $options;
+			// The one choice the source shows selected is the group's default; more
+			// than one is not a radio state, so it is not carried as one.
+			if ( 1 === count( $checked_labels ) ) {
+				$group_control['checked_option'] = $checked_labels[0];
+			}
 			if ( $required ) {
 				$group_control['required'] = true;
 			}
@@ -246,6 +255,38 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$options = self::option_labels( $control, 'select' === $lookup );
 			if ( ! empty( $options ) ) {
 				$attrs['options'] = $options;
+			}
+		}
+		// The choice the source shows pre-selected is the field's default. Jetpack
+		// carries it on the `defaultValue` block attribute and renders it logged
+		// out (the field's `default` shortcode attribute), so a captured default
+		// maps onto the provider field instead of silently resetting to empty.
+		if ( 'select' === $lookup ) {
+			$default = self::select_default_label( $control );
+			if ( '' !== $default ) {
+				$attrs['defaultValue'] = $default;
+			}
+		}
+		if ( 'radio' === $lookup ) {
+			$checked_option = isset( $control['checked_option'] ) && is_scalar( $control['checked_option'] ) ? trim( (string) $control['checked_option'] ) : '';
+			if ( '' !== $checked_option && in_array( $checked_option, (array) ( $attrs['options'] ?? array() ), true ) ) {
+				$attrs['defaultValue'] = $checked_option;
+			}
+		}
+		if ( 'checkbox' === $lookup && ! empty( $attrs['options'] ) ) {
+			// A multi-checkbox field's rendered options can carry checked states,
+			// but the plain group path has no single-value default attribute to
+			// hold them; report the dropped default instead of shipping it silently.
+			foreach ( (array) ( $control['options'] ?? array() ) as $option ) {
+				if ( is_array( $option ) && ! empty( $option['selected'] ) && empty( $option['placeholder'] ) ) {
+					$losses[] = array(
+						'dimension'         => 'control',
+						'reason_code'       => 'unsupported_control_attribute',
+						'attribute'         => 'default_option',
+						'control_type_hash' => hash( 'sha256', $type ),
+					);
+					break;
+				}
 			}
 		}
 
@@ -701,6 +742,37 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Read the one option the source select shows pre-selected, as Jetpack's
+	 * `defaultValue` label.
+	 *
+	 * A flagged prompt option is never a default: it is the field's unselected
+	 * state. More than one selected option is not representable on a single
+	 * select; the caller reports that through the runtime choice token instead
+	 * of shipping a partial default.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	private static function select_default_label( array $control ): string {
+		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
+		$default = '';
+		foreach ( array_values( $options ) as $option ) {
+			if ( ! is_array( $option ) || empty( $option['selected'] ) || ! empty( $option['placeholder'] ) ) {
+				continue;
+			}
+			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+			if ( '' === $label && isset( $option['value'] ) && is_scalar( $option['value'] ) ) {
+				$label = trim( (string) $option['value'] );
+			}
+			if ( '' === $label || '' !== $default ) {
+				return '';
+			}
+			$default = substr( $label, 0, 200 );
+		}
+		return $default;
 	}
 
 	/**
