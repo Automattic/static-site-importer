@@ -182,6 +182,9 @@ namespace {
 				$this->data['manage_stock'] = $value; }
 			public function set_stock_quantity( $value ) {
 				$this->data['stock_quantity'] = $value; }
+			public function update_meta_data( $key, $value ) {
+				$this->data['meta'][ $key ] = $value;
+			}
 			public function save() {
 				$id               = $GLOBALS['ssi_next_product_id']++;
 				$this->data['id'] = $id;

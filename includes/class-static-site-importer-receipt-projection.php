@@ -126,6 +126,8 @@ class Static_Site_Importer_Receipt_Projection {
 				max( 0, (int) $args['captured_interaction_state_count'] )
 			);
 		}
+		require_once __DIR__ . '/class-static-site-importer-woo-storefront-readiness.php';
+		$storefront                = Static_Site_Importer_Woo_Storefront_Readiness::project( $lifecycle, $entities, $receipt );
 		$report                    = Static_Site_Importer_Import_Report::from_array(
 			array(
 				'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
@@ -140,6 +142,7 @@ class Static_Site_Importer_Receipt_Projection {
 				'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
 				'theme_materialization'            => $receipt['theme_materialization'] ?? array(),
 				'diagnostics'                      => $diagnostics,
+				'commerce'                         => empty( $storefront ) ? array() : array( 'storefront' => $storefront ),
 				'entity_lifecycle'                 => array(
 					'status'       => $lifecycle['status'] ?? 'not_requested',
 					'entities'     => $entities,
