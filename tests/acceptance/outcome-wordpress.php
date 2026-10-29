@@ -42,7 +42,8 @@ file_put_contents( $theme . '/functions.php', '<?php add_action("wp_head", funct
 file_put_contents( $theme . '/functions.php', ' add_action("admin_post_nopriv_ssi_outcome_form", function() { echo \'<p id="fixture-success">Submission received</p>\'; exit; });', FILE_APPEND );
 echo wp_json_encode(
 	array(
-		'status' => 'imported',
-		'theme'  => $theme,
+		'status'      => 'imported',
+		'source_html' => $artifact['files'][0]['content'],
+		'theme'       => $theme,
 	)
 );
