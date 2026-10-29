@@ -905,8 +905,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		} else {
 			$parent = 0;
 		}
-		$user_id        = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-		$post           = array(
+		$user_id     = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$post        = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
 			'post_author'  => $page['materialized_post_author'] ?? ( $user_id > 0 ? $user_id : 1 ),
 			'post_type'    => $post_type,
@@ -916,7 +916,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
-		$description    = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
+		$description = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
 		if ( '' !== $description ) {
 			$post['post_excerpt'] = wp_slash( $description );
 		} elseif ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {

@@ -139,7 +139,7 @@ foreach ( $pages as $page ) {
 	$assert( 'Authored description for ' . $page->post_title === $page->post_excerpt, 'Description belongs to excerpt.' );
 	$image = get_post_thumbnail_id( $id );
 	$assert( $image > 0 && 'attachment' === get_post_type( $image ), 'Social image belongs to a Media Library attachment.' );
-	$assert( $page->post_title . ' | Garden' === get_post_meta( $id, 'jetpack_seo_html_title', true ), 'The branded document title belongs to the registered SEO title; post_title stays the route title.' );
+	$assert( get_post_meta( $id, 'jetpack_seo_html_title', true ) === sprintf( '%s | Garden', $page->post_title ), 'The branded document title belongs to the registered SEO title; post_title stays the route title.' );
 	$assert( get_post_meta( $id, 'advanced_seo_description', true ) === $page->post_excerpt, 'Registered platform description is written.' );
 	$snapshot['pages'][] = array(
 		'id'              => $id,
