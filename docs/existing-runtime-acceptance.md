@@ -171,8 +171,9 @@ V2 replaces the v1 acceptance predicate: missing outcome evidence now prevents
 acceptance. One hash-bound `artifacts/outcomes.json` report uses
 `static-site-importer/outcome-checks/v1`, with `pass`, `fail` or `unsupported`
 and evidence for `link_graph`, `block_validity`, `head_singletons`,
-`control_inventory`, and `forms`. The three-check-only predicate is replaced:
-retained reports without the two new checks cannot pass.
+`control_inventory`, `forms`, `readability`, and `full_document`. The previous
+five-check predicate is replaced: retained reports without document outcomes
+cannot pass.
 Failures fail the aggregate; unsupported required checks leave it pending.
 The portable consumer rechecks the retained report and import/origin/route binding.
 
@@ -225,6 +226,33 @@ Run only against a disposable import: these probes submit test data. Recipient/
 provider declarations describe recovered routing, not proof of email delivery.
 See `tests/acceptance/outcome-interactive-config.mjs` for a complete neutral example.
 
+### Readability and full-document evidence
+
+Declare `outcomes.colourSchemes` as a nonempty array of `light` and/or `dark`.
+At every declared width and scheme, a fresh logged-out page measures computed
+foreground/background colours for each visible text node and control. Evidence
+includes selector, text, effective colours, ratio and WCAG AA threshold (4.5:1,
+or 3:1 for large text). Alpha colours are composited. Uniform, decoded repeating
+background images are measurable, including transparent pixels; nonuniform images,
+unsafe canvas reads, unsupported geometry, generated content, filters, blending,
+opacity and unmeasurable foregrounds are explicitly unsupported, never assumed
+white or passed. Hidden text is excluded. Unsupported nodes leave acceptance pending;
+a measured failure still fails even when other nodes are unsupported.
+
+Supply `outcomes.documents[route]` with retained source `html`, `sourceOrigin`,
+`sourceContent` and `candidateContent` unique selectors identifying the post-content
+boundaries. The full-document check compares ordered chrome before and after those
+boundaries: text, destinations, images and semantic/control elements. It includes
+hidden chrome (including admin-bar remnants); it ignores script/style plumbing and
+neutral wrappers, not banner text or widgets. Local source URLs normalize to route
+paths. Head singletons remain owned by the existing head check.
+
+Intentional differences require `documents[route].decisions` rows with a nonempty
+`reason` and exact `expected` and `actual` chrome snapshots (the same objects retained
+in evidence). A decision cannot wildcard or ignore subsequent additions. Missing
+source evidence or ambiguous boundaries is unsupported. The real fixture records
+the exact WordPress accessibility skip-link addition, not a blanket theme waiver.
+
 The shipped PHP collector enumerates all five post types across statuses and
 effective file-backed templates/parts. It calls real `parse_blocks()` and accounts
 for balanced block comments separately because the core parser tolerates malformed
@@ -241,14 +269,14 @@ then calls the public acceptance runner and portable consumer. Supply
 `STATIC_SITE_IMPORTER_WP_CLI`, `SSI_OUTCOME_ORIGIN` (the served HTTP origin), and
 `SSI_OUTCOME_DISPOSABLE=1`. It demonstrates a passing outcome baseline and failing
 link, malformed navigation delimiter, duplicate canonical, dead trigger, wrong
-navigation destination, and handlerless form regressions. Its disclosure and form
+navigation destination, handlerless form, low-contrast text, white-on-white control,
+and injected footer regressions. Its disclosure and form
 are imported from source HTML; the fixture-owned local provider handles submissions.
 It deliberately does not fabricate DLA/editor evidence: unrelated gates stay pending.
 
 Remaining slices: fixed real-source corpus and release matrix; CSS links and
 shared-chrome anchors; installed-editor validation for every document (the existing
-Gate C still validates mapped route posts); readability/full-document
-checks; theme-switch independence. These are outside this check set and
+Gate C still validates mapped route posts); theme-switch independence. These are outside this check set and
 are not certified by its pass result. No legacy comparator or editor save gate is
 retired: the new outcome set replaces only the former outcome-free aggregate
 acceptance predicate.
