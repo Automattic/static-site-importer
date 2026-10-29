@@ -276,6 +276,7 @@
           "tests/smoke-managed-classic-theme-materialization.php",
           "tests/smoke-materialization-coverage.php",
           "tests/smoke-image-asset-records.php",
+          "tests/smoke-resource-asset-records.php",
           "tests/smoke-missing-author-stylesheet-diagnostics.php",
           "tests/smoke-multilingual-contract.php",
           "tests/smoke-navigation-entity-materializer.php",

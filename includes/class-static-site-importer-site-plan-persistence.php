@@ -140,6 +140,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$state['applied']['attachments'] = $media_state['applied']['attachments'] ?? array();
 		}
+		require_once __DIR__ . '/class-static-site-importer-media-library-materializer.php';
+		// Theme-owned capture records (fonts) are verified against the exact
+		// declared write bytes before any theme file materializes.
+		$record_writes = Static_Site_Importer_Media_Library_Materializer::verify_record_theme_writes( $state );
+		if ( is_wp_error( $record_writes ) ) {
+			return self::failed_receipt_from_error( $state, $record_writes );
+		}
 		// Theme package writes participate in the normal journal and are installed
 		// before editor admission, including page-ready imports before activation.
 		$runtime_payload = $state['args']['theme_runtime_payload'] ?? null;

@@ -51,6 +51,13 @@ final class Static_Site_Importer_Content_Policy {
 		'wav',
 		'pdf',
 		'docx',
+		'xlsx',
+		'pptx',
+		'zip',
+		'gz',
+		'tgz',
+		'7z',
+		'rtf',
 	);
 
 	/** Static formats whose source bytes are inspected for server-side code. */
@@ -90,7 +97,13 @@ final class Static_Site_Importer_Content_Policy {
 		'audio/ogg'                 => 'ogg',
 		'audio/wav'                 => 'wav',
 		'application/pdf'           => 'pdf',
+		'application/zip'           => 'zip',
+		'application/gzip'          => 'gz',
+		'application/x-7z-compressed' => '7z',
+		'application/rtf'           => 'rtf',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+		'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
 	);
 
 	/** Server-rendered page formats: a file with one of these extensions is a page, not an asset. */

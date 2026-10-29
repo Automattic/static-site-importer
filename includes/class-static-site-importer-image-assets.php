@@ -1,6 +1,11 @@
 <?php
 /**
- * Capture-owned image identity at the importer boundary.
+ * Capture-owned resource identity at the importer boundary.
+ *
+ * The capture producer records images, fonts, documents and video under one
+ * contract; this class keeps that single intake, identity and verification
+ * path. Fonts stay theme-owned; every other recorded resource becomes one
+ * Media Library attachment.
  *
  * @package StaticSiteImporter
  */
@@ -8,6 +13,22 @@ defined( 'ABSPATH' ) || exit;
 
 /** Carries verified capture records, not URL-shaped rendition guesses. */
 final class Static_Site_Importer_Image_Assets {
+	private const KINDS = array( 'image', 'font', 'document', 'video' );
+	private const IMAGE_CONTENT_TYPES    = array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml' );
+	private const FONT_CONTENT_TYPES     = array( 'font/woff2', 'font/woff', 'font/ttf', 'font/otf' );
+	private const DOCUMENT_CONTENT_TYPES = array(
+		'application/pdf',
+		'application/zip',
+		'application/gzip',
+		'application/x-7z-compressed',
+		'application/rtf',
+		'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+	);
+	private const VIDEO_CONTENT_TYPES    = array( 'video/mp4', 'video/webm', 'video/ogg' );
+	private const FONT_FACE_FIELDS       = array( 'family', 'weight', 'style', 'unicode_range', 'format' );
+
 	/** Consume optional capture evidence before it can become a theme asset. */
 	public static function extract( array $artifact, ?object $reader = null ) {
 		$records = null;
@@ -58,25 +79,13 @@ final class Static_Site_Importer_Image_Assets {
 			$by_hash[ $hash ][] = $file['path'];
 		}
 		foreach ( $records as $record ) {
-			if ( ! is_array( $record ) ) {
-				return self::invalid();
-			}
-			$original = $record['original'] ?? null;
-			if ( ! is_array( $original ) || ! is_string( $original['source_url'] ?? null ) || ! filter_var( $original['source_url'], FILTER_VALIDATE_URL ) || ! preg_match( '#^https?://#', $original['source_url'] ) || ! is_string( $original['sha256'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $original['sha256'] ) || ! in_array( $original['content_type'] ?? null, array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml' ), true ) || ! is_int( $original['width'] ?? null ) || $original['width'] < 1 || ! is_int( $original['height'] ?? null ) || $original['height'] < 1 || ! is_bool( $original['alpha'] ?? null ) || ! is_array( $record['source_urls'] ?? null ) || empty( $record['source_urls'] ) || ! is_array( $record['references'] ?? null ) ) {
+			if ( ! is_array( $record ) || ! self::record_is_valid( $record, $aliases ) ) {
 				return self::invalid();
 			}
 			foreach ( $record['source_urls'] as $url ) {
-				if ( ! is_string( $url ) || ! filter_var( $url, FILTER_VALIDATE_URL ) || isset( $aliases[ $url ] ) ) {
-					return self::invalid();
-				}
 				$aliases[ $url ] = true;
 			}
-			foreach ( $record['references'] as $reference ) {
-				if ( ! is_array( $reference ) || ! in_array( $reference['kind'] ?? null, array( 'content', 'navigation', 'head', 'CSS' ), true ) || ! is_string( $reference['document_url'] ?? null ) || ! is_string( $reference['location'] ?? null ) || ! in_array( $reference['source_url'] ?? null, $record['source_urls'], true ) ) {
-					return self::invalid();
-				}
-			}
-			$matches = $by_hash[ $original['sha256'] ] ?? array();
+			$matches = $by_hash[ $record['original']['sha256'] ] ?? array();
 			if ( isset( $record['path'] ) ) {
 				// Receipt paths disambiguate distinct resources with equal bytes.
 				$matches = array_values( array_filter( $matches, static fn( string $path ): bool => $path === $record['path'] || 'website/' . $record['path'] === $path || 'website/' . $path === $record['path'] ) );
@@ -128,6 +137,74 @@ final class Static_Site_Importer_Image_Assets {
 		);
 	}
 
+	/** One validated record: a declared kind whose original, aliases and references agree. */
+	private static function record_is_valid( array $record, array $aliases ): bool {
+		$kind = self::kind( $record );
+		if ( isset( $record['kind'] ) && ! in_array( $kind, self::KINDS, true ) ) {
+			return false;
+		}
+		// Ownership is declared, never inferred: a font claiming the Media Library
+		// (or an attachment-bound resource claiming theme ownership) is conflicting
+		// evidence, and capture owns this decision.
+		$owner = $record['destination_owner'] ?? ( 'font' === $kind ? 'theme' : 'media-library' );
+		if ( $owner !== self::destination_owner( $record ) ) {
+			return false;
+		}
+		$original = $record['original'] ?? null;
+		$types    = match ( $kind ) {
+			'font'     => self::FONT_CONTENT_TYPES,
+			'document' => self::DOCUMENT_CONTENT_TYPES,
+			'video'    => self::VIDEO_CONTENT_TYPES,
+			default    => self::IMAGE_CONTENT_TYPES,
+		};
+		$valid = is_array( $original ) && is_string( $original['source_url'] ?? null ) && filter_var( $original['source_url'], FILTER_VALIDATE_URL ) && preg_match( '#^https?://#', $original['source_url'] ) && is_string( $original['sha256'] ?? null ) && preg_match( '/^[a-f0-9]{64}$/', $original['sha256'] ) && in_array( $original['content_type'] ?? null, $types, true );
+		if ( 'image' === $kind ) {
+			$valid = $valid && is_int( $original['width'] ?? null ) && $original['width'] >= 1 && is_int( $original['height'] ?? null ) && $original['height'] >= 1 && is_bool( $original['alpha'] ?? null );
+		}
+		if ( ! $valid || ! is_array( $record['source_urls'] ?? null ) || empty( $record['source_urls'] ) || ! is_array( $record['references'] ?? null ) ) {
+			return false;
+		}
+		foreach ( $record['source_urls'] as $url ) {
+			if ( ! is_string( $url ) || ! filter_var( $url, FILTER_VALIDATE_URL ) || isset( $aliases[ $url ] ) ) {
+				return false;
+			}
+		}
+		foreach ( $record['references'] as $reference ) {
+			if ( ! is_array( $reference ) || ! in_array( $reference['kind'] ?? null, array( 'content', 'navigation', 'head', 'CSS' ), true ) || ! is_string( $reference['document_url'] ?? null ) || ! is_string( $reference['location'] ?? null ) || ! in_array( $reference['source_url'] ?? null, $record['source_urls'], true ) ) {
+				return false;
+			}
+			// Font uses retain their declared @font-face descriptors.
+			if ( isset( $reference['font_face'] ) ) {
+				$face = $reference['font_face'];
+				if ( ! is_array( $face ) || array_keys( $face ) !== array_filter( array_keys( $face ), static fn( string $field ): bool => in_array( $field, self::FONT_FACE_FIELDS, true ) ) ) {
+					return false;
+				}
+				foreach ( self::FONT_FACE_FIELDS as $field ) {
+					if ( isset( $face[ $field ] ) && ! is_string( $face[ $field ] ) ) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	/** The capture-declared resource kind; records from before the contract defaulted to images. */
+	public static function kind( array $record ): string {
+		$kind = $record['kind'] ?? 'image';
+		return in_array( $kind, self::KINDS, true ) ? $kind : 'image';
+	}
+
+	/** Fonts stay theme-owned design assets; every other recorded resource is attachment-bound. */
+	public static function destination_owner( array $record ): string {
+		return 'font' === self::kind( $record ) ? 'theme' : 'media-library';
+	}
+
+	/** The plan destination each record requires: theme vocabulary for theme-owned assets, plan vocabulary for attachment-bound ones. */
+	public static function plan_destination( array $record ): string {
+		return 'theme' === self::destination_owner( $record ) ? 'theme' : 'media_library';
+	}
+
 	/** Export-root-relative and document-relative references share one file key. */
 	private static function reference_path( string $url, string $document ): string {
 		if ( str_starts_with( $url, '/' ) && ! str_starts_with( $url, '//' ) ) {
@@ -137,20 +214,112 @@ final class Static_Site_Importer_Image_Assets {
 		return \Automattic\BlocksEngine\PhpTransformer\Path\ArtifactPath::resolveRelativePath( $url, $document );
 	}
 
-	/** Validate staged bytes again immediately before upload. */
+	/** Validate staged bytes again immediately before writing: digest, byte-sniffed MIME and every size the record declares. */
 	public static function verify( string $file, array $record ): bool {
 		$original = $record['original'];
-		if ( 'image/svg+xml' === $original['content_type'] ) {
-			$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Bounded staged capture artwork.
-			$svg   = false !== $bytes && strlen( $bytes ) <= 2 * 1024 * 1024 ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array();
-			return 'supported' === ( $svg['status'] ?? '' ) && ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'] && hash_file( 'sha256', $file ) === $original['sha256'];
+		if ( hash_file( 'sha256', $file ) !== $original['sha256'] || filesize( $file ) < 1 ) {
+			return false;
 		}
-		$size = wp_getimagesize( $file );
-		return is_array( $size ) && $size[0] === $original['width'] && $size[1] === $original['height'] && ( $size['mime'] ?? '' ) === $original['content_type'] && hash_file( 'sha256', $file ) === $original['sha256'] && ( ! $original['alpha'] || 'image/jpeg' !== $original['content_type'] );
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Bounded staged capture bytes.
+		if ( ! is_string( $bytes ) ) {
+			return false;
+		}
+		if ( 'image/svg+xml' === $original['content_type'] ) {
+			$svg = strlen( $bytes ) <= 2 * 1024 * 1024 ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array();
+			return 'supported' === ( $svg['status'] ?? '' ) && ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'];
+		}
+		if ( 'image' === self::kind( $record ) ) {
+			$size = wp_getimagesize( $file );
+			return is_array( $size ) && $size[0] === $original['width'] && $size[1] === $original['height'] && ( $size['mime'] ?? '' ) === $original['content_type'] && ( ! $original['alpha'] || 'image/jpeg' !== $original['content_type'] );
+		}
+		return self::verify_bytes( $bytes, $record );
 	}
 
-	/** A record is authoritative: never silently fall back to a rendition. */
+	/** Validate one record's declared bytes against its digest and byte-sniffed MIME; rasters need wp_getimagesize and verify the staged file instead. */
+	public static function verify_bytes( string $bytes, array $record ): bool {
+		$original = $record['original'];
+		if ( '' === $bytes || ! hash_equals( $original['sha256'], hash( 'sha256', $bytes ) ) ) {
+			return false;
+		}
+		$sniffed = match ( self::kind( $record ) ) {
+			'font'     => self::font_content_type( $bytes ),
+			'document' => self::document_content_type( $bytes ),
+			'video'    => self::video_content_type( $bytes ),
+			default    => null,
+		};
+		// Response headers and extensions are not evidence; the declared MIME must
+		// match what the bytes themselves announce.
+		return $sniffed === $original['content_type'];
+	}
+
+	/** Signature of WOFF/WOFF2/sfnt font bytes, mirroring the capture producer's verifier. */
+	private static function font_content_type( string $bytes ): ?string {
+		if ( strlen( $bytes ) < 12 ) {
+			return null;
+		}
+		$tables = unpack( 'n', substr( $bytes, 4, 2 ) )[1];
+		if ( strlen( $bytes ) >= 48 && unpack( 'n', substr( $bytes, 12, 2 ) )[1] > 0 && unpack( 'N', substr( $bytes, 8, 4 ) )[1] === strlen( $bytes ) ) {
+			return 'wOF2' === substr( $bytes, 0, 4 ) ? 'font/woff2' : ( 'wOFF' === substr( $bytes, 0, 4 ) ? 'font/woff' : null );
+		}
+		if ( $tables > 0 && $tables <= 512 && strlen( $bytes ) >= 12 + $tables * 16 ) {
+			if ( 'OTTO' === substr( $bytes, 0, 4 ) ) {
+				return 'font/otf';
+			}
+			if ( 0x00010000 === unpack( 'N', substr( $bytes, 0, 4 ) )[1] || 'true' === substr( $bytes, 0, 4 ) ) {
+				return 'font/ttf';
+			}
+		}
+		return null;
+	}
+
+	/** Signature of document and archive bytes; unknown downloads stay unresolved. */
+	private static function document_content_type( string $bytes ): ?string {
+		if ( str_starts_with( $bytes, '%PDF-' ) && str_contains( substr( $bytes, -1024 ), '%%EOF' ) ) {
+			return 'application/pdf';
+		}
+		if ( strlen( $bytes ) >= 22 && 0x04034b50 === unpack( 'V', substr( $bytes, 0, 4 ) )[1] ) {
+			// OOXML packages declare their document kind in the ZIP member inventory.
+			if ( str_contains( $bytes, '[Content_Types].xml' ) ) {
+				if ( str_contains( $bytes, 'word/document.xml' ) ) {
+					return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+				}
+				if ( str_contains( $bytes, 'xl/workbook.xml' ) ) {
+					return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+				}
+				if ( str_contains( $bytes, 'ppt/presentation.xml' ) ) {
+					return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+				}
+			}
+			return 'application/zip';
+		}
+		if ( str_starts_with( $bytes, "\x1f\x8b" ) ) {
+			return 'application/gzip';
+		}
+		if ( str_starts_with( $bytes, "\x37\x7a\xbc\xaf\x27\x1c" ) ) {
+			return 'application/x-7z-compressed';
+		}
+		if ( str_starts_with( $bytes, '{\\rtf' ) ) {
+			return 'application/rtf';
+		}
+		return null;
+	}
+
+	/** Signature of MP4/WebM/Theora bytes. */
+	private static function video_content_type( string $bytes ): ?string {
+		if ( strlen( $bytes ) >= 16 && 'ftyp' === substr( $bytes, 4, 4 ) ) {
+			return 'video/mp4';
+		}
+		if ( strlen( $bytes ) >= 16 && 0x1a45dfa3 === unpack( 'N', substr( $bytes, 0, 4 ) )[1] && str_contains( substr( $bytes, 0, 4096 ), 'webm' ) ) {
+			return 'video/webm';
+		}
+		if ( strlen( $bytes ) >= 4 && 'OggS' === substr( $bytes, 0, 4 ) && str_contains( $bytes, 'theora' ) ) {
+			return 'video/ogg';
+		}
+		return null;
+	}
+
+	/** A record is authoritative: never silently fall back to a rendition or placeholder. */
 	private static function invalid(): WP_Error {
-		return new WP_Error( 'image_resource_unresolved', 'Capture image records must identify an available, verified original with unambiguous source URLs.' );
+		return new WP_Error( 'image_resource_unresolved', 'Capture asset records must identify an available, verified original with unambiguous source URLs.' );
 	}
 }

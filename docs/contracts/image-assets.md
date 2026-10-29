@@ -1,4 +1,4 @@
-# Capture image records → WordPress attachments
+# Capture resource records → WordPress attachments and theme-owned fonts
 
 Refs Automattic/data-liberation-agent#1035 (keep open).
 
@@ -16,11 +16,16 @@ not establish resource identity. Records survive direct-artifact checkpoints
 and compilation as importer-owned evidence, outside the immutable compiler plan.
 
 Before upload SSI verifies the staged digest, dimensions and MIME against the
-record. Missing, conflicting or unverified originals fail with
-`image_resource_unresolved`; they never fall back to an optimizer response or
-placeholder. The compiler must declare `media_library` ownership for recorded
-images. An unsupported ownership declaration fails explicitly rather than
-claiming a successful attachment destination.
+record. Raster dimensions come from `wp_getimagesize`/SVG inspection; fonts,
+documents and video verify by byte signature (WOFF/WOFF2/sfnt, PDF/ZIP/OOXML/
+gzip/7z/RTF, MP4/WebM/Theora) against the declared content type. Missing,
+conflicting or unverified originals fail with `image_resource_unresolved`; they
+never fall back to an optimizer response or placeholder. The compiler must
+declare each recorded resource its capture-owned destination — theme files for
+fonts, `media_library` for every other kind. An unsupported ownership
+declaration fails explicitly rather than claiming a successful destination, and
+theme-owned records verify their exact declared write bytes immediately before
+the theme package materializes.
 
 For admitted media assets:
 
@@ -28,14 +33,20 @@ For admitted media assets:
   to the import theme; aliases reuse the same attachment, including on reimport;
 - authored image alt text supplies a meaningful filename and title; absent alt
   leaves the image decorative and uses the original basename for its title;
-- attachment meta `_static_site_importer_image_asset` retains original facts,
+  documents, archives and video keep the original basename and carry no
+  WordPress-generated renditions, only file identity and size metadata;
+- attachment meta `_static_site_importer_asset_record` retains original facts,
   aliases and categorized references; `completed.image_assets` in the public
-  materialization receipt adds `destination.attachment_id` and `destination.url`;
+  materialization receipt adds `destination.attachment_id` and `destination.url`
+  for the attachment-backed kinds (theme-owned fonts appear only as theme files);
 - captured inline srcset descriptors for the same resource are removed before
   compile, producing native image blocks rather than raw responsive-media;
   independently identified candidates are not collapsed;
 - the existing compiler token resolver binds content, parts, menus, head and CSS
-  references to the same destination. Native Site Identity reuses that attachment;
+  references to the same destination. Document links become `wp:file` blocks,
+  video becomes `wp:video`, and captured fonts stay theme-owned: theme.json
+  `fontFace` entries own the family, while imported `@font-face` CSS resolves to
+  the written theme files. Native Site Identity reuses image attachments;
 - original bytes are not transcoded. A scoped output-format filter prevents
   site-wide JPEG conversion of alpha-bearing WordPress intermediate sizes.
 
@@ -61,6 +72,17 @@ checks generated alpha sizes under an adversarial JPEG conversion filter, and
 proves reimport/rollback ownership. Set `SSI_IMAGE_RECORD_MARKUP` to retain its
 saved content for the same Gutenberg validator.
 
+`tests/fixtures/resource-asset-capture/artifact.json` extends the same proof to
+non-image resources: licensed Roboto subsets served with lying
+`application/octet-stream` headers, a PDF terms document, a ZIP download and a
+WebM video with poster, all linked from content and navigation. Refresh it with
+`tools/capture-resource-record-fixture.mjs` against the same capture producer.
+`tests/smoke-resource-asset-records.php` compiles it in the default gate and
+`tests/smoke-resource-asset-record-import.php` uploads it in disposable
+WordPress: one attachment per document, download and video with every content,
+navigation and CSS reference rewritten, four verified theme-owned font files
+behind theme.json fontFace, and an explicitly failed import for a lying digest.
+
 ## Follow-up slices
 
 - Blocks Engine destination ownership for CSS-only and head-only records. Its
@@ -68,6 +90,7 @@ saved content for the same Gutenberg validator.
   must not fabricate a block consumer or mutate an approved plan to bypass it.
 - Record-owned picture/art-direction conversion and broader Cover/Media & Text
   fixtures; the existing native resolver bindings remain in use.
-- Non-image resource records, proxy font byte verification and the broader
-  builder/gallery/inline-icon fixture matrix.
+- Document and video WordPress metadata enrichment (duration, dimensions),
+  legacy OLE2 document signatures, and the broader builder/gallery/inline-icon
+  fixture matrix.
 - Producer record-owned acquisition inventory and additional optimizer adapters.
