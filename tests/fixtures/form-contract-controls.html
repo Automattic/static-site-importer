@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Apply</title></head><body><main>
+<form id="application" style="display:flex;flex-direction:column;gap:16px">
+<label style="display:flex;flex-direction:column;gap:6px">Role<select name="role" required><option value="" disabled selected>Select your role</option><option value="engineer">Engineer</option><option value="designer">Designer</option><option value="pm" selected>Product manager</option></select></label>
+<label style="display:flex;flex-direction:column;gap:6px">Desk<select name="desk"><option value="">Choose a desk</option><option value="remote">Remote</option><option value="hq">Headquarters</option></select></label>
+<label style="display:flex;flex-direction:column;gap:6px">Email<input type="email" name="email" required></label>
+<fieldset style="border:0;margin:0;padding:0"><legend>Stack</legend>
+<label style="display:flex;gap:8px"><input type="checkbox" name="stack_frontend" checked> Frontend</label>
+<label style="display:flex;gap:8px"><input type="checkbox" name="stack_backend"> Backend</label>
+<label style="display:flex;gap:8px"><input type="checkbox" name="stack_ops"> Operations</label>
+</fieldset>
+<label style="display:flex;gap:8px"><input type="checkbox" name="consent" required> I agree to the terms</label>
+<label style="display:flex;flex-direction:column;gap:6px">Portfolio upload<input type="file" name="portfolio"></label>
+<label style="display:flex;flex-direction:column;gap:6px">Accent color<input type="color" name="accent"></label>
+<label style="display:flex;flex-direction:column;gap:6px">Shifts<select name="shifts" multiple><option value="am">Morning</option><option value="pm">Evening</option></select></label>
+<button type="submit">Send application</button>
+</form></main></body></html>

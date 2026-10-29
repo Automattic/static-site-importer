@@ -186,13 +186,20 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	private static function unavailable_form_row( array $form ): array {
 		return array(
-			'selector'       => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
-			'source_path'    => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
-			'provider'       => self::PROVIDER_ID,
-			'block_name'     => 'jetpack/contact-form',
-			'status'         => 'skipped',
-			'reason'         => 'provider_unavailable',
-			'runtime_mapped' => false,
+			'selector'          => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
+			'source_path'       => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
+			'provider'          => self::PROVIDER_ID,
+			'block_name'        => 'jetpack/contact-form',
+			'status'            => 'skipped',
+			'reason'            => 'provider_unavailable',
+			'runtime_mapped'    => false,
+			'runtime_readiness' => array(
+				'status'                   => 'missing_capability',
+				'reason_code'              => 'provider_unavailable',
+				'required_block_types'     => Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types(),
+				'unregistered_block_types' => array_keys( array_filter( (array) ( Static_Site_Importer_Jetpack_Forms_Runtime::jetpack_forms_availability_details()['required_blocks'] ?? array() ), static fn ( bool $registered ): bool => ! $registered ) ),
+			),
+			'complete'          => false,
 		);
 	}
 
@@ -276,6 +283,7 @@ class Static_Site_Importer_Form_Seeder {
 		$root                    = self::form_root_as_group( Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state ) );
 		$form_attrs              = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
 		$form_attrs['className'] = $state->scope;
+		$state->recipient        = self::form_recipient( $form_attrs, $state );
 		$block                   = array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
@@ -419,7 +427,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 	}
 
-	/** Map one source control into a provider field, submit, native button or reported skip. */
+	/** Map one source control into a provider field, submit, native button, handoff or reported skip. */
 	private static function map_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control ): void {
 		$form = $state->form;
 		if ( isset( $state->choice_pairs[ $control_index ] ) ) {
@@ -435,6 +443,7 @@ class Static_Site_Importer_Form_Seeder {
 		if ( isset( $hidden_nodes[ 'control-' . $control_index ] ) ) {
 			$state->suppressed_controls[ $control_index ] = true;
 			$state->skipped[]                             = 'unconditionally_hidden_control';
+			$state->record_suppressed( $control_index, 'unconditionally_hidden_control' );
 			return;
 		}
 		$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -442,11 +451,13 @@ class Static_Site_Importer_Form_Seeder {
 		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
 			$state->suppressed_controls[ $control_index ] = true;
 			$state->skipped[]                             = 'hidden_bookkeeping';
+			$state->record_suppressed( $control_index, 'hidden_bookkeeping' );
 			return;
 		}
 		$choice_box                                        = null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $form, $control_index );
 		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Presentation_Descriptor::source_label_row_carried_margins( $form, $control_index ) );
 		if ( isset( $state->suppressed_controls[ $control_index ] ) ) {
+			$state->record_suppressed( $control_index, isset( $state->choice_pairs[ $control_index ] ) ? 'choice_carrier' : 'radio_group_member' );
 			return;
 		}
 		if ( isset( $state->radio_groups['groups'][ $control_index ] ) ) {
@@ -457,11 +468,13 @@ class Static_Site_Importer_Form_Seeder {
 		$is_auxiliary_button     = 'button' === $tag && Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $state->controls, $control_index );
 		if ( $is_auxiliary_button ) {
 			// The provider owns this control as part of a field rather than as an action.
+			$state->record_suppressed( $control_index, 'provider_auxiliary_button' );
 			return;
 		}
 
 		if ( 'submit' === $type ) {
 			self::map_submit_control( $state, $control_index, $control, $presentation_descriptor );
+			$state->record_submit( $control_index );
 			return;
 		}
 		if ( 'button' === $tag && 'button' === $type ) {
@@ -470,23 +483,27 @@ class Static_Site_Importer_Form_Seeder {
 				Static_Site_Importer_Form_Field_Markup::control_text( $control ),
 				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
 			);
+			$state->record_mapped( $control_index, 'core/button' );
 			return;
 		}
 
 		if ( 'file' === $type && 'input' === $tag ) {
-			$label                                 = Static_Site_Importer_Form_Field_Markup::control_text( $control );
-			$state->field_blocks[ $control_index ] = array(
-				'name'    => 'core/paragraph',
-				'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
-				'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
-				'wrapper' => 'paragraph',
-			);
-			$state->skipped[]                      = 'file';
-			$state->unsupported_capabilities[]     = array(
+			// A file upload is a functional control the provider cannot represent
+			// here; it is never downgraded to text or dropped without a name.
+			$state->skipped[]                  = 'file';
+			$state->unsupported_capabilities[] = array(
 				'capability'    => 'file_upload',
 				'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
 				'control_index' => $control_index,
 			);
+			$state->record_handoff( $control_index, 'file_upload' );
+			return;
+		}
+		if ( 'select' === $tag && ( in_array( $type, array( 'select-multiple', 'multiple' ), true ) || ! empty( $control['multiple'] ) ) ) {
+			// A multi-select narrowed to the provider's single dropdown would drop
+			// the source's multiple-selection behavior; that is an owner decision.
+			$state->skipped[] = 'select-multiple';
+			$state->record_handoff( $control_index, 'multiple_selection' );
 			return;
 		}
 		self::map_field_control( $state, $control_index, $control, $tag, $type, $presentation_descriptor, $choice_box );
@@ -539,6 +556,9 @@ class Static_Site_Importer_Form_Seeder {
 		);
 		if ( null === $field_block ) {
 			$state->skipped[] = '' !== $type ? $type : $tag;
+			// No provider field exists for this control type. That is an explicit
+			// owner handoff, never a silent removal or downgrade.
+			$state->record_handoff( $control_index, 'control_type:' . ( '' !== $type ? $type : $tag ) );
 			return;
 		}
 		if ( ! empty( $control_phone_destinations ) ) {
@@ -560,15 +580,20 @@ class Static_Site_Importer_Form_Seeder {
 		$layout_hook                       = Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index );
 		$help_classes                      = isset( $field_block['attrs']['helpText'] ) ? Static_Site_Importer_Form_Field_Markup::help_class_markers( $state->form, $control ) : '';
 		$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook . ' ' . $help_classes );
-		if ( isset( $state->choice_pairs[ $control_index ] ) ) {
+		if ( 'jetpack/field-select' === ( $field_block['name'] ?? '' ) ) {
+			// Every provider select carries the source's own option values and
+			// selected state through the runtime's persisted choice token, so a
+			// submitted choice is the value the source would have submitted.
 			$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
 			if ( '' === $choice_token ) {
-				$state->control_attribute_losses[] = array(
-					'dimension'     => 'control',
-					'reason_code'   => 'unsupported_control_attribute',
-					'attribute'     => 'choice_values',
-					'control_index' => $control_index,
-				);
+				if ( self::options_carry_values( $control['options'] ?? null ) ) {
+					$state->control_attribute_losses[] = array(
+						'dimension'     => 'control',
+						'reason_code'   => 'unsupported_control_attribute',
+						'attribute'     => 'choice_values',
+						'control_index' => $control_index,
+					);
+				}
 			} else {
 				$field_block['attrs']['className'] .= ' ' . $choice_token;
 			}
@@ -587,6 +612,33 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$state->field_blocks[ $control_index ] = $field_block;
 		$state->mapped_types[]                 = $field_block['name'];
+		$state->record_mapped( $control_index, $field_block['name'] );
+	}
+
+	/**
+	 * Whether captured select options carry values or selected states worth preserving.
+	 *
+	 * @param mixed $options Captured select options.
+	 * @return bool
+	 */
+	private static function options_carry_values( mixed $options ): bool {
+		if ( ! is_array( $options ) ) {
+			return false;
+		}
+		foreach ( $options as $option ) {
+			if ( ! is_array( $option ) ) {
+				continue;
+			}
+			$value = isset( $option['value'] ) && is_scalar( $option['value'] ) ? trim( (string) $option['value'] ) : '';
+			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+			if ( '' !== $value && $value !== $label ) {
+				return true;
+			}
+			if ( ! empty( $option['selected'] ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -617,7 +669,8 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** The mapped report row: fields, submit, layout receipt, target map, overlay CSS and visual state. */
 	private static function mapped_report_row( Static_Site_Importer_Form_Plan_State $state, bool $available, array $target_map, array $overlay ): array {
-		$row = array(
+		$readiness = self::runtime_readiness( $state, $available );
+		$row       = array(
 			'selector'                    => $state->selector,
 			'source_path'                 => $state->source_path,
 			'provider'                    => self::PROVIDER_ID,
@@ -629,6 +682,13 @@ class Static_Site_Importer_Form_Seeder {
 			'submit_text'                 => $state->submit_text,
 			'runtime_mapped'              => true,
 			'runtime_carried'             => $available,
+			// The form-materialization contract surfaces: every control decided,
+			// the recipient named, and the runtime capability proven.
+			'field_contract'              => array_values( self::contract_rows_in_source_order( $state->field_contract ) ),
+			'handoff_items'               => $state->handoff_items,
+			'recipient'                   => $state->recipient,
+			'runtime_readiness'           => $readiness,
+			'complete'                    => $available && 'ready' === ( $readiness['status'] ?? '' ),
 			'block_markup'                => '',
 			'computed_layout_receipt'     => $state->layout['receipt'],
 			'provider_layout_target_map'  => $target_map,
@@ -638,6 +698,113 @@ class Static_Site_Importer_Form_Seeder {
 			$row['unsupported_capabilities'] = $state->unsupported_capabilities;
 		}
 		return $row;
+	}
+
+	/**
+	 * The recovered recipient, or the explicit handoff when none was recovered.
+	 *
+	 * A recipient is recovered only from the source's own facts (its mailto
+	 * action). Without one, the provider's own fallback (the site admin's
+	 * address) must not be inherited silently: the row carries an explicit
+	 * owner-handoff item naming the missing fact.
+	 *
+	 * @param array<string,mixed>                  $form_attrs Provider contact-form attributes.
+	 * @param Static_Site_Importer_Form_Plan_State $state      Plan state.
+	 * @return array{status:string,value?:string,reason_code?:string}
+	 */
+	private static function form_recipient( array $form_attrs, Static_Site_Importer_Form_Plan_State $state ): array {
+		$recipient = isset( $form_attrs['to'] ) && is_string( $form_attrs['to'] ) && '' !== trim( $form_attrs['to'] ) ? trim( $form_attrs['to'] ) : '';
+		if ( '' !== $recipient ) {
+			return array(
+				'status' => 'recovered',
+				'value'  => $recipient,
+			);
+		}
+		$state->handoff_items[] = array(
+			'kind'        => 'recipient',
+			'reason_code' => 'no_recovered_recipient',
+			'selector'    => $state->selector,
+			'source_path' => $state->source_path,
+			'message'     => 'No recipient or submission backend was recovered from the source form. Mail delivery is unset until the owner sets a recipient; the provider will not silently inherit one.',
+		);
+		return array(
+			'status'      => 'handoff',
+			'reason_code' => 'no_recovered_recipient',
+		);
+	}
+
+	/**
+	 * Prove the provider blocks this form materializes are registered.
+	 *
+	 * A form is ready only when every provider block type it uses is registered
+	 * in this runtime; a saved field whose block type is unregistered would not
+	 * render. Core blocks the provider composes (buttons, text) are not provider
+	 * capabilities and are not checked here.
+	 *
+	 * @param Static_Site_Importer_Form_Plan_State $state     Plan state.
+	 * @param bool                                 $available Whether the provider runtime is active.
+	 * @return array{status:string,reason_code:string,required_block_types:array<int,string>,unregistered_block_types:array<int,string>}
+	 */
+	private static function runtime_readiness( Static_Site_Importer_Form_Plan_State $state, bool $available ): array {
+		$used = array( 'jetpack/contact-form' );
+		foreach ( $state->field_blocks as $block ) {
+			self::collect_provider_blocks( $block, $used );
+		}
+		$used         = array_values( array_unique( $used ) );
+		$unregistered = array();
+		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
+			$registry = WP_Block_Type_Registry::get_instance();
+			foreach ( $used as $block_name ) {
+				if ( ! $registry->is_registered( $block_name ) ) {
+					$unregistered[] = $block_name;
+				}
+			}
+		}
+		if ( ! $available ) {
+			return array(
+				'status'                   => 'missing_capability',
+				'reason_code'              => 'provider_unavailable',
+				'required_block_types'     => $used,
+				'unregistered_block_types' => $unregistered,
+			);
+		}
+		return array(
+			'status'                   => empty( $unregistered ) ? 'ready' : 'missing_capability',
+			'reason_code'              => empty( $unregistered ) ? '' : 'provider_blocks_not_registered',
+			'required_block_types'     => $used,
+			'unregistered_block_types' => $unregistered,
+		);
+	}
+
+	/**
+	 * Collect the provider block names one emitted field block tree uses.
+	 *
+	 * @param mixed             $block Emitted field block tree.
+	 * @param array<int,string> $used  Provider block names collected so far.
+	 */
+	private static function collect_provider_blocks( mixed $block, array &$used ): void {
+		if ( ! is_array( $block ) ) {
+			return;
+		}
+		$name = $block['name'] ?? '';
+		if ( is_string( $name ) && str_starts_with( $name, 'jetpack/' ) && ! in_array( $name, $used, true ) ) {
+			$used[] = $name;
+		}
+		foreach ( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() as $inner ) {
+			self::collect_provider_blocks( $inner, $used );
+		}
+	}
+
+	/**
+	 * The per-control contract decisions in source control order.
+	 *
+	 * @param array<int,array<string,mixed>> $field_contract Contract decisions keyed by control index.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function contract_rows_in_source_order( array $field_contract ): array {
+		$rows = $field_contract;
+		ksort( $rows );
+		return $rows;
 	}
 
 	/** Build the skipped mapping plan for a form the provider cannot represent. */
@@ -653,6 +820,7 @@ class Static_Site_Importer_Form_Seeder {
 					'status'         => 'skipped',
 					'reason'         => $reason,
 					'runtime_mapped' => false,
+					'complete'       => false,
 				),
 				$extra
 			)

@@ -16,7 +16,7 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 		$receipt = $plan->report_facts['computed_layout_receipt'];
 		$losses  = array();
 		foreach ( $receipt['losses'] ?? array() as $loss ) {
-			if ( ! is_array( $loss ) || ! self::requires_gate( $loss ) || self::provider_represents( $loss, $plan ) ) {
+			if ( ! is_array( $loss ) || ! self::requires_gate( $loss ) ) {
 				continue;
 			}
 			// Proposed serialization is needed only by an installed waiver hook.
@@ -82,18 +82,5 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 			|| 'textarea_height_omitted' === ( $loss['reason_code'] ?? '' )
 			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
 			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
-	}
-
-	/** Check actual planned provider destinations instead of emitted markup. */
-	private static function provider_represents( array $loss, Static_Site_Importer_Form_Mapping_Plan $plan ): bool {
-		$form         = $plan->source_form;
-		$field_blocks = $plan->fields;
-		if ( 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_int( $loss['control_index'] ?? null ) ) {
-			$control = $form['controls'][ $loss['control_index'] ] ?? null;
-			if ( is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $loss['control_index'] ]['name'] ?? '' ) ) {
-				return true;
-			}
-		}
-		return false;
 	}
 }
