@@ -807,7 +807,39 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */
 	private static function apply_whole_page_handoffs( array &$state ) {
-		$results              = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
+		$results = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
+		// Products are seeded before their add-to-cart bindings can name a Woo ID.
+		// Prove the original document first, then persist the bound document before
+		// the normal handoff verifier checks its exact final bytes.
+		$original_pages = $state['ordered_pages'];
+		foreach ( $original_pages as &$original_page ) {
+			unset( $original_page['materialized_block_markup'] );
+		}
+		unset( $original_page );
+		$product_results = array_values( array_filter( $results, static fn( array $result ): bool => 'product' === ( $result['post_type'] ?? '' ) ) );
+		$original_claims = Static_Site_Importer_Whole_Page_Handoff::validate( $original_pages, $product_results );
+		foreach ( $original_claims['claims'] as $source => $original_claim ) {
+			foreach ( $state['ordered_pages'] as $bound_page ) {
+				if ( ( $bound_page['source_path'] ?? '' ) !== $source || ! isset( $bound_page['materialized_block_markup'] ) ) {
+					continue;
+				}
+				$id = (int) $original_claim['post_id'];
+				self::journal_post( $state, array(
+					'planned_existing_id' => $id,
+					'source_path'         => $source,
+				) );
+				$saved = wp_update_post(
+					array(
+						'ID'           => $id,
+						'post_content' => wp_slash( (string) $bound_page['materialized_block_markup'] ),
+					),
+					true
+				);
+				if ( is_wp_error( $saved ) ) {
+					return $saved;
+				}
+			}
+		}
 		$validated            = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results );
 		$state['diagnostics'] = array_merge( $state['diagnostics'], $validated['diagnostics'] );
 		if ( ! empty( $validated['diagnostics'] ) && ! empty( $results ) ) {
@@ -875,11 +907,33 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! self::write_post_meta( $destination, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] ) || ! self::write_post_meta( $destination, self::PRODUCER_RECONCILIATION_META_KEY, $page['reconciliation_identity'] ) || ! self::write_post_meta( $destination, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
 				return new WP_Error( 'whole_page_destination_provenance_failed' );
 			}
-			$state['applied']['posts'][]                           = array(
+			$state['applied']['posts'][] = array(
 				'id'                      => $destination,
 				'source_path'             => $source,
 				'reconciliation_identity' => $page['reconciliation_identity'],
 			);
+			if ( 'product' === get_post_type( $destination ) ) {
+				// WordPress's specific single template wins over Woo's generic one.
+				// Keep the queried product (and Woo context), output only its document.
+				$product_slug = get_post_field( 'post_name', $destination );
+				if ( ! is_string( $product_slug ) || '' === $product_slug || sanitize_title( $product_slug ) !== $product_slug ) {
+					return new WP_Error( 'whole_page_product_slug_invalid' );
+				}
+				$target = 'templates/single-product-' . $product_slug . '.html';
+				self::journal_file( $state, $state['theme_dir'] . '/' . $target );
+				$template = self::write_file( $state['theme_dir'], array(
+					'target_path' => $target,
+					'source_path' => $source,
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => '<!-- wp:post-content /-->',
+					),
+				) );
+				if ( is_wp_error( $template ) ) {
+					return $template;
+				}
+				$state['applied']['files'][] = $template;
+			}
 			$page['skip_materialization']                          = true;
 			$page['provider_owned']                                = true;
 			$page['provider_featured_image_target_path']           = (string) ( $claim['result']['featured_image_target_path'] ?? '' );

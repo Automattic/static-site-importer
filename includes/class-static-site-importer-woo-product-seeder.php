@@ -264,6 +264,16 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'], $report['rollback']['created_variations'] );
 			$row['source_route']  = (string) ( $product['source_route'] ?? '/products/' . self::string_value( $product, 'slug' ) );
 			$report['products'][] = $row;
+			$document             = self::whole_page_document( $product, $args );
+			if ( is_array( $document ) && in_array( $row['status'] ?? '', array( 'created', 'updated' ), true ) ) {
+				$claim                          = array_intersect_key( $document, array_flip( array( 'source_path', 'source_route', 'page_reconciliation_identity', 'declaration_reconciliation_identity', 'entity_id' ) ) );
+				$report['whole_page_results'][] = $claim + array(
+					'schema'              => Static_Site_Importer_Whole_Page_Handoff::SCHEMA,
+					'status'              => 'committed',
+					'destination_post_id' => $row['id'],
+					'post_type'           => 'product',
+				);
+			}
 
 			$status = $row['status'] ?? 'error';
 			if ( isset( $report['counts'][ $status ] ) ) {
@@ -277,6 +287,19 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		return $report;
+	}
+
+	/** Only consume a producer-authorized document for this exact product row. */
+	private static function whole_page_document( array $product, array $args ): ?array {
+		$candidate   = $product['whole_page_candidate'] ?? null;
+		$declaration = (string) ( $args['declaration_reconciliation_identity'] ?? '' );
+		$entity      = (string) ( $product['id'] ?? '' );
+		$document    = $args['whole_page_documents'][ $declaration ][ $entity ] ?? null;
+		if ( 'blocks-engine/whole-page-candidate/v1' !== $candidate || ! is_array( $document ) || ! is_string( $document['post_content'] ?? null ) ) {
+			return null;
+		}
+		return ( $document['source_route'] ?? '' ) === ( $product['source_route'] ?? '' )
+			&& ( $document['source_path'] ?? '' ) === ( $product['source_path'] ?? '' ) ? $document : null;
 	}
 
 	/**
@@ -454,7 +477,8 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$product->set_name( $name );
 			$product->set_slug( $slug );
 			$product->set_status( self::post_status( $manifest_product ) );
-			$product->set_description( wp_kses_post( self::string_value( $manifest_product, 'description' ) ) );
+			$document = self::whole_page_document( $manifest_product, $args );
+			$product->set_description( is_array( $document ) ? $document['post_content'] : wp_kses_post( self::string_value( $manifest_product, 'description' ) ) );
 			$product->set_short_description( wp_kses_post( self::string_value( $manifest_product, 'short_description' ) ) );
 			$product->set_regular_price( self::price_value( $manifest_product, 'regular_price' ) );
 			$product->set_sale_price( self::price_value( $manifest_product, 'sale_price' ) );
@@ -529,6 +553,22 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					'status' => 'error',
 					'error'  => 'WooCommerce did not return a product ID',
 				);
+			}
+
+			if ( is_array( $document ) ) {
+				// Woo's data store slashes descriptions; preserve the exact block bytes
+				// and verify them before advertising a committed handoff.
+				$saved = wp_update_post(
+					array(
+						'ID'           => $product_id,
+						'post_content' => wp_slash( (string) $document['post_content'] ),
+					),
+					true
+				);
+				if ( is_wp_error( $saved ) || get_post_field( 'post_content', $product_id ) !== $document['post_content'] ) {
+					// ssi-error-class: integrity
+					throw new RuntimeException( 'WooCommerce whole-page document could not be saved exactly.' );
+				}
 			}
 
 			$category_ids = self::ensure_category_ids( self::category_names( $manifest_product ), $created_terms );
