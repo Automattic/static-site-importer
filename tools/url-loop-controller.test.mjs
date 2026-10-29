@@ -6,8 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   CAPTURE_PRODUCER_ENV, EDITOR_OPEN_ARTIFACT_PREFIX, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
-  buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
-  deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
+  buildUrlProofWorkflow, captureAt, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
+  deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch, runCapture,
   evaluationEnv, readEditorPresentation, resolveCaptureProducer, topLevelDirectoryNames, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
@@ -31,60 +31,100 @@ const step = (workflow, id) => workflow.steps.find((item) => item.id === id);
 const argOf = (args, flag) => args[args.indexOf(flag) + 1];
 const clean = { editor_presentation: { passed: true }, capture_repository: CAPTURE_REPO, capture_compare: { passed: true }, materialization_compare: { passed: true }, quality: { quality_pass: true, unsupported_fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 } };
 
-test('one URL yields a bounded three-repository repair loop', () => {
+test('one URL yields a bounded, self-admitting repair chain', () => {
   const root = tmp('ssi-workflow-');
-  const { workflow, context, inputs } = build(root);
-  assert.equal(workflow.schema, WORKFLOW_SCHEMA);
-  assert.equal(workflow.id, WORKFLOW_ID);
-  assert.deepEqual(Object.keys(workflow.inputs), ['url'], 'the candidate is composed per iteration, not supplied');
-  assert.deepEqual(inputs, { url });
-  assert.equal(context.loop_id, sourceIdentity('https://example.com/#fragment'));
-  assert.deepEqual(workflow.budget, { max_step_runs: 20, deadline: '10h' });
-  assert.deepEqual(workflow.iterate, { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: 3 });
-  assert.deepEqual(workflow.steps.map((item) => item.id), ['evaluate', 'repair']);
-  const evaluate = step(workflow, 'evaluate').exec;
-  assert.equal(evaluate.program, process.execPath);
-  assert.equal(argOf(evaluate.args, '--instance'), '{{instance}}');
-  assert.equal(argOf(evaluate.args, '--iteration'), '{{iteration}}');
-  assert.deepEqual(JSON.parse(argOf(evaluate.args, '--context')), context, 'the context is pinned inside the definition');
-  assert.deepEqual(Object.keys(context.repositories), ['static-site-importer', 'blocks-engine', CAPTURE_REPO]);
-  assert.equal(context.repositories['static-site-importer'].path, root);
-  assert.equal(context.repositories['blocks-engine'].base, 'trunk');
-  assert.deepEqual(context.repositories[CAPTURE_REPO], { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main', task_url: taskUrl, verify: ['npm test'] });
-  assert.equal(context.capture_producer.repository, CAPTURE_REPO);
-  assert.deepEqual(context.capture_producer.build, [['npm', 'ci'], ['npm', 'run', 'build']]);
-  assert.equal(Object.hasOwn(context.capture_producer, 'failure_details'), false);
+  const cases = [
+    {
+      name: 'the first pass has no fixture and default options',
+      options: {},
+      loop: sourceIdentity(url),
+      maxIterations: '3',
+      budget: { max_step_runs: 20, deadline: '10h' },
+      captureRepository: { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main', task_url: taskUrl, verify: ['npm test'] },
+    },
+    {
+      name: 'a forked loop keeps its custom options',
+      options: { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '8', deadline: '3h', fixBackend: 'opencode', blocksEngineTaskUrl: 'https://github.com/Automattic/blocks-engine/issues/1', captureProducer: producer(root, { verify: ['npm test', 'npm run lint'], task_url: 'https://example.com/capture-tool/issues/9' }) },
+      loop: `${sourceIdentity(url)}-proof-r2`,
+      maxIterations: '2',
+      budget: { max_step_runs: 8, deadline: '3h' },
+      captureRepository: { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main', task_url: 'https://example.com/capture-tool/issues/9', verify: ['npm test', 'npm run lint'] },
+    },
+  ];
+  for (const item of cases) {
+    const { workflow, context, inputs } = build(root, item.options);
+    assert.equal(workflow.schema, WORKFLOW_SCHEMA);
+    assert.equal(workflow.id, WORKFLOW_ID);
+    assert.equal('iterate' in workflow, false, 'one instance is one pass; the chain re-admits through the next step');
+    const rendered = JSON.stringify(workflow);
+    assert.equal(rendered.includes('{{instance}}') || rendered.includes('{{iteration}}'), false, 'iteration is an input, never a template');
+    assert.deepEqual(Object.keys(workflow.inputs), ['url', 'loop', 'iteration', 'max_iterations', 'fixture']);
+    assert.deepEqual([workflow.inputs.iteration, workflow.inputs.max_iterations, workflow.inputs.fixture], [{ default: '1' }, { default: item.maxIterations }, {}]);
+    assert.deepEqual(inputs, { url, loop: item.loop }, 'start admits the first pass with the loop identity repairs are named from');
+    assert.equal(context.loop_id, item.loop);
+    assert.equal(context.source_id, sourceIdentity('https://example.com/#fragment'));
+    assert.deepEqual(workflow.budget, item.budget);
+    assert.deepEqual(workflow.steps.map((step) => step.id), ['capture', 'evaluate', 'repair', 'next']);
+    assert.equal(context.workflow_file, path.join(root, 'output', 'workflow.json'), 'the next step re-admits this file');
+    assert.deepEqual(Object.keys(context.repositories), ['static-site-importer', 'blocks-engine', CAPTURE_REPO]);
+    assert.equal(context.repositories['static-site-importer'].path, root);
+    assert.equal(context.repositories['blocks-engine'].base, 'trunk');
+
+    const capture = step(workflow, 'capture').exec;
+    assert.equal(capture.program, process.execPath);
+    assert.equal(argOf(capture.args, '--loop'), '{{inputs.loop}}');
+    assert.equal(argOf(capture.args, '--fixture'), '{{inputs.fixture}}', 'an already-captured fixture passes through; only the first pass captures');
+    assert.equal(capture.args.includes('--iteration'), false);
+    assert.deepEqual(JSON.parse(argOf(capture.args, '--context')), context, 'the context is pinned inside the definition');
+
+    const evaluate = step(workflow, 'evaluate');
+    assert.deepEqual(evaluate.needs, ['capture']);
+    assert.equal(evaluate.exec.program, process.execPath);
+    assert.equal(argOf(evaluate.exec.args, '--loop'), '{{inputs.loop}}');
+    assert.equal(argOf(evaluate.exec.args, '--iteration'), '{{inputs.iteration}}');
+    assert.equal(argOf(evaluate.exec.args, '--max-iterations'), '{{inputs.max_iterations}}');
+    assert.equal(argOf(evaluate.exec.args, '--fixture'), '{{steps.capture.output/fixture_root}}');
+    assert.deepEqual(JSON.parse(argOf(evaluate.exec.args, '--context')), context);
+
+    const fix = step(workflow, 'repair');
+    assert.deepEqual(fix.needs, ['evaluate']);
+    assert.deepEqual(fix.when, { step: 'evaluate', output: '/verdict', equals: 'findings' });
+    assert.equal(fix.foreach, '{{steps.evaluate.output/repair_items}}');
+    assert.equal(fix.max_parallel, 3);
+    assert.equal(fix.join, 'any');
+    assert.equal(fix.retry.max, 1);
+    assert.equal(fix.cook.repo, '{{item.repository}}');
+    assert.equal(fix.cook['task-url'], '{{item.task_url}}');
+    assert.equal(fix.cook.head, '{{item.head}}', 'branch names arrive per item, derived from the loop and iteration inputs');
+    assert.equal(fix.cook.verify, '{{item.verify}}');
+    assert.match(fix.cook.prompt, /URL repair loop \{\{inputs.loop\}\}, iteration \{\{inputs.iteration\}\}/);
+    assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' });
+    assert.equal(fix.cook['draft-pr'], false);
+    assert.equal(fix.cook['timeout-ms'], 40 * 60 * 1000, 'repair providers get a 40 minute base deadline');
+    assert.equal('secret-env' in fix.cook, false, 'no secret env is requested unless named');
+
+    const next = step(workflow, 'next');
+    assert.deepEqual(next.needs, ['repair'], 'the next pass composes this pass\'s repair branches, so it waits for them');
+    assert.deepEqual(next.when, { step: 'evaluate', output: '/continue', equals: true });
+    assert.deepEqual(next.exec.args, ['workflow', 'run', context.workflow_file, '--input', 'url={{inputs.url}}', '--input', 'loop={{inputs.loop}}', '--input', 'max_iterations={{inputs.max_iterations}}', '--input', 'iteration={{steps.evaluate.output/next_iteration}}', '--input', 'fixture={{steps.capture.output/fixture_root}}'], 'every input is carried unchanged except the iteration and the fixture root');
+
+    assert.deepEqual(context.repositories[CAPTURE_REPO], item.captureRepository);
+    assert.equal(context.capture_producer.repository, CAPTURE_REPO);
+    assert.deepEqual(context.capture_producer.build, [['npm', 'ci'], ['npm', 'run', 'build']]);
+    assert.equal(Object.hasOwn(context.capture_producer, 'failure_details'), false);
+    if (item.options.blocksEngineTaskUrl) {
+      assert.equal(context.repositories['blocks-engine'].task_url, 'https://github.com/Automattic/blocks-engine/issues/1');
+      assert.equal(step(workflow, 'repair').cook.backend, 'opencode');
+    }
+  }
+
   const failureDetails = { file: '{capture}/diagnostics.json', pointer: '/failures' };
   const configuredDetails = build(root, { captureProducer: producer(root, { failure_details: failureDetails }) });
   assert.deepEqual(configuredDetails.context.capture_producer.failure_details, failureDetails);
-
-  const fix = step(workflow, 'repair');
-  assert.deepEqual(fix.needs, ['evaluate']);
-  assert.deepEqual(fix.when, { step: 'evaluate', output: '/verdict', equals: 'findings' });
-  assert.equal(fix.foreach, '{{steps.evaluate.output/repair_items}}');
-  assert.equal(fix.max_parallel, 3);
-  assert.equal(fix.join, 'any');
-  assert.equal(fix.retry.max, 1);
-  assert.equal(fix.cook.repo, '{{item.repository}}');
-  assert.equal(fix.cook['task-url'], '{{item.task_url}}');
-  assert.equal(fix.cook.head, '{{item.head}}');
-  assert.equal(fix.cook.verify, '{{item.verify}}');
-  assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' });
-  assert.equal(fix.cook['draft-pr'], false);
-  assert.equal(fix.cook['timeout-ms'], 40 * 60 * 1000, 'repair providers get a 40 minute base deadline');
-  assert.equal('secret-env' in fix.cook, false, 'no secret env is requested unless named');
-
-  const custom = build(root, { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '8', deadline: '3h', fixBackend: 'opencode', blocksEngineTaskUrl: 'https://github.com/Automattic/blocks-engine/issues/1', captureProducer: producer(root, { verify: ['npm test', 'npm run lint'], task_url: 'https://example.com/capture-tool/issues/9' }) });
-  assert.equal(custom.context.loop_id, `${context.loop_id}-proof-r2`);
-  assert.deepEqual(custom.workflow.budget, { max_step_runs: 8, deadline: '3h' });
-  assert.equal(step(custom.workflow, 'repair').cook.backend, 'opencode');
   assert.equal(step(build(root, { fixTimeoutMinutes: '90' }).workflow, 'repair').cook['timeout-ms'], 90 * 60 * 1000);
   assert.deepEqual(step(build(root, { fixSecretEnv: ['ROADIE_PI_KEY', 'OTHER_KEY', 'ROADIE_PI_KEY'] }).workflow, 'repair').cook['secret-env'], ['ROADIE_PI_KEY', 'OTHER_KEY'], 'secret env names pass through, deduplicated');
   assert.deepEqual(step(build(root, { fixSecretEnv: 'ROADIE_PI_KEY' }).workflow, 'repair').cook['secret-env'], ['ROADIE_PI_KEY']);
   assert.equal('secret-env' in step(build(root, { fixSecretEnv: [] }).workflow, 'repair').cook, false);
-  assert.equal(custom.context.repositories['blocks-engine'].task_url, 'https://github.com/Automattic/blocks-engine/issues/1');
-  assert.deepEqual(custom.context.repositories[CAPTURE_REPO].verify, ['npm test', 'npm run lint']);
-  assert.equal(custom.context.repositories[CAPTURE_REPO].task_url, 'https://example.com/capture-tool/issues/9');
   assert.throws(() => build(root, { instance: '../invalid' }), /path-safe/);
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
@@ -202,7 +242,11 @@ test('every routed repository gets a citable evidence file, and the step output 
   }
   repairs[CAPTURE_REPO].scope = [];
   const repositories = { 'blocks-engine': { task_url: taskUrl, base: 'trunk', verify: ['composer test'] }, [CAPTURE_REPO]: { task_url: taskUrl, base: 'main', verify: ['npm test'] } };
-  const output = evaluationVerdict({ verdict: 'findings', repairs, components: { 'blocks-engine': { head_sha: 'b'.repeat(40), merged: [{ branch: 'url-loop/x/blocks-engine-i1', sha: 'c'.repeat(40) }] } }, quality: { quality_pass: false } }, '/e.json', { instance: 'wf-1', iteration: 2, repositories });
+  const output = evaluationVerdict({ verdict: 'findings', repairs, components: { 'blocks-engine': { head_sha: 'b'.repeat(40), merged: [{ branch: 'url-loop/x/blocks-engine-i1', sha: 'c'.repeat(40) }] } }, quality: { quality_pass: false } }, '/e.json', { instance: 'wf-1', iteration: 2, maxIterations: 3, repositories });
+  assert.deepEqual([output.continue, output.next_iteration], [true, 3], 'findings with iterations left continue the chain');
+  const capped = evaluationVerdict({ verdict: 'findings', repairs }, '/e.json', { instance: 'wf-1', iteration: 3, maxIterations: 3, repositories });
+  assert.deepEqual([capped.continue, capped.next_iteration], [false, 4], 'the iteration cap ends the chain without an iterate budget');
+  assert.deepEqual([evaluationVerdict({ verdict: 'accepted', repairs }, '/e.json', { instance: 'wf-1', iteration: 1, maxIterations: 3, repositories }).continue, evaluationVerdict({ verdict: 'blocked', repairs }, '/e.json', { instance: 'wf-1', iteration: 1, maxIterations: 3, repositories }).continue], [false, false]);
   assert.deepEqual(output.repairs['blocks-engine'], { findings: 1, report_path: repairs['blocks-engine'].report_path });
   assert.deepEqual(output.components['blocks-engine'].merged, ['url-loop/x/blocks-engine-i1']);
   assert.deepEqual(output.repair_items, [CAPTURE_REPO, 'blocks-engine'].map((repository) => ({ repository, report_path: repairs[repository].report_path, head: repairBranch('wf-1', repository, 2), task_url: taskUrl, scope: repairs[repository].scope || [], scope_text: (repairs[repository].scope || []).join(', '), verify: verifyProgram(repositories[repository].verify, repairs[repository].scope || [], repositories[repository].base) })));
@@ -210,7 +254,7 @@ test('every routed repository gets a citable evidence file, and the step output 
   assert.match(output.repair_items[1].verify, /git status --porcelain/);
   assert.doesNotMatch(output.repair_items[0].verify, /git diff/);
   assert.equal(verifyProgram(['npm ci', 'npm test']), '(npm ci) && (npm test)', 'one shell program per item: a templated array would arrive as JSON');
-  for (const verdict of ['accepted', 'blocked']) assert.deepEqual(evaluationVerdict({ verdict, repairs }, '/e.json', { instance: 'wf-1', iteration: 1, repositories }).repair_items, []);
+  for (const verdict of ['accepted', 'blocked']) assert.deepEqual(evaluationVerdict({ verdict, repairs }, '/e.json', { instance: 'wf-1', iteration: 1, maxIterations: 3, repositories }).repair_items, []);
 });
 
 test('repair branches are discovered for one instance and repository in iteration order', () => {
@@ -260,6 +304,48 @@ test('the candidate merges this instance\'s repair branches onto the base, and a
     () => composeRepository({ repo: 'blocks-engine', source, remote, base: 'trunk', instance: 'wf-2', directory: path.join(root, 'eval2', 'candidate', 'blocks-engine') }),
     (error) => error instanceof LoopBlocker && error.reason === `candidate_merge_conflict:blocks-engine:${repairBranch('wf-2', 'blocks-engine', 2)}`,
   );
+});
+
+test('the capture step passes a fixture through and otherwise captures the source once', () => {
+  const root = tmp('ssi-capture-step-');
+  const loop = sourceIdentity(url);
+  const remote = path.join(root, 'remote');
+  gitIn(root, 'init', '--quiet', '-b', 'main', remote);
+  fs.writeFileSync(path.join(remote, 'cli.js'), 'producer\n');
+  gitIn(remote, 'add', '.');
+  gitIn(remote, 'commit', '--quiet', '-m', 'base');
+  const source = path.join(root, 'source');
+  gitIn(root, 'clone', '--quiet', remote, source);
+  const producer = {
+    repository: CAPTURE_REPO,
+    build: [],
+    capture: ['sh', '-c', 'mkdir -p "$1/site/website" && echo \'<html></html>\' > "$1/site/website/index.html" && printf \'{"schema":"t","summary":{"routesCaptured":1,"routesFailed":0}}\' > "$1/site/capture-receipt.json"', '{url}', '{output}'],
+    compare: ['true'],
+    compare_candidate: [],
+    compare_report: '{capture}/compare/{stage}/report.json',
+  };
+  const context = {
+    source_id: loop,
+    loop_id: loop,
+    root: path.join(root, 'artifacts'),
+    capture_producer: producer,
+    repositories: { [CAPTURE_REPO]: { path: source, remote, base: 'main' } },
+    runtime_toolchain: {},
+  };
+  assert.throws(() => runCapture({ context, url, loop: 'other-loop', fixture: 'null' }), /capture_loop_mismatch/, 'the loop input must be the context\'s loop identity');
+
+  // A captured fixture root passes through; Homeboy renders an unset optional
+  // input as the string `null`, so that means no fixture too.
+  const site = path.join(root, 'elsewhere', 'site');
+  fs.mkdirSync(path.join(site, 'website'), { recursive: true });
+  fs.writeFileSync(path.join(site, 'website', 'index.html'), '<html></html>');
+  fs.writeFileSync(path.join(site, 'capture-receipt.json'), JSON.stringify({ schema: 't', summary: { routesCaptured: 1, routesFailed: 0 } }));
+  assert.deepEqual(runCapture({ context, url, loop, fixture: site }), { fixture_root: site }, 'an already-captured fixture is passed through untouched');
+
+  const captured = runCapture({ context, url, loop, fixture: 'null' });
+  assert.deepEqual(captured, { fixture_root: path.join(context.root, 'captures', loop, 'capture', 'site') }, 'without a fixture the composed producer captures the live URL once');
+  assert.throws(() => runCapture({ context, url, loop, fixture: '' }), /capture_output_not_fresh/, 'a re-capture would need a new loop identity');
+  assert.throws(() => runCapture({ context, url, loop, fixture: path.join(root, 'empty') }), /fixture_root_invalid/);
 });
 
 // The shape Codebox v0.33.0 `wordpress.editor-open presentation-url=/` writes.
@@ -353,6 +439,9 @@ test('producer commands expand per composed checkout, and the capture is found b
   assert.equal(located.directory, site);
   assert.equal(located.website, path.join(site, 'website'));
   assert.deepEqual(located.failures, [{ routes_failed: 1, routes_captured: 11, receipt_path: path.join(site, 'capture-receipt.json') }]);
+  assert.deepEqual(captureAt(site, null), located, 'a fixture root is read back the same way it was located');
+  assert.equal(captureAt(path.join(output, 'absent'), null), null, 'a fixture without a receipt is invalid');
+  assert.equal(captureAt(output, null), null, 'the fixture root is the capture directory, not its parent');
   const diagnostics = path.join(site, 'diagnostics.json');
   fs.writeFileSync(diagnostics, JSON.stringify({ failures: [{ url: 'x'.repeat(600), error: 'route drift' }] }));
   assert.equal(locateCapture(output, { file: '{capture}/diagnostics.json', pointer: '/failures' }).failures[0].routes[0].url.length, 500);
@@ -396,7 +485,7 @@ test('Homeboy accepts the generated definition', (context) => {
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const data = JSON.parse(result.stdout).data;
   assert.equal(data.id, WORKFLOW_ID);
-  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['evaluate', 'exec'], ['repair', 'cook']]);
+  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['capture', 'exec'], ['evaluate', 'exec'], ['repair', 'cook'], ['next', 'exec']]);
   fs.writeFileSync(file, JSON.stringify(build(root, { fixSecretEnv: ['ROADIE_PI_KEY'] }).workflow));
   const withSecret = spawnSync('homeboy', ['workflow', 'validate', file], { encoding: 'utf8' });
   assert.equal(withSecret.status, 0, `secret-env must validate\n${withSecret.stderr}\n${withSecret.stdout}`);

@@ -417,9 +417,14 @@ status.
 ### Durable, bounded evaluation
 
 `tools/url-loop-controller.mjs` turns one URL into a bounded, hands-off repair
-loop (`homeboy/workflow/v1`) across SSI, Blocks Engine and a configured capture
-producer. The operator supplies the URL; the loop opens upstream pull requests
-until the source passes or a budget or typed blocker stops it.
+chain of `homeboy/workflow/v1` instances across SSI, Blocks Engine and a
+configured capture producer. The operator supplies the URL; the loop opens
+upstream pull requests until the source passes or the iteration cap or a typed
+blocker stops it. One instance is one pass: the pass's final `next` step
+re-admits the same definition with `iteration` advanced and the captured
+fixture carried as an input, and because Homeboy derives instance ids
+deterministically from definition and inputs, a replayed admission converges on
+the existing next instance.
 
 The capture producer is operator configuration: the repository the loop
 composes and repairs for capture, and the commands that build it, capture a URL
@@ -463,31 +468,44 @@ node tools/url-loop-controller.mjs start \
 homeboy workflow status <instance printed by start>
 ```
 
-Each iteration runs four steps:
+Each pass runs four steps:
 
-1. **`evaluate`** composes the candidate and measures it:
+1. **`capture`** runs only on the first pass: it composes the producer
+   repository, builds it and captures the live URL once, and its output is the
+   capture directory (the loop's `fixture`). A pass that received a `fixture`
+   input passes it through unchanged, so later passes measure the same capture.
+2. **`evaluate`** composes the candidate and measures it:
    - **Compose.** For each repository it checks out the public base (`main`;
      `trunk` for Blocks Engine; the configured base for the producer) and merges
-     this instance's repair branches `url-loop/<instance>/<repo>-i<n>` in
-     iteration order, so every iteration measures all earlier repairs. Base and
-     merged SHAs are recorded; a conflict is the typed blocker
-     `candidate_merge_conflict:<repo>:<branch>`.
-   - **Capture.** It builds the composed producer, captures the live URL, finds
-     the capture by its receipt and runs the `capture` comparison.
+     this loop's repair branches `url-loop/<loop>/<repo>-i<n>` in iteration
+     order, so every pass measures all earlier repairs. `<loop>` is the loop
+     identity `start` derives from the URL (suffixed with `--instance` when
+     forking), shared by every pass, so branch names never depend on a Homeboy
+     instance id. Base and merged SHAs are recorded; a conflict is the typed
+     blocker `candidate_merge_conflict:<repo>:<branch>`.
+   - **Compare.** It builds the composed producer and runs the `capture`
+     comparison against the fixture.
    - **Import.** It builds the SSI development package against the composed
      Blocks Engine (`tools/build-dev-package.mjs`) and imports the capture into
      a disposable WP Codebox Playground with `recipe-run`: WordPress 7.1,
      WP-CLI, Jetpack preinstalled for forms, and SSI driven through
      `import --single-step --state` because PHP.wasm has no subprocesses.
-   - **Compare.** While Codebox serves the imported site, the `materialization`
-     comparison measures WordPress against the capture.
- 2. **`repair`** is one Homeboy Cook step with `foreach` over the routed repair
+   - **Measure.** While Codebox serves the imported site, the `materialization`
+     comparison measures WordPress against the capture. The step output records
+     the verdict plus `next_iteration` and `continue`, true only when the
+     verdict is `findings` and `iteration < max_iterations`.
+ 3. **`repair`** is one Homeboy Cook step with `foreach` over the routed repair
     items. It fans out up to three independent repository repairs; each Cook
     receives that repository's evidence, tracker, branch and verify commands.
-    The `any` join lets the next evaluation run when at least one repair passes,
+    The `any` join lets the next step run when at least one repair passes,
     even if another repository's repair fails. If every repair fails, the join
     fails the workflow instance. Repairs open ready-for-review PRs; nothing merges
     automatically.
+4. **`next`** re-admits the same definition file (`workflow.json` under the
+    loop's artifact root) with every input unchanged except
+    `iteration=<next_iteration>` and `fixture=<fixture root>`, gated by
+    `continue == true`. `max_step_runs` and `deadline` bound each pass; the
+    iteration cap bounds the chain.
 
 **Verdict.** `accepted` requires a passing capture comparison, a passing
 materialization comparison, `quality_pass`, and zero unsupported fallback, core
@@ -500,7 +518,7 @@ evidence with an owner is `findings`; missing or unroutable evidence is
 failures go to the capture producer; finding packets owned by `blocks-engine/*`
 go to Blocks Engine; other finding packets, import failures and
 materialization-comparison failures go to SSI. Each routed repository gets
-`evaluations/<instance>/i<n>/repairs/<repo>.json` with its findings, the
+`evaluations/<loop>/i<n>/repairs/<repo>.json` with its findings, the
 composed component SHAs, stage reports, import quality and a sorted `scope`
 array. Scope is derived from finding packet owners of the form
 `<repository>/<component>` when that top-level component directory exists in
@@ -528,16 +546,21 @@ the recorded serialized output the gate compares. `SSI_BLOCKS_ENGINE_PATH` and
 a runner. Steps run with an empty environment plus the declared public
 toolchain names (`PATH`, `HOME`, `XDG_*`, `PLAYWRIGHT_*`, npm and Composer
 caches) captured where `start` runs. Evaluation children get a temp directory
-owned by the iteration (`evaluations/<instance>/i<n>/tmp`), never an inherited
+owned by the pass (`evaluations/<loop>/i<n>/tmp`), never an inherited
 one. `--fix-timeout-minutes` (default 40) is each repair provider's base deadline;
 Homeboy extends a provider still producing output to three times that.
 `--fix-secret-env <NAME>` (repeatable) names an environment variable each repair
 Cook asks Homeboy to hydrate for its provider (the Cook step's `secret-env`),
 resolved from the runner's configured secrets; providers otherwise see a
 filtered environment, so a credential such as a provider header key must be
-named here.
+named here. `--max-iterations` (default 3) bounds the chain: `evaluate` emits
+`continue` only while the verdict is `findings` and `iteration < max_iterations`,
+and the `next` step re-admits the definition only while `continue` holds.
+`--max-step-runs` and `--deadline` bound each pass, not the whole chain.
 `--instance <token>` forks an
-independent loop for the same source. `workflow` instead of `start` prints the
+independent loop for the same source: repair branches, captures and evaluations
+are named from the resulting loop identity, so a fork never composes another
+loop's repairs. `workflow` instead of `start` prints the
 generated definition for `homeboy workflow validate -` without admitting it.
 
 ## Product Handoff Contract
