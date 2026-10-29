@@ -54,10 +54,20 @@ request() {
  curl -sS -D "$evidence/${phase}-redirect.txt" -o /dev/null "http://127.0.0.1:${port}/old-garden"
 }
 request before
+# The verification runtime requests the readiness probe with its signal; the
+# public captures above must render without it. Capture both worlds.
+verification_capture() {
+ local phase="$1"
+ local front
+ front="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1])).pages[0].url; console.log(p + (p.includes("?") ? "&" : "?") + "static_site_importer_verify=font-readiness")' "$evidence/before.json")"
+ curl -fsS "$front" > "$evidence/${phase}-verification.html"
+}
+verification_capture before
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/route-ownership-wordpress.php reimport
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/route-ownership-wordpress.php reimported
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/route-ownership-wordpress.php rollback
 "${wp[@]}" theme install twentytwentyfive --force
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/route-ownership-wordpress.php switch
 request after
+verification_capture after
 node "$root/tools/verify-route-ownership.mjs" "$evidence"

@@ -752,7 +752,13 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( $enqueue_stylesheet ) {
 			$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
 		}
-		$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
+		// The readiness probe is verification-only capture machinery. It never
+		// enqueues on the public front end; the verification runtime that reads
+		// the readiness record requests it for its own capture request.
+		$bootstrap .= "    \$static_site_importer_verify = isset( \$_GET['static_site_importer_verify'] ) ? sanitize_key( wp_unslash( \$_GET['static_site_importer_verify'] ) ) : '';\n";
+		$bootstrap .= "    if ( 'font-readiness' === \$static_site_importer_verify ) {\n";
+		$bootstrap .= "        wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
+		$bootstrap .= "    }\n";
 		$bootstrap .= "} );\n";
 		$writes[]   = self::write( 'functions.php', $bootstrap, 'theme.font_materialization' );
 		$writes[]   = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );

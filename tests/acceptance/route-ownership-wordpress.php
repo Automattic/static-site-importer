@@ -16,21 +16,28 @@ if ( in_array( $phase, array( 'import', 'reimport' ), true ) ) {
 	if ( 'import' === $phase ) {
 		update_option( 'blogdescription', '' );
 		delete_option( 'site_icon' );
+	} else {
+		// The site owner chooses a different language between imports; the next
+		// import must record the decision as preserved, never overwrite it.
+		update_option( 'WPLANG', 'fr_FR' );
 	}
 	$chunk = static function ( string $type, string $bytes ): string {
 		return pack( 'N', strlen( $bytes ) ) . $type . $bytes . pack( 'N', crc32( $type . $bytes ) );
 	};
 	$png   = "\x89PNG\r\n\x1a\n" . $chunk( 'IHDR', pack( 'NNCCCCC', 512, 512, 8, 2, 0, 0, 0 ) )
 		. $chunk( 'IDAT', gzcompress( str_repeat( "\0" . str_repeat( "\x14\x28\x3c", 512 ), 512 ) ) ) . $chunk( 'IEND', '' );
-	$head  = '<link rel="icon" href="assets/content.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Ownership Garden","slogan":"Growing together"}</script>';
 	$files = array();
 	foreach ( array(
-		'index.html' => 'Garden home',
-		'about.html' => 'About the garden',
-	) as $path => $title ) {
+		// path => array( title, lang, asset base, home, about, contact links ).
+		'index.html'      => array( 'Garden home', 'nl', '', 'index.html', 'about.html', 'fr/contact.html' ),
+		'about.html'      => array( 'About the garden', 'en', '', 'index.html', 'about.html', 'fr/contact.html' ),
+		'fr/contact.html' => array( 'Contact the garden', 'fr', '../', '../index.html', '../about.html', 'contact.html' ),
+	) as $path => $spec ) {
+		list( $title, $lang, $base, $home, $about, $contact ) = $spec;
+		$head    = '<link rel="icon" href="' . $base . 'assets/content.png"><script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Ownership Garden","slogan":"Growing together"}</script>';
 		$files[] = array(
 			'path'    => 'website/' . $path,
-			'content' => '<!doctype html><html lang="en"><head><title>' . $title . ' | Garden</title><meta name="description" content="Authored description for ' . $title . '"><meta property="og:image" content="assets/social.png">' . $head . '</head><body><header><nav><a href="index.html">Home</a><a href="about.html">About</a></nav></header><main><h1>' . $title . '</h1><p>Persistent garden content.</p><img src="assets/content.png" alt="Garden artwork"></main></body></html>',
+			'content' => '<!doctype html><html lang="' . $lang . '"><head><title>' . $title . ' | Garden</title><meta name="description" content="Authored description for ' . $title . '"><meta property="og:image" content="' . $base . 'assets/social.png">' . $head . '</head><body><header><nav><a href="' . $home . '">Home</a><a href="' . $about . '">About</a><a href="' . $contact . '">Contact</a></nav></header><main><h1>' . $title . '</h1><p>Persistent garden content.</p><img src="' . $base . 'assets/content.png" alt="Garden artwork"></main></body></html>',
 		);
 	}
 	$files[]     = array(
@@ -125,8 +132,19 @@ $pages = get_posts(
 		'order'       => 'ASC',
 	)
 );
-$assert( 2 === count( $pages ), 'Two imported routes persist.' );
-$snapshot = array(
+$assert( 3 === count( $pages ), 'Three imported routes persist.' );
+$route_language_key = Static_Site_Importer_Site_Language::ROUTE_META_KEY;
+// before: the source document language (nl → nl_NL) owns the site language
+// through the core language-pack path. Later phases: the owner's fr_FR
+// survives reimport, rollback and the theme switch untouched.
+$site_language_owner = 'before' === $phase ? 'nl_NL' : 'fr_FR';
+$assert( get_option( 'WPLANG' ) === $site_language_owner, 'The site language owner matches the phase expectation: source language applied via the core pack path, then the owner value preserved.' );
+$route_language_owners = array(
+	'Garden home'        => 'before' === $phase ? null : 'nl',
+	'About the garden'   => 'en',
+	'Contact the garden' => 'fr',
+);
+$snapshot              = array(
 	'pages'    => array(),
 	'menus'    => array(),
 	'media'    => array(),
@@ -141,6 +159,14 @@ foreach ( $pages as $page ) {
 	$assert( $image > 0 && 'attachment' === get_post_type( $image ), 'Social image belongs to a Media Library attachment.' );
 	$assert( get_post_meta( $id, 'jetpack_seo_html_title', true ) === sprintf( '%s | Garden', $page->post_title ), 'The branded document title belongs to the registered SEO title; post_title stays the route title.' );
 	$assert( get_post_meta( $id, 'advanced_seo_description', true ) === $page->post_excerpt, 'Registered platform description is written.' );
+	$expected_route_language = array_key_exists( $page->post_title, $route_language_owners ) ? $route_language_owners[ $page->post_title ] : false;
+	$assert( false !== $expected_route_language, 'Every imported route is known to the language ownership proof: ' . $page->post_title );
+	$route_language = get_post_meta( $id, $route_language_key, true );
+	if ( null === $expected_route_language ) {
+		$assert( ! metadata_exists( 'post', $id, $route_language_key ), 'A route sharing the site language stays unrecorded.' );
+	} else {
+		$assert( $expected_route_language === $route_language, 'A route whose source language differs from the site language carries its language on its own owner.' );
+	}
 	$snapshot['pages'][] = array(
 		'id'              => $id,
 		'title'           => $page->post_title,
@@ -151,6 +177,7 @@ foreach ( $pages as $page ) {
 		'image_url'       => wp_get_attachment_url( $image ),
 		'seo_title'       => get_post_meta( $id, 'jetpack_seo_html_title', true ),
 		'seo_description' => get_post_meta( $id, 'advanced_seo_description', true ),
+		'route_language'  => $route_language,
 	);
 }
 foreach ( get_posts(

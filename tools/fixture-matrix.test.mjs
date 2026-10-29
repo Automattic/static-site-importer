@@ -5170,7 +5170,7 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
   assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
   assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
-  assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+  assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/?static_site_importer_verify=font-readiness');
   for (const visualStep of visualSteps) {
     assert.equal(visualCompareMatrixComparison(visualStep).animatedMedia, 'first-frame');
   }
@@ -5227,8 +5227,8 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
     assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
     assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
-    assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
-    assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+    assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/?static_site_importer_verify=font-readiness');
+    assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/?static_site_importer_verify=font-readiness');
     assert.ok(probeIndex >= 0);
     assert.ok(mergeIndex > probeIndex);
     assert.ok(importIndex > mergeIndex);
@@ -6442,13 +6442,13 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');
   assert.equal(aboutComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/about.html');
-  assert.equal(aboutComparison.candidateUrl, '/about/');
+  assert.equal(aboutComparison.candidateUrl, '/about/?static_site_importer_verify=font-readiness');
   const nestedAboutComparison = visualCompareMatrixComparison(visualSteps[2]);
   assert.equal(nestedAboutComparison.name, 'artist--about--2');
   assert.equal(nestedAboutComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/about/index.html');
-  assert.equal(nestedAboutComparison.candidateUrl, '/about/');
+  assert.equal(nestedAboutComparison.candidateUrl, '/about/?static_site_importer_verify=font-readiness');
   const teamComparison = visualCompareMatrixComparison(visualSteps[3]);
-  assert.equal(teamComparison.candidateUrl, '/about/team/');
+  assert.equal(teamComparison.candidateUrl, '/about/team/?static_site_importer_verify=font-readiness');
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.extra_surfaces_per_fixture, 3);
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.total_surface_count, 4);
   assert.equal(multiSurfaceRecipe.metadata.runtime_cost_warnings[0].code, 'surface_coverage_runtime_cost');
@@ -7021,7 +7021,7 @@ test('fixture matrix recipe steps emit fixture attribution metadata for import e
   assert.equal(steps.find((step) => step.metadata.phase === 'import').metadata.artifact, '/artifacts/static-site-importer-fixture-matrix/simple-site/artifact.json');
   assert.equal(steps.find((step) => step.metadata.phase === 'editor').metadata.target, 'front-page');
   assert.equal(steps.find((step) => step.metadata.phase === 'editor').allowFailure, true);
-  assert.equal(steps.find((step) => step.metadata.phase === 'visual').metadata.candidate_url, '/');
+  assert.equal(steps.find((step) => step.metadata.phase === 'visual').metadata.candidate_url, '/?static_site_importer_verify=font-readiness');
   assert.equal(steps.find((step) => step.metadata.phase === 'visual').allowFailure, true);
   assert.match(steps.find((step) => step.metadata.phase === 'visual').metadata.source_url, /simple-site\/source\/index\.html$/);
 });
@@ -7528,7 +7528,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
-  assert.equal(comparison.candidateUrl, '/');
+  assert.equal(comparison.candidateUrl, '/?static_site_importer_verify=font-readiness');
   assert.equal(comparison.fullPage, true);
   assert.equal(comparison.threshold, 0.05);
 
@@ -7560,7 +7560,7 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
   const comparison = visualCompareMatrixComparison(step);
   assert.equal(comparison.name, 'shop');
   assert.equal(comparison.sourceUrl, 'http://127.0.0.1:4173/shop/index.html');
-  assert.equal(comparison.candidateUrl, '/?p=42');
+  assert.equal(comparison.candidateUrl, '/?p=42&static_site_importer_verify=font-readiness');
   assert.equal(comparison.threshold, 0.2);
   assert.equal(comparison.sourceLabel, 'shop-source');
   assert.equal(comparison.candidateLabel, 'shop-candidate');
@@ -7590,7 +7590,7 @@ test('visual attribution options normalize positive limits and targeted selector
 
 test('visual parity defaults require the candidate font readiness record', () => {
   const step = visualParityCompareStep({ fixture: { id: 'shop' } });
-  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0.01}]}');
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/?static_site_importer_verify=font-readiness","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0.01}]}');
 });
 
 test('visual attribution options reach every fixture matrix comparison', () => {
@@ -7734,7 +7734,7 @@ test('default visual-parity source-url targets the staged same-origin source tre
     '/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html',
   );
   // Candidate defaults to the imported front page served at `/`.
-  assert.equal(visualCompareMatrixComparison(visualStep).candidateUrl, '/');
+  assert.equal(visualCompareMatrixComparison(visualStep).candidateUrl, '/?static_site_importer_verify=font-readiness');
 });
 
 test('explicit visual-parity source base can still target a served uploads path', () => {
