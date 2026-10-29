@@ -312,6 +312,9 @@ final class Static_Site_Importer_Quality_Gates {
 
 	/** Identify the canonical form fallback across raw and normalized diagnostics. */
 	public static function is_form_fallback_diagnostic( array $diagnostic ): bool {
+		if ( self::is_commerce_controls_fallback_diagnostic( $diagnostic ) && 'commerce_add_to_cart_form' === ( $diagnostic['binding']['role'] ?? '' ) ) {
+			return true;
+		}
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
 			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
 				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic );
@@ -734,13 +737,13 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
-			if ( 'commerce_add_to_cart_form' === ( $receipt['role'] ?? '' ) && 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) ) {
+			if ( 'commerce_add_to_cart_form' === ( $receipt['role'] ?? '' ) && ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) ) {
 				$receipt = array();
 			}
 			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
-			$reason               = ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) ? ( empty( $receipt ) ? 'no_seeded_product_for_page' : 'provider_replacement_not_persisted' ) : '';
+			$reason               = ! $resolved_by_provider && Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) ? ( empty( $receipt ) ? 'no_seeded_product_for_page' : 'provider_replacement_not_persisted' ) : '';
 			$binding_reason       = $report['materialization_receipt']['completed']['runtime_declarations']['entities'][ $identity ]['product_form_binding_reason'] ?? '';
-			if ( ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) && in_array( $binding_reason, array( 'ambiguous_page_product', 'anchor_not_in_page' ), true ) ) {
+			if ( ! $resolved_by_provider && Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) && in_array( $binding_reason, array( 'ambiguous_page_product', 'anchor_not_in_page' ), true ) ) {
 				$reason = $binding_reason;
 			}
 

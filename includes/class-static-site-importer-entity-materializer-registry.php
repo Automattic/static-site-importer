@@ -1113,7 +1113,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks, array $resolved ): array {
 		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $resolved );
 		foreach ( $fallbacks as $fallback ) {
-			if ( ! is_array( $fallback ) || 'commerce_add_to_cart' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) {
+			if ( ! is_array( $fallback ) || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
 				continue;
 			}
 			$source        = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
@@ -1194,6 +1194,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			list( $adapter, $result ) = array_values( $match )[0];
 			$anchors                  = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array();
+			if ( empty( $anchors ) && 'commerce_add_to_cart_form' === ( $fallback['binding']['role'] ?? '' ) ) {
+				$anchors[] = $fallback['binding'];
+			}
 			if ( empty( $anchors ) ) {
 				$region = Static_Site_Importer_Product_Finding_Materializer::serialize_readable_graft_anchor( $fallback['readable_blocks'] ?? array() );
 				if ( '' !== $region ) {

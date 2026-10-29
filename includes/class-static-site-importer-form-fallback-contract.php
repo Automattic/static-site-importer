@@ -20,6 +20,13 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		return is_string( $intent ) && '' !== $intent ? $intent : 'unknown';
 	}
 
+	/** Identify purchase forms and explicitly bound formless purchase regions. */
+	public static function is_add_to_cart_fallback( array $finding ): bool {
+		return 'commerce_add_to_cart' === self::intent( $finding )
+			|| ( in_array( 'html_commerce_controls_fallback', array( $finding['diagnostic_code'] ?? '', $finding['code'] ?? '', $finding['reason_code'] ?? '' ), true )
+				&& 'commerce_add_to_cart_form' === ( $finding['binding']['role'] ?? '' ) );
+	}
+
 	/** The owning provider boundary for a form fallback or its declared entity. */
 	public static function route( array $finding ): string {
 		return match ( self::intent( $finding ) ) {
