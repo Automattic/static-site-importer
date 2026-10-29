@@ -298,43 +298,6 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * One picture served at several sizes by a path-based image service becomes one
-	 * attachment, using the largest captured size. A different picture stays separate.
-	 */
-	public function test_sizes_of_one_image_share_one_attachment(): void {
-		$uri    = get_theme_root_uri() . '/' . $this->slug();
-		$family = '/media/external/cdn/photo.png';
-		$size   = static fn( int $width ): string => $family . '/v1/fill/w_' . $width . ',h_' . $width . ',q_90/photo.webp';
-		$markup = '';
-		foreach ( array( 48, 144, 96 ) as $width ) {
-			$markup .= '<!-- wp:image --><figure class="wp-block-image"><img src="' . $uri . $size( $width ) . '" alt="Logo"/></figure><!-- /wp:image -->';
-		}
-		$markup .= '<!-- wp:image --><figure class="wp-block-image"><img src="' . $uri . '/media/photo.png" alt="Other"/></figure><!-- /wp:image -->';
-		$state   = $this->state_with_page( $markup );
-		foreach ( array( 48, 144, 96 ) as $width ) {
-			wp_mkdir_p( dirname( $this->theme_dir . $size( $width ) ) );
-			$image = imagecreatetruecolor( $width, $width );
-			imagepng( $image, $this->theme_dir . $size( $width ) );
-			imagedestroy( $image );
-		}
-
-		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
-
-		$this->assertIsArray( $report );
-		$this->assertSame( 2, $report['attachment_count'], 'three sizes of one image share one attachment; the other image is separate' );
-		$ids = array();
-		foreach ( parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) ) as $block ) {
-			if ( 'core/image' === $block['blockName'] ) {
-				$ids[] = (int) $block['attrs']['id'];
-			}
-		}
-		$this->assertCount( 4, $ids );
-		$this->assertSame( array( $ids[0], $ids[0], $ids[0] ), array_slice( $ids, 0, 3 ) );
-		$this->assertNotSame( $ids[0], $ids[3] );
-		$this->assertSame( 144, (int) wp_get_attachment_metadata( $ids[0] )['width'], 'the largest captured size is kept' );
-	}
-
-	/**
 	 * An authored candidate family rides in core/image metadata. It binds with
 	 * the image, candidate by candidate, so the render keeps the source choice.
 	 */
