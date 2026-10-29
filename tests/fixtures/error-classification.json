@@ -53,6 +53,7 @@
     "existing_theme_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new ErrorException()": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace could not be created.')": { "class": "operational", "owning_layer": "static-site-importer" },
+    "image_resource_unresolved": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace directory cannot be a symlink.')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace ownership record could not be published.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace ownership record is invalid.')": { "class": "integrity", "owning_layer": "static-site-importer" },

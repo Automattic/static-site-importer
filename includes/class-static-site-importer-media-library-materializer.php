@@ -10,14 +10,15 @@ defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/class-static-site-importer-ico-asset.php';
 
 /**
- * Moves page-owned raster images into the Media Library.
+ * Moves plan-owned images into the Media Library.
  *
  * The site plan resolves every image to a file the generated theme ships, so
  * after an import an owner sees an empty Media Library and image blocks with
  * no attachment. Raster files referenced by materialized page content — a
  * core/image, core/cover, or core/media-text block, or an img inside another
  * block's saved markup — become attachments. Identical bytes share one
- * attachment. Native blocks are bound the way the editor binds an uploaded
+ * attachment for legacy plans; capture records instead own resource identity.
+ * Native blocks are bound the way the editor binds an uploaded
  * image: media id, `wp-image-{id}` class, attachment URL. Theme chrome
  * (template parts), SVG icons, and CSS backgrounds stay theme-owned design
  * assets.
@@ -325,6 +326,12 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					if ( ! in_array( $wanted, $rels, true ) || '' === $url ) {
 						continue;
 					}
+					foreach ( $state['resolved']['resolution']['attachment_resolutions'] ?? array() as $attachment ) {
+						if ( $url === $attachment['url'] ) {
+							$state['pending_site_icon'] = $attachment['id'];
+							return $attachment['id'];
+						}
+					}
 					$relative = self::theme_relative_raster( $url, $theme_uri );
 					if ( null === $relative ) {
 						continue;
@@ -379,7 +386,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$authored  = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && ( $selection['src'] ?? null ) === $src;
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
-		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored );
+		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
 		if ( null !== $error ) {
 			return $block_match[0];
 		}
@@ -448,13 +455,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int> $attachments Attachment ID per theme-relative source (0 when not bindable).
 	 * @param array<string,int> $by_hash     Attachment ID per content hash.
 	 */
-	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error, bool $authored_selection = false ): int {
-		// Explicit selection descriptors apply to these exact bytes. Largest-
-		// rendition promotion remains for native images without a source family.
-		$source = $authored_selection ? $relative : self::largest_rendition( $theme_dir, $relative );
-		if ( $source !== $relative ) {
-			return self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error, true );
-		}
+	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
 		return self::attachment_from_source( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
 	}
 
@@ -469,7 +470,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
-		$file = $theme_dir . '/' . $relative;
+		$file   = $theme_dir . '/' . $relative;
+		$record = $state['staged_image_records'][ $relative ] ?? null;
+		if ( is_array( $record ) ) {
+			require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+			if ( ! Static_Site_Importer_Image_Assets::verify( $file, $record ) ) {
+				$error = new WP_Error( 'image_resource_unresolved', 'The staged image does not match its capture record.' );
+				return 0;
+			}
+			$identity                 = basename( $theme_dir ) . '#resource#' . hash( 'sha256', $record['original']['source_url'] . '#' . $record['original']['sha256'] );
+			$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, $alt, $state, $error, $record );
+			return $attachments[ $relative ];
+		}
 		$hash = is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '';
 		if ( '' !== $hash && isset( $by_hash[ $hash ] ) ) {
 			$attachments[ $relative ] = $by_hash[ $hash ];
@@ -488,12 +500,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 
 	/**
 	 * Upload plan-routed media from verified compiled bytes, never from the theme.
-	 * The temporary source tree preserves rendition selection and the shared
-	 * attachment identity/dedupe path used by the post-write materializer.
+	 * Capture records own resource identity; legacy plans keep exact captured
+	 * bytes. WordPress owns responsive sizes, never URL-shaped sibling guesses.
 	 *
 	 * @return array|WP_Error Token resolutions or an upload failure.
 	 */
 	public static function resolve_plan_assets( array &$state ) {
+		$by_source = array_column( $state['plan']['assets'] ?? array(), null, 'source_path' );
+		foreach ( $state['args']['image_asset_records'] ?? array() as $source => $record ) {
+			if ( 'media_library' !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
+				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare Media Library ownership for every recorded image.', array( 'source_path' => $source ) );
+			}
+		}
 		$assets = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) );
 		if ( 'blocks-engine/wordpress-site-plan/v3' !== ( $state['plan']['schema'] ?? '' ) || empty( $assets ) || ! function_exists( 'wp_insert_attachment' ) ) {
 			return array();
@@ -503,16 +521,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$files = array();
 		try {
 			$writes = array_column( $state['resolved']['writes'], null, 'target_path' );
-			// Include captured image siblings for the existing largest-rendition
-			// policy, even when a sibling itself has only stylesheet consumers.
 			foreach ( $state['plan']['assets'] as $asset ) {
-				if ( 'media_library' !== ( $asset['destination'] ?? '' ) && ! in_array( strtolower( pathinfo( $asset['target_path'], PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+				if ( 'media_library' !== ( $asset['destination'] ?? '' ) ) {
 					continue;
 				}
 				$relative = $asset['target_path'];
 				$write    = $writes[ $relative ] ?? null;
 				if ( ! is_array( $write ) || ! Static_Site_Importer_Site_Plan_Persistence::safe_destination( $dir, $relative ) ) {
 					return new WP_Error( 'media_library_source_missing' );
+				}
+				$record = $state['args']['image_asset_records'][ $asset['source_path'] ] ?? null;
+				if ( is_array( $record ) ) {
+					$state['staged_image_records'][ $relative ] = $record;
 				}
 				$files[] = $dir . '/' . $relative;
 				$result  = Static_Site_Importer_Site_Plan_Persistence::write_file( $dir, $write, $state['payload_reader'] ?? null );
@@ -525,28 +545,29 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$resolutions = array();
 			$error       = null;
 			foreach ( $assets as $asset ) {
-				$alt                = '';
-				$authored_selection = false;
-				$documents          = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
+				$alt       = '';
+				$documents = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
 				foreach ( $documents as $page ) {
 					$markup = (string) ( $page['resolved_block_markup'] ?? '' );
 					if ( preg_match_all( '/<img\\b[^>]*>/i', $markup, $tags ) ) {
 						foreach ( $tags[0] as $tag ) {
 							if ( str_contains( $tag, $asset['target_path'] ) ) {
-								$alt                = self::alt_from_tag( $tag );
-								$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
+								$alt = self::alt_from_tag( $tag );
 								break 2;
 							}
 						}
 					}
 				}
-				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error, $authored_selection );
+				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error );
 				if ( $error ) {
 					return $error;
 				}
 				// Artwork WordPress cannot hold as an attachment (unproven SVG or
 				// ICO, non-image bytes) keeps its unresolved theme destination.
 				if ( ! $id ) {
+					if ( isset( $state['staged_image_records'][ $asset['target_path'] ] ) ) {
+						return new WP_Error( 'image_resource_unresolved', 'The recorded original could not become an attachment.' );
+					}
 					continue;
 				}
 				$resolutions[ $asset['token'] ] = array(
@@ -569,59 +590,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 	}
 
-	/**
-	 * The largest captured size of an image served by a path-based image service.
-	 *
-	 * A transformed URL looks like `<image>/v1/fill/w_48,h_48,.../<name>`. Other
-	 * sizes of the same image sit next to it under the same `<image>` path. The
-	 * Resize variants must retain the same operation, non-size parameters and
-	 * decoded aspect ratio. Crops and different focal points are not equivalent.
-	 */
-	private static function largest_rendition( string $theme_dir, string $relative ): string {
-		if ( ! preg_match( '#^(.+?)/v1/(?:fill|fit)/[^/]+/[^/]+$#i', $relative, $match ) ) {
-			return $relative;
-		}
-		$family      = $match[1];
-		$best        = $relative;
-		$identity    = self::resize_identity( $relative );
-		$source_size = @getimagesize( $theme_dir . '/' . $relative ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid images cannot establish equivalent geometry.
-		if ( null === $identity || ! is_array( $source_size ) || $source_size[0] <= 0 || $source_size[1] <= 0 ) {
-			return $relative;
-		}
-		$best_area = -1;
-		$siblings  = glob( $theme_dir . '/' . $family . '/v1/*/*/*', GLOB_NOSORT );
-		$siblings  = is_array( $siblings ) ? $siblings : array();
-		sort( $siblings );
-		foreach ( $siblings as $sibling ) {
-			$sibling_relative = substr( $sibling, strlen( $theme_dir ) + 1 );
-			if ( ! is_file( $sibling ) || self::resize_identity( $sibling_relative ) !== $identity || ! in_array( strtolower( pathinfo( $sibling, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
-				continue;
-			}
-			$size = @getimagesize( $sibling ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable or differently cropped images are excluded.
-			if ( ! is_array( $size ) || $size[0] * $source_size[1] !== $source_size[0] * $size[1] ) {
-				continue;
-			}
-			$area = (int) $size[0] * (int) $size[1];
-			if ( $area > $best_area ) {
-				$best      = $sibling_relative;
-				$best_area = $area;
-			}
-		}
-		return $best;
-	}
-
-	/** Source operation identity with only pixel-size parameters removed. */
-	private static function resize_identity( string $relative ): ?string {
-		if ( ! preg_match( '#^(.+?)/v1/(fill|fit)/([^/]+)/[^/]+$#i', $relative, $match ) ) {
-			return null;
-		}
-		$parameters = array_values( array_filter( explode( ',', $match[3] ), static fn( string $parameter ): bool => ! preg_match( '/^(?:w|h)_[1-9][0-9]*$/i', $parameter ) ) );
-		sort( $parameters );
-		return $match[1] . '/' . strtolower( $match[2] ) . '/' . implode( ',', $parameters );
-	}
-
 	/** Create (or reuse) the attachment for one theme-relative image file. */
-	private static function attachment_for( string $file, string $relative, string $identity, string $alt, array &$state, ?WP_Error &$error ): int {
+	private static function attachment_for( string $file, string $relative, string $identity, string $alt, array &$state, ?WP_Error &$error, ?array $record = null ): int {
 		$existing = get_posts(
 			array(
 				'post_type'     => 'attachment',
@@ -659,8 +629,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( null !== $svg ) {
 			add_filter( 'upload_mimes', $svg_mime );
 		}
+		$filename = basename( $relative );
+		if ( null !== $record ) {
+			$extensions = array(
+				'image/png'     => 'png',
+				'image/jpeg'    => 'jpg',
+				'image/webp'    => 'webp',
+				'image/gif'     => 'gif',
+				'image/avif'    => 'avif',
+				'image/svg+xml' => 'svg',
+			);
+			$stem       = pathinfo( rawurldecode( (string) wp_parse_url( $record['original']['source_url'], PHP_URL_PATH ) ), PATHINFO_FILENAME );
+			$filename   = ( '' !== trim( $alt ) ? sanitize_title( $alt ) : sanitize_title( $stem ) ) . '.' . ( $extensions[ $record['original']['content_type'] ] ?? pathinfo( $relative, PATHINFO_EXTENSION ) );
+		}
 		try {
-			$upload = wp_upload_bits( sanitize_file_name( basename( $relative ) ), null, $bytes );
+			$upload = wp_upload_bits( sanitize_file_name( $filename ), null, $bytes );
 		} finally {
 			if ( null !== $svg ) {
 				remove_filter( 'upload_mimes', $svg_mime );
@@ -675,7 +658,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			wp_delete_file( $upload['file'] );
 			return 0;
 		}
-		$title         = '' !== trim( $alt ) ? trim( $alt ) : pathinfo( $relative, PATHINFO_FILENAME );
+		$title         = '' !== trim( $alt ) ? trim( $alt ) : str_replace( array( '-', '_' ), ' ', pathinfo( $filename, PATHINFO_FILENAME ) );
 		$attachment_id = wp_insert_attachment(
 			array(
 				'post_mime_type' => $mime,
@@ -713,9 +696,28 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				)
 			);
 		} elseif ( function_exists( 'wp_generate_attachment_metadata' ) ) {
-			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
+			// Site-wide format filters must not turn a transparent capture into
+			// opaque intermediate sizes. Core still owns sizing and metadata.
+			$preserve_alpha = static function ( array $formats ) use ( $mime ): array {
+				$formats[ $mime ] = $mime;
+				return $formats;
+			};
+			$alpha          = ! empty( $record['original']['alpha'] );
+			if ( $alpha ) {
+				add_filter( 'image_editor_output_format', $preserve_alpha, PHP_INT_MAX );
+			}
+			try {
+				wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
+			} finally {
+				if ( $alpha ) {
+					remove_filter( 'image_editor_output_format', $preserve_alpha, PHP_INT_MAX );
+				}
+			}
 		}
 		update_post_meta( $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
+		if ( null !== $record ) {
+			update_post_meta( $attachment_id, '_static_site_importer_image_asset', $record );
+		}
 		if ( '' !== trim( $alt ) ) {
 			update_post_meta( $attachment_id, '_wp_attachment_image_alt', wp_strip_all_tags( $alt ) );
 		}
@@ -972,7 +974,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$src_id             = 0;
 		$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
-			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored_selection );
+			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
 			if ( null !== $error ) {
 				return $tag;
 			}
@@ -1048,13 +1050,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
-	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, bool $authored_selection = false ): int {
+	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): int {
 		$relative = self::theme_relative_raster( $url, $theme_uri );
 		if ( null === $relative ) {
 			return 0;
 		}
 		++$report['replaceable_media_count'];
-		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error, $authored_selection );
+		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
 		return null === $error ? $id : 0;
 	}
 

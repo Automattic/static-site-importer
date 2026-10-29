@@ -48,6 +48,15 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$artifact = $admission['artifact'];
 			$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
 		}
+		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+		$images = Static_Site_Importer_Image_Assets::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
+		if ( is_wp_error( $images ) ) {
+			return $images;
+		}
+		$artifact = $images['artifact'];
+		if ( ! empty( $images['records'] ) ) {
+			$args['image_asset_records'] = $images['records'];
+		}
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		if ( is_wp_error( $redirects ) ) {
 			return $redirects;

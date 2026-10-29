@@ -84,9 +84,7 @@ export function validateManifest(candidate = manifest) {
     declared.add(test.path)
   }
 
-  const executable = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "tests", "tools"], { cwd: root, encoding: "utf8" })
-    .trim().split("\n").filter(Boolean)
-    .filter(isExecutableTest)
+  const executable = discoverExecutableTests()
   const exclusions = Object.keys(candidate.exclusions || {})
   for (const path of executable) {
     if (!declared.has(path) && !exclusions.some((pattern) => matches(pattern, path))) fail(`undeclared executable test: ${path}`)
@@ -99,6 +97,14 @@ export function validateManifest(candidate = manifest) {
     .map((test) => test.path)
     .sort()
   if (JSON.stringify(declaredStandalone) !== JSON.stringify(projected)) fail("homeboy.json standalone_php_test_paths is not the standalone PHP projection of test-manifest.json")
+}
+
+export function discoverExecutableTests(directory = root) {
+  return execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "tests", "tools"], { cwd: directory, encoding: "utf8" })
+    .split("\0").filter(Boolean)
+    // The index still lists unstaged deletions; validate the runnable working tree.
+    .filter((path) => existsSync(resolve(directory, path)))
+    .filter(isExecutableTest)
 }
 
 function isExecutableTest(path) {

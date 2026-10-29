@@ -70,6 +70,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$artifact = $admission['artifact'];
 		$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
+		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+		$images = Static_Site_Importer_Image_Assets::extract( $artifact, $payload_reader );
+		if ( is_wp_error( $images ) ) {
+			$workspace->purge();
+			return $images;
+		}
+		$artifact                    = $images['artifact'];
+		$args['image_asset_records'] = $images['records'];
 		if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
 		}
@@ -1778,7 +1786,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['native_site_identity_evidence'], $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'] );
+		unset( $args['native_site_identity_evidence'], $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'], $args['image_asset_records'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {

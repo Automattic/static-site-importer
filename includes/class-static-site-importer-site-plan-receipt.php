@@ -20,6 +20,28 @@ if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 final class Static_Site_Importer_Site_Plan_Receipt {
 	private const BLOCK_PROVENANCE_LIMIT = 50;
 
+	/** Public source-resource to destination mapping, including reused attachments. */
+	private static function image_assets( array $state ): array {
+		$records = array();
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			$record      = $state['args']['image_asset_records'][ $asset['source_path'] ] ?? null;
+			$destination = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] ?? null;
+			if ( ! is_array( $record ) || ! is_array( $destination ) ) {
+				continue;
+			}
+			$records[ $record['original']['source_url'] ] = array_merge(
+				$record,
+				array(
+					'destination' => array(
+						'attachment_id' => $destination['id'],
+						'url'           => $destination['url'],
+					),
+				)
+			);
+		}
+		return array_values( $records );
+	}
+
 	/** Preserve typed preflight diagnostics without claiming filesystem mutation. */
 	public static function rejected_receipt_from_error( array $state, WP_Error $error ): array {
 		unset( $state['preflight_error'] );
@@ -108,6 +130,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				'files'                        => $state['applied']['files'],
 				'operations'                   => $state['applied']['operations'],
 				'site_identity'                => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
+				'image_assets'                 => self::image_assets( $state ),
 				'runtime_declarations'         => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization'         => $state['applied']['font_materialization'] ?? array(
 					'status'      => 'not_requested',

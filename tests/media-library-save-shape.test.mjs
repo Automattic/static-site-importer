@@ -3,11 +3,27 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const require = createRequire( import.meta.url );
 const { ensureRuntime, validateMarkup } = require( '../lib/gutenberg-block-validation.cjs' );
 ensureRuntime();
 const { createBlock, parse, serialize } = require( '@wordpress/blocks' );
+test( 'capture record compiles to an editable attachment-bound image that validates in Gutenberg', () => {
+	const dir = mkdtempSync( join( tmpdir(), 'ssi-record-validation-' ) );
+	try {
+		const path = join( dir, 'markup.html' );
+		execFileSync( 'php', [ fileURLToPath( new URL( './smoke-image-asset-records.php', import.meta.url ) ) ], { env: { ...process.env, SSI_IMAGE_RECORD_MARKUP: path } } );
+		const markup = readFileSync( path, 'utf8' );
+		assert.match( markup, /"id":73/ );
+		assert.equal( validateMarkup( markup ).ok, true );
+	} finally {
+		rmSync( dir, { recursive: true, force: true } );
+	}
+} );
+
 const source = 'https://example.test/themes/source/photo.png';
 const bind = ( markup ) => execFileSync( 'php', [ fileURLToPath( new URL( './fixtures/media-library-save-shape.php', import.meta.url ) ) ], { input: markup, encoding: 'utf8' } );
 // The compiler retains the media URL in its attribute metadata before binding.
