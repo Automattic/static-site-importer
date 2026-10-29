@@ -2054,6 +2054,14 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			return;
 		}
 
+		// Plan diagnostics are a lossy projection of quality.fallbacks. Restore
+		// producer evidence by exact page/code/selector, never by page alone.
+		$fallbacks = array();
+		foreach ( $report['quality']['fallbacks'] ?? array() as $fallback ) {
+			if ( is_array( $fallback ) ) {
+				$fallbacks[ self::producer_fallback_key( $fallback ) ][] = $fallback;
+			}
+		}
 		$normalized = array();
 		$seen       = array();
 		foreach ( array_values( $report['diagnostics'] ) as $index => $diagnostic ) {
@@ -2072,6 +2080,15 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 			if ( '' === $source_path ) {
 				$source_path = self::diagnostic_source_path( $source );
+			}
+
+			$matches = $fallbacks[ self::producer_fallback_key( array_merge( $diagnostic, array( 'source_path' => $source_path ) ) ) ] ?? array();
+			if ( 1 === count( $matches ) ) {
+				foreach ( array( 'binding', 'source_html_preview', 'html_excerpt', 'excerpt' ) as $field ) {
+					if ( isset( $matches[0][ $field ] ) ) {
+						$diagnostic[ $field ] = $matches[0][ $field ];
+					}
+				}
 			}
 
 			// The compiler reports dropped files as warnings that classify as
@@ -2143,6 +2160,13 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		$report['diagnostics'] = $normalized;
+	}
+
+	/** Exact producer location shared by raw fallbacks and plan diagnostics. */
+	private static function producer_fallback_key( array $finding ): string {
+		return (string) ( $finding['source_path'] ?? $finding['source'] ?? '' ) . "\n"
+			. (string) ( $finding['diagnostic_code'] ?? $finding['code'] ?? $finding['reason_code'] ?? '' ) . "\n"
+			. (string) ( $finding['selector'] ?? '' );
 	}
 
 	/**

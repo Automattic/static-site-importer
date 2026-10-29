@@ -1116,9 +1116,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $fallback ) || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
 				continue;
 			}
-			$source        = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
-			$declared      = false;
-			$anchor_hashes = self::fallback_anchor_hashes( $fallback );
+			$source                  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+			$fallback['source_path'] = $source;
+			$declared                = false;
+			$anchor_hashes           = self::fallback_anchor_hashes( $fallback );
 			// Canonical producer anchors own this page region. Carry the form
 			// diagnostic with each binding so its receipt joins the same fallback.
 			// A binding naming its own pre-projection anchor hash joins only the
@@ -1431,7 +1432,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'occurrence'                       => $binding['occurrence'],
 			'role'                             => $binding['role'],
 			'declaration_id'                   => $declaration_id,
-			'selector'                         => $grid_selector,
+			'selector'                         => $is_form_contract ? (string) ( $entity['selector'] ?? '' ) : $grid_selector,
 			'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
 			'fallback_reconciliation_identity' => $is_form_contract ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( '' !== $grid_selector ? $grid_identity : ( $is_grid ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ) ),
 			'fallback_hash'                    => $is_form_contract ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( '' !== $grid_selector ? $grid_hash : ( $is_grid ? hash( 'sha256', $binding['search_block_markup'] ) : '' ) ),
