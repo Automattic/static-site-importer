@@ -1,8 +1,9 @@
 // Neutral source capture plus explicit source-to-candidate bindings. A missing
 // binding leaves its source row unsupported; it cannot shrink the inventory.
+// Full-document evidence (outcomes.documents[route]) is route-specific and is
+// built by the real-fixture runner; see docs/existing-runtime-acceptance.md.
 export const interactiveConfig = {
   colourSchemes: ['light', 'dark'],
-  documents: { '/': { sourceOrigin: 'https://source.example', html: '<main></main>', sourceContent: 'main', candidateContent: '.wp-block-post-content' } },
   capture: {
     schema: 'static-site-importer/interactive-capture/v1',
     pages: [{
