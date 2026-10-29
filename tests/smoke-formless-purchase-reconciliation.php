@@ -32,6 +32,7 @@ function wp_json_encode( mixed $value ): string|false {
 function sanitize_key( string $key ): string {
 	return (string) preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $key ) );
 }
+require_once ABSPATH . 'vendor/autoload.php';
 require_once ABSPATH . 'includes/class-static-site-importer-entity-materializer-registry.php';
 require_once ABSPATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once ABSPATH . 'includes/class-static-site-importer-import-report.php';
@@ -53,9 +54,9 @@ function check( bool $condition, string $message ): void {
 $schema   = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","name":"Shirt","url":"https://example.test/products/shirt","hasVariant":[{"@type":"Product","sku":"SMALL"}]}</script>';
 $region   = '<!-- wp:html --><div class="purchase"><select name="size"><option>Small</option></select><input name="quantity" type="number" value="1"><button>Add to cart</button></div><!-- /wp:html -->';
 $fallback = array(
-	'type'            => 'unsupported_html_fallback',
+	'type'            => 'html',
 	'diagnostic_code' => 'html_commerce_controls_fallback',
-	'source_path'     => 'products/shirt.html',
+	'source'          => 'products/shirt.html',
 	'selector'        => '.purchase',
 	'html_excerpt'    => $region,
 	'binding'         => array(
@@ -63,6 +64,7 @@ $fallback = array(
 		'source_path'         => 'products/shirt.html',
 		'search_block_markup' => $region,
 		'occurrence'          => 1,
+		'position'            => array( 'start' => 0, 'end' => strlen( $region ) ),
 		'role'                => 'commerce_add_to_cart_form',
 	),
 );
@@ -73,7 +75,7 @@ $product = array(
 	'url'         => 'https://example.test/products/shirt',
 	'variants'    => array( array( 'sku' => 'SMALL' ) ),
 );
-foreach ( array( 'unique', 'ambiguous', 'unseeded', 'missing_anchor', 'not_persisted', 'other_controls' ) as $scenario ) {
+foreach ( array( 'unique', 'declared', 'ambiguous', 'unseeded', 'missing_anchor', 'not_persisted', 'other_controls', 'wrong_page', 'wrong_selector' ) as $scenario ) {
 	$finding  = $fallback;
 	$products = array( $product );
 	$rows     = array( array( 'slug' => 'shirt', 'id' => 42, 'status' => 'created' ) );
@@ -86,6 +88,9 @@ foreach ( array( 'unique', 'ambiguous', 'unseeded', 'missing_anchor', 'not_persi
 	}
 	if ( 'other_controls' === $scenario ) {
 		$finding['binding']['role'] = 'commerce_controls';
+	}
+	if ( 'declared' === $scenario ) {
+		$products[0]['bindings'] = array( $finding['binding'] );
 	}
 	$lifecycle = array(
 		'entities' => array(
@@ -112,8 +117,31 @@ foreach ( array( 'unique', 'ambiguous', 'unseeded', 'missing_anchor', 'not_persi
 	}
 	unset( $binding );
 	$report                = Static_Site_Importer_Import_Report::from_array( array() );
-	$report['diagnostics'] = array( $finding );
-	$report->set_quality( array( 'fallback_count' => 1 ) );
+	// The compiler's report row is not the raw quality fallback: its source
+	// names the transformer and it omits binding/excerpt evidence.
+	$collector = new Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Diagnostics\DiagnosticsCollector();
+	$diagnostics = $collector->collect(
+		'Automattic\\BlocksEngine\\PhpTransformer\\HtmlToBlocks\\HtmlTransformer',
+		array(),
+		array( $finding ),
+		array(),
+		array(),
+		array(),
+		new Automattic\BlocksEngine\PhpTransformer\Contract\HtmlValidationOutcome()
+	);
+	// ArtifactCompiler adds the owning page to the transformer's flat rows.
+	$diagnostic = $diagnostics[1];
+	$diagnostic['source_path'] = $finding['source'];
+	check( ! isset( $diagnostic['binding'] ), 'Producer diagnostic projection omits binding' );
+	$report['diagnostics'] = array( $diagnostic );
+	$quality_finding = $finding;
+	if ( 'wrong_page' === $scenario ) {
+		$quality_finding['source'] = 'products/other-shirt.html';
+	}
+	if ( 'wrong_selector' === $scenario ) {
+		$quality_finding['selector'] = '.other-purchase';
+	}
+	$report->set_quality( array( 'fallback_count' => 1, 'fallbacks' => array( $quality_finding ) ) );
 	$report['materialization_receipt'] = array(
 		'completed' => array(
 			'runtime_declarations' => array( 'entities' => $reports, 'entity_bindings' => $bindings ),
@@ -124,14 +152,21 @@ foreach ( array( 'unique', 'ambiguous', 'unseeded', 'missing_anchor', 'not_persi
 	$resolutions = $report['fallback_reconciliation']['resolutions'];
 	check( 1 === count( $resolutions ), $scenario . ': exactly one resolution' );
 	$resolution = $resolutions[0];
-	$resolved   = 'unique' === $scenario;
+	$resolved   = in_array( $scenario, array( 'unique', 'declared' ), true );
 	check( ( $resolved ? 'resolved_by_provider' : 'unresolved' ) === $resolution['state'], $scenario . ': receipt state' );
 	check( ( $resolved ? 0 : 1 ) === $report['quality']['unsupported_fallback_count'], $scenario . ': unsupported_html_fallback count' );
 	check( $resolved === $report['quality']['pass'], $scenario . ': quality gate result' );
 	check( ! $resolved === in_array( 'unsupported_html_fallback', $report['quality']['failure_reasons'], true ), $scenario . ': quality failure reason' );
 	if ( $resolved ) {
 		check( 'woocommerce' === $resolution['receipt']['provider'], 'Product provider owns resolution' );
+		check( $finding['binding'] === $report['diagnostics'][0]['binding'], 'Producer binding survives report normalization' );
+		check( '.purchase' === $bindings[0]['selector'], 'Receipt retains fallback selector' );
+		check( hash( 'sha256', $region ) === $bindings[0]['fallback_hash'], 'Receipt hashes producer excerpt' );
+		check( $resolution['fallback_reconciliation_identity'] === $bindings[0]['fallback_reconciliation_identity'], 'Report and receipt share fallback identity' );
 		check( str_contains( $content, 'woocommerce/single-product' ) && str_contains( $content, 'woocommerce/add-to-cart-form' ), 'Native purchase replacement persisted' );
+	}
+	if ( in_array( $scenario, array( 'wrong_page', 'wrong_selector' ), true ) ) {
+		check( ! isset( $report['diagnostics'][0]['binding'] ), $scenario . ': unrelated producer binding is not restored' );
 	}
 	$reason = match ( $scenario ) {
 		'ambiguous' => 'ambiguous_page_product',

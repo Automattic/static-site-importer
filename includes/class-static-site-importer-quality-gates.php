@@ -42,6 +42,8 @@ final class Static_Site_Importer_Quality_Gates {
 	 */
 	public static function finalize_quality_report( Static_Site_Importer_Import_Report $report, array $args ): array {
 		self::normalize_quality_report( $report );
+		// Restore producer binding evidence before receipt predicates inspect it.
+		Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics( $report );
 		self::reconcile_provider_materialized_fallbacks( $report );
 		self::mark_active_companion_script_fallbacks_materialized( $report );
 		Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics( $report );
