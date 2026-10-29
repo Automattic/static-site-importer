@@ -8,6 +8,7 @@
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
+    { "path": "tests/acceptance/route-ownership-wordpress.php", "environment": "operator-only", "command": ["bash", "tools/run-route-ownership-acceptance.sh"], "reason": "Disposable Docker WordPress public CLI import, logged-out routes and native-owner theme-switch persistence proof." },
     { "path": "tests/acceptance/outcome-wordpress.php", "environment": "operator-only", "reason": "Disposable imported WordPress fixture owned by outcome-runner.mjs." },
     { "path": "tests/acceptance/outcome-runner.mjs", "environment": "operator-only", "reason": "Declare STATIC_SITE_IMPORTER_WP_CLI, SSI_OUTCOME_ORIGIN and SSI_OUTCOME_DISPOSABLE=1 for a fresh served WordPress runtime." },
     { "path": "tests/acceptance/redirection-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Real native admin rule and owner-edited navigation, served complete export, and second disposable WordPress navigation/reload proof." },

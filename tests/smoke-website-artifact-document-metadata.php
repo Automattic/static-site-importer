@@ -63,10 +63,10 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		),
 	),
 	array(
-		'name'        => 'Ember Rye Document Metadata',
-		'slug'        => 'ember-rye-document-metadata-smoke',
-		'overwrite'   => true,
-		'activate'    => false,
+		'name'          => 'Ember Rye Document Metadata',
+		'slug'          => 'ember-rye-document-metadata-smoke',
+		'overwrite'     => true,
+		'activate'      => false,
 		'import_run_id' => 'ssi-smoke-run-001',
 		'artifact_hash' => 'sha256:ember-rye-smoke',
 	)
@@ -75,19 +75,19 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 $assert( ! is_wp_error( $result ), 'import-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 
 if ( ! is_wp_error( $result ) ) {
-	$theme_dir = $result['theme_dir'];
-	$report    = isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : array();
-	$manifest  = json_decode( $read( $result['manifest_path'] ?? '' ), true );
+	$theme_dir         = $result['theme_dir'];
+	$report            = isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : array();
+	$manifest          = json_decode( $read( $result['manifest_path'] ?? '' ), true );
 	$validation_result = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 	$finding_packets   = isset( $result['finding_packets'] ) && is_array( $result['finding_packets'] ) ? $result['finding_packets'] : array();
-	$page_ids  = array_values( $result['pages'] ?? array() );
-	$page_id   = (int) ( $page_ids[0] ?? 0 );
-	$progress_events = isset( $result['progress_events'] ) && is_array( $result['progress_events'] ) ? $result['progress_events'] : array();
-	$page      = $page_id > 0 ? get_post( $page_id ) : null;
-	$content   = $page instanceof WP_Post ? $page->post_content : '';
-	$documents = array();
+	$page_ids          = array_values( $result['pages'] ?? array() );
+	$page_id           = (int) ( $page_ids[0] ?? 0 );
+	$progress_events   = isset( $result['progress_events'] ) && is_array( $result['progress_events'] ) ? $result['progress_events'] : array();
+	$page              = $page_id > 0 ? get_post( $page_id ) : null;
+	$content           = $page instanceof WP_Post ? $page->post_content : '';
+	$documents         = array();
 	$pattern_documents = array();
-	$template_parts = $report['generated_theme']['template_parts'] ?? array();
+	$template_parts    = $report['generated_theme']['template_parts'] ?? array();
 	foreach ( $report['generated_theme']['block_documents'] ?? array() as $document ) {
 		if ( is_array( $document ) && isset( $document['path'] ) ) {
 			$documents[ $document['path'] ] = $document;
@@ -96,8 +96,8 @@ if ( ! is_wp_error( $result ) ) {
 			}
 		}
 	}
-	$metadata = $report['generated_theme']['document_metadata'] ?? array();
-	$scripts  = $metadata['scripts'] ?? array();
+	$metadata               = $report['generated_theme']['document_metadata'] ?? array();
+	$scripts                = $metadata['scripts'] ?? array();
 	$materialized_documents = $report['materialized_content']['block_documents'] ?? array();
 
 	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
@@ -156,7 +156,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( isset( $validation_result['diagnostic_summary'] ), 'default-validation-result-includes-diagnostic-summary' );
 	$assert( 'import-validation-result.json' === ( $validation_result['artifacts']['import_validation_result']['path'] ?? '' ), 'default-validation-result-includes-artifact-refs' );
 	$assert( ! static_site_importer_smoke_contains_local_path( $validation_result ), 'default-validation-result-contains-no-local-paths' );
-	$visual_parity = $report['visual_parity_artifacts'] ?? array();
+	$visual_parity            = $report['visual_parity_artifacts'] ?? array();
 	$visual_parity_validation = $validation_result['visual_parity_artifacts'] ?? array();
 	$assert( 'static-site-importer/visual-parity-artifacts/v1' === ( $visual_parity['schema'] ?? '' ), 'visual-parity-artifact-schema' );
 	$assert( 'pending' === ( $visual_parity['status'] ?? '' ), 'visual-parity-artifacts-pending-until-runtime-capture' );
@@ -181,14 +181,16 @@ if ( ! is_wp_error( $result ) ) {
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
 	$assert( str_contains( $bootstrap, 'Static Site Importer authored viewport metadata' ) && str_contains( $bootstrap, "'width=320, user-scalable=yes'" ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'theme-bootstrap-materializes-authored-viewport', $bootstrap );
-	$assert( str_contains( $bootstrap, 'Static Site Importer authored route document titles' ) && str_contains( $bootstrap, "add_filter( 'pre_get_document_title'" ) && str_contains( $bootstrap, 'is_front_page()' ), 'theme-bootstrap-materializes-route-document-titles', $bootstrap );
+	$assert( ! str_contains( $bootstrap, 'Static Site Importer authored route document titles' ) && ! str_contains( $bootstrap, 'Static Site Importer authored route head metadata' ), 'theme-does-not-own-route-metadata', $bootstrap );
 	$viewport_receipt = $result['materialization_receipt']['completed']['viewport_metadata'] ?? array();
 	$assert( 'completed' === ( $viewport_receipt['status'] ?? '' ) && 'width=320, user-scalable=yes' === ( $viewport_receipt['declaration'] ?? '' ), 'viewport-materialization-is-recorded-in-receipt' );
 	$previous_query       = $GLOBALS['wp_query'] ?? null;
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();
 	$GLOBALS['wp_query']  = $previous_query;
-	$assert( 'Ember & Rye – Bakery' === $rendered_route_title, 'single-page-runtime-title-matches-document-metadata', $rendered_route_title );
+	$route_title = (string) get_post_field( 'post_title', $page_id );
+	$assert( '' !== $route_title && 'Ember & Rye – Bakery' !== $route_title, 'single-page-post-title-is-the-route-title-not-the-branded-document-title', $route_title );
+	$assert( str_contains( $rendered_route_title, $route_title ), 'core-title-formats-the-native-route-title', $rendered_route_title );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -212,7 +214,7 @@ $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_we
 
 $assert( ! is_wp_error( $missing_template_parts_result ), 'missing-template-parts-import-succeeds', is_wp_error( $missing_template_parts_result ) ? $missing_template_parts_result->get_error_message() : '' );
 if ( ! is_wp_error( $missing_template_parts_result ) ) {
-	$missing_report = json_decode( $read( $missing_template_parts_result['report_path'] ), true );
+	$missing_report         = json_decode( $read( $missing_template_parts_result['report_path'] ), true );
 	$missing_template_parts = $missing_report['generated_theme']['template_parts'] ?? array();
 	$missing_template       = $read( $missing_template_parts_result['theme_dir'] . '/templates/front-page.html' );
 	$assert( array() === $missing_template_parts, 'missing-template-parts-does-not-generate-header' );
@@ -238,7 +240,7 @@ $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifa
 				'path'    => 'website/contact.html',
 				'content' => '<main><h1>Contact</h1><p>Email us.</p></main>',
 			),
-		)
+		),
 	),
 	array(
 		'name'                         => 'Ember Rye Multi Page Artifact',
@@ -252,17 +254,17 @@ $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifa
 $assert( ! is_wp_error( $multi_page_result ), 'multi-page-import-succeeds', is_wp_error( $multi_page_result ) ? $multi_page_result->get_error_message() : '' );
 
 if ( ! is_wp_error( $multi_page_result ) ) {
-	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
-	$multi_validation = json_decode( $read( $multi_page_result['validation_result_path'] ), true );
-	$multi_findings   = json_decode( $read( $multi_page_result['finding_packets_path'] ), true );
-	$source_docs     = $multi_report['source_documents'] ?? array();
+	$multi_report            = json_decode( $read( $multi_page_result['report_path'] ), true );
+	$multi_validation        = json_decode( $read( $multi_page_result['validation_result_path'] ), true );
+	$multi_findings          = json_decode( $read( $multi_page_result['finding_packets_path'] ), true );
+	$source_docs             = $multi_report['source_documents'] ?? array();
 	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
-	$wordpress_site_plan = $multi_report['blocks_engine']['wordpress_site_plan'] ?? array();
-	$block_documents = $multi_report['generated_theme']['block_documents'] ?? array();
-	$template_parts  = $multi_report['generated_theme']['template_parts'] ?? array();
-	$documents_by_source = array();
-	$pattern_documents = array();
-	$template_parts_by_path = array();
+	$wordpress_site_plan     = $multi_report['blocks_engine']['wordpress_site_plan'] ?? array();
+	$block_documents         = $multi_report['generated_theme']['block_documents'] ?? array();
+	$template_parts          = $multi_report['generated_theme']['template_parts'] ?? array();
+	$documents_by_source     = array();
+	$pattern_documents       = array();
+	$template_parts_by_path  = array();
 	foreach ( $blocks_engine_documents as $document ) {
 		if ( is_array( $document ) && isset( $document['source_path'] ) ) {
 			$documents_by_source[ $document['source_path'] ] = $document;
@@ -290,7 +292,10 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( 'contact' === ( $documents_by_source['website/contact.html']['slug'] ?? '' ), 'contact-page-materializes' );
 	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $wordpress_site_plan['schema'] ?? '' ), 'wordpress-site-plan-contract-is-recorded' );
 	$multi_page_ids = $multi_page_result['pages'] ?? array();
-	foreach ( array( 'website/index.html' => 'Home Page', 'website/menu.html' => 'Menu Page' ) as $source_path => $expected_title ) {
+	foreach ( array(
+		'website/index.html' => 'Home Page',
+		'website/menu.html'  => 'Menu Page',
+	) as $source_path => $expected_title ) {
 		$route_page_id       = (int) ( $multi_page_ids[ $source_path ] ?? 0 );
 		$route_page          = 0 < $route_page_id ? get_post( $route_page_id ) : null;
 		$provenance          = json_decode( (string) get_post_meta( $route_page_id, '_static_site_importer_provenance', true ), true );
@@ -299,8 +304,8 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 		$rendered_title      = wp_get_document_title();
 		$GLOBALS['wp_query'] = $previous_query;
 		$assert( $expected_title === ( $provenance['document_title'] ?? '' ), 'multi-page-provenance-retains-' . sanitize_key( $source_path ) . '-title' );
-		$assert( $expected_title === $rendered_title, 'multi-page-runtime-renders-' . sanitize_key( $source_path ) . '-title', $rendered_title );
-		$assert( $route_page instanceof WP_Post && $route_page->post_title !== $rendered_title, 'multi-page-editor-title-remains-independent-for-' . sanitize_key( $source_path ) );
+		$assert( $route_page instanceof WP_Post && '' !== $route_page->post_title && $expected_title !== $route_page->post_title, 'multi-page-post-title-is-the-route-title-for-' . sanitize_key( $source_path ), $route_page->post_title ?? '' );
+		$assert( $route_page instanceof WP_Post && str_contains( $rendered_title, $route_page->post_title ), 'core-title-formats-native-route-title', $rendered_title );
 	}
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $multi_report['import_validation_result']['schema'] ?? '' ), 'theme-report-persists-finalized-validation-result' );
 	$assert( $multi_report['import_validation_result'] === $multi_validation, 'theme-validation-sidecar-matches-finalized-report-contract' );
@@ -316,9 +321,9 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 
 $external_report_dir = sys_get_temp_dir() . '/ssi-external-report-' . uniqid( '', true );
 mkdir( $external_report_dir, 0700, true );
-$external_report_dir = (string) realpath( $external_report_dir );
+$external_report_dir  = (string) realpath( $external_report_dir );
 $external_report_path = $external_report_dir . '/import-report.json';
-$external_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+$external_result      = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
 		'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 		'files'  => array(
@@ -329,18 +334,18 @@ $external_result = Static_Site_Importer_Theme_Generator::import_website_artifact
 		),
 	),
 	array(
-		'name'     => 'External Report Contract',
-		'slug'     => 'external-report-contract-smoke',
+		'name'      => 'External Report Contract',
+		'slug'      => 'external-report-contract-smoke',
 		'overwrite' => true,
-		'activate' => false,
-		'report'   => $external_report_path,
+		'activate'  => false,
+		'report'    => $external_report_path,
 	)
 );
 $assert( ! is_wp_error( $external_result ), 'external-report-import-succeeds', is_wp_error( $external_result ) ? $external_result->get_error_message() : '' );
 if ( ! is_wp_error( $external_result ) ) {
-	$external_report = json_decode( $read( $external_result['external_report_path'] ), true );
+	$external_report     = json_decode( $read( $external_result['external_report_path'] ), true );
 	$external_validation = json_decode( $read( $external_result['external_validation_result_path'] ), true );
-	$external_findings = json_decode( $read( $external_result['external_finding_packets_path'] ), true );
+	$external_findings   = json_decode( $read( $external_result['external_finding_packets_path'] ), true );
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $external_report['import_validation_result']['schema'] ?? '' ), 'external-report-persists-finalized-validation-result' );
 	$assert( $external_report['import_validation_result'] === $external_validation, 'external-validation-sidecar-matches-finalized-report-contract' );
 	$assert( $external_report['finding_packets'] === $external_findings, 'external-findings-sidecar-matches-finalized-report-contract' );

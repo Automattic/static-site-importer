@@ -73,7 +73,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['args']['theme_runtime_payload']     = $runtime_payload;
 			// Bootstrap overlays cached before owner composition must be rebuilt
 			// from the new bootstrap, or a later overlay could drop its loader.
-			foreach ( array( 'font_overlay', 'viewport_overlay', 'route_title_overlay', 'internal_link_overlay', 'route_head_metadata_overlay' ) as $overlay ) {
+			foreach ( array( 'font_overlay', 'viewport_overlay', 'internal_link_overlay' ) as $overlay ) {
 				unset( $prepared[ $overlay ] );
 			}
 			$prepared = Static_Site_Importer_Site_Plan_Preparation::refresh_prepared_destination( $prepared );
@@ -166,7 +166,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				// replaces the bootstrap; recompose its loader without duplicating files.
 				$prepared['base_resolved']['writes'] = array_values( array_filter( $prepared['base_resolved']['writes'], static fn( array $write ): bool => ! isset( $package['files'][ $write['target_path'] ] ) ) );
 				$prepared['base_resolved']           = Static_Site_Importer_Generated_Runtime_Package::with_writes( $prepared['base_resolved'], $package );
-				foreach ( array( 'font_overlay', 'viewport_overlay', 'route_title_overlay', 'internal_link_overlay', 'route_head_metadata_overlay' ) as $overlay ) {
+				foreach ( array( 'font_overlay', 'viewport_overlay', 'internal_link_overlay' ) as $overlay ) {
 					unset( $prepared[ $overlay ] );
 				}
 			}

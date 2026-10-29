@@ -152,6 +152,10 @@ Testers can enter one public URL, upload static site files, choose a folder, upl
 
 URL imports collect a complete canonical plan before applying it once to the existing Playground site. The demo's PHP.wasm-only network adapter resolves public A/AAAA records through Google's DNS-over-HTTPS endpoint and uses WordPress HTTP over Playground's browser/proxy transport. SSI retains public-address classification, redirect validation, response limits, and the inert script policy. Native WordPress installations continue to use SSI's IP-pinned transport. After successful materialization, the demo opens the imported homepage; the `/import/` page and **Move to WordPress.com** toolbar remain available. Failed imports stay on the importer with their error.
 
+## Route metadata ownership
+
+Imported document titles and descriptions belong to post titles and excerpts; social images belong to Media Library attachments via featured images. Registered Jetpack SEO fields receive authored values. Generated themes no longer replay route titles or descriptive source head tags. See [the ownership contract and theme-switch proof](docs/route-metadata-ownership.md) for platform scope, presentation-only decisions, and remaining slices of #2430.
+
 ## Site Identity and Default Content
 
 The imported site's resolved title is also the generated theme name, so a producer's generic package name does not replace the site identity. Callers can still pass `name` and `slug`. Developers can customize the final values with `static_site_importer_theme_name` and `static_site_importer_theme_slug`:
