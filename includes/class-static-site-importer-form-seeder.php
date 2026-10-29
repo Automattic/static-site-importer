@@ -688,7 +688,7 @@ class Static_Site_Importer_Form_Seeder {
 			'handoff_items'               => $state->handoff_items,
 			'recipient'                   => $state->recipient,
 			'runtime_readiness'           => $readiness,
-			'complete'                    => $available && 'ready' === ( $readiness['status'] ?? '' ),
+			'complete'                    => $available && 'ready' === $readiness['status'],
 			'block_markup'                => '',
 			'computed_layout_receipt'     => $state->layout['receipt'],
 			'provider_layout_target_map'  => $target_map,

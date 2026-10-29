@@ -189,7 +189,7 @@ final class Static_Site_Importer_Form_Plan_State {
 	 * @return string
 	 */
 	private static function handoff_message( array $source, string $capability ): string {
-		$named = isset( $source['name'] ) && '' !== $source['name'] ? 'name "' . $source['name'] . '"' : ( '' !== $source['label'] ? 'label "' . $source['label'] . '"' : $source['type'] . ' control' );
+		$named = '' !== $source['name'] ? 'name "' . $source['name'] . '"' : ( '' !== $source['label'] ? 'label "' . $source['label'] . '"' : $source['type'] . ' control' );
 		$kind  = '' !== $source['type'] ? $source['type'] : $source['tag'];
 		if ( str_starts_with( $capability, 'control_type:' ) ) {
 			return 'The source ' . $kind . ' control (' . $named . ') has no provider field for its type (' . substr( $capability, strlen( 'control_type:' ) ) . '); add an equivalent field by hand or accept the loss.';
