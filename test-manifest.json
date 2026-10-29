@@ -7,6 +7,8 @@
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
+    { "path": "tests/acceptance/outcome-wordpress.php", "environment": "operator-only", "reason": "Disposable imported WordPress fixture owned by outcome-runner.mjs." },
+    { "path": "tests/acceptance/outcome-runner.mjs", "environment": "operator-only", "reason": "Declare STATIC_SITE_IMPORTER_WP_CLI, SSI_OUTCOME_ORIGIN and SSI_OUTCOME_DISPOSABLE=1 for a fresh served WordPress runtime." },
     { "path": "tests/acceptance/redirection-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Real native admin rule and owner-edited navigation, served complete export, and second disposable WordPress navigation/reload proof." },
     { "path": "tests/acceptance/redirection-wordpress.php", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Disposable Docker WordPress; real Redirection install, native rule ownership, reimport, reversible retirement, compensation and GET/HEAD/query behavior." },
     { "path": "tests/acceptance/alias-hierarchy-wordpress.php", "environment": "operator-only", "reason": "Set SSI_ALIAS_DISPOSABLE=1 in a fresh administrator WordPress CLI runtime; real native alias hierarchy, alias-free synthetic draft parent, descendant permalink/editability, protected collision, reimport and rollback proof." },
@@ -229,6 +231,7 @@
     { "path": "tests/smoke-url-batch-import-wordpress.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-website-artifact-document-metadata.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-export-resolved-block-theme.php", "environment": "wordpress-runtime", "command": ["wp", "--skip-plugins=static-site-importer", "eval-file", "tests/smoke-export-resolved-block-theme.php"] },
+    { "path": "tests/StaticSiteImporterCliPolicyTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterCliPolicyTest.php"] },
     { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterFallbackDiagnosticsTest.php"] },
     { "path": "tests/StaticSiteImporterWordPressSitePlanMaterializerTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterWordPressSitePlanMaterializerTest.php"] },
     { "path": "tests/StaticSiteImporterMediaLibraryMaterializerTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterMediaLibraryMaterializerTest.php"] },
@@ -247,6 +250,7 @@
     { "path": "tools/runtime-package-manifest.test.mjs", "environment": "node" },
     { "path": "tools/host-acceptance-package.test.mjs", "environment": "node" },
     { "path": "tools/run-existing-runtime-review.test.mjs", "environment": "node" },
+    { "path": "tools/outcome-checks.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-intake.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-controller.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },

@@ -103,8 +103,10 @@ test('binds actual public DLA numeric coverage and viewport scores without inven
   assert.throws(() => bindFidelityReport('capture', frozenScope, fidelityReport('capture'), 'a'.repeat(64), null, []), /Incompatible/);
 });
 test('acceptance requires measured numeric zero from a bound import report, plus all requirements', () => {
-  const input = { identity: {}, scope: frozenScope, gates: { capture: fidelityGate('capture', frozenScope, fidelityReport('capture'), true), materialization: fidelityGate('materialization', frozenScope, fidelityReport('materialization'), true), editor: { status: 'passed' }, health: { status: 'passed' } }, importReport: { schema: 'static-site-importer/import-report/v1', quality: { fallback_count: 0 } }, importReportVerified: true };
+  const input = { identity: {}, scope: frozenScope, gates: { capture: fidelityGate('capture', frozenScope, fidelityReport('capture'), true), materialization: fidelityGate('materialization', frozenScope, fidelityReport('materialization'), true), editor: { status: 'passed' }, health: { status: 'passed' }, outcomes: { status: 'passed' } }, importReport: { schema: 'static-site-importer/import-report/v1', quality: { fallback_count: 0 } }, importReportVerified: true };
   assert.equal(aggregateAcceptance(input).status, 'accepted');
+  assert.equal(aggregateAcceptance({ ...input, gates: { ...input.gates, outcomes: undefined } }).status, 'pending');
+  assert.equal(aggregateAcceptance({ ...input, gates: { ...input.gates, outcomes: { status: 'failed' } } }).status, 'failed');
   assert.equal(aggregateAcceptance({ ...input, importReportVerified: false }).status, 'pending');
   for (const count of [true, '0', undefined, -1]) assert.equal(aggregateAcceptance({ ...input, importReport: { ...input.importReport, quality: { fallback_count: count } } }).status, 'pending');
   assert.equal(aggregateAcceptance({ ...input, importReport: { ...input.importReport, quality: { fallback_count: 1 } } }).status, 'failed');
