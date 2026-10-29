@@ -29,7 +29,7 @@ $artifact    = array(
 		),
 	),
 );
-$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+$compiled    = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
 	$artifact,
 	array(
 		'slug'     => 'outcome-fixture',
@@ -62,9 +62,9 @@ file_put_contents( $theme . '/functions.php', '<?php add_action("wp_enqueue_scri
 file_put_contents( $theme . '/functions.php', ' add_action("admin_post_nopriv_ssi_outcome_form", function() { echo \'<p id="fixture-success">Submission received</p>\'; exit; });', FILE_APPEND );
 echo wp_json_encode(
 	array(
-		'status'           => 'imported',
-		'source_html'      => $source_html,
+		'status'            => 'imported',
+		'source_html'       => $source_html,
 		'source_html_about' => $about_html,
-		'theme'            => $theme,
+		'theme'             => $theme,
 	)
 );

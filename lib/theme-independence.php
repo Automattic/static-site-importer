@@ -35,7 +35,7 @@ if ( ! function_exists( 'ssi_theme_owner_snapshot' ) ) {
 			)
 		) as $post ) {
 			$permalink = get_permalink( $post );
-			if ( ! is_string( $permalink ) || '' === $permalink ) {
+			if ( '' === (string) $permalink ) {
 				throw new RuntimeException( esc_html( "Post {$post->ID} has no permalink to snapshot." ) );
 			}
 			// Every meta row is an owner surface: route SEO fields (Jetpack SEO
@@ -126,7 +126,7 @@ if ( ! function_exists( 'ssi_theme_independence_activate' ) ) {
 	 * @return void
 	 */
 	function ssi_theme_independence_activate( $theme ) {
-		if ( ! is_string( $theme ) || ! preg_match( '/^[a-z0-9_-]+$/i', $theme ) || ! wp_get_theme( $theme )->exists() ) {
+		if ( ! preg_match( '/^[a-z0-9_-]+$/i', $theme ) || ! wp_get_theme( $theme )->exists() ) {
 			throw new RuntimeException( esc_html( "Theme {$theme} is not installed." ) );
 		}
 		update_option(
