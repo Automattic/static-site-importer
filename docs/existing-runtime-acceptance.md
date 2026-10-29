@@ -170,7 +170,9 @@ boolean cannot replace measurement.
 V2 replaces the v1 acceptance predicate: missing outcome evidence now prevents
 acceptance. One hash-bound `artifacts/outcomes.json` report uses
 `static-site-importer/outcome-checks/v1`, with `pass`, `fail` or `unsupported`
-and evidence for `link_graph`, `block_validity`, and `head_singletons`.
+and evidence for `link_graph`, `block_validity`, `head_singletons`,
+`control_inventory`, and `forms`. The three-check-only predicate is replaced:
+retained reports without the two new checks cannot pass.
 Failures fail the aggregate; unsupported required checks leave it pending.
 The portable consumer rechecks the retained report and import/origin/route binding.
 
@@ -189,6 +191,40 @@ outcomes: {
 },
 ```
 
+### Interactive source evidence
+
+Also supply `outcomes.capture` (`static-site-importer/interactive-capture/v1`).
+Its exhaustive `pages` array has one row per declared route: `route`, `sourceUrl`,
+`interactionStates` (the capture's `blocks-engine-capture/interaction-states/v1`
+or `/v2` envelope, including every state), `navigation` (every route-navigation
+item, with `id` and source `destination`), and `forms` (every source form, with
+`id`). Explicit empty arrays mean none; missing route inventories are unsupported.
+Preserve source identities when adapting capture artifacts; never derive this
+inventory from the imported DOM, which would hide dropped controls/forms.
+
+Supply `outcomes.controls[id]` with a unique candidate `trigger` selector. For
+`dialog`, `listbox`, `disclosure`, and `tabs` also supply `target`, `expected`
+(visibility boolean or attribute string), optional `attribute`, and keyboard
+activation `key` (default Enter). Each source member/transition must have its own
+identity and binding. Navigation destinations come from source evidence, **not**
+the candidate binding; local source destinations map to the candidate origin.
+Every control is probed in a fresh logged-out context by click and real Tab/keyboard
+activation at every manifest width. Missing bindings/unknown kinds are listed as
+unsupported with reasons; measured dead triggers/wrong destinations fail and are
+also listed as unreproduced. `unsupportedReason` explicitly records an unsupported
+binding, never a waiver that passes acceptance.
+
+Supply `outcomes.forms[id]` with `selector`, `fields` (accessible textbox name to
+safe test value), `successSelector`, and at least one nonempty `recipient`,
+`provider`, or `ownerHandoff` item describing the owner's remaining delivery work.
+Probes require named fields, an explicit local POST handler, a successful actual
+POST response, and newly visible success UI at each width. Missing ownership or
+submission paths fail. Source provider endpoints are never intentionally contacted;
+external/GET/JS-only provider paths currently fail rather than being certified.
+Run only against a disposable import: these probes submit test data. Recipient/
+provider declarations describe recovered routing, not proof of email delivery.
+See `tests/acceptance/outcome-interactive-config.mjs` for a complete neutral example.
+
 The shipped PHP collector enumerates all five post types across statuses and
 effective file-backed templates/parts. It calls real `parse_blocks()` and accounts
 for balanced block comments separately because the core parser tolerates malformed
@@ -204,13 +240,15 @@ provenance; caller-declared telemetry fingerprints are rejected too.
 then calls the public acceptance runner and portable consumer. Supply
 `STATIC_SITE_IMPORTER_WP_CLI`, `SSI_OUTCOME_ORIGIN` (the served HTTP origin), and
 `SSI_OUTCOME_DISPOSABLE=1`. It demonstrates a passing outcome baseline and failing
-link, malformed navigation delimiter, and duplicate canonical regressions.
+link, malformed navigation delimiter, duplicate canonical, dead trigger, wrong
+navigation destination, and handlerless form regressions. Its disclosure and form
+are imported from source HTML; the fixture-owned local provider handles submissions.
 It deliberately does not fabricate DLA/editor evidence: unrelated gates stay pending.
 
 Remaining slices: fixed real-source corpus and release matrix; CSS links and
 shared-chrome anchors; installed-editor validation for every document (the existing
-Gate C still validates mapped route posts); controls/forms/readability/full-document
-checks; theme-switch independence. These are outside this first check set and
+Gate C still validates mapped route posts); readability/full-document
+checks; theme-switch independence. These are outside this check set and
 are not certified by its pass result. No legacy comparator or editor save gate is
 retired: the new outcome set replaces only the former outcome-free aggregate
 acceptance predicate.

@@ -14,7 +14,7 @@ $artifact = array(
 	'files'      => array(
 		array(
 			'path'    => 'website/index.html',
-			'content' => '<!doctype html><html><head><title>Outcome fixture</title><meta name="description" content="Neutral imported fixture"></head><body><main><h1>Outcome fixture</h1><p>Imported WordPress content.</p></main></body></html>',
+			'content' => '<!doctype html><html><head><title>Outcome fixture</title><meta name="description" content="Neutral imported fixture"></head><body><main><h1>Outcome fixture</h1><p>Imported WordPress content.</p><details id="fixture-disclosure"><summary>More information</summary><p id="fixture-panel">Disclosure content</p></details><nav><a id="fixture-nav" href="/#fixture-panel">Information</a></nav><form id="fixture-form" method="post" action="/wp-admin/admin-post.php"><input type="hidden" name="action" value="ssi_outcome_form"><label>Email<input name="email" aria-label="Email" type="text"></label><button type="submit">Send</button></form></main></body></html>',
 		),
 	),
 );
@@ -37,6 +37,9 @@ if ( 'completed' !== $receipt['status'] ) {
 $theme = get_stylesheet_directory();
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable fixture writes an intentionally controlled head policy.
 file_put_contents( $theme . '/functions.php', '<?php add_action("wp_head", function() { $origin = home_url(); echo \'<link rel="canonical" href="\' . esc_url($origin . "/") . \'"><meta name="description" content="Neutral imported fixture"><meta property="og:title" content="Outcome fixture"><meta property="og:url" content="\' . esc_url($origin . "/") . \'"><meta property="og:image" content="\' . esc_url($origin . "/fixture.png") . \'">\'; }, 1); remove_action("wp_head", "wp_generator"); remove_action("wp_head", "rel_canonical"); add_filter("wp_robots", "__return_empty_array", PHP_INT_MAX);' );
+// The recovered fixture provider owns this local submission endpoint.
+// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable fixture handler.
+file_put_contents( $theme . '/functions.php', ' add_action("admin_post_nopriv_ssi_outcome_form", function() { echo \'<p id="fixture-success">Submission received</p>\'; exit; });', FILE_APPEND );
 echo wp_json_encode(
 	array(
 		'status' => 'imported',

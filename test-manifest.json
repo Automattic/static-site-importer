@@ -1,6 +1,7 @@
 {
   "schema": "static-site-importer/test-manifest/v1",
   "exclusions": {
+    "tests/acceptance/outcome-interactive-config.mjs": "Shared neutral source capture and candidate bindings for outcome tests.",
     "tests/fixtures/**": "Fixture inputs are data, not executable tests.",
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php.",
     "tests/acceptance/blocks-engine-source-autoloader.php": "Retired prototype source-overlay acceptance helper; final external-metric acceptance uses the normal Composer vendor package.",
