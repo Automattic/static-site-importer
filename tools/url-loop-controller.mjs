@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v2';
+export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v3';
 export const REPAIR_EVIDENCE_SCHEMA = 'static-site-importer/url-loop-repair-evidence/v1';
 export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
 export const WORKFLOW_ID = 'ssi-url-proof';
@@ -122,11 +122,14 @@ function boundedInteger(value, fallback, min, max, name) {
 }
 
 /**
- * One URL as a `homeboy/workflow/v1` repair loop: every iteration evaluates a
- * candidate composed from the importer, compiler and configured capture
- * repository tips plus this instance's repair branches, and each repository
- * with routed findings gets a repair Cook. The loop stops when the verdict is
- * `accepted` or a budget ends it.
+ * One URL as a bounded self-admitting `homeboy/workflow/v1` chain: one instance
+ * is one pass. A pass captures once (or receives the loop's already-captured
+ * fixture), evaluates a candidate composed from the importer, compiler and
+ * configured capture repository tips plus this loop's repair branches, runs a
+ * repair Cook per repository with routed findings, and its final step re-admits
+ * the same definition with `iteration` advanced while the verdict is `findings`
+ * and iterations remain. Instance ids are deterministic from definition and
+ * inputs, so a replayed admission converges on the existing next instance.
  */
 export function buildUrlProofWorkflow(input) {
   const url = normalizeUrl(input.url);
@@ -156,17 +159,21 @@ export function buildUrlProofWorkflow(input) {
   if (!/^[1-9][0-9]*[smhd]$/.test(deadline)) throw new Error('deadline must be a duration such as 90m or 10h');
   const sourceId = sourceIdentity(url);
   if (input.instance && !/^[A-Za-z0-9_-]{1,32}$/.test(input.instance)) throw new Error('instance must be a short path-safe token');
-  const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
-  const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
+  // The loop identity: one value shared by every pass of the chain. Repair
+  // branches, captures and evaluations are named from it, never from a Homeboy
+  // instance id, so a later pass composes and measures an earlier pass's repairs.
+  const loop = input.instance ? `${sourceId}-${input.instance}` : sourceId;
+  const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loop));
   const node = path.resolve(input.nodeExecutable || process.execPath);
   const fixed = (repo, checkout, tracker, verify) => ({ role: FIXED_REPOSITORIES[repo].role, path: path.resolve(checkout), remote: FIXED_REPOSITORIES[repo].remote, base: FIXED_REPOSITORIES[repo].base, task_url: taskUrl(tracker), verify: [verify || FIXED_REPOSITORIES[repo].verify].flat() });
   const { checkout, remote, base, repository } = producer;
   const commands = { build: producer.build, capture: producer.capture, compare: producer.compare, compare_candidate: producer.compare_candidate, compare_report: producer.compare_report };
   const context = {
     source_id: sourceId,
-    loop_id: loopId,
+    loop_id: loop,
     root,
     workspace,
+    workflow_file: path.join(root, 'workflow.json'),
     repositories: {
       'static-site-importer': fixed('static-site-importer', workspace, input.ssiTaskUrl, input.ssiVerify),
       'blocks-engine': fixed('blocks-engine', blocksEngine, input.blocksEngineTaskUrl, input.blocksEngineVerify),
@@ -180,7 +187,9 @@ export function buildUrlProofWorkflow(input) {
   };
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
-  const evaluate = { program: node, args: [MODULE_PATH, 'evaluate', '--url', '{{inputs.url}}', '--instance', '{{instance}}', '--iteration', '{{iteration}}', '--context', JSON.stringify(context)], cwd: workspace };
+  const captureStep = { program: node, args: [MODULE_PATH, 'capture', '--url', '{{inputs.url}}', '--loop', '{{inputs.loop}}', '--fixture', '{{inputs.fixture}}', '--context', JSON.stringify(context)], cwd: workspace };
+  const evaluate = { program: node, args: [MODULE_PATH, 'evaluate', '--url', '{{inputs.url}}', '--loop', '{{inputs.loop}}', '--iteration', '{{inputs.iteration}}', '--max-iterations', '{{inputs.max_iterations}}', '--fixture', '{{steps.capture.output/fixture_root}}', '--context', JSON.stringify(context)], cwd: workspace };
+  const next = { program: input.homeboyBin || 'homeboy', args: ['workflow', 'run', context.workflow_file, '--input', 'url={{inputs.url}}', '--input', 'loop={{inputs.loop}}', '--input', 'max_iterations={{inputs.max_iterations}}', '--input', 'iteration={{steps.evaluate.output/next_iteration}}', '--input', 'fixture={{steps.capture.output/fixture_root}}'], cwd: workspace };
   const cook = () => ({
     repo: '{{item.repository}}',
     'task-url': '{{item.task_url}}',
@@ -190,23 +199,24 @@ export function buildUrlProofWorkflow(input) {
     'timeout-ms': fixTimeoutMinutes * 60 * 1000,
     ...(fixSecretEnv.length ? { 'secret-env': fixSecretEnv } : {}),
     'provider-evidence': JSON.stringify({ id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' }),
-    prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next iteration measures this branch. Owning component paths: {{item.scope_text}}. When paths are listed, the fix belongs there; changes elsewhere do not address the finding.',
+    prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{inputs.loop}}, iteration {{inputs.iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next pass measures this branch. Owning component paths: {{item.scope_text}}. When paths are listed, the fix belongs there; changes elsewhere do not address the finding.',
     verify: '{{item.verify}}',
     'draft-pr': false,
   });
   const workflow = {
     schema: WORKFLOW_SCHEMA,
     id: WORKFLOW_ID,
-    inputs: { url: { required: true } },
+    inputs: { url: { required: true }, loop: { required: true }, iteration: { default: '1' }, max_iterations: { default: String(maxIterations) }, fixture: {} },
     env: { public: RUNTIME_ENV.filter((name) => process.env[name]) },
     budget: { max_step_runs: maxStepRuns, deadline },
-    iterate: { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: maxIterations },
     steps: [
-      { id: 'evaluate', timeout: '90m', exec: evaluate },
+      { id: 'capture', timeout: '90m', exec: captureStep },
+      { id: 'evaluate', needs: ['capture'], timeout: '90m', exec: evaluate },
       { id: 'repair', needs: ['evaluate'], when: { step: 'evaluate', output: '/verdict', equals: 'findings' }, foreach: '{{steps.evaluate.output/repair_items}}', max_parallel: 3, join: 'any', retry: { max: 1, on: ['failed'] }, cook: cook() },
+      { id: 'next', needs: ['repair'], when: { step: 'evaluate', output: '/continue', equals: true }, exec: next },
     ],
   };
-  return { workflow, context, inputs: { url } };
+  return { workflow, context, inputs: { url, loop } };
 }
 
 /** Route evidence to exactly the repository that owns the repair. */
@@ -349,16 +359,26 @@ function truncateStrings(value) {
   return value;
 }
 
+/**
+ * Read one capture directory: its Blocks Engine receipt, the website tree it
+ * holds, and its failed routes. This is what a fixture root must contain.
+ */
+export function captureAt(directory, failureDetails) {
+  if (!fs.existsSync(path.join(directory, CAPTURE_RECEIPT_FILE))) return null;
+  const receipt = readJson(path.join(directory, CAPTURE_RECEIPT_FILE));
+  const website = path.join(directory, receipt.websiteRoot || 'website');
+  if (!fs.existsSync(path.join(website, 'index.html'))) return null;
+  const summary = receipt.summary || {};
+  const failures = Number(summary.routesFailed || 0) > 0 ? [{ routes_failed: summary.routesFailed, routes_captured: summary.routesCaptured ?? null, receipt_path: path.join(directory, CAPTURE_RECEIPT_FILE), ...(failureDetails ? { routes: (() => { try { const file = expandTemplate(failureDetails.file, { capture: directory }); const value = fs.existsSync(file) ? jsonPointer(readJson(file), failureDetails.pointer) : null; return Array.isArray(value) ? value.slice(0, 50).map(truncateStrings) : undefined; } catch { return undefined; } })() } : {}) }] : [];
+  return { directory, website, failures };
+}
+
+/** Find the single capture under `output` by its Blocks Engine capture receipt. */
 export function locateCapture(output, failureDetails) {
   const receipts = [output, ...(fs.existsSync(output) ? fs.readdirSync(output, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(output, entry.name)) : [])]
     .filter((directory) => fs.existsSync(path.join(directory, CAPTURE_RECEIPT_FILE)));
   if (receipts.length !== 1) return null;
-  const receipt = readJson(path.join(receipts[0], CAPTURE_RECEIPT_FILE));
-  const website = path.join(receipts[0], receipt.websiteRoot || 'website');
-  if (!fs.existsSync(path.join(website, 'index.html'))) return null;
-  const summary = receipt.summary || {};
-  const failures = Number(summary.routesFailed || 0) > 0 ? [{ routes_failed: summary.routesFailed, routes_captured: summary.routesCaptured ?? null, receipt_path: path.join(receipts[0], CAPTURE_RECEIPT_FILE), ...(failureDetails ? { routes: (() => { try { const file = expandTemplate(failureDetails.file, { capture: receipts[0] }); const value = fs.existsSync(file) ? jsonPointer(readJson(file), failureDetails.pointer) : null; return Array.isArray(value) ? value.slice(0, 50).map(truncateStrings) : undefined; } catch { return undefined; } })() } : {}) }] : [];
-  return { directory: receipts[0], website, failures };
+  return captureAt(receipts[0], failureDetails);
 }
 
 /** Read the SSI CLI state file: terminal quality, failures and success. */
@@ -479,13 +499,58 @@ async function importAndMeasure({ context, pluginZip, captureWebsite, url, direc
 }
 
 /**
- * One iteration: compose the candidate, build the capture producer and the SSI development
- * package, capture and compare the live source, import into Codebox, compare
- * WordPress against the capture, and decide the verdict with routed repairs.
+ * The capture step. A pass that received the loop's already-captured fixture
+ * root passes it through unchanged; otherwise the composed producer captures
+ * the live URL once, and the located capture directory becomes the fixture
+ * root every pass of the chain measures. Homeboy renders an unset optional
+ * input as the string `null`, so both `''` and `'null'` mean no fixture.
  */
-export async function runEvaluation({ context, url, instance, iteration }) {
+export function runCapture({ context, url, loop, fixture }) {
   const normalized = normalizeUrl(url);
   if (!context?.root || context.source_id !== sourceIdentity(normalized)) throw new Error('workflow_context_url_mismatch');
+  if (context.loop_id !== loop) throw new Error('capture_loop_mismatch');
+  const failureDetails = context.capture_producer.failure_details;
+  const received = fixture && fixture !== 'null' ? fixture : '';
+  if (received) {
+    const located = captureAt(received, failureDetails);
+    if (!located) throw new Error(`fixture_root_invalid: ${received} holds no ${CAPTURE_RECEIPT_FILE} with a website/index.html`);
+    return { fixture_root: located.directory };
+  }
+  const directory = path.join(context.root, 'captures', String(loop));
+  if (fs.existsSync(directory)) throw new Error('capture_output_not_fresh');
+  fs.mkdirSync(path.join(directory, 'logs'), { recursive: true });
+  const output = path.join(directory, 'capture');
+  const env = evaluationEnv(process.env, context.runtime_toolchain?.env, directory);
+  const producer = context.capture_producer;
+  const repository = context.repositories[producer.repository];
+  try {
+    // The candidate is composed like any other: on a fresh loop this is the
+    // capture repository's base, later re-captures would measure its repairs.
+    const composed = composeRepository({ repo: producer.repository, source: repository.path, remote: repository.remote, base: repository.base, instance: loop, directory: path.join(directory, 'candidate', producer.repository) });
+    for (const [index, command] of producer.build.entries()) {
+      const [program, ...args] = expandTemplate(command, { checkout: composed.path });
+      if (run(program, args, { cwd: composed.path, env, log: path.join(directory, 'logs', `capture-build-${index}.log`) }).status !== 0) throw new LoopBlocker(`capture_build_failed:${index}`);
+    }
+    const [program, ...args] = captureCommands(producer, { checkout: composed.path, url: normalized, output }).capture;
+    run(program, args, { cwd: directory, env, log: path.join(directory, 'logs', 'capture.log') });
+    const located = locateCapture(output, failureDetails);
+    if (!located) throw new LoopBlocker('capture_receipt_missing', path.join(directory, 'logs', 'capture.log'));
+    return { fixture_root: located.directory };
+  } finally {
+    const checkout = path.join(directory, 'candidate', producer.repository);
+    if (fs.existsSync(checkout)) run('git', ['worktree', 'remove', '--force', checkout], { cwd: repository.path });
+  }
+}
+
+/**
+ * One pass: compose the candidate, build the capture producer and the SSI development
+ * package, compare the loop's fixture, import into Codebox, compare
+ * WordPress against the fixture, and decide the verdict with routed repairs.
+ */
+export async function runEvaluation({ context, url, instance, iteration, fixture }) {
+  const normalized = normalizeUrl(url);
+  if (!context?.root || context.source_id !== sourceIdentity(normalized)) throw new Error('workflow_context_url_mismatch');
+  if (context.loop_id !== instance) throw new Error('evaluation_loop_mismatch');
   if (!/^[A-Za-z0-9_.-]{1,96}$/.test(String(instance || '')) || !/^[1-9][0-9]*$/.test(String(iteration || ''))) throw new Error('evaluation_identity_invalid');
   const directory = path.join(context.root, 'evaluations', String(instance), `i${iteration}`);
   if (fs.existsSync(directory)) throw new Error('evaluation_output_not_fresh');
@@ -512,11 +577,9 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     const pluginZip = fs.readdirSync(packageDir).filter((file) => file.endsWith('.zip')).map((file) => path.join(packageDir, file))[0];
     if (!pluginZip) throw new LoopBlocker('ssi_package_missing');
 
-    const output = path.join(directory, 'capture');
-    const [captureProgram, ...captureArgs] = captureCommands(producer, { checkout: captureCheckout, url: normalized, output }).capture;
-    run(captureProgram, captureArgs, { cwd: directory, env, log: path.join(directory, 'logs', 'capture.log') });
-    const located = locateCapture(output, producer.failure_details);
-    if (!located) throw new LoopBlocker('capture_receipt_missing', path.join(directory, 'logs', 'capture.log'));
+    const located = captureAt(String(fixture || ''), producer.failure_details);
+    if (!located) throw new LoopBlocker('fixture_root_invalid', String(fixture || ''));
+    evidence.fixture_root = located.directory;
     evidence.capture_repository = producer.repository;
     evidence.capture_failures = located.failures;
     const commands = captureCommands(producer, { checkout: captureCheckout, capture: located.directory });
@@ -589,7 +652,9 @@ export function verifyProgram(commands, scope = [], base = null) {
 }
 
 /** The evaluate step output the workflow gates and Cook evidence read. */
-export function evaluationVerdict(evaluation, reportPath, { instance, iteration, repositories } = {}) {
+export function evaluationVerdict(evaluation, reportPath, { instance, iteration, maxIterations, repositories } = {}) {
+  const pass = Number(iteration);
+  const budget = Number(maxIterations);
   return {
     verdict: evaluation.verdict,
     report_path: reportPath,
@@ -603,6 +668,10 @@ export function evaluationVerdict(evaluation, reportPath, { instance, iteration,
     // Compact: the findings live in each repository's evidence file.
     repairs: Object.fromEntries(Object.entries(evaluation.repairs || {}).map(([repo, work]) => [repo, { findings: work.findings.length, report_path: work.report_path }])),
     repair_items: evaluation.verdict === 'findings' ? Object.entries(evaluation.repairs || {}).map(([repo, work]) => ({ repository: repo, report_path: work.report_path, head: repairBranch(instance, repo, iteration), task_url: repositories[repo].task_url, scope: work.scope || [], scope_text: (work.scope || []).join(', '), verify: verifyProgram(repositories[repo].verify, work.scope || [], repositories[repo].base) })) : [],
+    // The chain's stop rule: the `next` step re-admits the definition only while
+    // there are findings and iterations remain.
+    next_iteration: Number.isInteger(pass) ? pass + 1 : null,
+    continue: evaluation.verdict === 'findings' && Number.isInteger(pass) && Number.isInteger(budget) && pass < budget,
   };
 }
 
@@ -623,14 +692,21 @@ function writeStepOutput(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
+// capture and evaluate are internal step operations: each takes --context plus
+// the inputs its workflow step declares.
 const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> --task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-timeout-minutes 40] [--fix-secret-env <NAME>]... [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
 
 async function main() {
   const [operation, ...argv] = process.argv.slice(2);
   const options = parseArgs(argv);
+  if (operation === 'capture') {
+    writeStepOutput(runCapture({ context: JSON.parse(options.context), url: options.url, loop: options.loop, fixture: options.fixture }));
+    return;
+  }
   if (operation === 'evaluate') {
-    const { evaluation, report_path: reportPath } = await runEvaluation({ context: JSON.parse(options.context), url: options.url, instance: options.instance, iteration: options.iteration });
-    const verdict = evaluationVerdict(evaluation, reportPath, { instance: options.instance, iteration: options.iteration, repositories: JSON.parse(options.context).repositories });
+    const context = JSON.parse(options.context);
+    const { evaluation, report_path: reportPath } = await runEvaluation({ context, url: options.url, instance: options.loop, iteration: options.iteration, fixture: options.fixture });
+    const verdict = evaluationVerdict(evaluation, reportPath, { instance: options.loop, iteration: options.iteration, maxIterations: boundedInteger(options.maxIterations, 3, 1, 5, 'max-iterations'), repositories: context.repositories });
     writeStepOutput(verdict);
     // A typed blocker fails the step, and with it the workflow instance.
     if (verdict.verdict === 'blocked') throw new Error(`evaluation_blocked:${verdict.blocker}`);
@@ -639,12 +715,11 @@ async function main() {
   if (operation === 'workflow') { process.stdout.write(`${JSON.stringify(buildUrlProofWorkflow(options).workflow, null, 2)}\n`); return; }
   if (operation === 'start') {
     const { workflow, context, inputs } = buildUrlProofWorkflow(options);
-    const file = path.join(context.root, 'workflow.json');
-    writeJson(file, workflow);
-    const result = spawnSync(options.homeboyBin || 'homeboy', ['workflow', 'run', file, '--input', `url=${inputs.url}`], { cwd: context.workspace, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
+    writeJson(context.workflow_file, workflow);
+    const result = spawnSync(options.homeboyBin || 'homeboy', ['workflow', 'run', context.workflow_file, '--input', `url=${inputs.url}`, '--input', `loop=${inputs.loop}`], { cwd: context.workspace, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
     if (result.status !== 0) { process.stdout.write(result.stdout || ''); throw new Error(`workflow_admission_failed:${result.status}`); }
     const instance = JSON.parse(result.stdout).data?.instance;
-    process.stdout.write(`${JSON.stringify({ instance, loop_id: context.loop_id, workflow_file: file, status_command: `homeboy workflow status ${instance}` })}\n`);
+    process.stdout.write(`${JSON.stringify({ instance, loop_id: context.loop_id, workflow_file: context.workflow_file, status_command: `homeboy workflow status ${instance}` })}\n`);
     return;
   }
   throw new Error(USAGE);
