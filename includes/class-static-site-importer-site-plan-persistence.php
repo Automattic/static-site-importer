@@ -412,8 +412,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		// Route-owner metadata: source languages that differ from the site
 		// language are recorded on the imported post, never rendered.
 		$state['applied']['route_languages'] = Static_Site_Importer_Site_Language::materialize_route_languages( $state );
-		$state['applied']['media_library'] = $media_library;
-		$font_materialization              = self::apply_font_overlay( $state, $font_overlay );
+		$state['applied']['media_library']   = $media_library;
+		$font_materialization                = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}

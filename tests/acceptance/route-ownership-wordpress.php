@@ -138,13 +138,13 @@ $route_language_key = Static_Site_Importer_Site_Language::ROUTE_META_KEY;
 // through the core language-pack path. Later phases: the owner's fr_FR
 // survives reimport, rollback and the theme switch untouched.
 $site_language_owner = 'before' === $phase ? 'nl_NL' : 'fr_FR';
-$assert( $site_language_owner === get_option( 'WPLANG' ), 'The site language owner matches the phase expectation: source language applied via the core pack path, then the owner value preserved.' );
+$assert( get_option( 'WPLANG' ) === $site_language_owner, 'The site language owner matches the phase expectation: source language applied via the core pack path, then the owner value preserved.' );
 $route_language_owners = array(
 	'Garden home'        => 'before' === $phase ? null : 'nl',
 	'About the garden'   => 'en',
 	'Contact the garden' => 'fr',
 );
-$snapshot = array(
+$snapshot              = array(
 	'pages'    => array(),
 	'menus'    => array(),
 	'media'    => array(),

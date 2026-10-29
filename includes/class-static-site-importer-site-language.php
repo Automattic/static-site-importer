@@ -45,99 +45,99 @@ final class Static_Site_Importer_Site_Language {
 	 * @var array<string,string>
 	 */
 	private const BARE_LOCALES = array(
-		'af' => 'af',
-		'ar' => 'ar',
+		'af'  => 'af',
+		'ar'  => 'ar',
 		'ary' => 'ary',
-		'az' => 'az',
+		'az'  => 'az',
 		'azb' => 'azb',
-		'ba' => 'ba',
+		'ba'  => 'ba',
 		'bel' => 'bel',
-		'bg' => 'bg_BG',
-		'bn' => 'bn_BD',
-		'bo' => 'bo',
-		'bs' => 'bs_BA',
-		'ca' => 'ca',
+		'bg'  => 'bg_BG',
+		'bn'  => 'bn_BD',
+		'bo'  => 'bo',
+		'bs'  => 'bs_BA',
+		'ca'  => 'ca',
 		'ceb' => 'ceb',
 		'ckb' => 'ckb',
-		'cs' => 'cs_CZ',
-		'cy' => 'cy',
-		'da' => 'da_DK',
-		'de' => 'de_DE',
-		'el' => 'el',
-		'en' => 'en_US',
-		'eo' => 'eo',
-		'es' => 'es_ES',
-		'et' => 'et',
-		'eu' => 'eu',
-		'fa' => 'fa_IR',
-		'fi' => 'fi',
-		'fo' => 'fo',
-		'fr' => 'fr_FR',
-		'fy' => 'fy',
-		'ga' => 'ga',
-		'gd' => 'gd',
-		'gl' => 'gl_ES',
-		'gu' => 'gu',
+		'cs'  => 'cs_CZ',
+		'cy'  => 'cy',
+		'da'  => 'da_DK',
+		'de'  => 'de_DE',
+		'el'  => 'el',
+		'en'  => 'en_US',
+		'eo'  => 'eo',
+		'es'  => 'es_ES',
+		'et'  => 'et',
+		'eu'  => 'eu',
+		'fa'  => 'fa_IR',
+		'fi'  => 'fi',
+		'fo'  => 'fo',
+		'fr'  => 'fr_FR',
+		'fy'  => 'fy',
+		'ga'  => 'ga',
+		'gd'  => 'gd',
+		'gl'  => 'gl_ES',
+		'gu'  => 'gu',
 		'haz' => 'haz',
-		'he' => 'he_IL',
-		'hi' => 'hi_IN',
-		'hr' => 'hr',
-		'hu' => 'hu_HU',
-		'hy' => 'hy',
-		'id' => 'id_ID',
-		'is' => 'is_IS',
-		'it' => 'it_IT',
-		'ja' => 'ja',
-		'ka' => 'ka_GE',
+		'he'  => 'he_IL',
+		'hi'  => 'hi_IN',
+		'hr'  => 'hr',
+		'hu'  => 'hu_HU',
+		'hy'  => 'hy',
+		'id'  => 'id_ID',
+		'is'  => 'is_IS',
+		'it'  => 'it_IT',
+		'ja'  => 'ja',
+		'ka'  => 'ka_GE',
 		'kab' => 'kab',
-		'kk' => 'kk',
-		'km' => 'km',
-		'kn' => 'kn',
-		'ko' => 'ko_KR',
-		'lo' => 'lo',
-		'lt' => 'lt_LT',
-		'lv' => 'lv',
-		'mk' => 'mk_MK',
-		'ml' => 'ml',
-		'mn' => 'mn',
-		'mr' => 'mr',
-		'ms' => 'ms_MY',
-		'my' => 'my_MM',
-		'ne' => 'ne_NP',
-		'nl' => 'nl_NL',
-		'nn' => 'nn_NO',
-		'no' => 'nb_NO',
-		'nb' => 'nb_NO',
+		'kk'  => 'kk',
+		'km'  => 'km',
+		'kn'  => 'kn',
+		'ko'  => 'ko_KR',
+		'lo'  => 'lo',
+		'lt'  => 'lt_LT',
+		'lv'  => 'lv',
+		'mk'  => 'mk_MK',
+		'ml'  => 'ml',
+		'mn'  => 'mn',
+		'mr'  => 'mr',
+		'ms'  => 'ms_MY',
+		'my'  => 'my_MM',
+		'ne'  => 'ne_NP',
+		'nl'  => 'nl_NL',
+		'nn'  => 'nn_NO',
+		'no'  => 'nb_NO',
+		'nb'  => 'nb_NO',
 		'oci' => 'oci',
-		'pa' => 'pa_IN',
-		'pl' => 'pl_PL',
-		'ps' => 'ps',
-		'pt' => 'pt_PT',
+		'pa'  => 'pa_IN',
+		'pl'  => 'pl_PL',
+		'ps'  => 'ps',
+		'pt'  => 'pt_PT',
 		'rhg' => 'rhg',
-		'ro' => 'ro_RO',
-		'ru' => 'ru_RU',
+		'ro'  => 'ro_RO',
+		'ru'  => 'ru_RU',
 		'sah' => 'sah',
-		'si' => 'si_LK',
-		'sk' => 'sk_SK',
+		'si'  => 'si_LK',
+		'sk'  => 'sk_SK',
 		'skr' => 'skr',
-		'sl' => 'sl_SI',
-		'sq' => 'sq',
-		'sr' => 'sr_RS',
-		'sv' => 'sv_SE',
-		'sw' => 'sw',
+		'sl'  => 'sl_SI',
+		'sq'  => 'sq',
+		'sr'  => 'sr_RS',
+		'sv'  => 'sv_SE',
+		'sw'  => 'sw',
 		'szl' => 'szl',
-		'ta' => 'ta_IN',
-		'te' => 'te',
-		'th' => 'th',
-		'tl' => 'tl',
-		'tr' => 'tr_TR',
-		'tt' => 'tt_RU',
+		'ta'  => 'ta_IN',
+		'te'  => 'te',
+		'th'  => 'th',
+		'tl'  => 'tl',
+		'tr'  => 'tr_TR',
+		'tt'  => 'tt_RU',
 		'tuk' => 'tuk',
-		'ug' => 'ug_CN',
-		'uk' => 'uk',
-		'ur' => 'ur',
-		'vi' => 'vi',
-		'zh' => 'zh_CN',
+		'ug'  => 'ug_CN',
+		'uk'  => 'uk',
+		'ur'  => 'ur',
+		'vi'  => 'vi',
+		'zh'  => 'zh_CN',
 	);
 
 	/** Region variants whose WordPress locale stays the bare language tag. */
@@ -255,10 +255,10 @@ final class Static_Site_Importer_Site_Language {
 	 * @return array{source_tag:string,source_from:string,locale:string,current_locale:string,mode:string}
 	 */
 	public static function decision( array $state ): array {
-		$explicit = isset( $state['args']['site_language'] ) && is_scalar( $state['args']['site_language'] )
+		$explicit    = isset( $state['args']['site_language'] ) && is_scalar( $state['args']['site_language'] )
 			? self::valid_language( (string) $state['args']['site_language'] )
 			: '';
-		$source_tag = '' !== $explicit ? $explicit : '';
+		$source_tag  = '' !== $explicit ? $explicit : '';
 		$source_from = '' !== $explicit ? 'explicit' : '';
 		if ( '' === $source_tag ) {
 			foreach ( $state['ordered_pages'] ?? array() as $page ) {
@@ -270,10 +270,10 @@ final class Static_Site_Importer_Site_Language {
 				break;
 			}
 		}
-		$current       = self::owner_locale();
-		$locale        = self::locale_from_language( $source_tag );
-		$unsupported   = '' !== $source_tag && '' === $locale;
-		$owner_set     = '' !== $current;
+		$current     = self::owner_locale();
+		$locale      = self::locale_from_language( $source_tag );
+		$unsupported = '' !== $source_tag && '' === $locale;
+		$owner_set   = '' !== $current;
 		return array(
 			'source_tag'     => $source_tag,
 			'source_from'    => $source_from,
@@ -333,9 +333,9 @@ final class Static_Site_Importer_Site_Language {
 			$rows[]        = $row;
 		}
 		return array(
-			'status' => array_filter( $rows, static fn( array $row ): bool => 'record_failed' === $row['status'] ) ? 'partial' : 'completed',
+			'status'      => array_filter( $rows, static fn( array $row ): bool => 'record_failed' === $row['status'] ) ? 'partial' : 'completed',
 			'site_locale' => $site,
-			'routes' => $rows,
+			'routes'      => $rows,
 		);
 	}
 
@@ -344,7 +344,7 @@ final class Static_Site_Importer_Site_Language {
 	 * authorized activation transaction, like the other site-identity writes.
 	 * Never fails the import: an unresolvable pack is an owner-handoff record.
 	 *
-	 * @param array<string,mixed> $state Prepared materialization state.
+	 * @param array<mixed> $state Prepared materialization state.
 	 * @return array<string,mixed>
 	 */
 	public static function materialize_site_language( array &$state ): array {
@@ -378,8 +378,8 @@ final class Static_Site_Importer_Site_Language {
 		$locale = $pack;
 		Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'WPLANG' );
 		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'WPLANG', $locale ) ) {
-			$report['status'] = 'owner_handoff';
-			$report['reason'] = 'site_language_option_write_failed';
+			$report['status']      = 'owner_handoff';
+			$report['reason']      = 'site_language_option_write_failed';
 			$report['kept_locale'] = self::default_locale();
 			return $report;
 		}
@@ -400,7 +400,7 @@ final class Static_Site_Importer_Site_Language {
 		if ( '' !== $owner ) {
 			return $owner;
 		}
-		$locale = is_array( $decision ) ? (string) ( $decision['locale'] ?? '' ) : '';
+		$locale = (string) ( $decision['locale'] ?? '' );
 		return '' !== $locale && 'apply' === ( $decision['mode'] ?? '' ) ? $locale : self::default_locale();
 	}
 
@@ -461,8 +461,8 @@ final class Static_Site_Importer_Site_Language {
 		if ( '' === $tag ) {
 			return array();
 		}
-		$subtags = array_values( array_filter( explode( '-', $tag ), static fn( string $subtag ): bool => '' !== $subtag ) );
-		$primary = (string) $subtags[0];
+		$subtags    = array_values( array_filter( explode( '-', $tag ), static fn( string $subtag ): bool => '' !== $subtag ) );
+		$primary    = (string) $subtags[0];
 		$candidates = array();
 		if ( isset( self::REGION_LOCALES[ $tag ] ) ) {
 			$candidates[] = self::REGION_LOCALES[ $tag ];
