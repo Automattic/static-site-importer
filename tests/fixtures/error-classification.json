@@ -60,6 +60,7 @@
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace root must be an existing non-symlink directory.')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-client-script-policy-report.php#throw new InvalidArgumentException(sprintf('Unknown client-script disposition \"%s\".',$disposition))": { "class": "programmer", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-direct-artifact-import.php#new WP_Error($code)": { "class": "propagated", "owning_layer": "static-site-importer" },
+    "includes/class-static-site-importer-site-plan-persistence.php#new WP_Error($failure_code)": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-direct-artifact-import.php#new WP_Error((string)($error['code']??'static_site_importer_direct_artifact_canonical_plan_failed'))": { "class": "propagated", "owning_layer": "blocks-engine" },
     "includes/class-static-site-importer-direct-artifact-import.php#throw new RuntimeException('A retained direct artifact payload is unavailable or corrupt.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-direct-artifact-import.php#throw new RuntimeException('Blocks Engine did not compact the composed WordPress site plan view.')": { "class": "integrity", "owning_layer": "blocks-engine" },
@@ -593,6 +594,8 @@
     "whole_page_destination_provenance_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "whole_page_destination_route_metadata_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "whole_page_source_page_update_failed": { "class": "operational", "owning_layer": "static-site-importer" },
-    "whole_page_source_route_occupied": { "class": "integrity", "owning_layer": "static-site-importer" }
+    "whole_page_source_route_occupied": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "whole_page_template_target_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "whole_page_template_unproven": { "class": "integrity", "owning_layer": "static-site-importer" }
   }
 }

@@ -893,7 +893,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * single-{post_type}-{slug} hierarchy), so the post keeps its own content and
 	 * the template carries the final page document, editable in the Site Editor.
 	 *
-	 * @param array<string,mixed> $state Materialization state.
+	 * @param array<mixed>        $state Materialization state.
 	 * @param array<string,mixed> $page  Final resolved page.
 	 * @return string|WP_Error Persisted template document.
 	 */
@@ -930,7 +930,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * The document that serves a materialized page: its template when a provider
 	 * post keeps its own content, otherwise the page post's content.
 	 *
-	 * @param array<string,mixed> $state Materialization state.
+	 * @param array<mixed>        $state Materialization state.
 	 * @param array<string,mixed> $page  Ordered page.
 	 */
 	public static function served_document( array $state, array $page ): ?string {
@@ -946,11 +946,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	/**
 	 * Persist a rewritten serving document and keep its provenance hash current.
 	 *
-	 * @param array<string,mixed> $state Materialization state.
-	 * @param array<string,mixed> $page  Ordered page.
+	 * @param array<mixed>        $state        Materialization state.
+	 * @param array<string,mixed> $page         Ordered page.
+	 * @param string              $failure_code Caller's error code for a provenance write failure.
 	 * @return true|WP_Error
 	 */
-	public static function write_served_document( array &$state, array $page, string $content ) {
+	public static function write_served_document( array &$state, array $page, string $content, string $failure_code = 'served_document_provenance_failed' ) {
 		$post_id = (int) ( $state['source_ids'][ (string) ( $page['source_path'] ?? '' ) ] ?? 0 );
 		if ( isset( $page['served_template'] ) ) {
 			$written = self::write_file(
@@ -983,7 +984,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_array( $provenance ) ) {
 			$provenance['content_hash'] = hash( 'sha256', $content );
 			if ( ! self::write_post_meta( $post_id, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
-				return new WP_Error( 'served_document_provenance_failed', 'Materialized page provenance could not be updated.', array( 'source_path' => $page['source_path'] ?? '' ) );
+				// ssi-error-class: operational
+				return new WP_Error( $failure_code, 'Materialized page provenance could not be updated.', array( 'source_path' => $page['source_path'] ?? '' ) );
 			}
 		}
 		return true;
@@ -1146,7 +1148,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				);
 			}
 			if ( $rewritten !== $content ) {
-				$updated = self::write_served_document( $state, $page, $rewritten );
+				$updated = self::write_served_document( $state, $page, $rewritten, 'route_link_rewrite_failed' );
 				if ( is_wp_error( $updated ) ) {
 					return $updated;
 				}
@@ -1415,8 +1417,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * A binding completes when the document that serves its page persists the
 	 * provider fragment: the page's post content or the served template.
 	 *
-	 * @param array<string,mixed> $state    Materialization state.
-	 * @param array<string,mixed> $receipt  Destination receipt fields.
+	 * @param array<mixed>        $state   Materialization state.
+	 * @param array<string,mixed> $receipt Destination receipt fields.
 	 */
 	private static function complete_entity_bindings( array &$state, string $source_path, string $content, array $receipt ): void {
 		foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
@@ -1429,6 +1431,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$binding_report = array_merge( $binding_report, $receipt );
+
 			$binding_report['status']                    = 'completed';
 			$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
 			$binding_report['materialized_content_hash'] = hash( 'sha256', $content );
