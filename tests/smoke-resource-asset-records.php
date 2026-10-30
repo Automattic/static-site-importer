@@ -43,7 +43,7 @@ $by_source = array_column( $plan['assets'], null, 'source_path' );
 foreach ( $extracted['records'] as $source => $record ) {
 	$asset = $by_source[ $source ] ?? null;
 	$assert( is_array( $asset ), 'The plan must declare every recorded resource: ' . $source );
-	$assert( Static_Site_Importer_Image_Assets::plan_destination( $record ) === ( $asset['destination'] ?? '' ), 'The compiler must honor the capture-owned destination: ' . $source );
+	$assert( Static_Site_Importer_Image_Assets::plan_destination( $record, $asset ) === ( $asset['destination'] ?? '' ), 'The compiler must honor the capture-owned destination: ' . $source );
 }
 $theme_json_write = null;
 foreach ( $plan['writes'] as $write ) {
@@ -126,6 +126,99 @@ foreach ( $extracted['records'] as $source => $record ) {
 	$served_mime           = $record;
 	$served_mime['original'] = array_merge( $record['original'], array( 'content_type' => 'application/octet-stream' ) );
 	$assert( ! Static_Site_Importer_Image_Assets::verify_bytes( $bytes_by_source[ $source ], $served_mime ), 'The served MIME must never substitute the byte signature: ' . $source );
+}
+
+// Exercise the real media resolution, theme verification and write helpers with
+// only the WordPress upload/database boundary stubbed below.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-media-library-materializer.php';
+function is_wp_error( $value ) { return $value instanceof WP_Error; }
+function get_temp_dir() { return sys_get_temp_dir() . '/'; }
+function wp_generate_uuid4() { return bin2hex( random_bytes( 16 ) ); }
+function wp_mkdir_p( $dir ) { return is_dir( $dir ) || mkdir( $dir, 0777, true ); }
+function wp_delete_file( $file ) { unlink( $file ); }
+function wp_getimagesize( $file ) { return getimagesize( $file ); }
+function get_posts( $args ) { return array(); }
+function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
+function sanitize_title( $title ) { return $title; }
+function sanitize_file_name( $name ) { return $name; }
+function wp_strip_all_tags( $text ) { return strip_tags( $text ); }
+function wp_upload_bits( $name, $unused, $bytes ) {
+	$file = $GLOBALS['ssi_record_test_dir'] . '/' . $name;
+	file_put_contents( $file, $bytes );
+	return array( 'file' => $file, 'error' => false );
+}
+function wp_check_filetype( $file ) { return array( 'type' => 'image/png' ); }
+function wp_insert_attachment( ...$args ) { return ++$GLOBALS['ssi_record_test_attachments']; }
+function wp_get_attachment_url( $id ) { return 'https://destination.example/uploads/' . $id . '.png'; }
+function wp_generate_attachment_metadata( ...$args ) { return array(); }
+function wp_update_attachment_metadata( ...$args ) {}
+function update_post_meta( ...$args ) {}
+
+$test_dir = get_temp_dir() . 'ssi-record-test-' . wp_generate_uuid4();
+wp_mkdir_p( $test_dir );
+$GLOBALS['ssi_record_test_dir'] = $test_dir;
+try {
+	foreach ( array( 'head-only', 'block-consumed', 'head-wrong-digest', 'head-wrong-mime', 'block-wrong-digest' ) as $case ) {
+		$block = str_starts_with( $case, 'block-' );
+		$png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQ4jWP8z0A+YKJA76jmUc2jmkc1U0EzACKcASfaaIZkAAAAAElFTkSuQmCC' );
+		$artifact = array(
+			'entrypoint' => 'index.html',
+			'files' => array(
+				array( 'path' => 'index.html', 'content' => '<html><head><link rel="apple-touch-icon" href="/media/apple-touch-icon.png"></head><body><main><h1>Recorded icon</h1>' . ( $block ? '<img src="/media/apple-touch-icon.png" alt="Icon">' : '' ) . '</main></body></html>' ),
+				array( 'path' => 'media/apple-touch-icon.png', 'content_base64' => base64_encode( $png ) ),
+			),
+		);
+		$record = array( 'kind' => 'image', 'original' => array( 'source_url' => 'https://source.example/media/apple-touch-icon.png', 'sha256' => hash( 'sha256', $png ), 'content_type' => 'image/png', 'width' => 20, 'height' => 20, 'alpha' => false ) );
+		if ( str_ends_with( $case, 'wrong-digest' ) ) {
+			$record['original']['sha256'] = str_repeat( '0', 64 );
+		}
+		if ( str_ends_with( $case, 'wrong-mime' ) ) {
+			$record['original']['content_type'] = 'image/jpeg';
+		}
+		$case_plan = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $artifact )->toArray()['source_reports']['wordpress_site_plan'];
+		$icon = array_column( $case_plan['assets'], null, 'source_path' )['media/apple-touch-icon.png'];
+		$assert( ( $block ? 'media_library' : 'theme' ) === $icon['destination'], $case . ': destination must follow block consumers.' );
+		$state = array(
+			'plan' => $case_plan,
+			'args' => array( 'image_asset_records' => array( 'media/apple-touch-icon.png' => $record ) ),
+			'theme_dir' => $test_dir . '/theme',
+			'resolved' => ( new Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $case_plan, array( 'theme_uri' => 'https://destination.example/themes/fixture' ) ),
+			'applied' => array( 'attachments' => array() ),
+		);
+		$GLOBALS['ssi_record_test_attachments'] = 0;
+		$media = Static_Site_Importer_Media_Library_Materializer::resolve_plan_assets( $state );
+		if ( 'block-wrong-digest' === $case ) {
+			$assert( is_wp_error( $media ) && 'image_resource_unresolved' === $media->code, $case . ': recorded upload must still verify.' );
+			continue;
+		}
+		$assert( ! is_wp_error( $media ), $case . ': media resolution must succeed.' );
+		$verified = Static_Site_Importer_Media_Library_Materializer::verify_record_theme_writes( $state );
+		if ( str_contains( $case, 'wrong-' ) ) {
+			$assert( is_wp_error( $verified ) && 'image_resource_unresolved' === $verified->code, $case . ': unverified theme bytes must fail.' );
+			$assert( 0 === $GLOBALS['ssi_record_test_attachments'], $case . ': no attachment may be created.' );
+			continue;
+		}
+		$assert( true === $verified, $case . ': theme writes must verify.' );
+		$assert( ( $block ? 1 : 0 ) === $GLOBALS['ssi_record_test_attachments'] && ( $block ? 1 : 0 ) === count( $state['applied']['attachments'] ), $case . ': exactly one attachment only for a block consumer.' );
+		$final = ( new Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $case_plan, array( 'theme_uri' => 'https://destination.example/themes/fixture', 'attachment_resolutions' => $media ) );
+		foreach ( $final['writes'] as $write ) {
+			if ( $icon['target_path'] === $write['target_path'] ) {
+				$result = Static_Site_Importer_Site_Plan_Persistence::write_file( $state['theme_dir'], $write );
+				$assert( ! is_wp_error( $result ) && $png === file_get_contents( $state['theme_dir'] . '/' . $icon['target_path'] ), $case . ': verified icon bytes must land in the theme.' );
+			}
+		}
+		$assert( $block ? ! file_exists( $state['theme_dir'] . '/' . $icon['target_path'] ) : is_file( $state['theme_dir'] . '/' . $icon['target_path'] ), $case . ': only head-owned artwork keeps a theme file.' );
+		if ( ! $block ) {
+			unlink( $state['theme_dir'] . '/' . $icon['target_path'] );
+		}
+	}
+} finally {
+	$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $test_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
+	foreach ( $files as $file ) {
+		$file->isDir() ? rmdir( $file->getPathname() ) : unlink( $file->getPathname() );
+	}
+	rmdir( $test_dir );
 }
 
 echo "Capture resource asset record contract passed.\n";
