@@ -16,6 +16,14 @@ non-public, allowing GET/HEAD requests to redirect to the native permalink.
 Unrelated occupied routes reject ownership. Page/media journals and provider
 compensation restore their respective mutations after a later failure.
 
+A provider result may set `document_destination: template` when its post keeps
+its own content (for example, a product description). The importer then writes
+the final resolved page document to the post's own single template,
+`templates/single-{post_type}-{slug}.html` in WordPress's template hierarchy,
+journals it, and verifies its exact bytes; fragment bindings in that document
+complete against the template. Without the field, the post content itself must
+already persist the exact document.
+
 The Events Calendar implements this boundary; see
 [native event migration](events-calendar-migration.md) for source admission,
 provider behavior and disposable runtime verification.

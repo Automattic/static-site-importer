@@ -314,21 +314,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return self::failed_receipt( $state, 'materialization_source_route_metadata_write_failed' );
 				}
 			}
-			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
-				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
-					$fragment          = (string) ( $binding_report['replacement_block_markup'] ?? '' );
-					$persisted_content = function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post ) : null;
-					if ( ! is_string( $persisted_content ) || '' === $fragment || ! str_contains( $persisted_content, $fragment ) ) {
-						$binding_report['status'] = 'unresolved';
-						continue;
-					}
-					$binding_report['status']                    = 'completed';
-					$binding_report['post_id']                   = $post;
-					$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
-					$binding_report['materialized_content_hash'] = hash( 'sha256', $persisted_content );
-				}
-			}
-			unset( $binding_report );
+			$persisted_content = function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post ) : null;
+			self::complete_entity_bindings( $state, (string) $page['source_path'], is_string( $persisted_content ) ? $persisted_content : '', array( 'post_id' => $post ) );
 		}
 		$taxonomy_entities = self::materialize_taxonomy_entities( $state );
 		if ( is_wp_error( $taxonomy_entities ) ) {
@@ -807,39 +794,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */
 	private static function apply_whole_page_handoffs( array &$state ) {
-		$results = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
-		// Products are seeded before their add-to-cart bindings can name a Woo ID.
-		// Prove the original document first, then persist the bound document before
-		// the normal handoff verifier checks its exact final bytes.
-		$original_pages = $state['ordered_pages'];
-		foreach ( $original_pages as &$original_page ) {
-			unset( $original_page['materialized_block_markup'] );
-		}
-		unset( $original_page );
-		$product_results = array_values( array_filter( $results, static fn( array $result ): bool => 'product' === ( $result['post_type'] ?? '' ) ) );
-		$original_claims = Static_Site_Importer_Whole_Page_Handoff::validate( $original_pages, $product_results );
-		foreach ( $original_claims['claims'] as $source => $original_claim ) {
-			foreach ( $state['ordered_pages'] as $bound_page ) {
-				if ( ( $bound_page['source_path'] ?? '' ) !== $source || ! isset( $bound_page['materialized_block_markup'] ) ) {
-					continue;
-				}
-				$id = (int) $original_claim['post_id'];
-				self::journal_post( $state, array(
-					'planned_existing_id' => $id,
-					'source_path'         => $source,
-				) );
-				$saved = wp_update_post(
-					array(
-						'ID'           => $id,
-						'post_content' => wp_slash( (string) $bound_page['materialized_block_markup'] ),
-					),
-					true
-				);
-				if ( is_wp_error( $saved ) ) {
-					return $saved;
-				}
-			}
-		}
+		$results              = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
 		$validated            = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results );
 		$state['diagnostics'] = array_merge( $state['diagnostics'], $validated['diagnostics'] );
 		if ( ! empty( $validated['diagnostics'] ) && ! empty( $results ) ) {
@@ -893,7 +848,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return new WP_Error( 'whole_page_destination_route_metadata_failed' );
 				}
 			}
-			$persisted_markup = get_post_field( 'post_content', $destination );
+			$persisted_markup = 'template' === ( $claim['result']['document_destination'] ?? '' ) ? self::write_whole_page_template( $state, $destination, $source, $page ) : get_post_field( 'post_content', $destination );
+			if ( is_wp_error( $persisted_markup ) ) {
+				return $persisted_markup;
+			}
 			if ( ! is_string( $persisted_markup ) ) {
 				return new WP_Error( 'whole_page_destination_content_unavailable', 'The committed provider document could not be read.' );
 			}
@@ -912,28 +870,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'source_path'             => $source,
 				'reconciliation_identity' => $page['reconciliation_identity'],
 			);
-			if ( 'product' === get_post_type( $destination ) ) {
-				// WordPress's specific single template wins over Woo's generic one.
-				// Keep the queried product (and Woo context), output only its document.
-				$product_slug = get_post_field( 'post_name', $destination );
-				if ( ! is_string( $product_slug ) || '' === $product_slug || sanitize_title( $product_slug ) !== $product_slug ) {
-					return new WP_Error( 'whole_page_product_slug_invalid' );
-				}
-				$target = 'templates/single-product-' . $product_slug . '.html';
-				self::journal_file( $state, $state['theme_dir'] . '/' . $target );
-				$template = self::write_file( $state['theme_dir'], array(
-					'target_path' => $target,
-					'source_path' => $source,
-					'payload'     => array(
-						'encoding' => 'utf8',
-						'data'     => '<!-- wp:post-content /-->',
-					),
-				) );
-				if ( is_wp_error( $template ) ) {
-					return $template;
-				}
-				$state['applied']['files'][] = $template;
-			}
+			self::complete_entity_bindings( $state, $source, $persisted_markup, array( 'post_id' => $destination ) );
 			$page['skip_materialization']                          = true;
 			$page['provider_owned']                                = true;
 			$page['provider_featured_image_target_path']           = (string) ( $claim['result']['featured_image_target_path'] ?? '' );
@@ -947,6 +884,107 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					break; }
 			}
 			unset( $ordered );
+		}
+		return true;
+	}
+
+	/**
+	 * Serve a provider-owned post through its own single template (WordPress's
+	 * single-{post_type}-{slug} hierarchy), so the post keeps its own content and
+	 * the template carries the final page document, editable in the Site Editor.
+	 *
+	 * @param array<string,mixed> $state Materialization state.
+	 * @param array<string,mixed> $page  Final resolved page.
+	 * @return string|WP_Error Persisted template document.
+	 */
+	private static function write_whole_page_template( array &$state, int $destination, string $source, array &$page ) {
+		$post_type = (string) get_post_type( $destination );
+		$slug      = get_post_field( 'post_name', $destination );
+		$markup    = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+		if ( ! is_string( $slug ) || '' === $slug || sanitize_title( $slug ) !== $slug || sanitize_key( $post_type ) !== $post_type || '' === $markup ) {
+			return new WP_Error( 'whole_page_template_target_invalid' );
+		}
+		$target = 'templates/single-' . $post_type . '-' . $slug . '.html';
+		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
+		$written = self::write_file(
+			$state['theme_dir'],
+			array(
+				'target_path' => $target,
+				'source_path' => $source,
+				'payload'     => array(
+					'encoding' => 'utf8',
+					'data'     => $markup,
+				),
+			)
+		);
+		if ( is_wp_error( $written ) ) {
+			return $written;
+		}
+		$state['applied']['files'][] = $written;
+		$page['served_template']     = $target;
+		$persisted                   = self::served_document( $state, $page );
+		return is_string( $persisted ) && hash_equals( hash( 'sha256', $markup ), hash( 'sha256', $persisted ) ) ? $persisted : new WP_Error( 'whole_page_template_unproven' );
+	}
+
+	/**
+	 * The document that serves a materialized page: its template when a provider
+	 * post keeps its own content, otherwise the page post's content.
+	 *
+	 * @param array<string,mixed> $state Materialization state.
+	 * @param array<string,mixed> $page  Ordered page.
+	 */
+	public static function served_document( array $state, array $page ): ?string {
+		if ( isset( $page['served_template'] ) ) {
+			$content = file_get_contents( $state['theme_dir'] . '/' . $page['served_template'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the importer-written local template.
+			return is_string( $content ) ? $content : null;
+		}
+		$post_id = (int) ( $state['source_ids'][ (string) ( $page['source_path'] ?? '' ) ] ?? 0 );
+		$content = $post_id > 0 && function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post_id ) : null;
+		return is_string( $content ) ? $content : null;
+	}
+
+	/**
+	 * Persist a rewritten serving document and keep its provenance hash current.
+	 *
+	 * @param array<string,mixed> $state Materialization state.
+	 * @param array<string,mixed> $page  Ordered page.
+	 * @return true|WP_Error
+	 */
+	public static function write_served_document( array &$state, array $page, string $content ) {
+		$post_id = (int) ( $state['source_ids'][ (string) ( $page['source_path'] ?? '' ) ] ?? 0 );
+		if ( isset( $page['served_template'] ) ) {
+			$written = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path' => $page['served_template'],
+					'source_path' => (string) $page['source_path'],
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+				)
+			);
+			if ( is_wp_error( $written ) ) {
+				return $written;
+			}
+		} else {
+			$updated = wp_update_post(
+				array(
+					'ID'           => $post_id,
+					'post_content' => wp_slash( $content ),
+				),
+				true
+			);
+			if ( is_wp_error( $updated ) ) {
+				return $updated;
+			}
+		}
+		$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
+		if ( is_array( $provenance ) ) {
+			$provenance['content_hash'] = hash( 'sha256', $content );
+			if ( ! self::write_post_meta( $post_id, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+				return new WP_Error( 'served_document_provenance_failed', 'Materialized page provenance could not be updated.', array( 'source_path' => $page['source_path'] ?? '' ) );
+			}
 		}
 		return true;
 	}
@@ -1092,8 +1130,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$source_path = (string) ( $page['source_path'] ?? '' );
-			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
-			$content     = $post_id > 0 && function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post_id ) : null;
+			$content     = self::served_document( $state, $page );
 			if ( ! is_string( $content ) ) {
 				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
 			}
@@ -1109,22 +1146,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				);
 			}
 			if ( $rewritten !== $content ) {
-				$updated = wp_update_post(
-					array(
-						'ID'           => $post_id,
-						'post_content' => wp_slash( $rewritten ),
-					),
-					true
-				);
+				$updated = self::write_served_document( $state, $page, $rewritten );
 				if ( is_wp_error( $updated ) ) {
 					return $updated;
-				}
-				$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
-				if ( is_array( $provenance ) ) {
-					$provenance['content_hash'] = hash( 'sha256', $rewritten );
-					if ( ! self::write_post_meta( $post_id, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
-						return new WP_Error( 'route_link_rewrite_failed', 'Materialized page provenance could not be updated after route-link resolution.', array( 'source_path' => $source_path ) );
-					}
 				}
 			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
@@ -1385,6 +1409,31 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
 		);
+	}
+
+	/**
+	 * A binding completes when the document that serves its page persists the
+	 * provider fragment: the page's post content or the served template.
+	 *
+	 * @param array<string,mixed> $state    Materialization state.
+	 * @param array<string,mixed> $receipt  Destination receipt fields.
+	 */
+	private static function complete_entity_bindings( array &$state, string $source_path, string $content, array $receipt ): void {
+		foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
+			if ( ( $binding_report['source_path'] ?? '' ) !== $source_path ) {
+				continue;
+			}
+			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
+			if ( '' === $content || '' === $fragment || ! str_contains( $content, $fragment ) ) {
+				$binding_report['status'] = 'unresolved';
+				continue;
+			}
+			$binding_report = array_merge( $binding_report, $receipt );
+			$binding_report['status']                    = 'completed';
+			$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
+			$binding_report['materialized_content_hash'] = hash( 'sha256', $content );
+		}
+		unset( $binding_report );
 	}
 
 	/**

@@ -6,6 +6,9 @@ define( 'ARRAY_A', 'ARRAY_A' );
 class WP_Post {
 	public function __construct( public int $ID, public string $post_status, public string $post_content, public string $post_type, public string $post_name ) {}
 }
+class WP_Error {
+	public function __construct( public string $code = '', public string $message = '' ) {}
+}
 class WC_Product_Simple {
 	private array $data = array();
 	public function __call( $name, $args ) {
@@ -20,6 +23,7 @@ class WC_Product_Simple {
 function post_type_exists( $type ) { return 'product' === $type; }
 function taxonomy_exists( $type ) { return 'product_cat' === $type; }
 function sanitize_title( $text ) { return strtolower( $text ); }
+function sanitize_key( $text ) { return strtolower( $text ); }
 function wp_kses_post( $text ) { return $text; }
 function get_page_by_path( ...$args ) { return null; }
 function get_option( $key, $default = false ) { return $default; }
@@ -48,7 +52,7 @@ $assert = static function ( bool $ok, string $message ): void {
 $row = array(
 	'id' => 'product-mug', 'name' => 'Mug', 'slug' => 'mug', 'regular_price' => '24',
 	'source_path' => 'website/products/mug.html', 'source_route' => '/products/mug',
-	'whole_page_candidate' => 'blocks-engine/whole-page-candidate/v1',
+	'whole_page_candidate' => 'blocks-engine/whole-page-candidate/v1', 'description' => 'A sturdy mug.',
 );
 // Exercise the real producer attachment code, not a fabricated page candidate.
 $attach = new ReflectionMethod( Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::class, 'attachWholePageCandidates' );
@@ -68,27 +72,31 @@ $report = Static_Site_Importer_Woo_Product_Seeder::seed( $manifest, array(
 ) );
 $assert( 1 === count( $report['whole_page_results'] ?? array() ), 'Product returns a whole-page claim.' );
 $id = $report['products'][0]['id'];
-$assert( $markup === get_post_field( 'post_content', $id ), 'Woo saves the complete editable layout.' );
+$assert( 'A sturdy mug.' === get_post_field( 'post_content', $id ), 'Product keeps its own description, not the page document.' );
 $binding = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $id ) );
-$bound_markup = $markup . $binding;
-$pages[0]['materialized_block_markup'] = $bound_markup;
+// Media resolution rebinds image URLs after the provider saved its document.
+$media_pages = $pages;
+$media_pages[0]['resolved_block_markup'] = str_replace( 'original-layout', 'original-layout media-bound', $markup );
+$bound_markup = $media_pages[0]['resolved_block_markup'] . $binding;
+$media_pages[0]['materialized_block_markup'] = $bound_markup;
 $state = array(
 	'args' => array( 'whole_page_provider_results' => $report['whole_page_results'] ),
-	'ordered_pages' => $pages, 'diagnostics' => array(), 'source_route_aliases' => array(),
+	'ordered_pages' => $media_pages, 'diagnostics' => array(), 'source_route_aliases' => array(),
+	'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array( array( 'source_path' => $row['source_path'], 'status' => 'prepared', 'replacement_block_markup' => $binding ) ) ) ),
 	'theme_dir' => sys_get_temp_dir() . '/ssi-product-handoff-' . uniqid(),
 );
 $apply = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'apply_whole_page_handoffs' );
 $arguments = array( &$state );
 $assert( true === $apply->invokeArgs( null, $arguments ), 'Product handoff commits.' );
-$assert( $bound_markup === get_post_field( 'post_content', $id ), 'Final product document includes the resolved add-to-cart binding.' );
+$assert( 'A sturdy mug.' === get_post_field( 'post_content', $id ), 'Handoff leaves the product description intact.' );
+$assert( 'completed' === $state['applied']['runtime_declarations']['entity_bindings'][0]['status'], 'Add-to-cart binding completes on the product that serves the page.' );
 $assert( 'draft' === get_post( 10 )->post_status, 'Captured page is no longer published.' );
 $assert( $id === $state['source_ids'][ $row['source_path'] ], 'Product is the page owner.' );
 $assert( in_array( 'products/mug', get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY ), true ), 'Source route becomes a redirect alias.' );
 $template = $state['theme_dir'] . '/templates/single-product-mug.html';
-$assert( '<!-- wp:post-content /-->' === file_get_contents( $template ), 'Specific single-product template outputs only the product document.' );
+$assert( $bound_markup === file_get_contents( $template ), 'Product single template serves the final media- and add-to-cart-bound page.' );
 $assert( false === $state['rollback']['files'][ $template ]['exists'], 'Template participates in transactional rollback.' );
 $assert( 'publish' === $state['rollback']['posts'][10]['post']['post_status'], 'Rollback retains the captured page publication state.' );
-$assert( $markup === $state['rollback']['posts'][ $id ]['post']['post_content'], 'Rollback retains the pre-binding product document.' );
 $binding = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $id ) );
 $assert( str_contains( $binding, '"productId":' . $id ) && str_contains( $binding, 'woocommerce/add-to-cart-form' ), 'Bound form explicitly retains Woo product context.' );
 unset( $row['whole_page_candidate'] );

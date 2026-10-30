@@ -70,8 +70,10 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 			}
 			$post   = $id > 0 ? get_post( $id ) : null;
 			$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
-			$valid  = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type
-				&& '' !== $markup && hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) );
+			// A template destination is written and proven by the importer; a
+			// content destination must already persist the exact document.
+			$valid = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type && '' !== $markup
+				&& ( 'template' === ( $result['document_destination'] ?? '' ) || hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) ) );
 			if ( ! $valid || isset( $claims[ $source ] ) ) {
 				$diagnostics[] = array(
 					'reason_code' => 'whole_page_claim_unproven',
