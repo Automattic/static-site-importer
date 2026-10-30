@@ -342,7 +342,7 @@
           "tests/smoke-woo-product-whole-page.php",
           "tests/smoke-woo-product-attributes.php",
           "tests/smoke-woo-store-visibility.php",
-          "tests/smoke-woo-product-whole-page.php",
+          "tests/smoke-admin-bar-top-chrome.php",
           "tests/smoke-woo-cart-binding.php",
           "tests/smoke-woo-order-lookup-binding.php",
           "tests/smoke-region-binding-row-degradation.php",
