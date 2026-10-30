@@ -520,8 +520,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 		$by_source = array_column( $state['plan']['assets'] ?? array(), null, 'source_path' );
 		foreach ( $state['args']['image_asset_records'] ?? array() as $source => $record ) {
-			if ( Static_Site_Importer_Image_Assets::plan_destination( $record ) !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
-				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare each recorded resource its capture-owned destination.', array( 'source_path' => $source ) );
+			if ( Static_Site_Importer_Image_Assets::plan_destination( $record, $by_source[ $source ] ?? array() ) !== ( $by_source[ $source ]['destination'] ?? '' ) ) {
+				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare each recorded resource its consumer-owned destination.', array( 'source_path' => $source ) );
 			}
 		}
 		$assets = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) );
@@ -818,7 +818,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 
 	/**
 	 * Verify theme-owned capture records against the exact bytes the plan is
-	 * about to write: captured fonts stay theme-owned, and their digest and
+	 * about to write: fonts and images without block consumers stay theme-owned;
+	 * their digest and
 	 * byte-sniffed MIME must match before any theme file lands.
 	 *
 	 * @param array<string,mixed> $state Transaction state after resolution.

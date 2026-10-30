@@ -312,14 +312,14 @@ final class Static_Site_Importer_Quality_Gates {
 			&& ! in_array( $diagnostic['block_name'] ?? '', array( 'core/html', 'core/freeform' ), true );
 	}
 
-	/** Identify the canonical form fallback across raw and normalized diagnostics. */
+	/** Identify form fallbacks to reconcile, independently of provider eligibility. */
 	public static function is_form_fallback_diagnostic( array $diagnostic ): bool {
 		if ( self::is_commerce_controls_fallback_diagnostic( $diagnostic ) && 'commerce_add_to_cart_form' === ( $diagnostic['binding']['role'] ?? '' ) ) {
 			return true;
 		}
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
 			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
-				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic );
+				return 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) || in_array( Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ), array( 'unknown', 'commerce_add_to_cart' ), true );
 			}
 		}
 
@@ -722,12 +722,20 @@ final class Static_Site_Importer_Quality_Gates {
 			if ( ! is_array( $diagnostic ) || ! ( self::is_form_fallback_diagnostic( $diagnostic ) || self::is_listing_owned_form( $diagnostic, $receipts_by_fallback ) ) ) {
 				continue;
 			}
-			$fallback_hash     = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
-			$source_path       = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
-			$identity          = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
-			$candidate_receipt = $receipts_by_fallback[ $identity ] ?? array();
+			$fallback_hash = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
+			$source_path   = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$identity      = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
+			/*
+			 * Unknown runtime forms remain accounted for, but contact-provider
+			 * receipts cannot resolve them, even with an exact identity match.
+			 * Formless commerce controls carry no form intent; product receipts own them.
+			 */
+			$unrouted_unknown  = ! self::is_commerce_controls_fallback_diagnostic( $diagnostic )
+				&& 'unknown' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic )
+				&& 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic );
+			$candidate_receipt = $unrouted_unknown ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
 			$receipt           = is_array( $candidate_receipt ) ? $candidate_receipt : array();
-			if ( empty( $receipt ) && ! self::has_form_fallback_identity( $diagnostic ) ) {
+			if ( ! $unrouted_unknown && empty( $receipt ) && ! self::has_form_fallback_identity( $diagnostic ) ) {
 				// Recover a missing producer identity only from one exact persisted form.
 				$candidate_receipt = $receipts_by_source_hash[ $source_path . "\n" . $fallback_hash ] ?? array();
 				if ( is_array( $candidate_receipt ) && 'commerce_add_to_cart_form' !== ( $candidate_receipt['role'] ?? '' ) ) {

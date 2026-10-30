@@ -200,8 +200,16 @@ final class Static_Site_Importer_Image_Assets {
 		return 'font' === self::kind( $record ) ? 'theme' : 'media-library';
 	}
 
-	/** The plan destination each record requires: theme vocabulary for theme-owned assets, plan vocabulary for attachment-bound ones. */
-	public static function plan_destination( array $record ): string {
+	/** Images follow plan consumers; fonts stay theme-owned and other resources attachment-bound. */
+	public static function plan_destination( array $record, array $asset ): string {
+		if ( 'image' === self::kind( $record ) ) {
+			foreach ( $asset['consumers'] ?? array() as $consumer ) {
+				if ( 'block' === ( $consumer['kind'] ?? '' ) ) {
+					return 'media_library';
+				}
+			}
+			return 'theme';
+		}
 		return 'theme' === self::destination_owner( $record ) ? 'theme' : 'media_library';
 	}
 
@@ -224,22 +232,26 @@ final class Static_Site_Importer_Image_Assets {
 		if ( ! is_string( $bytes ) ) {
 			return false;
 		}
-		if ( 'image/svg+xml' === $original['content_type'] ) {
-			$svg = strlen( $bytes ) <= 2 * 1024 * 1024 ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array();
-			return 'supported' === ( $svg['status'] ?? '' ) && ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'];
-		}
-		if ( 'image' === self::kind( $record ) ) {
+		if ( 'image' === self::kind( $record ) && 'image/svg+xml' !== $original['content_type'] ) {
 			$size = wp_getimagesize( $file );
 			return is_array( $size ) && $size[0] === $original['width'] && $size[1] === $original['height'] && ( $size['mime'] ?? '' ) === $original['content_type'] && ( ! $original['alpha'] || 'image/jpeg' !== $original['content_type'] );
 		}
 		return self::verify_bytes( $bytes, $record );
 	}
 
-	/** Validate one record's declared bytes against its digest and byte-sniffed MIME; rasters need wp_getimagesize and verify the staged file instead. */
+	/** Validate one record's declared bytes against its digest, byte-sniffed MIME and image dimensions. */
 	public static function verify_bytes( string $bytes, array $record ): bool {
 		$original = $record['original'];
 		if ( '' === $bytes || ! hash_equals( $original['sha256'], hash( 'sha256', $bytes ) ) ) {
 			return false;
+		}
+		if ( 'image' === self::kind( $record ) ) {
+			if ( 'image/svg+xml' === $original['content_type'] ) {
+				$svg = strlen( $bytes ) <= 2 * 1024 * 1024 ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array();
+				return 'supported' === ( $svg['status'] ?? '' ) && ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'];
+			}
+			$size = @getimagesizefromstring( $bytes ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid captured image bytes fail verification.
+			return is_array( $size ) && $size[0] === $original['width'] && $size[1] === $original['height'] && $size['mime'] === $original['content_type'] && ( ! $original['alpha'] || 'image/jpeg' !== $original['content_type'] );
 		}
 		$sniffed = match ( self::kind( $record ) ) {
 			'font'     => self::font_content_type( $bytes ),
