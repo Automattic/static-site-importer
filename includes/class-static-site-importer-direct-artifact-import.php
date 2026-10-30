@@ -1311,7 +1311,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	/** Remove only earlier failed runs with this identity, using workspaces confined to the owned root. */
 	private static function purge_prior_failed_runs( string $identity, string $current_import_id ): void {
-		$root = self::root();
+		$root    = self::root();
 		$entries = is_dir( $root ) ? scandir( $root ) : false;
 		foreach ( is_array( $entries ) ? $entries : array() as $entry ) {
 			if ( ! preg_match( '/^\\.ssi-artifact-run-direct-([a-f0-9]{64})$/D', $entry, $match ) || $match[1] === $current_import_id ) {
@@ -1322,7 +1322,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				continue;
 			}
 			$run = self::read_run( $workspace, $match[1] );
-			if ( ! is_wp_error( $run ) && 'failed' === ( $run['state'] ?? '' ) && $identity === ( $run['binding']['artifact_identity'] ?? '' ) ) {
+			if ( ! is_wp_error( $run ) && 'failed' === ( $run['state'] ?? '' ) && hash_equals( $identity, (string) ( $run['binding']['artifact_identity'] ?? '' ) ) ) {
 				$workspace->purge();
 			}
 		}
@@ -1400,7 +1400,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( in_array( $phase, array( 'materialize', 'materialization_claim' ), true ) ) {
 			$workspace->prune_except( self::terminal_retention( false ) );
 		}
-		$error_data                    = array(
+		$error_data = array(
 			'import_id'    => (string) ( $run['import_id'] ?? '' ),
 			'artifact_run' => self::evidence( $run ),
 			'failure'      => self::scrub_failure( $failure ),
