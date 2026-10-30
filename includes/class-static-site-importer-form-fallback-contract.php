@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Form_Fallback_Contract {
 
-	/** Read the producer's intent; older findings retain the unknown route. */
+	/** Read the producer's intent; older findings require unknown-intent evidence. */
 	public static function intent( array $finding ): string {
 		$intent = $finding['form_intent'] ?? null;
 		return is_string( $intent ) && '' !== $intent ? $intent : 'unknown';
@@ -30,10 +30,21 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	/** The owning provider boundary for a form fallback or its declared entity. */
 	public static function route( array $finding ): string {
 		return match ( self::intent( $finding ) ) {
-			'contact', 'newsletter', 'unknown' => 'form',
+			'contact', 'newsletter' => 'form',
+			'unknown' => self::has_contact_evidence( $finding ) ? 'form' : 'runtime',
 			'commerce_add_to_cart' => 'commerce',
 			default => 'runtime',
 		};
+	}
+
+	/** Unknown forms require an email or free-text control, not just choices. */
+	private static function has_contact_evidence( array $finding ): bool {
+		foreach ( self::manifest_from_metadata( $finding )['controls'] as $control ) {
+			if ( 'textarea' === $control['tag'] || ( 'input' === $control['tag'] && in_array( $control['type'], array( 'email', 'text' ), true ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

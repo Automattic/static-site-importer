@@ -474,7 +474,10 @@ namespace {
 		'type'  => 'submit',
 		'label' => 'Send',
 	);
+	// Explicit contact intent keeps these malformed controls on the validation path;
+	// unknown forms without contact evidence belong to the preserved runtime route.
 	$mixed_entity     = static fn( string $selector, array $controls ): array => array(
+		'form_intent' => 'contact',
 		'source_path' => 'contact.html',
 		'selector'    => $selector,
 		'controls'    => $controls,
