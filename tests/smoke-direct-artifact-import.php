@@ -1020,6 +1020,15 @@ $assert( $entity_declaration_id === ( $entity_diagnostic['declaration_id'] ?? ''
 $assert( 'static_site_importer_runtime_entity_invalid' === ( $entity_failure['error']['code'] ?? '' ), 'machine-readable failure codes are unchanged' );
 $assert( '$.forms[0].presentation_graph' === ( $entity_failure['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['errors'][0]['path'] ?? '' ), 'resumability evidence keeps the pointer identifying the rejected entity' );
 
+// Terminal materialization failures keep only compact evidence, and each retry of the same artifact replaces the earlier failed workspace.
+$failed_root = $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-';
+foreach ( array( 'quality' => array( $quality_failure, false ), 'editability' => array( $editability_failure, false ), 'entity' => array( $entity_failure, true ) ) as $label => list( $failure, $latest ) ) {
+	$failed_dir = $failed_root . ( $failure['error']['data']['import_id'] ?? '' );
+	$assert( $latest === is_dir( $failed_dir ), $label . ' failure workspace must survive only until the same artifact is retried' );
+}
+$kept = array_values( array_diff( scandir( $failed_dir ), array( '.', '..' ) ) );
+$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' ) ) && in_array( 'run.json', $kept, true ), 'a terminal materialization failure prunes resume-only checkpoints and keeps its evidence: ' . implode( ',', $kept ) );
+
 $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 $drive_apply( $input(), static fn ( array $step ): array => Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $step, $cli_report ) );
