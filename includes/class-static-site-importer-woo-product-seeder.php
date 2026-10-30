@@ -264,6 +264,18 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'], $report['rollback']['created_variations'] );
 			$row['source_route']  = (string) ( $product['source_route'] ?? '/products/' . self::string_value( $product, 'slug' ) );
 			$report['products'][] = $row;
+			$document             = self::whole_page_document( $product, $args );
+			if ( is_array( $document ) && in_array( $row['status'] ?? '', array( 'created', 'updated' ), true ) ) {
+				$claim                          = array_intersect_key( $document, array_flip( array( 'source_path', 'source_route', 'page_reconciliation_identity', 'declaration_reconciliation_identity', 'entity_id' ) ) );
+				$report['whole_page_results'][] = $claim + array(
+					'schema'               => Static_Site_Importer_Whole_Page_Handoff::SCHEMA,
+					'status'               => 'committed',
+					'destination_post_id'  => $row['id'],
+					'post_type'            => 'product',
+					// The product keeps its own description; its single template serves the page.
+					'document_destination' => 'template',
+				);
+			}
 
 			$status = $row['status'] ?? 'error';
 			if ( isset( $report['counts'][ $status ] ) ) {
@@ -277,6 +289,19 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		return $report;
+	}
+
+	/** Only consume a producer-authorized document for this exact product row. */
+	private static function whole_page_document( array $product, array $args ): ?array {
+		$candidate   = $product['whole_page_candidate'] ?? null;
+		$declaration = (string) ( $args['declaration_reconciliation_identity'] ?? '' );
+		$entity      = (string) ( $product['id'] ?? '' );
+		$document    = $args['whole_page_documents'][ $declaration ][ $entity ] ?? null;
+		if ( 'blocks-engine/whole-page-candidate/v1' !== $candidate || ! is_array( $document ) || ! is_string( $document['post_content'] ?? null ) ) {
+			return null;
+		}
+		return ( $document['source_route'] ?? '' ) === ( $product['source_route'] ?? '' )
+			&& ( $document['source_path'] ?? '' ) === ( $product['source_path'] ?? '' ) ? $document : null;
 	}
 
 	/**

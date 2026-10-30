@@ -77,7 +77,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
-			$content     = $post_id > 0 ? get_post_field( 'post_content', $post_id ) : null;
+			$content     = Static_Site_Importer_Site_Plan_Persistence::served_document( $state, $page );
 			// An explicit provider claim wins; otherwise the site plan's
 			// featured-image handoff names the theme asset and its alt text.
 			$featured_image = is_array( $page['metadata']['featured_image'] ?? null ) ? $page['metadata']['featured_image'] : array();
@@ -168,20 +168,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $rewritten === $content ) {
 				continue;
 			}
-			$updated = wp_update_post(
-				array(
-					'ID'           => $post_id,
-					'post_content' => wp_slash( $rewritten ),
-				),
-				true
-			);
+			$updated = Static_Site_Importer_Site_Plan_Persistence::write_served_document( $state, $page, $rewritten );
 			if ( is_wp_error( $updated ) ) {
 				return $updated;
-			}
-			$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
-			if ( is_array( $provenance ) ) {
-				$provenance['content_hash'] = hash( 'sha256', $rewritten );
-				Static_Site_Importer_Site_Plan_Persistence::write_post_meta( $post_id, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) );
 			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] ?? array() as $index => $binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $source_path && 'completed' === ( $binding_report['status'] ?? '' ) ) {
