@@ -23,7 +23,9 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { cpSync, readdirSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { PINNED, provisionWordPress, wpPhpArgs } from '../lib/disposable-wordpress.mjs';
+export { PINNED } from '../lib/disposable-wordpress.mjs';
 import { tmpdir } from 'node:os';
 import { basename, dirname as pathDirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,23 +35,6 @@ export const PROFILE_NAME = 'html-site-import';
 export const FANOUT_MIN_BATCHES = 2;
 
 const ROOT = resolve(pathDirname(fileURLToPath(import.meta.url)), '..');
-
-// The runtime a downstream consumer builds SSI into: WordPress, WP-CLI, and the
-// SQLite drop-in at the same versions. Every input is an immutable URL pinned
-// by digest, so the gate fails on a changed artifact rather than drifting.
-export const PINNED = Object.freeze({
-  wordpressVersion: '7.1',
-  wordpressUrl: 'https://wordpress.org/wordpress-7.1.tar.gz',
-  wordpressSha256: '05a5f89138f632b7329f1202f2a0553c5f7fe4daf8e4b9ca7ebae9b9466b9e86',
-  wpCliVersion: '2.12.0',
-  wpCliUrl: 'https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar',
-  wpCliSha256: 'ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c',
-  // The WordPress.org build, not a GitHub tag: the wordpress.org zip ships the
-  // db.copy drop-in, while the GitHub tags are a monorepo without it.
-  sqliteIntegrationVersion: '3.0.1',
-  sqliteIntegrationUrl: 'https://downloads.wordpress.org/plugin/sqlite-database-integration.3.0.1.zip',
-  sqliteIntegrationSha256: '8703c196d3c666be9e60ced60cafabc726b23193179bfa99147e2d9feb38aecb',
-});
 
 export const PLAN_REQUEST = Object.freeze({
   operation: 'plan',
@@ -184,12 +169,6 @@ function runImportEvidentially(phpBinary, wpCliPath, args, cwd) {
   }
 }
 
-// PHP-level diagnostics would corrupt receipt parsing and drown job logs;
-// WP-CLI renders its own errors, so the display channel can stay off.
-function wpPhpArgs(wpCliPath, args) {
-  return ['-d', 'display_errors=0', '-d', 'log_errors=0', wpCliPath, ...args];
-}
-
 function bounded(value, limit = 4000) {
   const text = String(value ?? '').trim();
   if (!text) return '';
@@ -207,17 +186,6 @@ async function pathExists(path) {
   } catch {
     return false;
   }
-}
-
-async function downloadPinned(url, expectedSha256, destination, label) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Downloading ${label} failed: HTTP ${response.status} for ${url}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const actual = sha256(bytes);
-  if (actual !== expectedSha256) {
-    throw new Error(`${label} sha256 mismatch: expected ${expectedSha256}, got ${actual}. Refusing to gate with unpinned inputs.`);
-  }
-  await writeFile(destination, bytes);
 }
 
 export function buildWebsiteBundle(fixtureDirectory, stagingRoot) {
@@ -255,12 +223,10 @@ export async function runGate(options, dependencies = {}) {
   };
 
   const workDir = options.workDir || await (dependencies.mkdtemp ?? mkdtemp)(join(tmpdir(), 'ssi-release-import-gate-'));
-  const runtimeDir = join(workDir, 'runtime');
-  const downloadsDir = join(workDir, 'downloads');
+
   const requestsDir = join(workDir, 'requests');
   const bundleDir = join(workDir, 'bundle');
-  await mkdir(runtimeDir, { recursive: true });
-  await mkdir(downloadsDir, { recursive: true });
+
   await mkdir(requestsDir, { recursive: true });
 
   // 1. Artifact contract: the zip must carry every file the html-site-import
@@ -279,44 +245,12 @@ export async function runGate(options, dependencies = {}) {
 
   // 2. Stage a disposable real PHP WordPress runtime from pinned inputs.
   log('== Runtime staging ==');
-  const wordpressArchive = join(downloadsDir, `wordpress-${PINNED.wordpressVersion}.tar.gz`);
-  const wpCliPath = join(downloadsDir, 'wp-cli.phar');
-  const sqliteArchive = join(downloadsDir, `sqlite-database-integration-${PINNED.sqliteIntegrationVersion}.zip`);
-  for (const [url, hash, destination, label] of [
-    [PINNED.wordpressUrl, PINNED.wordpressSha256, wordpressArchive, `WordPress ${PINNED.wordpressVersion}`],
-    [PINNED.wpCliUrl, PINNED.wpCliSha256, wpCliPath, `WP-CLI ${PINNED.wpCliVersion}`],
-    [PINNED.sqliteIntegrationUrl, PINNED.sqliteIntegrationSha256, sqliteArchive, `SQLite integration ${PINNED.sqliteIntegrationVersion}`],
-  ]) {
-    if (!await pathExists(destination) || sha256(await readFile(destination)) !== hash) {
-      await downloadPinned(url, hash, destination, label);
-    }
-    log(`OK ${label} pinned (${hash.slice(0, 12)}...)`);
-  }
-
-  const wpDir = join(runtimeDir, 'wordpress');
-  await mkdir(wpDir, { recursive: true });
-  run('tar', ['-xzf', wordpressArchive, '-C', wpDir, '--strip-components=1']);
-  // The wordpress.org zip unpacks to sqlite-database-integration/ directly.
-  run('unzip', ['-q', sqliteArchive, '-d', join(wpDir, 'wp-content', 'plugins')]);
-  const sqlitePlugin = join(wpDir, 'wp-content', 'plugins', 'sqlite-database-integration');
-  await cp(join(sqlitePlugin, 'db.copy'), join(wpDir, 'wp-content', 'db.php'));
-
   const php = dependencies.phpBinary ?? 'php';
-  const wpRun = (args) => run(php, wpPhpArgs(wpCliPath, args), { cwd: wpDir });
-
-  // --skip-check: the drop-in owns the database only after WordPress boots,
-  // so wp-cli's pre-boot mysqli check is meaningless here (and hostile on
-  // machines that happen to run a local MySQL).
-  wpRun(['config', 'create', '--skip-check', '--dbname=wordpress', '--dbuser=wordpress', '--dbpass=wordpress', '--dbhost=localhost']);
-  wpRun(['core', 'install', '--url=http://localhost:8090', '--title=SSI Release Import Gate', '--admin_user=admin', '--admin_password=password', '--admin_email=admin@example.test', '--skip-email']);
-  evidence.runtime.wordpress = wpRun(['core', 'version']).stdout.trim();
-  // Report the plugin version. SQLITE_DB_DROPIN_VERSION is the db.copy file's
-  // own constant and lags the plugin (plugin 3.0.1 ships drop-in 1.8.0), so
-  // printing it alone reads as the wrong plugin being installed.
-  evidence.runtime.database = wpRun(['eval', 'if ( ! defined( "SQLITE_DB_DROPIN_VERSION" ) ) { echo "mysql"; return; } $plugin = get_file_data( WP_CONTENT_DIR . "/plugins/sqlite-database-integration/load.php", array( "Version" => "Version" ) ); echo "sqlite plugin " . $plugin["Version"] . " (drop-in " . SQLITE_DB_DROPIN_VERSION . ")";']).stdout.trim();
-  if (!/sqlite/i.test(evidence.runtime.database)) {
-    return finish(log, options, workDir, evidence, [...failures, `expected the SQLite drop-in to own the database, wp db engine reports: ${evidence.runtime.database}`]);
-  }
+  const runtime = await provisionWordPress({ workDir, phpBinary: php, log });
+  const { wpDir, wpCliPath, wpRun } = runtime;
+  evidence.runtime.wordpress = runtime.wordpress;
+  evidence.runtime.database = runtime.database;
+  try {
   log(`OK WordPress ${evidence.runtime.wordpress} installed (${evidence.runtime.database})`);
 
   // 3. Install the artifact under test the way the consumer does.
@@ -325,7 +259,7 @@ export async function runGate(options, dependencies = {}) {
   const activePlugins = wpRun(['plugin', 'list', '--status=active', '--field=name']).stdout.trim().split('\n');
   evidence.checks.plugin_install = { active: activePlugins.includes('static-site-importer') };
   if (!activePlugins.includes('static-site-importer')) {
-    return finish(log, options, workDir, evidence, [...failures, `static-site-importer is not active after installing ${basename(options.zip)}`]);
+    return await finish(log, options, workDir, evidence, [...failures, `static-site-importer is not active after installing ${basename(options.zip)}`]);
   }
   evidence.runtime.plugin_version = wpRun(['plugin', 'get', 'static-site-importer', '--field=version']).stdout.trim();
   log(`OK static-site-importer ${evidence.runtime.plugin_version} installed from the built zip and active`);
@@ -404,7 +338,10 @@ export async function runGate(options, dependencies = {}) {
   log('== Coverage statement ==');
   coverage.statements.forEach((statement) => log(statement));
 
-  return finish(log, options, workDir, evidence, failures);
+  return await finish(log, options, workDir, evidence, failures);
+  } finally {
+    if (!options.keep) await runtime.close();
+  }
 }
 
 async function finish(log, options, workDir, evidence, failures) {

@@ -247,6 +247,7 @@
     { "path": "tests/StaticSiteImporterMediaLibraryMaterializerTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterMediaLibraryMaterializerTest.php"] },
     { "path": "tools/build-dev-package.test.mjs", "environment": "node" },
     { "path": "tools/release-import-gate.test.mjs", "environment": "node" },
+    { "path": "tools/disposable-wordpress.test.mjs", "environment": "node" },
     { "path": "tools/acceptance-handoff.test.mjs", "environment": "node" },
     { "path": "tools/owner-handoff-evidence.test.mjs", "environment": "node" },
     { "path": "tools/fig-intent-parity-report.test.mjs", "environment": "node" },
