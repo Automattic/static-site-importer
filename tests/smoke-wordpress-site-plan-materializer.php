@@ -2605,7 +2605,7 @@ $partial_quality_counters = array(
 	'source_fallback_count'                 => 1,
 );
 $assert(
-	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 4 === ( $partial_quality['block_count'] ?? 0 ) && array(
+	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 51 === ( $partial_quality['block_count'] ?? 0 ) && array(
 		'block_count'    => 1,
 		'fallback_count' => 1,
 	) === ( $partial_quality['metrics'] ?? null ),

@@ -28,7 +28,11 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 class Static_Site_Importer_Block_Document_Reporter {
 
 	/**
-	 * Analyze final page post_content and replace any pre-materialization counts.
+	 * Analyze every final block document and replace any pre-materialization counts.
+	 *
+	 * Each document is named by the generated path the import writes it to: the
+	 * persisted page post content, the generated templates/*.html and the shared
+	 * parts/*.html.
 	 *
 	 * @param array<int,array<string,mixed>>       $documents Materialized documents with path and content.
 	 * @param Static_Site_Importer_Import_Report $report    Conversion report (mutated by reference).
