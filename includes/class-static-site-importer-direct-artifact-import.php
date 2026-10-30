@@ -390,6 +390,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return new WP_Error( 'static_site_importer_direct_artifact_run_expired', 'The retained direct artifact run expired and must be restarted.' );
 		}
+		// A terminal failure keeps only its evidence; its claim alone proves mutation may have happened.
+		$claim = $workspace->path( 'materialization-claim' );
+		if ( 'failed' === ( $run['state'] ?? '' ) && is_string( $claim ) && is_dir( $claim ) ) {
+			return self::materialization_ambiguous();
+		}
 		$policy       = self::run_policy();
 		$clock        = $policy['clock'];
 		$run['state'] = 'running';
@@ -1047,10 +1052,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 	}
 
+	private static function materialization_ambiguous(): WP_Error {
+		return new WP_Error( 'static_site_importer_direct_artifact_materialization_ambiguous', 'Materialization was already claimed without a durable result; the import will not repeat WordPress mutation.' );
+	}
+
 	/** Atomically reserve the only materialization attempt before mutation. */
 	private static function claim_materialization( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
 		if ( ! $workspace->claim_directory( 'materialization-claim' ) ) {
-			return new WP_Error( 'static_site_importer_direct_artifact_materialization_ambiguous', 'Materialization was already claimed without a durable result; the import will not repeat WordPress mutation.' );
+			return self::materialization_ambiguous();
 		}
 		$run['work']['materialization_claims'] = 1;
 		$run['phase']                          = 'materialization_claimed';
