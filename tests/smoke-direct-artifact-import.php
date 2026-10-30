@@ -751,6 +751,8 @@ $ambiguous_request = $GLOBALS['ssi_direct_last_drive_request'];
 $ambiguous_request['source'] = array( 'type' => 'files', 'import_id' => $interrupted_id );
 $ambiguous = Static_Site_Importer_Canonical_Import_Service::import( $ambiguous_request );
 $assert( 'static_site_importer_direct_artifact_materialization_ambiguous' === ( $ambiguous['error']['code'] ?? '' ) && $mutations_before_interruption + 1 === $GLOBALS['ssi_direct_mutations'], 'resume across the mutation receipt boundary must fail closed instead of repeating WordPress mutation' );
+$kept = array_values( array_diff( (array) scandir( $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' . $interrupted_id ), array( '.', '..' ) ) );
+$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' ) ) && in_array( 'materialization-claim', $kept, true ), 'a terminal materialization failure keeps only its evidence: ' . implode( ',', $kept ) );
 
 $fail_run_after_receipt = true;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_checkpoint_publish'][] = static function ( $allowed, string $kind, string $relative, array $evidence ) use ( &$fail_run_after_receipt ) {
@@ -1020,14 +1022,12 @@ $assert( $entity_declaration_id === ( $entity_diagnostic['declaration_id'] ?? ''
 $assert( 'static_site_importer_runtime_entity_invalid' === ( $entity_failure['error']['code'] ?? '' ), 'machine-readable failure codes are unchanged' );
 $assert( '$.forms[0].presentation_graph' === ( $entity_failure['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['errors'][0]['path'] ?? '' ), 'resumability evidence keeps the pointer identifying the rejected entity' );
 
-// Terminal materialization failures keep only compact evidence, and each retry of the same artifact replaces the earlier failed workspace.
+// Each retry of the same artifact replaces the earlier failed workspace.
 $failed_root = $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-';
 foreach ( array( 'quality' => array( $quality_failure, false ), 'editability' => array( $editability_failure, false ), 'entity' => array( $entity_failure, true ) ) as $label => list( $failure, $latest ) ) {
 	$failed_dir = $failed_root . ( $failure['error']['data']['import_id'] ?? '' );
 	$assert( $latest === is_dir( $failed_dir ), $label . ' failure workspace must survive only until the same artifact is retried' );
 }
-$kept = array_values( array_diff( scandir( $failed_dir ), array( '.', '..' ) ) );
-$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' ) ) && in_array( 'run.json', $kept, true ), 'a terminal materialization failure prunes resume-only checkpoints and keeps its evidence: ' . implode( ',', $kept ) );
 
 $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
