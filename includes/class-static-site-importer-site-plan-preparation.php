@@ -99,6 +99,48 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
+	 * Bridge all frontend CSS, including companion-published source assets.
+	 *
+	 * @param array<string,mixed> $resolved Resolved writes and page markup.
+	 * @return array<string,mixed> Resolved projection with frontend offsets.
+	 */
+	public static function with_admin_bar_top_chrome( array $resolved ): array {
+		$css    = '';
+		$markup = '';
+		foreach ( $resolved['pages'] ?? array() as $page ) {
+			$markup .= (string) ( $page['resolved_block_markup'] ?? '' );
+		}
+		foreach ( $resolved['writes'] ?? array() as $write ) {
+			$data = (string) ( $write['payload']['data'] ?? '' );
+			if ( 'base64' === ( $write['payload']['encoding'] ?? '' ) ) {
+				$data = (string) base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Reads declared canonical asset payload bytes.
+			}
+			$target = (string) ( $write['target_path'] ?? '' );
+			if ( str_ends_with( $target, '.css' ) && ! str_ends_with( $target, '/editor-style.css' ) ) {
+				$css .= "\n" . $data;
+			} elseif ( preg_match( '/\.(?:html|php)$/', $target ) ) {
+				$markup .= $data;
+			}
+		}
+		$bridge = Static_Site_Importer_Stylesheet_Materializer::admin_bar_top_chrome_css( $css, $markup );
+		if ( '' !== $bridge ) {
+			foreach ( $resolved['writes'] as &$write ) {
+				if ( 'style.css' === ( $write['target_path'] ?? '' ) ) {
+					$data                  = (string) ( $write['payload']['data'] ?? '' );
+					$write['payload']      = array(
+						'encoding' => 'utf8',
+						'data'     => $data . $bridge,
+					);
+					$write['payload_hash'] = hash( 'sha256', $data . $bridge );
+					break;
+				}
+			}
+			unset( $write );
+		}
+		return $resolved;
+	}
+
+	/**
 	 * Validate and resolve every destination without mutating WordPress or the filesystem.
 	 *
 	 * The resulting state may be passed to materialize_prepared(). That method prepares
@@ -219,6 +261,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
 			$resolved                                   = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
+			$resolved                                   = self::with_admin_bar_top_chrome( $resolved );
 			$state['base_resolved']                     = $resolved;
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;

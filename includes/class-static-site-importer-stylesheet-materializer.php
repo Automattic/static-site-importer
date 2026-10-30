@@ -235,7 +235,6 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 */
 	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array(), array $artifact_provenance = array() ): string {
 		$theme_name       = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
-		$admin_bar_bridge = self::admin_bar_top_chrome_css( $css );
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );
 
@@ -262,7 +261,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			$headers[] = $update_uri_line;
 		}
 
-		return "/*\n" . implode( "\n", $headers ) . "\n*/\n\n" . $css . "\n" . $body_class_guard . $admin_bar_bridge . $repair_css;
+		return "/*\n" . implode( "\n", $headers ) . "\n*/\n\n" . $css . "\n" . $body_class_guard . $repair_css;
 	}
 
 	/**
@@ -441,16 +440,31 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	/**
 	 * Build frontend admin-bar offsets for imported fixed/sticky top chrome.
 	 *
-	 * @param string $css Source CSS.
+	 * @param string $css Source CSS from all delivered frontend stylesheets.
+	 * @param string $markup Imported markup.
 	 * @return string Additional frontend CSS rules.
 	 */
-	private static function admin_bar_top_chrome_css( string $css ): string {
+	public static function admin_bar_top_chrome_css( string $css, string $markup = '' ): string {
 		$css = preg_replace( '/\/\*.*?\*\//s', '', $css ) ?? $css;
 		if ( '' === trim( $css ) || ! str_contains( $css, 'position' ) || ! str_contains( $css, 'top' ) ) {
 			return '';
 		}
 
-		$rules = self::admin_bar_top_chrome_rules_from_css( $css );
+		$positions = array();
+		$tops      = array();
+		$rules     = self::admin_bar_top_chrome_rules_from_css( $css, $positions, $tops );
+		preg_match_all( '/\bclass\s*=\s*([\'"])(.*?)\1/is', $markup, $matches );
+		foreach ( $matches[2] as $class_list ) {
+			$classes = preg_split( '/\s+/', html_entity_decode( $class_list, ENT_QUOTES | ENT_HTML5 ) );
+			if ( false === $classes ) {
+				continue;
+			}
+			foreach ( array_intersect( $classes, array_keys( $positions ) ) as $position ) {
+				foreach ( array_intersect( $classes, array_keys( $tops ) ) as $top_class ) {
+					$rules = array_merge( $rules, self::admin_bar_top_rules( '.' . $position . '.' . $top_class, $tops[ $top_class ] ) );
+				}
+			}
+		}
 		if ( empty( $rules ) ) {
 			return '';
 		}
@@ -462,9 +476,11 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * Build admin-bar offset rules from one CSS scope.
 	 *
 	 * @param string $css CSS to inspect.
+	 * @param array<string,bool> $positions Single fixed/sticky classes.
+	 * @param array<string,string> $tops Single classes with top declarations.
 	 * @return array<int, string> CSS rules.
 	 */
-	private static function admin_bar_top_chrome_rules_from_css( string $css ): array {
+	private static function admin_bar_top_chrome_rules_from_css( string $css, array &$positions, array &$tops ): array {
 		$rules  = array();
 		$length = strlen( $css );
 		$offset = 0;
@@ -481,30 +497,26 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			$offset = $body_end + 1;
 
 			if ( str_starts_with( $prelude, '@' ) ) {
-				$rules = array_merge( $rules, self::admin_bar_top_chrome_rules_from_css( $body ) );
+				$rules = array_merge( $rules, self::admin_bar_top_chrome_rules_from_css( $body, $positions, $tops ) );
 				continue;
 			}
 
-			if ( ! preg_match( '/(?:^|;)\s*position\s*:\s*(?:fixed|sticky)\s*(?:!important\s*)?(?:;|$)/i', $body ) ) {
-				continue;
-			}
-
-			$top = self::css_declaration_value( $body, 'top' );
-			if ( null === $top ) {
-				continue;
-			}
-
-			$desktop_top = self::admin_bar_offset_top_value( $top, '32px' );
-			$mobile_top  = self::admin_bar_offset_top_value( $top, '46px' );
-			if ( null === $desktop_top || null === $mobile_top ) {
-				continue;
-			}
+			$is_fixed = (bool) preg_match( '/(?:^|;)\s*position\s*:\s*(?:fixed|sticky)\s*(?:!important\s*)?(?:;|$)/i', $body );
+			$top      = self::css_declaration_value( $body, 'top' );
 
 			$selectors = array();
 			foreach ( explode( ',', $prelude ) as $selector ) {
 				$selector = trim( $selector );
-				if ( self::selector_is_plausible_top_chrome( $selector ) ) {
-					$selectors[] = 'body.admin-bar ' . $selector;
+				if ( preg_match( '/^\.([a-zA-Z_][a-zA-Z0-9_-]*)$/', $selector, $class ) ) {
+					if ( $is_fixed ) {
+						$positions[ $class[1] ] = true;
+					}
+					if ( null !== $top ) {
+						$tops[ $class[1] ] = $top;
+					}
+				}
+				if ( $is_fixed && null !== $top && self::selector_is_plausible_top_chrome( $selector ) ) {
+					$selectors[] = $selector;
 				}
 			}
 
@@ -512,12 +524,32 @@ class Static_Site_Importer_Stylesheet_Materializer {
 				continue;
 			}
 
-			$selector_list = implode( ', ', array_unique( $selectors ) );
-			$rules[]       = $selector_list . ' { top: ' . $desktop_top . '; }';
-			$rules[]       = '@media screen and (max-width: 782px) { ' . $selector_list . ' { top: ' . $mobile_top . '; } }';
+			$rules = array_merge( $rules, self::admin_bar_top_rules( implode( ', ', array_unique( $selectors ) ), $top ) );
 		}
 
 		return $rules;
+	}
+
+	/**
+	 * Offset top chrome except where core makes the admin bar absolute.
+	 *
+	 * Each selector gets a `:root` prefix so the offset outranks its source rule, which may live in a
+	 * carried stylesheet that loads after style.css.
+	 *
+	 * @param string $selector Selector list.
+	 * @param string $top Source top declaration.
+	 * @return array<int,string> Frontend rules.
+	 */
+	private static function admin_bar_top_rules( string $selector, string $top ): array {
+		$offset = self::admin_bar_offset_top_value( $top );
+		if ( null === $offset ) {
+			return array();
+		}
+		$selector = implode( ', ', array_map( static fn ( string $part ): string => ':root ' . trim( $part ), explode( ',', $selector ) ) );
+		return array(
+			$selector . ' { top: ' . $offset . '; }',
+			'@media screen and (max-width: 600px) { ' . $selector . ' { top: ' . $top . '; } }',
+		);
 	}
 
 	/**
@@ -539,10 +571,9 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * Add one WordPress admin-bar height to a source top value.
 	 *
 	 * @param string $top    Source top declaration value.
-	 * @param string $offset Admin-bar height.
 	 * @return string|null Offset top value, or null when unsafe to rewrite.
 	 */
-	private static function admin_bar_offset_top_value( string $top, string $offset ): ?string {
+	private static function admin_bar_offset_top_value( string $top ): ?string {
 		$top       = trim( $top );
 		$important = '';
 		if ( preg_match( '/\s*!important\s*$/i', $top ) ) {
@@ -554,11 +585,10 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			return null;
 		}
 
-		if ( preg_match( '/^0(?:[a-z%]+)?$/i', $top ) ) {
-			return $offset . $important;
+		if ( '0' === $top ) {
+			$top = '0px';
 		}
-
-		return 'calc(' . $top . ' + ' . $offset . ')' . $important;
+		return 'calc(' . $top . ' + var(--wp-admin--admin-bar--height, 0px))' . $important;
 	}
 
 	/**
