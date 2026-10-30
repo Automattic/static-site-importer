@@ -1049,7 +1049,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$post['meta_input'] = wp_slash( $fields );
 		}
-		if ( ! empty( $page['metadata']['detected_date'] ) ) {
+		// A captured document was already public, so a detected date after this
+		// import is not its publication date (e.g. an event's date in its URL).
+		// Persisting it would make WordPress schedule the post instead of
+		// publishing it; leave such a post dated by WordPress.
+		if ( ! empty( $page['metadata']['detected_date'] ) && (string) $page['metadata']['detected_date'] <= gmdate( 'Y-m-d H:i:s' ) ) {
 			// The classifier emits UTC; post_date_gmt stores that absolute value.
 			// When the source stated the same instant with its own offset, that
 			// wall-clock time is the post_date its permalinks use. Otherwise
