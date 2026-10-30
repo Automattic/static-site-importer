@@ -209,7 +209,25 @@ class Static_Site_Importer_Receipt_Projection {
 			$report->set_section( 'theme_runtime', $runtime );
 			Static_Site_Importer_Quality_Gates::mark_companion_script_fallbacks_materialized( $report, $runtime['runtime_scripts'] ?? array(), (string) $runtime['owner_slug'], 'generated_theme' );
 		}
-		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
+		// Every block document the import writes — the persisted page content,
+		// the generated templates/*.html and the shared parts/*.html — is counted
+		// by the same analysis, so a raw block in the site shell fails the
+		// core_html_block gate exactly like one in page content and each finding
+		// carries its document path.
+		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents(
+			array_merge(
+				$report['generated_theme']['block_documents'],
+				$report['generated_theme']['template_parts'],
+				array_map(
+					static fn( array $template ): array => array(
+						'path'    => 'templates/' . $template['slug'] . '.html',
+						'content' => $template['materialized_block_markup'] ?? $template['resolved_block_markup'] ?? $template['canonical_block_markup'] ?? '',
+					),
+					array_values( array_filter( is_array( $plan['templates'] ?? null ) ? $plan['templates'] : array(), static fn( $template ): bool => is_array( $template ) && is_string( $template['slug'] ?? null ) && '' !== $template['slug'] ) )
+				)
+			),
+			$report
+		);
 		// Page markup is persisted in WordPress and analyzed above; the report
 		// keeps each document's identity, not a second copy of its content.
 		$report->set_in_section(
