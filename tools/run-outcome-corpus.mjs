@@ -30,13 +30,14 @@ export function validateCorpus(manifest) {
 }
 
 /** Toolchain supplies runtime credentials and lifecycle, not check results. */
-export async function runOutcomeCorpus({ manifest: manifestPath, output, compare, toolchain }) {
+export async function runOutcomeCorpus({ manifest: manifestPath, output, compare, toolchain, producerRepository, producerVersion, producerTarball }) {
   const manifest = validateCorpus(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
   const root = path.resolve(output);
   if (fs.existsSync(root) && fs.readdirSync(root).length) throw new Error('Output must be a fresh private directory');
+  toolchain ??= await (await import('../lib/default-outcome-toolchain.mjs')).createDefaultToolchain({ output, producerRepository, producerVersion, producerTarball });
   for (const name of ['capture', 'ssi', 'blocks_engine']) {
     const identity = toolchain.identities?.[name];
-    if (!identity?.version || !/^[a-f0-9]{40,64}$/i.test(identity.commit ?? '')) throw new Error(`Exact ${name} version and commit required`);
+    if (!identity?.version || (!(name === 'blocks_engine' && identity.commit === 'unverified' && identity.artifact_identity) && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(identity.commit ?? ''))) throw new Error(`Exact ${name} version and commit required`);
   }
   fs.mkdirSync(root, { recursive: true });
   const imports = [];
@@ -48,7 +49,9 @@ export async function runOutcomeCorpus({ manifest: manifestPath, output, compare
     let failure;
     try {
       let imported;
-      if (site.source_url) {
+      if (toolchain.importSite) {
+        imported = await toolchain.importSite({ site, directory, manifestPath });
+      } else if (site.source_url) {
         imported = await runUrlLoopIntake({ url: site.source_url, outputRoot: path.join(directory, 'intake'), capture: toolchain.capture, staticSiteImporter: toolchain.staticSiteImporter, blocksEngine: toolchain.blocksEngine, ssiIdentity: toolchain.identities.ssi, blocksEngineIdentity: toolchain.identities.blocks_engine, runMatrix: true, matrixArgs: toolchain.matrixArgs });
       } else {
         const artifactRoot = path.resolve(path.dirname(path.resolve(manifestPath)), site.artifact_directory);
@@ -85,8 +88,13 @@ export async function runOutcomeCorpus({ manifest: manifestPath, output, compare
   const previous = compare ? JSON.parse(fs.readFileSync(compare, 'utf8')) : undefined;
   const matrix = outcomeMatrix(imports, previous);
   if (imports.some(row => row.reason)) matrix.status = 'failed';
+  matrix.versions = toolchain.identities;
+  matrix.identity_warnings = [
+    ...(toolchain.identities.ssi.dirty ? ['SSI checkout is dirty; this run is not clean release proof.'] : []),
+    ...(toolchain.identities.blocks_engine.commit === 'unverified' ? ['Blocks Engine installed artifact carries no verified commit identity; file upstream for artifact provenance.'] : []),
+  ];
   write(path.join(root, 'matrix.json'), matrix);
-  fs.writeFileSync(path.join(root, 'matrix.md'), outcomeMatrixMarkdown(matrix));
+  fs.writeFileSync(path.join(root, 'matrix.md'), `${outcomeMatrixMarkdown(matrix)}\n${matrix.identity_warnings.join('\n')}\n`);
   return matrix;
 }
 
@@ -94,11 +102,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const args = process.argv.slice(2), options = {};
     for (let index = 0; index < args.length; index += 2) {
-      if (!['--manifest', '--output', '--compare'].includes(args[index]) || !args[index + 1]) throw new Error('Usage: run-outcome-corpus.mjs --manifest <path> --output <dir> [--compare <matrix.json>]');
-      options[args[index].slice(2)] = args[index + 1];
+      if (!['--manifest', '--output', '--compare', '--producer-repository', '--producer-version', '--producer-tarball'].includes(args[index]) || !args[index + 1]) throw new Error('Usage: run-outcome-corpus.mjs --manifest <path> --output <dir> (--producer-repository <owner/repo> [--producer-version <v>] | --producer-tarball <path>) [--compare <matrix.json>]');
+      options[args[index].slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = args[index + 1];
     }
-    if (!options.manifest || !options.output || !process.env.SSI_OUTCOME_TOOLCHAIN) throw new Error('Declare --manifest, --output and SSI_OUTCOME_TOOLCHAIN (private runtime lifecycle module)');
-    const { default: toolchain } = await import(pathToFileURL(path.resolve(process.env.SSI_OUTCOME_TOOLCHAIN)).href);
+    if (!options.manifest || !options.output) throw new Error('Declare --manifest and --output');
+    const toolchain = process.env.SSI_OUTCOME_TOOLCHAIN ? (await import(pathToFileURL(path.resolve(process.env.SSI_OUTCOME_TOOLCHAIN)).href)).default : undefined;
     const result = await runOutcomeCorpus({ ...options, toolchain });
     if (result.status !== 'passed') process.exitCode = 1;
   } catch (error) { console.error(error.message); process.exitCode = 1; }

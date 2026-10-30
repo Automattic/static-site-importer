@@ -10,6 +10,8 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { validateOutcomeDocuments } from '../lib/outcome-editor-validation.mjs';
 import http from 'node:http';
+import { installedIdentities } from '../lib/default-outcome-toolchain.mjs';
+import { execFileSync } from 'node:child_process';
 
 test('saved documents use real client parser and save-contract validation for every owner type', async () => {
   const bundle = await build({ stdin: { contents: `import * as blocks from '@wordpress/blocks'; import {createElement} from '@wordpress/element'; window.wp={blocks}; blocks.registerBlockType('synthetic/text', {title:'Text', category:'text', attributes:{text:{type:'string',source:'text',selector:'p'}}, save:({attributes})=>createElement('p',null,attributes.text)});`, resolveDir: process.cwd() }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } });
@@ -31,6 +33,59 @@ test('saved documents use real client parser and save-contract validation for ev
     assert.deepEqual(changed.filter(row => row.validation.invalid_blocks > 0).map(row => row.type), ['wp_navigation']);
     assert.ok(changed[4].diagnostics.length > 0);
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+test('installed artifact identities reject missing provenance, version drift and invalid commits', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-identities-'));
+  const root = path.join(directory, 'checkout');
+  const producer = path.join(directory, 'package');
+  const put = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value)); };
+  try {
+    put(path.join(producer, 'package.json'), { name: 'synthetic-capture', version: '1.0.0' });
+    assert.throws(() => installedIdentities(root, producer), /predates installed-artifact provenance/);
+    const provenance = { name: 'synthetic-capture', version: '1.0.0', commit: 'a'.repeat(40) };
+    put(path.join(producer, 'provenance.json'), { ...provenance, version: '2.0.0' });
+    assert.throws(() => installedIdentities(root, producer), /identity does not match/);
+    put(path.join(producer, 'provenance.json'), { ...provenance, commit: 'a'.repeat(41) });
+    assert.throws(() => installedIdentities(root, producer), /invalid commit/);
+    put(path.join(producer, 'provenance.json'), provenance);
+    put(path.join(root, 'composer.json'), { require: { 'automattic/blocks-engine-php-transformer': 'v1.0.0' } });
+    put(path.join(root, 'static-site-importer.php'), '<?php // Version: 1.0.0\n');
+    put(path.join(root, 'vendor/automattic/blocks-engine-php-transformer/VERSION'), '1.0.0\n');
+    put(path.join(root, 'vendor/composer/installed.json'), { packages: [{ name: 'automattic/blocks-engine-php-transformer', version: 'v1.0.0' }] });
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, 'add', '.']);
+    execFileSync('git', ['-C', root, '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', 'commit', '-qm', 'Synthetic identity']);
+    const identities = installedIdentities(root, producer);
+    assert.equal(identities.ssi.dirty, false);
+    assert.deepEqual(identities.capture, provenance);
+    assert.equal(identities.blocks_engine.commit, 'unverified');
+    assert.deepEqual(identities.blocks_engine.artifact_identity, { VERSION: '1.0.0' });
+    put(path.join(root, 'dirty.txt'), 'change');
+    assert.equal(installedIdentities(root, producer).ssi.dirty, true);
+    put(path.join(root, 'vendor/automattic/blocks-engine-php-transformer/VERSION'), '2.0.0');
+    assert.throws(() => installedIdentities(root, producer), /differs from SSI dependency pin/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('default public CLI rejects an offline pre-provenance pack without a toolchain module', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-default-cli-'));
+  try {
+    fs.mkdirSync(path.join(directory, 'package'));
+    fs.writeFileSync(path.join(directory, 'package/package.json'), JSON.stringify({ name: 'synthetic-capture', version: '1.0.0' }));
+    const archive = path.join(directory, 'capture.tgz');
+    execFileSync('tar', ['-czf', archive, '-C', directory, 'package']);
+    const manifest = path.join(directory, 'manifest.json');
+    fs.writeFileSync(manifest, JSON.stringify({ schema: 'static-site-importer/outcome-corpus/v1', sites: [{ id: 'one', artifact_directory: 'missing' }] }));
+    const env = { ...process.env };
+    delete env.SSI_OUTCOME_TOOLCHAIN;
+    assert.throws(() => execFileSync(process.execPath, ['tools/run-outcome-corpus.mjs', '--manifest', manifest, '--output', path.join(directory, 'run'), '--producer-tarball', archive], { env, encoding: 'utf8', stdio: 'pipe' }), error => {
+      assert.equal(error.status, 1);
+      assert.match(error.stderr, /predates installed-artifact provenance/);
+      assert.doesNotMatch(error.stderr, /Declare.*SSI_OUTCOME_TOOLCHAIN/);
+      return true;
+    });
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('private corpus IDs and source selection are unambiguous', () => {
