@@ -725,9 +725,14 @@ final class Static_Site_Importer_Quality_Gates {
 			$fallback_hash = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
 			$source_path   = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 			$identity      = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
-			// Unknown runtime forms remain accounted for, but contact-provider
-			// receipts cannot resolve them, even with an exact identity match.
-			$unrouted_unknown  = 'unknown' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic );
+			/*
+			 * Unknown runtime forms remain accounted for, but contact-provider
+			 * receipts cannot resolve them, even with an exact identity match.
+			 * Formless commerce controls carry no form intent; product receipts own them.
+			 */
+			$unrouted_unknown  = ! self::is_commerce_controls_fallback_diagnostic( $diagnostic )
+				&& 'unknown' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic )
+				&& 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic );
 			$candidate_receipt = $unrouted_unknown ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
 			$receipt           = is_array( $candidate_receipt ) ? $candidate_receipt : array();
 			if ( ! $unrouted_unknown && empty( $receipt ) && ! self::has_form_fallback_identity( $diagnostic ) ) {
