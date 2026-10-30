@@ -52,5 +52,15 @@ The current adapter does not automatically resolve or verify current paired
 release artifacts; supplied identity declarations are not yet checked against
 installed binaries. A self-provisioning disposable runtime adapter and a committed
 multi-site end-to-end regression proof remain required before this slice can
-certify a private release corpus. Broader architecture slices remain tracked in
+certify a private release corpus.
+
+The release gate's pinned WordPress, WP-CLI and SQLite provisioning is now shared
+in `lib/disposable-wordpress.mjs`. It rejects reused runtime directories and
+removes partially staged runtimes on provisioning failure. The default outcome
+toolchain is still blocked on installed-artifact commit provenance: the published
+DLA `v0.33.43` archive records its version in `package.json` but does not carry a
+commit identity. A release tag alone is not installed-artifact evidence. The
+producer must ship commit provenance before the default can satisfy that contract.
+
+Broader architecture slices remain tracked in
 #2431 and its linked issues; this change does not close that issue.
