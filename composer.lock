@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5eea64cb9fad1648ce04447ebff3901d",
+    "content-hash": "23c78d1e7d41b1f1613e1f981e05c2f6",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.45.31",
+            "version": "v0.45.33",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "36086a0f4eede5c35f2a3d69c09b8f9edc180c9e"
+                "reference": "d086ee76d425628481cab6c2fb6a4f2805de512c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/36086a0f4eede5c35f2a3d69c09b8f9edc180c9e",
-                "reference": "36086a0f4eede5c35f2a3d69c09b8f9edc180c9e",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/d086ee76d425628481cab6c2fb6a4f2805de512c",
+                "reference": "d086ee76d425628481cab6c2fb6a4f2805de512c",
                 "shasum": ""
             },
             "require": {
@@ -95,8 +95,8 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-10-30T12:21:02+00:00",
-            "published-time": "2026-10-30T12:21:53+00:00"
+            "time": "2026-10-30T14:00:10+00:00",
+            "published-time": "2026-10-30T14:01:18+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -176,16 +176,16 @@
         },
         {
             "name": "league/commonmark",
-            "version": "2.10.5",
+            "version": "2.10.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/commonmark.git",
-                "reference": "6d6ed049ee31e1e644ce51a11a7b1b12f2dc3ade"
+                "reference": "cb3d6a523587751db4b8e1d0c3945d2d68535bd3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/6d6ed049ee31e1e644ce51a11a7b1b12f2dc3ade",
-                "reference": "6d6ed049ee31e1e644ce51a11a7b1b12f2dc3ade",
+                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/cb3d6a523587751db4b8e1d0c3945d2d68535bd3",
+                "reference": "cb3d6a523587751db4b8e1d0c3945d2d68535bd3",
                 "shasum": ""
             },
             "require": {
@@ -279,8 +279,8 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-30T11:53:51+00:00",
-            "published-time": "2026-10-30T11:54:09+00:00"
+            "time": "2026-10-30T12:21:38+00:00",
+            "published-time": "2026-10-30T12:24:58+00:00"
         },
         {
             "name": "league/config",
