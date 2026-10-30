@@ -66,7 +66,10 @@ outcomes.themeIndependence = {
   activate: async () => themeEval(`ssi_theme_independence_activate(${JSON.stringify(defaultTheme)});`),
   restore: async () => themeEval('ssi_theme_independence_restore();'),
 };
-const config = { directory: output, outputDirectory: output, evidenceRoot: output, manifest, candidateOrigin, importRunId: 'outcome-real-fixture', authenticate: async () => {}, candidateInventory: async () => [], outcomes };
+// Authenticate the editor probe independently of logged-out outcome pages.
+const cookies = JSON.parse(wp('eval', `\$users = get_users(array('role' => 'administrator', 'number' => 1)); if (!\$users) { throw new Exception('Administrator required'); } \$id = \$users[0]->ID; \$expires = time() + HOUR_IN_SECONDS; echo wp_json_encode(array(array('name' => LOGGED_IN_COOKIE, 'value' => wp_generate_auth_cookie(\$id, \$expires, 'logged_in')), array('name' => AUTH_COOKIE, 'value' => wp_generate_auth_cookie(\$id, \$expires, 'auth')), array('name' => SECURE_AUTH_COOKIE, 'value' => wp_generate_auth_cookie(\$id, \$expires, 'secure_auth'))));`));
+const authenticate = async ({ page }) => page.context().addCookies(cookies.map(cookie => ({ ...cookie, url: candidateOrigin })));
+const config = { directory: output, outputDirectory: output, evidenceRoot: output, manifest, candidateOrigin, importRunId: 'outcome-real-fixture', authenticate, candidateInventory: async () => [], outcomes };
 const run = async () => {
   const report = await runExistingRuntimeAcceptance(config);
   return { report, outcomes: JSON.parse(fs.readFileSync(path.join(output, report.artifacts.outcomes.path), 'utf8')) };
@@ -77,6 +80,8 @@ assert.equal(baseline.outcomes.checks.readability.status, 'pass');
 assert.equal(baseline.outcomes.checks.full_document.status, 'pass');
 assert.equal(baseline.outcomes.checks.full_document.evidence.length, 12, 'both routes, all three widths and both schemes');
 assert.equal(baseline.outcomes.checks.link_graph.status, 'pass');
+assert.equal(baseline.outcomes.capabilities.client_editor_validation, 'available');
+assert.ok(baseline.outcomes.checks.block_validity.evidence.some(row => row.type === 'wp_navigation' && row.validation?.validation_method === 'wp.blocks.validateBlock'));
 assert.ok(baseline.outcomes.checks.link_graph.evidence.some(row => row.surface?.startsWith('css:')), 'rendered stylesheets enter the link graph');
 assert.ok(baseline.outcomes.checks.link_graph.evidence.some(row => row.surface === 'chrome:wp_navigation' || row.surface?.startsWith('chrome:wp_navigation:')), 'navigation anchors are checked');
 assert.equal(baseline.outcomes.checks.theme_independence.status, 'pass', JSON.stringify(baseline.outcomes.checks.theme_independence));
@@ -159,7 +164,7 @@ try {
 } finally { wp('post', 'update', navigationId, `--post_content=${navigation}`); }
 const id = Number(wp('post', 'create', '--post_type=wp_navigation', '--post_status=publish', '--post_title=Outcome regression', '--porcelain').trim());
 try {
-  for (const [content, check] of [['<!-- wp:html --><a href="/?page_id=42">Bad link</a><!-- /wp:html -->', 'link_graph'], ['<!-- wp:paragraph --><p>Broken</p><!-- / -->', 'block_validity']]) {
+  for (const [content, check] of [['<!-- wp:html --><a href="/?page_id=42">Bad link</a><!-- /wp:html -->', 'link_graph'], ['<!-- wp:paragraph --><p>Broken</p><!-- / -->', 'block_validity'], ['<!-- wp:paragraph --><h2>Invalid paragraph save contract</h2><!-- /wp:paragraph -->', 'block_validity']]) {
     wp('post', 'update', String(id), `--post_content=${content}`);
     const { report, outcomes } = await run();
     assert.equal(outcomes.checks[check].status, 'fail');

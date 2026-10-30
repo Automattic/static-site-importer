@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://static-site-importer.example/contracts/outcome-corpus-v1.schema.json",
+  "title": "Private operator outcome corpus v1",
+  "description": "Keep manifests and generated evidence outside the public checkout. Relative artifact paths resolve against the manifest directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "sites"],
+  "properties": {
+    "schema": { "const": "static-site-importer/outcome-corpus/v1" },
+    "sites": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "oneOf": [ { "required": ["source_url"] }, { "required": ["artifact_directory"] } ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$" },
+          "source_url": { "type": "string", "pattern": "^https?://", "format": "uri" },
+          "artifact_directory": { "type": "string", "minLength": 1 },
+          "routes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^/(?!/)" } },
+          "expected_decisions": {
+            "description": "Exact full-document intentional differences; never blanket check exemptions.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["route", "reason", "expected", "actual"],
+              "properties": {
+                "route": { "type": "string", "pattern": "^/(?!/)" },
+                "reason": { "type": "string", "minLength": 1 },
+                "expected": { "type": "object" },
+                "actual": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

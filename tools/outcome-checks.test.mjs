@@ -73,7 +73,10 @@ test('outcome report detects independent regressions, chains and cycles', async 
     });
     const run = () => runOutcomeChecks({ browser, candidateOrigin, routes: ['/', '/about/'], importRunId: 'fixture', config: config() });
     const passing = await run();
-    assert.equal(outcomeGate(passing).status, 'passed', JSON.stringify(passing.checks.link_graph));
+    // An HTTP-only fixture cannot certify the installed WordPress editor.
+    assert.equal(passing.checks.block_validity.status, 'unsupported');
+    assert.equal(passing.checks.block_validity.evidence[0].reason, 'installed_editor_validation_required');
+    assert.equal(outcomeGate(passing).status, 'pending', JSON.stringify(passing.checks.link_graph));
     assert.equal(passing.checks.link_graph.status, 'pass');
     assert.equal(passing.checks.theme_independence.status, 'pass', JSON.stringify(passing.checks.theme_independence));
     assert.ok(passing.checks.link_graph.evidence.some(row => row.surface?.startsWith('css:/') && row.violations.length === 0), 'rendered stylesheets are scanned');
