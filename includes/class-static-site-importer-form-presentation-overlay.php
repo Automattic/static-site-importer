@@ -511,6 +511,29 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	}
 
 	/**
+	 * Append front-end rules to a compiled overlay, which may be empty when the
+	 * source form had no presentation to compile. The result is re-assembled
+	 * through the canonical artifact header and overlay builder.
+	 *
+	 * @param array<string,mixed> $overlay Compiled overlay, or an empty array.
+	 * @param array<int,string>   $rules   Front-end rules in the compiled grammar.
+	 * @return array<string,mixed>
+	 */
+	public static function with_front_end_rules( array $overlay, array $rules ): array {
+		$css      = self::artifact( $overlay, 'css' );
+		$existing = '' === $css ? array() : array_slice( explode( "\n", rtrim( $css, "\n" ) ), 1 );
+		$rules    = array_merge( $existing, $rules );
+		return self::overlay(
+			array(
+				'css'                => '/* Static Site Importer ' . self::SURFACES[ self::SURFACE_FRONT_END ]['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n",
+				'editor_css'         => self::artifact( $overlay, 'editor_css' ),
+				'context_css'        => self::artifact( $overlay, 'context_css' ),
+				'editor_context_css' => self::artifact( $overlay, 'editor_context_css' ),
+			)
+		);
+	}
+
+	/**
 	 * Assemble compiled artifacts into the canonical overlay with its integrity fields.
 	 *
 	 * @param array<string,string> $artifacts Artifact key (`css`, `editor_css`, `context_css`, `editor_context_css`) => compiled CSS.
