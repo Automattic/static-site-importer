@@ -63,6 +63,7 @@ $plan     = $compiler->compile(
 			'2024/03/dated-post.html' => '<main><h1>Dated by URL</h1></main>',
 			'notes/index.html'       => '<main><h1>Notes</h1></main>',
 			'notes/essay.html'       => '<html><head><meta property="article:published_time" content="2024-05-20T09:30:00Z"></head><body><main><h1>Essay</h1></main></body></html>',
+			'2099/01/upcoming.html'   => '<html><head><meta property="og:url" content="https://example.org/2099/01/upcoming"></head><body><main><h1>Upcoming event</h1></main></body></html>',
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
@@ -108,6 +109,11 @@ try {
 		$dated = $dated_id ? get_post( $dated_id ) : null;
 		$assert( $dated instanceof WP_Post && 'post' === $dated->post_type, 'url-dated-document-classifies-as-post' );
 		$assert( $dated instanceof WP_Post && 0 === (int) $dated->post_parent, 'url-dated-post-has-no-page-parent' );
+
+		// A date after the import (here an event's date in its URL) is not when
+		// an already-public document was published: it must not be scheduled.
+		$upcoming = (int) ( $pages['2099/01/upcoming.html'] ?? 0 ) ? get_post( (int) $pages['2099/01/upcoming.html'] ) : null;
+		$assert( $upcoming instanceof WP_Post && 'publish' === $upcoming->post_status, 'future-dated-document-publishes', $upcoming instanceof WP_Post ? $upcoming->post_status . ' ' . $upcoming->post_date_gmt : 'missing' );
 
 		$page = $page_id ? get_post( $page_id ) : null;
 		$assert( $page instanceof WP_Post && 'page' === $page->post_type, 'undated-entrypoint-stays-page' );
