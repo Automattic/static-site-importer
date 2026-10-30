@@ -116,6 +116,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$args['source_metadata']['collection'] = is_array( $args['source_metadata']['collection'] ?? null ) ? $args['source_metadata']['collection'] : array();
 		$args['source_metadata']['collection']['script_policy'] = $policy['report'];
 		$identity = self::hash( $artifact );
+		self::purge_prior_failed_runs( $identity, $import_id );
 
 		$run          = array(
 			'import_id'  => $import_id,
@@ -388,6 +389,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( $workspace->is_expired() ) {
 			$workspace->purge();
 			return new WP_Error( 'static_site_importer_direct_artifact_run_expired', 'The retained direct artifact run expired and must be restarted.' );
+		}
+		// A terminal failure keeps only its evidence; its claim alone proves mutation may have happened.
+		$claim = $workspace->path( 'materialization-claim' );
+		if ( 'failed' === ( $run['state'] ?? '' ) && is_string( $claim ) && is_dir( $claim ) ) {
+			return self::materialization_ambiguous();
 		}
 		$policy       = self::run_policy();
 		$clock        = $policy['clock'];
@@ -1039,21 +1045,21 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			// checkpoints (source artifact, plans, receipts, the composed site)
 			// exist to resume work and would otherwise stay on disk until expiry.
 			// A returned plan still references retained payloads by identity.
-			$retained = array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' );
-			if ( 'plan' === $run['binding']['operation'] ) {
-				$retained[] = 'payloads';
-			}
-			$workspace->prune_except( $retained );
+			$workspace->prune_except( self::terminal_retention( 'plan' === $run['binding']['operation'] ) );
 			return $response;
 		} catch ( Throwable $error ) {
 			return self::fail( $workspace, $run, (string) ( $run['progress']['phase'] ?? $run['phase'] ?? 'runtime' ), $error );
 		}
 	}
 
+	private static function materialization_ambiguous(): WP_Error {
+		return new WP_Error( 'static_site_importer_direct_artifact_materialization_ambiguous', 'Materialization was already claimed without a durable result; the import will not repeat WordPress mutation.' );
+	}
+
 	/** Atomically reserve the only materialization attempt before mutation. */
 	private static function claim_materialization( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
 		if ( ! $workspace->claim_directory( 'materialization-claim' ) ) {
-			return new WP_Error( 'static_site_importer_direct_artifact_materialization_ambiguous', 'Materialization was already claimed without a durable result; the import will not repeat WordPress mutation.' );
+			return self::materialization_ambiguous();
 		}
 		$run['work']['materialization_claims'] = 1;
 		$run['phase']                          = 'materialization_claimed';
@@ -1303,6 +1309,34 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		);
 	}
 
+	/** Remove only earlier failed runs with this identity, using workspaces confined to the owned root. */
+	private static function purge_prior_failed_runs( string $identity, string $current_import_id ): void {
+		$root    = self::root();
+		$entries = is_dir( $root ) ? scandir( $root ) : false;
+		foreach ( is_array( $entries ) ? $entries : array() as $entry ) {
+			if ( ! preg_match( '/^\\.ssi-artifact-run-direct-([a-f0-9]{64})$/D', $entry, $match ) || $match[1] === $current_import_id ) {
+				continue;
+			}
+			$workspace = self::workspace( $match[1], false );
+			if ( is_wp_error( $workspace ) ) {
+				continue;
+			}
+			$run = self::read_run( $workspace, $match[1] );
+			if ( ! is_wp_error( $run ) && 'failed' === ( $run['state'] ?? '' ) && hash_equals( $identity, (string) ( $run['binding']['artifact_identity'] ?? '' ) ) ) {
+				$workspace->purge();
+			}
+		}
+	}
+
+	/** Shared terminal evidence set; resumable materialization failures retain their required workspace data. */
+	private static function terminal_retention( bool $retain_payloads ): array {
+		$keep = array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' );
+		if ( $retain_payloads ) {
+			$keep[] = 'payloads';
+		}
+		return $keep;
+	}
+
 	private static function fail( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $phase, Throwable|WP_Error $error, array $page_ids = array() ) {
 		if ( is_wp_error( $error ) ) {
 			$code    = (string) $error->get_error_code();
@@ -1362,7 +1396,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$run['progress']['phase']      = $phase;
 		$run['progress']['updated_at'] = gmdate( 'c' );
 		$write                         = self::write_run( $workspace, $run );
-		$error_data                    = array(
+		// Other failure phases are resumable; materialization failures are terminal (see resumable receipt below).
+		if ( in_array( $phase, array( 'materialize', 'materialization_claim' ), true ) ) {
+			$workspace->prune_except( self::terminal_retention( false ) );
+		}
+		$error_data = array(
 			'import_id'    => (string) ( $run['import_id'] ?? '' ),
 			'artifact_run' => self::evidence( $run ),
 			'failure'      => self::scrub_failure( $failure ),
