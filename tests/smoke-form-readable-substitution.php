@@ -140,6 +140,17 @@ $boxes_css = $boxes_row['provider_layout_overlay_css']['css'] ?? '';
 $checks['readable checkbox wrap has source gap'] = 1 === preg_match( '/[^{}]*-wrap \\.contact-form__checkbox-wrap\\{[^{}]*gap:8px/', $boxes_css );
 $checks['readable editor checkbox option has source gap'] = 1 === preg_match( '/[^{}]* > \\.wp-block-jetpack-option\\{[^{}]*gap:8px/', $boxes_row['provider_layout_overlay_css']['editor_css'] ?? '' );
 $checks['readable submit wrapper has no padding'] = 1 === preg_match( '/[^{}]* \\.ssi-node-[a-f0-9]{12}\\{[^{}]*padding:0!important(?:;|\\})/', $boxes_css ) && ! preg_match( '/[^{}]* \\.ssi-node-[a-f0-9]{12}\\{[^{}]*padding:5px 10px/', $boxes_css );
+// A form with no captured presentation still gets the provider base rules; the
+// overlay it contributes must be admitted, or the whole import is rejected.
+$plain_result = ( new ArtifactCompiler() )->compile( array(
+	'entrypoint' => 'index.html',
+	'files' => array( 'index.html' => '<main><form><label>Email <input type="email" name="email" required></label><button type="submit">Contact me</button></form></main>' ),
+) )->toArray();
+$plain_plan = $plain_result['source_reports']['wordpress_site_plan'];
+$plain_declaration = current( array_filter( $plain_plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
+$plain_row = Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $plain_declaration['payload']['entities'], $plain_plan ) ) ) )['forms'][0];
+$plain_overlays = Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( array( array( 'forms' => array( $plain_row ) ) ) );
+$checks['unstyled form overlay is admitted'] = 'mapped' === $plain_row['status'] && 1 === count( $plain_overlays ) && null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $plain_overlays[0] );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );

@@ -239,7 +239,7 @@ opacity and unmeasurable foregrounds are explicitly unsupported, never assumed
 white or passed. Hidden text is excluded. Unsupported nodes leave acceptance pending;
 a measured failure still fails even when other nodes are unsupported.
 
-Supply `outcomes.documents[route]` with retained source `html`, `sourceOrigin`,
+Supply `outcomes.documents[route]` with retained source `html` (the head check needs only this), `sourceOrigin`,
 `sourceContent` and `candidateContent` unique selectors identifying the post-content
 boundaries. The full-document check compares ordered chrome before and after those
 boundaries: text, destinations, images and semantic/control elements. It includes
@@ -259,7 +259,13 @@ for balanced block comments separately because the core parser tolerates malform
 closing delimiters. Link scanning covers raw content, navigation, templates, parts
 and logged-out head output. Alias probes disable automatic redirects and require
 one destination-host redirect followed by a 200; chains and cycles fail.
-Head probes require every declared singleton and destination-origin URL values.
+Head probes require one charset, viewport, canonical, `og:title` and `og:url`, and
+destination-origin URL values. They judge authored metadata against the retained
+source head in `documents[route].html`: a source description must survive verbatim,
+a source `og:image` must have a destination counterpart, and a source robots,
+generator or pingback value must not be echoed. Destination-owned values, such as
+core's robots and generator tags, pass. Any duplicate fails. A route without a
+retained source document leaves the head check unsupported.
 Robots/generator/pingback metadata is conservatively rejected regardless of
 provenance; caller-declared telemetry fingerprints are rejected too.
 

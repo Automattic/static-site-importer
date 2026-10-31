@@ -181,15 +181,17 @@ final class Static_Site_Importer_Form_Presentation {
 		if ( ! isset( $overlay['overlay'] ) || ! is_array( $overlay['overlay'] ) || ! is_string( $overlay['css'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $scope ) ) {
 			return $overlay;
 		}
-		return self::with_overlay_css( $overlay, rtrim( $overlay['css'] ) . "\n" . self::provider_base_rules( $scope ) . "\n" );
+		$overlay['overlay'] = Static_Site_Importer_Form_Presentation_Overlay::with_front_end_rules( $overlay['overlay'], self::provider_base_rules( $scope ) );
+		$overlay['css']     = $overlay['overlay']['css'];
+		return $overlay;
 	}
 
 	/**
 	 * Inactive field errors take no space, and a placeholder without an
 	 * authored colour keeps the browser default over the provider's `inherit`.
 	 */
-	private static function provider_base_rules( string $scope ): string {
-		return '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}';
+	private static function provider_base_rules( string $scope ): array {
+		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' );
 	}
 
 	/**
@@ -232,15 +234,6 @@ final class Static_Site_Importer_Form_Presentation {
 			}
 		}
 		return $graph;
-	}
-
-	/** The overlay carrying CSS, with its digest and size restated. */
-	private static function with_overlay_css( array $overlay, string $css ): array {
-		$overlay['css']               = $css;
-		$overlay['overlay']['css']    = $css;
-		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
-		$overlay['overlay']['bytes']  = strlen( $css );
-		return $overlay;
 	}
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */

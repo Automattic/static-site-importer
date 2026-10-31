@@ -7,6 +7,7 @@ import { documentOutcomes } from '../lib/document-outcomes.mjs';
 import { interactiveOutcomes } from '../lib/interactive-outcomes.mjs';
 import { interactiveConfig } from '../tests/acceptance/outcome-interactive-config.mjs';
 import { aggregateAcceptance, acceptanceScope } from '../lib/existing-runtime-acceptance.mjs';
+import { validateOutcomeDocuments } from '../lib/outcome-editor-validation.mjs';
 
 // Public runner primitive, with an explicit server-parse inventory seam. Real
 // WordPress collection is also exercised by the disposable acceptance workload.
@@ -15,10 +16,11 @@ test('outcome report detects independent regressions, chains and cycles', async 
   // The theme switch flips the served theme without touching any native owner;
   // regressions mutate owners, routes, aliases or CSS under that switch.
   const theme = { active: 'outcome-fixture' };
-  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="/#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
+  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png"><meta name="generator" content="WordPress 7.1"><meta name="robots" content="${regression === 'head-robots' ? 'noindex' : 'max-image-preview:large'}">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="/#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
   const server = http.createServer((req, res) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const url = new URL(req.url, origin);
+    if (theme.active !== 'outcome-fixture') theme.rendered = true;
     const body = page(url.pathname === '/about/' ? '<p id="about-section">About content</p>' : '<details id="fixture-panel"><summary>More</summary></details>');
     if (req.url === '/alias' || req.url === '/legacy') {
       if (req.url === '/legacy' && theme.active !== 'outcome-fixture' && regression === 'theme-alias') { res.setHeader('Content-Type', 'text/html'); res.end(body); return; }
@@ -41,14 +43,16 @@ test('outcome report detects independent regressions, chains and cycles', async 
     browser = await chromium.launch({ headless: true });
     const candidateOrigin = `http://127.0.0.1:${server.address().port}`;
     const inventory = () => ({ schema: 'static-site-importer/outcome-inventory/v1', types: ['post', 'page', 'wp_template', 'wp_template_part', 'wp_navigation'], documents: [
-      { id: 1, type: 'wp_navigation', content: regression === 'anchor' ? '<!-- wp:html --><a href="#fixture-panel">Information</a><!-- /wp:html -->' : '<!-- wp:html --><a href="/#fixture-panel">Information</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } },
+      { id: 1, type: 'wp_navigation', content: regression === 'anchor' ? '<!-- wp:html --><a href="#fixture-panel">Information</a><!-- /wp:html -->' : '<!-- wp:html --><a href="/#fixture-panel">Information</a><a href="#">Top</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } },
       { id: 2, type: 'wp_template_part', content: '<!-- wp:html --><a href="/about/#about-section">About</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
       { id: 3, type: 'page', content: regression === 'source' ? '<a href="https://SOURCE.example/path">Bad</a>' : regression === 'cdn' ? '<img src="//cdn.source.example/image.png">' : regression === 'link' ? '<a href="/?page_id=1">Bad</a>' : '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
     ] });
     const ownerSnapshot = () => ({
       schema: THEME_OWNER_SNAPSHOT_SCHEMA,
       pages: [{ id: 1, type: 'page', status: 'publish', title: 'Home', excerpt: '', content: 'Home content', url: `${candidateOrigin}/`, meta: {} }],
-      menus: { 5: { title: 'Primary', status: 'publish', content: 'navigation' } },
+      // Core creates a fallback menu the first time the probe theme renders a
+      // header without one; an owner first appearing at restore is a loss.
+      menus: { 5: { title: 'Primary', status: 'publish', content: 'navigation' }, ...(theme.rendered ? { 13: { title: 'Navigation', status: 'publish', content: 'page-list' } } : {}), ...(regression === 'theme-restore-addition' && theme.restored ? { 14: { title: 'Restored', status: 'publish', content: '' } } : {}) },
       media: { 9: { url: `${candidateOrigin}/uploads/img.png`, hash: 'a'.repeat(64) } },
       redirects: { ownership: regression === 'theme-redirect' && theme.active !== 'outcome-fixture' ? null : { rules: { '/legacy/': { id: 1 } } } },
       settings: {
@@ -60,7 +64,10 @@ test('outcome report detects independent regressions, chains and cycles', async 
     });
     const config = () => ({
       colourSchemes: ['light', 'dark'],
-      documents: { '/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
+      // The source head declares what was authored: destination-owned robots
+      // and generator tags pass, an echoed source directive or a replaced
+      // authored description fails.
+      documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav><a href="/#fixture-panel">Information</a></nav><main></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
       capture: { schema: 'static-site-importer/interactive-capture/v1', pages: ['/', '/about/'].map(route => ({ route, sourceUrl: `https://source.example${route}`, interactionStates: { schema: 'blocks-engine-capture/interaction-states/v2', states: [] }, navigation: [], forms: [] })) },
       sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias', '/legacy'], telemetryMarkers: ['source-analytics'],
       collectInventory: async () => inventory(),
@@ -68,17 +75,19 @@ test('outcome report detects independent regressions, chains and cycles', async 
         theme: 'twentytwentyfive',
         snapshot: async () => ownerSnapshot(),
         activate: async () => { theme.active = 'twentytwentyfive'; },
-        restore: async () => { theme.active = 'outcome-fixture'; },
+        restore: async () => { theme.active = 'outcome-fixture'; theme.restored = true; },
       },
     });
-    const run = () => runOutcomeChecks({ browser, candidateOrigin, routes: ['/', '/about/'], importRunId: 'fixture', config: config() });
+    const run = () => Object.assign(theme, { rendered: false, restored: false }) && runOutcomeChecks({ browser, candidateOrigin, routes: ['/', '/about/'], importRunId: 'fixture', config: config() });
     const passing = await run();
     // An HTTP-only fixture cannot certify the installed WordPress editor.
     assert.equal(passing.checks.block_validity.status, 'unsupported');
     assert.equal(passing.checks.block_validity.evidence[0].reason, 'installed_editor_validation_required');
     assert.equal(outcomeGate(passing).status, 'pending', JSON.stringify(passing.checks.link_graph));
     assert.equal(passing.checks.link_graph.status, 'pass');
+    assert.equal(passing.checks.head_singletons.status, 'pass', JSON.stringify(passing.checks.head_singletons));
     assert.equal(passing.checks.theme_independence.status, 'pass', JSON.stringify(passing.checks.theme_independence));
+    assert.ok(passing.checks.theme_independence.evidence.some(row => row.kind === 'theme_render_additions' && row.owners.join() === 'menus.13'), 'the probe theme owns the menu its render created');
     assert.ok(passing.checks.link_graph.evidence.some(row => row.surface?.startsWith('css:/') && row.violations.length === 0), 'rendered stylesheets are scanned');
     assert.ok(passing.checks.link_graph.evidence.some(row => row.surface === 'chrome:wp_navigation:1' && row.status === 'pass'), 'navigation anchors resolve');
     assert.ok(passing.checks.link_graph.evidence.filter(row => row.surface === 'chrome:wp_template_part:2' && row.status === 'pass').length === 2, 'template part anchors resolve on every route');
@@ -97,7 +106,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
     const noTheme = structuredClone(passing);
     delete noTheme.checks.theme_independence;
     assert.equal(outcomeGate(noTheme).status, 'pending', 'reports without theme independence no longer certify acceptance');
-    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence']]) {
+    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
       regression = mutation;
       const report = await run();
       assert.equal(report.checks[check].status, 'fail', `${mutation}: ${JSON.stringify(report.checks[check])}`);
@@ -214,5 +223,30 @@ test('source inventories retain unsupported controls and require real form submi
     const missingRoute = structuredClone(interactiveConfig);
     missingRoute.capture.pages = [];
     assert.equal((await run(missingRoute)).forms.status, 'unsupported');
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+// The editor's heartbeat rewrites the draft's post lock, so an editor left open
+// would mutate the site that theme independence then measures.
+test('editor validation separates deprecated shapes, reports readable issues and leaves the editor', async () => {
+  let beats = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/heartbeat') { beats++; res.end(); return; }
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<script>window.wp = { blocks: { parse: () => [{ name: "core/image", innerBlocks: [] }, { name: "core/html", isValid: false, innerBlocks: [] }], validateBlock: () => [false, [{ log: () => {}, args: ["Expected attributes %o, instead saw %o.", [["class", "a"]], [["class", "b"]]] }]], getBlockTypes: () => [{}] } }; setInterval(() => fetch("/heartbeat"), 50);</script>');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const [row] = await validateOutcomeDocuments({ page, candidateOrigin: `http://127.0.0.1:${server.address().port}`, documents: [{ id: 1, type: 'page', content: '' }] });
+    // Issues state what the editor expected and saw. A block that parse()
+    // accepted through a deprecation is a deprecated shape, not an invalid block.
+    assert.deepEqual(row.results[0].issues, ['Expected attributes [["class","a"]], instead saw [["class","b"]].']);
+    assert.deepEqual(row.results.map(result => [result.isValid, Boolean(result.deprecated_save_shape)]), [[true, true], [false, false]]);
+    assert.equal(row.validation.invalid_blocks, 1);
+    const after = beats;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(beats, after);
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
