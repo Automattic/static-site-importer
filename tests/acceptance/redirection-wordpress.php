@@ -9,7 +9,7 @@ $assert = static function ( bool $condition, string $message ): void {
 };
 // Studio and other hosts run the canonical CLI as the identity-less site operator.
 $assert( 0 === get_current_user_id(), 'The acceptance process runs as the identity-less CLI operator.' );
-$import                       = static function ( array $request, string $user = '' ): array {
+$import = static function ( array $request, string $user = '' ): array {
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	$file = wp_tempnam( 'ssi-redirection-request.json' );
 	file_put_contents( $file, wp_json_encode( $request ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Operator-owned temporary request fixture.
@@ -33,6 +33,62 @@ $import                       = static function ( array $request, string $user =
 	} finally {
 		wp_delete_file( $file ); }
 };
+// One real import on a path-scoped home reproduces build-host route matching.
+if ( in_array( 'home-path', $args ?? array(), true ) ) {
+	$request = array(
+		'operation' => 'apply',
+		'slug'      => 'home-path-acceptance',
+		'activate'  => true,
+		'source'    => array(
+			'type'       => 'files',
+			'entrypoint' => 'website/index.html',
+			'files'      => array(
+				array(
+					'path'    => 'website/index.html',
+					'content' => '<html><head><title>Home</title></head><body><main><h1>Home</h1><a href="about.html">About</a></main></body></html>',
+				),
+				array(
+					'path'    => 'website/about.html',
+					'content' => '<html><head><title>About</title></head><body><main><h1>About</h1></main></body></html>',
+				),
+			),
+		),
+	);
+	$result  = $import( $request );
+	$assert( true === ( $result['success'] ?? false ), 'Path-scoped home import completes: ' . wp_json_encode( $result) );
+	$GLOBALS['wp_rewrite']->init();
+	require_once WP_PLUGIN_DIR . '/redirection/redirection.php';
+	red_start_rest();
+	$inventory = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'redirect', array( 'per_page' => 200 ) );
+	$rules     = array();
+	foreach ( $inventory['items'] ?? array() as $item ) {
+		$rules[ $item['url'] ] = $item['action_data']['url'];
+	}
+	ksort( $rules );
+	echo 'Path-scoped rule inventory: ' . wp_json_encode( $rules ) . "\n";
+	$assert( array( '/scope:acceptance/about.html' => home_url( '/about/' ) ) === $rules, 'Only the HTML alias remains, expressed as a full request path for Redirection.' );
+	$origin = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
+	$host   = wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT );
+	foreach ( array(
+		'/'           => 200,
+		'/about/'     => 200,
+		'/about'      => 301,
+		'/about.html' => 301,
+	) as $source_route => $expected_status ) {
+		$response = wp_remote_get(
+			$origin . '/scope:acceptance' . $source_route, array(
+				'redirection' => 0,
+				'headers'     => array( 'Host' => $host ),
+			)
+		);
+		$assert( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === $expected_status, 'Path-scoped HTTP status for ' . $source_route );
+		if ( 301 === $expected_status ) {
+			$assert( home_url( '/about/' ) === wp_remote_retrieve_header( $response, 'location' ), 'Alias and slash canonicalization reach the native page.' );
+		}
+	}
+	echo "Path-scoped home acceptance: passed\n";
+	return;
+}
 $scope_name                   = 'redirection-acceptance-with-a-long-stable-source-identity';
 $request                      = array(
 	'operation' => 'apply',

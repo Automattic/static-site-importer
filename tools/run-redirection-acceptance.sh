@@ -8,15 +8,20 @@ project="ssi_redirection_${RANDOM}_$$"
 network="${project}_network"
 volume="${project}_wordpress"
 second_volume="${project}_second"
+scoped_volume="${project}_scoped"
 port="${SSI_REDIRECTION_PORT:-19603}"
 mounts=(-v "$volume:/var/www/html" -v "$root:/var/www/html/wp-content/plugins/static-site-importer")
 cleanup() {
   docker logs "${project}_wordpress" > "$evidence/wordpress.log" 2>&1 || true
   docker logs "${project}_db" > "$evidence/database.log" 2>&1 || true
-  docker rm --force "${project}_wordpress" "${project}_second" "${project}_static" "${project}_db" >/dev/null 2>&1 || true
+  docker rm --force "${project}_wordpress" "${project}_second" "${project}_static" "${project}_scoped" "${project}_db" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
   docker volume rm "$second_volume" >/dev/null 2>&1 || true
+  docker volume rm "$scoped_volume" >/dev/null 2>&1 || true
+  # The verified export.json is the evidence; its disposable served copy is
+  # generated site code, not repository source for subsequent lint gates.
+  rm -rf "$evidence/served"
 }
 trap cleanup EXIT
 docker network create "$network" >/dev/null
@@ -37,6 +42,17 @@ if test "$ready" != 1; then exit 1; fi
 # itself must establish the pretty routes its source paths need (#2426). The
 # image's default .htaccess already routes them to WordPress.
 "${wp[@]}" plugin activate static-site-importer
+# Separate tables and a real Apache path alias keep this focused case isolated.
+docker volume create "$scoped_volume" >/dev/null
+scoped_mounts=(-v "$scoped_volume:/var/www/html" -v "$root:/var/www/html/wp-content/plugins/static-site-importer")
+docker run --detach --name "${project}_scoped" --network "$network" -e WORDPRESS_TABLE_PREFIX=scoped_ -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${scoped_mounts[@]}" wordpress:beta-php8.3-apache >/dev/null
+for attempt in $(seq 1 30); do if docker exec "${project}_scoped" test -f /var/www/html/wp-config.php; then break; fi; sleep 1; done
+docker exec "${project}_scoped" bash -c 'printf "Alias /scope:acceptance /var/www/html\n" > /etc/apache2/conf-enabled/scoped.conf; apache2ctl graceful'
+scoped_wp=(timeout 900 docker run --rm --network "$network" --user 33:33 -e SSI_REDIRECTION_DISPOSABLE=1 -e SSI_REDIRECTION_HTTP_ORIGIN="http://${project}_scoped" -e WORDPRESS_TABLE_PREFIX=scoped_ -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${scoped_mounts[@]}" wordpress:cli-php8.3 wp --allow-root)
+"${scoped_wp[@]}" core install --url="http://127.0.0.1:$port/scope:acceptance" --title='Path-scoped acceptance' --admin_user=admin --admin_password=password --admin_email=admin@example.test --skip-email
+"${scoped_wp[@]}" rewrite structure '/%postname%/'
+"${scoped_wp[@]}" plugin activate static-site-importer
+"${scoped_wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php home-path | tee "$evidence/home-path.jsonl"
 # Hosts such as Studio run the canonical CLI without --user; prove that operator path.
 "${wp_operator[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php | tee "$evidence/native.jsonl"
 # Unauthenticated web callers remain refused by both SSI and the provider.

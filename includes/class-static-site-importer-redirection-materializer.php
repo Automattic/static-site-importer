@@ -180,7 +180,9 @@ final class Static_Site_Importer_Redirection_Materializer {
 				$alias_paths[ '/' . ltrim( rawurldecode( $path ), '/' ) ] = $source;
 			}
 		}
-		$routes = array();
+		// Plan paths are home-relative; Redirection matches the full request path.
+		$home_path = rtrim( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
+		$routes    = array();
 		foreach ( $pages as $page ) {
 			$source = (string) ( $page['source_path'] ?? '' );
 			$id     = (int) ( $ids[ $source ] ?? 0 );
@@ -202,7 +204,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( ! is_string( $target ) || '' === $target ) {
 				return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed source document has no native destination URL.' );
 			}
-			$target_path = wp_parse_url( $target, PHP_URL_PATH );
+			$target_path = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
 			$public      = self::served_source_path( $source );
 			$sources     = array_merge(
 				array( $route_path, $public ),
@@ -212,17 +214,18 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( '' === (string) $from ) {
 					continue;
 				}
-				$from = '/' . ltrim( rawurldecode( (string) $from ), '/' );
-				if ( trim( $from, '/' ) === trim( (string) $target_path, '/' ) ) {
+				$from         = '/' . ltrim( rawurldecode( (string) $from ), '/' );
+				$request_path = $home_path . $from;
+				if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) ) {
 					continue; }
-				if ( isset( $routes[ $from ] ) && $routes[ $from ] !== $target ) {
+				if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
 					return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
 				}
 				$occupied = self::published_route_owner( $from );
 				if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $id ) {
 					return new WP_Error( 'static_site_importer_redirect_route_occupied', 'Unrelated published content owns a requested source route.' );
 				}
-				$routes[ $from ] = $target;
+				$routes[ $request_path ] = $target;
 			}
 		}
 		if ( count( $routes ) > self::MAX_RULES ) {
@@ -686,6 +689,14 @@ final class Static_Site_Importer_Redirection_Materializer {
 			$from = (string) $item['url'];
 			if ( ! str_starts_with( $from, '/' ) || str_starts_with( $from, '//' ) || preg_match( '/[\s?#]/', $from ) ) {
 				return new WP_Error( 'static_site_importer_redirect_export_unproven', 'A native source URL is not a portable exact-path alias.' );
+			}
+			// Native request paths must become home-relative portable aliases.
+			$home_path = rtrim( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
+			if ( '' !== $home_path ) {
+				if ( ! str_starts_with( $from, $home_path . '/' ) ) {
+					return new WP_Error( 'static_site_importer_redirect_export_unproven', 'A native source URL is outside the site home path.' );
+				}
+				$from = substr( $from, strlen( $home_path ) );
 			}
 			$lines[] = $from . ' ' . $documents[ $target_id ] . ' 301';
 		}
