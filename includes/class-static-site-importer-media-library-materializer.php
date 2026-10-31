@@ -1169,6 +1169,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @param int[]|null $candidate_ids Optional resolved candidate IDs, including 0 for unbound URLs.
+	 * @param-out ($candidate_ids is null ? null : int[]) $candidate_ids
 	 */
 	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, ?array &$candidate_ids = null ): string {
 		// Candidate commas belong to the shared producer parser, not the URL
