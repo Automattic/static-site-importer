@@ -239,6 +239,14 @@ opacity and unmeasurable foregrounds are explicitly unsupported, never assumed
 white or passed. Hidden text is excluded. Unsupported nodes leave acceptance pending;
 a measured failure still fails even when other nodes are unsupported.
 
+Readability judges what the import changed. When `documents[route].sourceUrl` serves
+the retained source page, the check renders it at the same width and colour scheme
+(same-origin resources only, scrolled so viewport entrances settle) and measures the
+same text. Text below the requirement passes as `source_contrast_preserved` when the
+source rendered it no better (within 10%); the row records `source_ratio`. Text the
+import lowered, text with no source counterpart, and routes without a source keep the
+absolute requirement. The corpus runner serves each retained source file.
+
 Supply `outcomes.documents[route]` with retained source `html` (the head check needs only this), `sourceOrigin`,
 `sourceContent` and `candidateContent` unique selectors identifying the post-content
 boundaries. The full-document check compares ordered chrome before and after those
