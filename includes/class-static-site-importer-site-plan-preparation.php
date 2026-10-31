@@ -14,6 +14,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 
 require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
+require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
@@ -658,7 +659,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
 				continue;
 			}
-			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, $page['post_type'] );
+			$conflict = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
 			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'post_conflict' );
@@ -832,7 +833,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$route    = (string) $archive['route'];
 			$identity = $plan_pages[ $source_path ] ?? WordPressSitePlan::identity( 'page', (string) $source_path, $route );
 			$match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $identity );
-			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
+			$conflict = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, 'page' );
 			if ( $conflict && ( ! $match || (int) $match->ID !== (int) $conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
 				if ( 'author' === $archive['kind'] ) {
 					// ssi-error-class: integrity
@@ -1095,7 +1096,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	private static function synthetic_parent_status( array $page, string $path ): string {
 		$owned = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
 		if ( ! $owned ) {
-			$conflict = '' === trim( $path, '/' ) ? null : get_page_by_path( trim( $path, '/' ), OBJECT, 'page' );
+			$conflict = '' === trim( $path, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $path, 'page' );
 			return $conflict && 'trash' !== $conflict->post_status ? (string) $conflict->post_status : 'draft';
 		}
 		if ( 'draft' === $owned->post_status ) {
