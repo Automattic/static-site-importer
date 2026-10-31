@@ -2,11 +2,17 @@
 set -euo pipefail
 # Source-only fixture, never wp-load.php and never a developer WordPress install.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-revision=ba9e7f97f08a7fbb88fbfa35641bcc230500b37a # WordPress/WordPress 6.8.3
+version=7.1.4
+revision=db96f5eaa77a8d3e8eec8923a518fa2326f0d46a # WordPress/WordPress $version
 destination="$root/vendor/wordpress-core"
 if [[ -n "${STATIC_SITE_IMPORTER_WP_ROOT:-}" ]]; then
   test -r "$STATIC_SITE_IMPORTER_WP_ROOT/wp-includes/html-api/class-wp-html-tag-processor.php"
   exit 0
+fi
+marker="$destination/ssi-fixture-source.txt"
+if test -r "$marker" && ! grep -qx "WordPress/WordPress $version $revision" "$marker"; then
+  # A fixture this script provisioned at an older pin: replace it.
+  rm -rf "$destination"
 fi
 if test -r "$destination/wp-includes/html-api/class-wp-html-tag-processor.php"; then
   exit 0
@@ -19,5 +25,5 @@ curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 "https://co
 mkdir "$work/core"
 tar --extract --gzip --file "$work/core.tar.gz" --directory "$work/core" --strip-components=1
 test -r "$work/core/wp-includes/html-api/class-wp-html-tag-processor.php"
-printf 'WordPress/WordPress 6.8.3 %s\n' "$revision" > "$work/core/ssi-fixture-source.txt"
+printf 'WordPress/WordPress %s %s\n' "$version" "$revision" > "$work/core/ssi-fixture-source.txt"
 mv "$work/core" "$destination"
