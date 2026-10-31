@@ -92,7 +92,12 @@ class Static_Site_Importer_Dependency_Manager {
 	public static function materialize_lifecycle_dependencies( array $lifecycle, array $args ) {
 		$reports = array();
 		foreach ( $lifecycle['dependencies'] ?? array() as $id => $prepared ) {
-			$adapter  = $prepared['adapter'];
+			$adapter = $prepared['adapter'];
+			// These providers need committed content before deciding whether any
+			// dependency is necessary. Their materializer provisions on demand.
+			if ( ! empty( $adapter['defer_dependencies'] ) ) {
+				continue;
+			}
 			$required = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );
 			$waived   = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
 			if ( $waived ) {

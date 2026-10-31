@@ -26,6 +26,33 @@ $import = static function ( array $request, string $user = '' ): array {
 			$receipt = json_decode( $line, true );
 			if ( is_array( $receipt ) && 'static-site-importer/import-cli-receipt/v1' === ( $receipt['schema'] ?? '' ) ) {
 				wp_cache_flush();
+				// Check every captured public source after each import scenario,
+				// independently of the rule inventory or redirect provider.
+				foreach ( $request['source']['files'] ?? array() as $source_file ) {
+					$source_path = $source_file['path'] ?? '';
+					if ( ! str_ends_with( $source_path, '.html' ) ) {
+						continue;
+					}
+					$source_path = preg_replace( '#^website/#', '', $source_path );
+					$source_path = preg_replace( '#(^|/)index\\.html$#', '$1', $source_path );
+					$public_path = wp_parse_url( home_url( '/' . $source_path ), PHP_URL_PATH );
+					$host_header = wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT );
+					$probe       = wp_remote_get(
+						getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' ) . $public_path,
+						array(
+							'redirection' => 0,
+							'headers'     => array( 'Host' => $host_header ),
+						)
+					);
+					if ( is_wp_error( $probe ) ) {
+						throw new RuntimeException( 'Source route HTTP probe failed: ' . $public_path );
+					}
+					$code          = wp_remote_retrieve_response_code( $probe );
+					$location_path = wp_parse_url( wp_remote_retrieve_header( $probe, 'location' ), PHP_URL_PATH );
+					if ( $code >= 300 && $code < 400 && trim( rawurldecode( (string) $location_path ), '/' ) === trim( rawurldecode( $public_path ), '/' ) ) {
+						throw new RuntimeException( 'Source route redirects to itself: ' . $public_path );
+					}
+				}
 				return $receipt['response'];
 			}
 		}
@@ -33,6 +60,111 @@ $import = static function ( array $request, string $user = '' ): array {
 	} finally {
 		wp_delete_file( $file ); }
 };
+// phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited -- Disposable CLI fixture owns these variables.
+// Exercise committed post receipts before any scenario installs Redirection.
+if ( in_array( 'post-slugs', $args ?? array(), true ) ) {
+	update_option( 'permalink_structure', '/%year%/%monthnum%/%day%/%postname%/' );
+	$GLOBALS['wp_rewrite']->init();
+	flush_rewrite_rules();
+	$receipt = array(
+		'plan'      => array( 'pages' => array() ),
+		'completed' => array( 'pages' => array() ),
+	);
+	foreach ( array( 'foo', 'foo-bar' ) as $slug ) {
+		$id                                       = wp_insert_post(
+			array(
+				'post_title'  => $slug,
+				'post_name'   => $slug,
+				'post_type'   => 'post',
+				'post_status' => 'publish',
+			)
+		);
+		$source                                   = $slug . '/index.html';
+		$receipt['plan']['pages'][]               = array(
+			'source_path' => $source,
+			'route'       => array( 'path' => '/' . $slug . '/' ),
+		);
+		$receipt['completed']['pages'][ $source ] = $id;
+	}
+	$before_wp     = $GLOBALS['wp'];
+	$before_query  = $GLOBALS['wp_query'];
+	$before_server = $_SERVER;
+	$routes        = Static_Site_Importer_Redirection_Materializer::routes( $receipt, array() );
+	$assert( array() === $routes, 'Post-slug sources are resolved by core without rules: ' . wp_json_encode( $routes ) );
+	$assert( $before_wp === $GLOBALS['wp'] && $before_query === $GLOBALS['wp_query'] && $before_server === $_SERVER, 'Core probing restores request state.' );
+	$materialize_args = array(
+		'slug'                     => 'post-slugs',
+		'materialized_receipt'     => $receipt,
+		'materialize_dependencies' => true,
+	);
+	$assert( ! Static_Site_Importer_Redirection_Materializer::has_intent( $receipt['plan'], $materialize_args ), 'Computed empty inventory has no intent.' );
+	$report = Static_Site_Importer_Redirection_Materializer::materialize( array(), $materialize_args );
+	$assert( 'completed' === ( $report['status'] ?? '' ) && ! is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Empty inventory never installs Redirection.' );
+	$origin = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
+	$host   = wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT );
+	foreach ( array( '/foo/', '/foo-bar/' ) as $path ) {
+		$response = wp_remote_get(
+			$origin . $path,
+			array(
+				'redirection' => 0,
+				'headers'     => array( 'Host' => $host ),
+			)
+		);
+		$status   = wp_remote_retrieve_response_code( $response );
+		$assert( in_array( $status, array( 200, 301 ), true ), 'Core serves post source ' . $path );
+		if ( 301 === $status ) {
+			$location = wp_remote_retrieve_header( $response, 'location' );
+			$assert( trim( wp_parse_url( $location, PHP_URL_PATH ), '/' ) !== trim( $path, '/' ), 'No source redirects to itself.' );
+			$final = wp_remote_get(
+				$origin . wp_parse_url( $location, PHP_URL_PATH ),
+				array(
+					'redirection' => 0,
+					'headers'     => array( 'Host' => $host ),
+				)
+			);
+			$assert( 200 === wp_remote_retrieve_response_code( $final ), 'Core needs only one canonical redirect.' );
+		}
+	}
+	$collision                                      = $receipt;
+	$collision['plan']['pages'][1]['route']['path'] = '/foo-bar-old/';
+	$collision['plan']['pages'][1]['source_path']   = 'foo-bar-old/index.html';
+	$collision['completed']['pages']['foo-bar-old/index.html'] = $id;
+	$routes = Static_Site_Importer_Redirection_Materializer::routes( $collision, array() );
+	$assert( ! is_wp_error( $routes ) && isset( $routes['/foo-bar-old/'] ) && get_permalink( $id ) === $routes['/foo-bar-old/'], 'A renamed colliding slug retains its rule.' );
+	// Core loosely guesses foo for this alias, but the imported destination is foo-bar.
+	$collision['plan']['pages'][1]['route']['path']   = '/fo/';
+	$collision['plan']['pages'][1]['source_path']     = 'fo/index.html';
+	$collision['completed']['pages']['fo/index.html'] = $id;
+	$routes = Static_Site_Importer_Redirection_Materializer::routes( $collision, array() );
+	$assert( isset( $routes['/fo/'] ), 'A loose guess to another ID never suppresses a rule.' );
+	$collision['plan']['pages'][1]['route']['path'] = '/foo-bar-old/';
+	$collision_args                                 = array_merge( $materialize_args, array( 'materialized_receipt' => $collision ) );
+	$collision_report                               = Static_Site_Importer_Redirection_Materializer::materialize( array(), $collision_args );
+	$assert( 'completed' === ( $collision_report['status'] ?? '' ), 'Collision rules materialize through the native provider.' );
+	foreach ( array( '/foo-bar-old/', '/fo/' ) as $collision_path ) {
+		$probe = wp_remote_get(
+			$origin . $collision_path,
+			array(
+				'redirection' => 0,
+				'headers'     => array( 'Host' => $host ),
+			)
+		);
+		$assert( 301 === wp_remote_retrieve_response_code( $probe ) && get_permalink( $id ) === wp_remote_retrieve_header( $probe, 'location' ), 'Collision source reaches the committed object without a self-loop.' );
+	}
+	Static_Site_Importer_Redirection_Materializer::rollback( $collision_report );
+	// Keep the following ordinary-import installation scenario independent.
+	WP_CLI::runcommand( 'plugin deactivate redirection', array( 'return' => true ) );
+	WP_CLI::runcommand( 'plugin delete redirection', array( 'return' => true ) );
+	foreach ( array_values( $receipt['completed']['pages'] ) as $post_id ) {
+		wp_delete_post( $post_id, true );
+	}
+	update_option( 'permalink_structure', '' );
+	$GLOBALS['wp_rewrite']->init();
+	flush_rewrite_rules();
+	echo "Post-slug and collision acceptance: passed\n";
+	return;
+}
+// phpcs:enable WordPress.WP.GlobalVariablesOverride.Prohibited
 // One real import on a path-scoped home reproduces build-host route matching.
 if ( in_array( 'home-path', $args ?? array(), true ) ) {
 	$request = array(
@@ -55,7 +187,7 @@ if ( in_array( 'home-path', $args ?? array(), true ) ) {
 		),
 	);
 	$result  = $import( $request );
-	$assert( true === ( $result['success'] ?? false ), 'Path-scoped home import completes: ' . wp_json_encode( $result) );
+	$assert( true === ( $result['success'] ?? false ), 'Path-scoped home import completes: ' . wp_json_encode( $result ) );
 	$GLOBALS['wp_rewrite']->init();
 	require_once WP_PLUGIN_DIR . '/redirection/redirection.php';
 	red_start_rest();
@@ -76,7 +208,8 @@ if ( in_array( 'home-path', $args ?? array(), true ) ) {
 		'/about.html' => 301,
 	) as $source_route => $expected_status ) {
 		$response = wp_remote_get(
-			$origin . '/scope:acceptance' . $source_route, array(
+			$origin . '/scope:acceptance' . $source_route,
+			array(
 				'redirection' => 0,
 				'headers'     => array( 'Host' => $host ),
 			)
@@ -171,12 +304,14 @@ $receipt = array(
 // Keep the full committed document inventory during fault injection, so a
 // retried failed deletion has not already replayed unrelated retirement rows.
 foreach ( array( 'website/index.html', 'website/notes/deep/index.html' ) as $source_path ) {
-	$source_posts = get_posts( array(
-		'post_type'   => 'page',
-		'meta_key'    => Static_Site_Importer_Source_Route::META_KEY,
-		'meta_value'  => Static_Site_Importer_Source_Route::public_source_route( $source_path ),
-		'numberposts' => 1,
-	) );
+	$source_posts = get_posts(
+		array(
+			'post_type'   => 'page',
+			'meta_key'    => Static_Site_Importer_Source_Route::META_KEY,
+			'meta_value'  => Static_Site_Importer_Source_Route::public_source_route( $source_path ),
+			'numberposts' => 1,
+		)
+	);
 	$assert( 1 === count( $source_posts ), 'Committed fixture document exists: ' . $source_path );
 	$receipt['plan']['pages'][]                    = array( 'source_path' => $source_path );
 	$receipt['completed']['pages'][ $source_path ] = $source_posts[0]->ID;
@@ -367,11 +502,14 @@ $check_routes = static function () use ( $assert, $scope_name ): void {
 			$origin   = $origin ? $origin : home_url();
 			$host     = wp_parse_url( home_url(), PHP_URL_HOST );
 			$port     = wp_parse_url( home_url(), PHP_URL_PORT );
-			$response = wp_remote_request( $origin . implode( '/', array_map( 'rawurlencode', explode( '/', $from ) ) ), array(
-				'method'      => $method,
-				'redirection' => 0,
-				'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),
-			) );
+			$response = wp_remote_request(
+				$origin . implode( '/', array_map( 'rawurlencode', explode( '/', $from ) ) ),
+				array(
+					'method'      => $method,
+					'redirection' => 0,
+					'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),
+				)
+			);
 			$assert( ! is_wp_error( $response ) && 301 === wp_remote_retrieve_response_code( $response ) && wp_remote_retrieve_header( $response, 'location' ) === $target, $method . ' reaches the native destination for ' . $from );
 		}
 	}
