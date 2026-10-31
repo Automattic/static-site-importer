@@ -81,12 +81,8 @@ if ( ! class_exists( 'WP_Error' ) ) {
 }
 
 $wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
-$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
-$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
-if ( is_readable( $parser ) && is_readable( $blocks ) ) {
-	require_once $parser;
-	require_once $blocks;
-}
+require_once __DIR__ . '/fixtures/core-block-parser.php';
+ssi_test_require_core_block_parser( $wp_root );
 if ( ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
 	// This test declares the wordpress-runtime environment; a missing
 	// dependency here must fail closed rather than silently report success.

@@ -38,8 +38,8 @@ Run on Lab with Docker, PHP, Node, Composer dependencies, npm dependencies and
 Playwright Chromium available. Never run against a host WordPress installation.
 The runner owns two disposable WordPress/MySQL volumes and cleans them on exit.
 
-The standalone suite's core fixture is WordPress **7.1.4**, pinned to
-WordPress/WordPress commit **db96f5eaa77a8d3e8eec8923a518fa2326f0d46a**.
+The standalone suite's core fixture is WordPress **7.2-beta3** (trunk), pinned to
+WordPress/WordPress commit **716e0856735658fa5a5966a9640674bc72e5a5f0**.
 `tools/prepare-wordpress-core-fixture.sh` downloads this immutable source archive
 into the existing harness-supported `vendor/wordpress-core` location. `npm test`
 prepares it before standalone PHP tests and sets `STATIC_SITE_IMPORTER_WP_ROOT`

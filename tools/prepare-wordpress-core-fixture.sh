@@ -2,8 +2,8 @@
 set -euo pipefail
 # Source-only fixture, never wp-load.php and never a developer WordPress install.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version=7.1.4
-revision=db96f5eaa77a8d3e8eec8923a518fa2326f0d46a # WordPress/WordPress $version
+version=7.2-beta3
+revision=716e0856735658fa5a5966a9640674bc72e5a5f0 # WordPress/WordPress $version
 destination="$root/vendor/wordpress-core"
 if [[ -n "${STATIC_SITE_IMPORTER_WP_ROOT:-}" ]]; then
   test -r "$STATIC_SITE_IMPORTER_WP_ROOT/wp-includes/html-api/class-wp-html-tag-processor.php"

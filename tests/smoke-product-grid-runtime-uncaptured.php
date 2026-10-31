@@ -13,13 +13,15 @@ if ( ! is_readable( $wp_includes . 'html-api/class-wp-html-tag-processor.php' ) 
 	fwrite( STDERR, "FAIL: WordPress Core is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 	exit( 1 );
 }
-foreach ( array( 'plugin.php', 'compat.php', 'compat-utf8.php', 'utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php', 'class-wp-block-parser-block.php', 'class-wp-block-parser-frame.php', 'class-wp-block-parser.php', 'blocks.php' ) as $wp_file ) {
-	// These UTF-8 helpers were split out after the pinned Core fixture.
+foreach ( array( 'plugin.php', 'compat.php', 'compat-utf8.php', 'utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php' ) as $wp_file ) {
+	// Older Core trees have no separate UTF-8 helper files.
 	if ( in_array( $wp_file, array( 'utf8.php', 'compat-utf8.php' ), true ) && ! is_readable( $wp_includes . $wp_file ) ) {
 		continue;
 	}
 	require_once $wp_includes . $wp_file;
 }
+require_once __DIR__ . '/fixtures/core-block-parser.php';
+ssi_test_require_core_block_parser( dirname( $wp_includes ) );
 require_once __DIR__ . '/fixtures/core-charset.php';
 /** Core diagnostic stub. */
 function _doing_it_wrong(): void {}

@@ -16,7 +16,7 @@ if ( ! is_readable( $wp_includes . 'html-api/class-wp-html-tag-processor.php' ) 
 	exit( 1 );
 }
 foreach ( array( 'plugin.php', 'compat.php', 'compat-utf8.php', 'utf8.php', 'l10n.php', 'formatting.php', 'kses.php', 'class-wp-token-map.php', 'html-api/html5-named-character-references.php', 'html-api/class-wp-html-attribute-token.php', 'html-api/class-wp-html-span.php', 'html-api/class-wp-html-text-replacement.php', 'html-api/class-wp-html-decoder.php', 'html-api/class-wp-html-tag-processor.php' ) as $wp_file ) {
-	// These UTF-8 helpers were split out after the pinned Core fixture.
+	// Older Core trees have no separate UTF-8 helper files.
 	if ( in_array( $wp_file, array( 'utf8.php', 'compat-utf8.php' ), true ) && ! is_readable( $wp_includes . $wp_file ) ) {
 		continue;
 	}
