@@ -271,6 +271,7 @@
     { "path": "tools/url-loop-intake.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-controller.test.mjs", "environment": "node" },
     { "path": "tests/authored-viewport.test.mjs", "environment": "node" },
+    { "path": "tests/third-party-social-image.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },
     { "path": "tests/smoke-generated-theme-block-validation.cjs", "environment": "browser-wp-codebox" },
     { "path": "tests/editor-companion-acceptance.mjs", "environment": "browser-wp-codebox", "command": ["bash", "tools/run-editor-companion-acceptance.sh"] },
