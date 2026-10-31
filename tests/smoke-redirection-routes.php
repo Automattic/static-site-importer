@@ -7,6 +7,7 @@ class WP_Error {
 function get_option( $key, $default = false ) { return $default; }
 function get_post_status( $id ) { return 'publish'; }
 function get_permalink( $id ) { return $GLOBALS['permalinks'][ $id ] ?? 'https://native.test/' . ( 1 === $id ? '' : 'native-' . $id . '/' ); }
+function home_url( $path = '' ) { return ( $GLOBALS['home'] ?? 'https://native.test' ) . $path; }
 function wp_parse_url( $url, $component ) { return parse_url( $url, $component ); }
 function sanitize_title_for_query( $value ) { return $value; }
 function get_posts( $args ) { return $GLOBALS['route_owners'] ?? array(); }
@@ -78,4 +79,14 @@ $assert( array( '/blogi/categories/ikäihmisen-ravitsemus.html' => 'https://nati
 $alias_receipt = array( 'plan' => array( 'pages' => array( $pages[0] ) ), 'completed' => array( 'pages' => array( 'website/index.html' => 1 ) ) );
 $encoded_alias_routes = Static_Site_Importer_Redirection_Materializer::routes( $alias_receipt, array( 'source_route_aliases' => array( array( 'from' => 'blogi/categories/ik%C3%A4ihmisen-ravitsemus', 'to' => 'index.html' ) ) ) );
 $assert( array( '/blogi/categories/ikäihmisen-ravitsemus' => 'https://native.test/' ) === $encoded_alias_routes, 'A percent-encoded alias binds in the provider canonical decoded form.' );
+// A home URL with a path (a subdirectory or scoped build host): routes the
+// destination already serves get no rule, and the rest match the full request (#2485).
+$GLOBALS['home']       = 'https://native.test/scope:build';
+$GLOBALS['permalinks'] = array( 1 => 'https://native.test/scope:build/', 2 => 'https://native.test/scope:build/about/' );
+$scoped_pages          = array(
+	array( 'source_path' => 'website/index.html', 'route' => array( 'path' => '/' ) ),
+	array( 'source_path' => 'website/about.html', 'route' => array( 'path' => '/about/' ) ),
+);
+$scoped_receipt        = array( 'plan' => array( 'pages' => $scoped_pages ), 'completed' => array( 'pages' => array( 'website/index.html' => 1, 'website/about.html' => 2 ) ) );
+$assert( array( '/scope:build/about.html' => 'https://native.test/scope:build/about/' ) === Static_Site_Importer_Redirection_Materializer::routes( $scoped_receipt, array() ), 'A path-scoped home redirects only its served HTML address, never a route to itself.' );
 echo "Redirection source route contract passed.\n";

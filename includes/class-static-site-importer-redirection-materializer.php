@@ -181,7 +181,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			}
 		}
 		// Plan paths are home-relative; Redirection matches the full request path.
-		$home_path = untrailingslashit( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ) );
+		$home_path = rtrim( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
 		$routes    = array();
 		foreach ( $pages as $page ) {
 			$source = (string) ( $page['source_path'] ?? '' );
@@ -691,7 +691,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				return new WP_Error( 'static_site_importer_redirect_export_unproven', 'A native source URL is not a portable exact-path alias.' );
 			}
 			// Native request paths must become home-relative portable aliases.
-			$home_path = untrailingslashit( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ) );
+			$home_path = rtrim( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
 			if ( '' !== $home_path ) {
 				if ( ! str_starts_with( $from, $home_path . '/' ) ) {
 					return new WP_Error( 'static_site_importer_redirect_export_unproven', 'A native source URL is outside the site home path.' );
