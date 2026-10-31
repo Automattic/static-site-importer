@@ -345,8 +345,14 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( isset( $attrs['requiredIndicator'] ) ) {
 				$label_attrs['requiredIndicator'] = $attrs['requiredIndicator'];
 			}
-			if ( ! empty( $attrs['required'] ) && is_string( $control['required_text'] ?? null ) && strlen( $control['required_text'] ) <= 32 ) {
-				$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
+			if ( is_string( $control['required_text'] ?? null ) && '' !== trim( $control['required_text'] ) && strlen( $control['required_text'] ) <= 32 ) {
+				if ( ! empty( $attrs['required'] ) ) {
+					$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
+				} else {
+					// A visible marker without validation: Jetpack renders its
+					// indicator only for required fields, so carry the same span.
+					$label_attrs['label'] = $label . '<span class="grunion-label-required" aria-hidden="true">' . esc_html( wp_strip_all_tags( $control['required_text'] ) ) . '</span>';
+				}
 			}
 			$source_label_class = isset( $control['label_class'] ) && is_scalar( $control['label_class'] ) ? trim( (string) $control['label_class'] ) : '';
 			$label_class        = trim( $source_label_class . ' ' . $label_class );
