@@ -162,7 +162,7 @@
     { "path": "tests/smoke-materialization-coverage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-tec-event-seeder.php", "environment": "standalone-php" },
     { "path": "tests/smoke-quality-budget-admission.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-product-materializer.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-product-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-grid-binding.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-product-grid-quality-reconciliation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-entity-decline.php", "environment": "standalone-php" },
