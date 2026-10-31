@@ -198,7 +198,10 @@ final class Static_Site_Importer_Form_Plan_State {
 			'file_upload'        => 'a working file upload',
 			'multiple_selection' => 'choosing several options at once',
 		);
-		$caption  = $captions[ $capability ] ?? str_replace( '_', ' ', $capability );
+		if ( 'conditional_visibility' === $capability ) {
+			return 'The source ' . $kind . ' control (' . $named . ') is required but hidden until a script reveals it, which the provider cannot represent; it was left out so the form can still be submitted. Add it by hand or accept the loss.';
+		}
+		$caption = $captions[ $capability ] ?? str_replace( '_', ' ', $capability );
 		return 'The source ' . $kind . ' control (' . $named . ') needs ' . $caption . ', which the provider cannot represent; add it by hand or accept the loss.';
 	}
 }

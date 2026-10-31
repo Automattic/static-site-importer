@@ -439,15 +439,23 @@ class Static_Site_Importer_Form_Seeder {
 			// visitor-facing provider input.
 			unset( $control['class'] );
 		}
-		$hidden_nodes = Static_Site_Importer_Form_Presentation::unconditionally_hidden_descendants( $form );
-		if ( isset( $hidden_nodes[ 'control-' . $control_index ] ) ) {
-			$state->suppressed_controls[ $control_index ] = true;
-			$state->skipped[]                             = 'unconditionally_hidden_control';
-			$state->record_suppressed( $control_index, 'unconditionally_hidden_control' );
-			return;
-		}
+		// The producer names the declaration that hides a control the reader
+		// never sees (a honeypot, or a conditional field only script reveals).
+		// The provider has no conditional fields, and a visible copy, or a
+		// hidden required one, would block every submission. A required value
+		// is the owner's call, so it is handed off; an optional one is suppressed.
 		$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
 		$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+		if ( 'hidden' !== $type && is_array( $control['hidden'] ?? null ) ) {
+			$state->suppressed_controls[ $control_index ] = true;
+			$state->skipped[]                             = 'unconditionally_hidden_control';
+			if ( ! empty( $control['required'] ) ) {
+				$state->record_handoff( $control_index, 'conditional_visibility', 'source_hides_required_control' );
+			} else {
+				$state->record_suppressed( $control_index, 'unconditionally_hidden_control' );
+			}
+			return;
+		}
 		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
 			$state->suppressed_controls[ $control_index ] = true;
 			$state->skipped[]                             = 'hidden_bookkeeping';

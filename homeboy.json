@@ -203,6 +203,7 @@
         "standalone_php_test_paths": [
           "tests/form-fallback-contract-equivalence.php",
           "tests/smoke-form-submit-box.php",
+          "tests/smoke-form-hidden-controls.php",
           "tests/smoke-form-submit-icon-sides.php",
           "tests/smoke-form-submit-colors.php",
           "tests/smoke-form-context-spacing.php",
