@@ -22,6 +22,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			'entity_collection'     => 'redirects',
 			'materialization_stage' => 'after_pages',
 			'intent_callback'       => array( self::class, 'has_intent' ),
+			'defer_dependencies'    => true,
 			'export_callback'       => array( self::class, 'export' ),
 			'validator'             => array( self::class, 'validate' ),
 			'materializer'          => array( self::class, 'materialize' ),
@@ -41,6 +42,14 @@ final class Static_Site_Importer_Redirection_Materializer {
 	}
 
 	public static function has_intent( array $plan, array $args ): bool {
+		if ( isset( $args['materialized_receipt'] ) ) {
+			$routes = self::routes( $args['materialized_receipt'], $args );
+			if ( is_wp_error( $routes ) || ! empty( $routes ) ) {
+				return true;
+			}
+			$owned = get_option( self::OWNERSHIP_OPTION, array() );
+			return ! empty( $owned[ (string) ( $args['slug'] ?? '' ) ] );
+		}
 		if ( ! empty( $args['source_route_aliases'] ) ) {
 			return true; }
 		foreach ( $plan['pages'] ?? array() as $page ) {
@@ -216,7 +225,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				}
 				$from         = '/' . ltrim( rawurldecode( (string) $from ), '/' );
 				$request_path = $home_path . $from;
-				if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) ) {
+				if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) || self::core_route_id( $from ) === $id ) {
 					continue; }
 				if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
 					return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
@@ -240,6 +249,56 @@ final class Static_Site_Importer_Redirection_Materializer {
 		ksort( $routes, SORT_STRING );
 		return $routes;
 	}
+
+	/** Resolve a real core request without leaking its query or server state. */
+	private static function core_route_id( string $path ): int {
+		// phpcs:disable WordPress.Security.NonceVerification, WordPress.WP.GlobalVariablesOverride.Prohibited -- Internal request simulation, restored in finally; no user mutation.
+		$names = array( 'wp', 'wp_query', 'wp_the_query', 'post', 'posts', 'request', 'query_string', 'more', 'single', 'authordata', 'currentday', 'currentmonth', 'page', 'pages', 'multipage', 'numpages' );
+		$saved = array();
+		foreach ( $names as $name ) {
+			$saved[ $name ] = array( array_key_exists( $name, $GLOBALS ), $GLOBALS[ $name ] ?? null );
+		}
+		$server    = $_SERVER;
+		$get       = $_GET;
+		$post_data = $_POST;
+		try {
+			$url                       = home_url( $path );
+			$_GET                      = array();
+			$_POST                     = array();
+			$_SERVER['REQUEST_URI']    = (string) wp_parse_url( $url, PHP_URL_PATH );
+			$_SERVER['HTTP_HOST']      = (string) wp_parse_url( $url, PHP_URL_HOST ) . ( wp_parse_url( $url, PHP_URL_PORT ) ? ':' . wp_parse_url( $url, PHP_URL_PORT ) : '' );
+			$_SERVER['REQUEST_METHOD'] = 'GET';
+			unset( $_SERVER['PATH_INFO'] );
+			$GLOBALS['wp']           = new WP();
+			$GLOBALS['wp_query']     = new WP_Query();
+			$GLOBALS['wp_the_query'] = $GLOBALS['wp_query'];
+			$GLOBALS['wp']->parse_request();
+			$GLOBALS['wp']->query_posts();
+			$GLOBALS['wp']->handle_404();
+			$query    = $GLOBALS['wp_query'];
+			$redirect = redirect_canonical( $url, false );
+			if ( ! $redirect && $query->is_404() ) {
+				$redirect = redirect_guess_404_permalink();
+			}
+			if ( $redirect ) {
+				return (int) url_to_postid( $redirect );
+			}
+			return $query->is_singular() ? (int) $query->get_queried_object_id() : (int) url_to_postid( $url );
+		} finally {
+			$_SERVER = $server;
+			$_GET    = $get;
+			$_POST   = $post_data;
+			foreach ( $saved as $name => $state ) {
+				if ( $state[0] ) {
+					$GLOBALS[ $name ] = $state[1];
+				} else {
+					unset( $GLOBALS[ $name ] );
+				}
+			}
+		}
+	}
+
+	// phpcs:enable WordPress.Security.NonceVerification, WordPress.WP.GlobalVariablesOverride.Prohibited
 
 	/** Draft hierarchy rows must never hide a genuine published route owner. */
 	public static function published_route_owner( string $path ) {
@@ -320,9 +379,6 @@ final class Static_Site_Importer_Redirection_Materializer {
 	}
 
 	public static function materialize( array $manifest, array $args ) {
-		if ( ! self::available() ) {
-			return new WP_Error( 'static_site_importer_redirection_unavailable', 'The native redirect provider is unavailable.' );
-		}
 		$receipt = $args['materialized_receipt'] ?? array();
 		$routes  = self::routes( $receipt, $args );
 		if ( is_wp_error( $routes ) ) {
@@ -354,6 +410,12 @@ final class Static_Site_Importer_Redirection_Materializer {
 		);
 		if ( array() === $routes && empty( $owned ) ) {
 			return $report;
+		}
+		if ( ! self::available() && ! empty( $args['materialize_dependencies'] ) ) {
+			Static_Site_Importer_Dependency_Manager::materialize_plugin_dependencies( self::adapter(), ! empty( $args['overwrite'] ) );
+		}
+		if ( ! self::available() ) {
+			return new WP_Error( 'static_site_importer_redirection_unavailable', 'The native redirect provider is unavailable.' );
 		}
 		$next = array(
 			'group_id' => (int) ( $owned['group_id'] ?? 0 ),

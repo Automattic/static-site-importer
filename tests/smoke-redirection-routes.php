@@ -5,6 +5,21 @@ class WP_Error {
 	public function __construct( public string $code, public string $message ) {}
 }
 function get_option( $key, $default = false ) { return $default; }
+function url_to_postid( $url ) { return 0; }
+function redirect_canonical( $url, $redirect = true ) { return false; }
+function redirect_guess_404_permalink() { return false; }
+function is_wp_error( $value ) { return $value instanceof WP_Error; }
+// This pure inventory test deliberately resolves nothing; real query behavior
+// and restoration are covered by the disposable WordPress acceptance suite.
+class WP {
+	public function parse_request() {}
+	public function query_posts() {}
+	public function handle_404() {}
+}
+class WP_Query {
+	public function is_singular() { return false; }
+	public function is_404() { return true; }
+}
 function get_post_status( $id ) { return 'publish'; }
 function get_permalink( $id ) { return $GLOBALS['permalinks'][ $id ] ?? 'https://native.test/' . ( 1 === $id ? '' : 'native-' . $id . '/' ); }
 function home_url( $path = '' ) { return ( $GLOBALS['home'] ?? 'https://native.test' ) . $path; }

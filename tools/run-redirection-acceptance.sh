@@ -42,6 +42,7 @@ if test "$ready" != 1; then exit 1; fi
 # itself must establish the pretty routes its source paths need (#2426). The
 # image's default .htaccess already routes them to WordPress.
 "${wp[@]}" plugin activate static-site-importer
+"${wp_operator[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php post-slugs | tee "$evidence/post-slugs.jsonl"
 # Separate tables and a real Apache path alias keep this focused case isolated.
 docker volume create "$scoped_volume" >/dev/null
 scoped_mounts=(-v "$scoped_volume:/var/www/html" -v "$root:/var/www/html/wp-content/plugins/static-site-importer")
