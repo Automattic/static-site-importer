@@ -1146,7 +1146,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 			return 'static-site-importer';
 		}
 
-		if ( in_array( $repair_bucket, array( 'dropped_images', 'static_site_import_quality' ), true ) || str_contains( $type, 'asset' ) || str_contains( $type, 'image' ) ) {
+		// The fallback bucket means unclassified, which is not evidence of ownership.
+		if ( 'dropped_images' === $repair_bucket || 'document_metadata_routed' === $type || str_contains( $type, 'asset' ) || str_contains( $type, 'image' ) ) {
 			return 'static-site-importer';
 		}
 
