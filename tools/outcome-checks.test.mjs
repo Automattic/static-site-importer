@@ -7,6 +7,7 @@ import { documentOutcomes } from '../lib/document-outcomes.mjs';
 import { interactiveOutcomes } from '../lib/interactive-outcomes.mjs';
 import { interactiveConfig } from '../tests/acceptance/outcome-interactive-config.mjs';
 import { aggregateAcceptance, acceptanceScope } from '../lib/existing-runtime-acceptance.mjs';
+import { validateOutcomeDocuments } from '../lib/outcome-editor-validation.mjs';
 
 // Public runner primitive, with an explicit server-parse inventory seam. Real
 // WordPress collection is also exercised by the disposable acceptance workload.
@@ -222,5 +223,25 @@ test('source inventories retain unsupported controls and require real form submi
     const missingRoute = structuredClone(interactiveConfig);
     missingRoute.capture.pages = [];
     assert.equal((await run(missingRoute)).forms.status, 'unsupported');
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+// The editor's heartbeat rewrites the draft's post lock, so an editor left open
+// would mutate the site that theme independence then measures.
+test('editor validation leaves the editor before later checks run', async () => {
+  let beats = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/heartbeat') { beats++; res.end(); return; }
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<script>window.wp = { blocks: { parse: () => [], validateBlock: () => [true, []], getBlockTypes: () => [{}] } }; setInterval(() => fetch("/heartbeat"), 50);</script>');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await validateOutcomeDocuments({ page, candidateOrigin: `http://127.0.0.1:${server.address().port}`, documents: [{ id: 1, type: 'page', content: '' }] });
+    const after = beats;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(beats, after);
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
