@@ -62,6 +62,33 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'wp_dequeue_style' ) ) {
+		function wp_dequeue_style( string $handle ): void {
+			unset( $GLOBALS['ssi_test_enqueued'][ $handle ] );
+		}
+	}
+	if ( ! function_exists( 'is_rtl' ) ) {
+		function is_rtl(): bool { return false; }
+	}
+	if ( ! function_exists( 'add_query_arg' ) ) {
+		function add_query_arg( string $key, $value, string $url ): string { return $url . ( str_contains( $url, '?' ) ? '&' : '?' ) . $key . '=' . $value; }
+	}
+	if ( ! function_exists( 'esc_url_raw' ) ) {
+		function esc_url_raw( string $url ): string { return $url; }
+	}
+	if ( ! function_exists( 'is_account_page' ) ) {
+		function is_account_page(): bool { return (bool) ( $GLOBALS['ssi_test_account_page'] ?? false ); }
+	}
+	if ( ! function_exists( 'wp_styles' ) ) {
+		function wp_styles(): object {
+			return $GLOBALS['ssi_test_styles'] ??= new class() {
+				public array $registered = array();
+				public string $base_url  = 'https://example.test';
+				public function get_data( string $handle, string $key ) { return 'after' === $key ? array( '.woo-after{color:blue}' ) : false; }
+			};
+		}
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-presentation.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-commerce-presentation.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
@@ -158,6 +185,26 @@ namespace {
 	$assert( ! str_contains( $ordinary_woo_inline_cart, 'ssi-commerce-control' ) && $all_selectors_are_marked, 'ordinary-woo-inline-cart-receives-no-ssi-styling' );
 	$binding = \Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array(), array( 'id' => 42 ) );
 	$assert( str_contains( $binding, '[add_to_cart id="42" class="ssi-commerce-control"]' ) && str_contains( $commerce_css, 'ssi-commerce-control' ), 'materialized-commerce-binding-receives-ssi-styling' );
+
+	// WooCommerce's block-theme stylesheet, whose class-qualified bare-element
+	// rules outrank the source design, is re-delivered inside a cascade layer
+	// on source-design pages, keeping its inline additions after the import.
+	$blocktheme = (object) array( 'src' => '/wp-content/plugins/woocommerce/assets/css/woocommerce-blocktheme.css', 'ver' => '10.3.0', 'deps' => array() );
+	foreach ( array( 'source page' => array( false, '' ), 'account page' => array( true, '' ), 'woo template' => array( false, 'woocommerce/woocommerce//single-product' ) ) as $label => $case ) {
+		$reset();
+		$GLOBALS['ssi_test_account_page']    = $case[0];
+		$GLOBALS['_wp_current_template_id'] = $case[1];
+		wp_styles()->registered['woocommerce-blocktheme'] = $blocktheme;
+		$GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] = true;
+		\Static_Site_Importer_Commerce_Presentation::enqueue();
+		$layered = $GLOBALS['ssi_test_inline_styles']['static-site-importer-woocommerce-blocktheme'] ?? null;
+		if ( 'source page' === $label ) {
+			$assert( '@import url("https://example.test/wp-content/plugins/woocommerce/assets/css/woocommerce-blocktheme.css?ver=10.3.0") layer(woocommerce);.woo-after{color:blue}' === $layered && ! isset( $GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] ), 'woo-blocktheme-layered-on-source-page' );
+		} else {
+			$assert( null === $layered && isset( $GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] ), 'woo-blocktheme-kept-on-' . str_replace( ' ', '-', $label ) );
+		}
+	}
+	unset( $GLOBALS['ssi_test_account_page'], $GLOBALS['_wp_current_template_id'] );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );
