@@ -175,6 +175,8 @@ Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Product_Grid_Runtime::register();
 Static_Site_Importer_Woo_Product_Listing_Materializer::register();
 Static_Site_Importer_Route_Head_Metadata::register();
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-comment-avatar.php';
+Static_Site_Importer_Comment_Avatar::register();
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';

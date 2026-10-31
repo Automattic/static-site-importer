@@ -319,7 +319,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$persisted_content = function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post ) : null;
 			self::complete_entity_bindings( $state, (string) $page['source_path'], is_string( $persisted_content ) ? $persisted_content : '', array( 'post_id' => $post ) );
 		}
-		$taxonomy_entities = self::materialize_taxonomy_entities( $state );
+		$comments = self::materialize_comment_entities( $state );
+		if ( is_wp_error( $comments ) ) {
+			return self::failed_receipt_from_error( $state, $comments );
+		}
+		$state['applied']['comment_entities'] = $comments;
+		$taxonomy_entities                    = self::materialize_taxonomy_entities( $state );
 		if ( is_wp_error( $taxonomy_entities ) ) {
 			return self::failed_receipt_from_error( $state, $taxonomy_entities );
 		}
@@ -524,6 +529,93 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
+	}
+
+	/** Persist captured comments in parent-first order, scoped to their source post. */
+	private static function materialize_comment_entities( array &$state ) {
+		$pending = $state['plan']['comment_entities'] ?? array();
+		$mapping = array();
+		$reports = array();
+		while ( $pending ) {
+			$progress = false;
+			foreach ( $pending as $key => $entity ) {
+				if ( ! is_array( $entity ) || ! is_string( $entity['source_path'] ?? null ) || ! is_string( $entity['source_id'] ?? null ) || '' === $entity['source_id'] || ! is_string( $entity['author_name'] ?? null ) || ! is_string( $entity['content'] ?? null ) || ! is_string( $entity['date'] ?? null ) || false === strtotime( $entity['date'] ) ) {
+					return new WP_Error( 'comment_entity_contract_invalid' );
+				}
+				$path    = $entity['source_path'];
+				$post_id = (int) ( $state['source_ids'][ $path ] ?? 0 );
+				if ( $post_id <= 0 ) {
+					return new WP_Error( 'comment_post_not_materialized' );
+				}
+				if ( isset( $mapping[ $path ][ $entity['source_id'] ] ) ) {
+					return new WP_Error( 'comment_entity_contract_invalid' );
+				}
+				$parent = $entity['parent_source_id'] ?? '';
+				if ( '' !== $parent && ! isset( $mapping[ $path ][ $parent ] ) ) {
+					continue;
+				}
+				$identity             = hash( 'sha256', self::source_origin_url( $state ) . "\n" . $path . "\n" . $entity['source_id'] );
+				$existing             = get_comments( array(
+					'post_id'    => $post_id,
+					'status'     => 'all',
+					'meta_key'   => '_static_site_importer_source_comment',
+					'meta_value' => $identity,
+					'number'     => 1,
+				) );
+				$comment_id           = is_array( $existing ) && isset( $existing[0] ) && $existing[0] instanceof WP_Comment ? (int) $existing[0]->comment_ID : 0;
+				$data                 = array(
+					'comment_post_ID'      => $post_id,
+					'comment_parent'       => $mapping[ $path ][ $parent ] ?? 0,
+					'comment_author'       => $entity['author_name'],
+					'comment_author_url'   => esc_url_raw( (string) ( $entity['author_url'] ?? '' ) ),
+					'comment_author_email' => '',
+					'comment_date_gmt'     => gmdate( 'Y-m-d H:i:s', (int) strtotime( $entity['date'] ) ),
+					'comment_content'      => wp_kses_post( $entity['content'] ),
+					'comment_approved'     => 1,
+					'comment_type'         => 'comment',
+					'user_id'              => 0,
+				);
+				$data['comment_date'] = get_date_from_gmt( $data['comment_date_gmt'] );
+				if ( $comment_id ) {
+					$state['rollback']['comments'][ $comment_id ] ??= array(
+						'comment' => get_comment( $comment_id, ARRAY_A ),
+						'avatar'  => get_comment_meta( $comment_id, '_static_site_importer_avatar_url', true ),
+					);
+					$result = wp_update_comment( wp_slash( array_merge( $data, array( 'comment_ID' => $comment_id ) ) ), true );
+				} else {
+					$result = wp_insert_comment( $data );
+					if ( $result ) {
+						$comment_id                                   = (int) $result;
+						$state['rollback']['comments'][ $comment_id ] = array( 'comment' => null );
+					}
+				}
+				if ( is_wp_error( $result ) || false === $result || $comment_id <= 0 ) {
+					return new WP_Error( 'comment_write_failed' );
+				}
+				$meta = array(
+					'_static_site_importer_source_comment' => $identity,
+					'_static_site_importer_avatar_url'     => esc_url_raw( (string) ( $entity['avatar_url'] ?? '' ) ),
+				);
+				foreach ( $meta as $meta_key => $value ) {
+					update_comment_meta( $comment_id, $meta_key, wp_slash( $value ) );
+					if ( get_comment_meta( $comment_id, $meta_key, true ) !== $value ) {
+						return new WP_Error( 'comment_metadata_write_failed' );
+					}
+				}
+				$mapping[ $path ][ $entity['source_id'] ] = $comment_id;
+				$reports[]                                = array(
+					'comment_id'  => $comment_id,
+					'source_path' => $path,
+					'source_id'   => $entity['source_id'],
+				);
+				unset( $pending[ $key ] );
+				$progress = true;
+			}
+			if ( ! $progress ) {
+				return new WP_Error( 'comment_parent_unresolved' );
+			}
+		}
+		return $reports;
 	}
 
 	/** Materialize only proven authors; never adopt an unmarked destination user. */
@@ -2516,6 +2608,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! empty( $state['rollback']['done'] ) ) {
 			return; }
 		$state['rollback']['done'] = true;
+		foreach ( array_reverse( $state['rollback']['comments'] ?? array(), true ) as $comment_id => $before ) {
+			try {
+				if ( null === $before['comment'] ) {
+					$result = wp_delete_comment( $comment_id, true );
+				} else {
+					$result = wp_update_comment( (array) wp_slash( $before['comment'] ), true );
+					update_comment_meta( $comment_id, '_static_site_importer_avatar_url', wp_slash( $before['avatar'] ) );
+				}
+				if ( is_wp_error( $result ) || false === $result ) {
+					// ssi-error-class: operational
+					throw new RuntimeException( 'materialization_rollback_comment_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'comment', (string) $comment_id, $error );
+			}
+		}
 		self::restore_runtime( $state );
 		foreach ( array_reverse( $state['rollback']['files'] ?? array(), true ) as $path => $before ) {
 			if ( ! is_array( $before ) ) {
