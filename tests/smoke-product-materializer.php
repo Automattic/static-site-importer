@@ -7,12 +7,21 @@
  * adapter, and confirms the gate-closure signal is stamped onto seeded findings.
  *
  * Run from the repository root:
- * php tests/smoke-product-materializer.php
+ * STATIC_SITE_IMPORTER_WP_ROOT=/path/to/wordpress php tests/smoke-product-materializer.php
+ *
+ * Requires readable WordPress core source files, not a bootstrapped site or an
+ * active WooCommerce plugin. Run with PHP, not `wp eval-file`: the seeder uses
+ * an in-memory WooCommerce mock and must not mix it with real WordPress APIs.
  *
  * @package StaticSiteImporter
  */
 
 namespace {
+	if ( function_exists( 'post_type_exists' ) || class_exists( 'WC_Product_Simple' ) ) {
+		fwrite( STDERR, "FAIL: Product materializer smoke requires standalone PHP, not a loaded WordPress/WooCommerce runtime. Run STATIC_SITE_IMPORTER_WP_ROOT=/path/to/wordpress php tests/smoke-product-materializer.php (WooCommerce is mocked).\n" );
+		exit( 1 );
+	}
+
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 	}
@@ -273,6 +282,7 @@ namespace {
 
 	$seeding = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $report, array() );
 	$assert( 'woocommerce' === ( $seeding['provider'] ?? '' ), 'materialize-provider-woocommerce' );
+	$assert( Static_Site_Importer_Woo_Product_Seeder::woocommerce_available(), 'mock-woocommerce-runtime-available' );
 	$assert( 1 === ( $seeding['finding_count'] ?? 0 ), 'materialize-one-finding' );
 	$assert( 2 === ( $seeding['product_count'] ?? 0 ), 'materialize-two-products' );
 	$assert( 'completed' === ( $seeding['status'] ?? '' ), 'materialize-status-completed' );
@@ -383,7 +393,9 @@ namespace {
 	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ) && str_contains( $page_contents['website/shop.html'], 'class="ssi-commerce-control"' ), 'page-content-has-marked-add-to-cart-shortcode' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
-	$assert( str_contains( $button_region, '\\u005c' ) && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );
+	// Core versions differ in whether backslashes use JSON escaping or Unicode
+	// escapes. Both must round-trip the original attribute without corruption.
+	$assert( ( parse_blocks( $button_region )[0]['attrs']['backslash'] ?? '' ) === 'C:\\products\\shop' && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );
 
 	// A resolvable product finding cannot consume an identical region on another page.
 	$owned_graft_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
