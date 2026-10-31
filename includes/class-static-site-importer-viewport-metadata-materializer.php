@@ -71,7 +71,7 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 		$marker    = '/* Static Site Importer authored viewport metadata. */';
 		if ( ! str_contains( $bootstrap, $marker ) ) {
 			$literal    = (string) wp_json_encode( $viewport );
-			$bootstrap .= "\n{$marker}\nadd_filter( 'template_include', static function ( \$template ) {\n\tremove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 );\n\tadd_action( 'wp_head', static function (): void {\n\t\techo '<meta name=\"viewport\" content=\"' . esc_attr( {$literal} ) . '\" />' . \"\\n\";\n\t}, 0 );\n\treturn \$template;\n}, PHP_INT_MAX );\n";
+			$bootstrap .= "\n{$marker}\nadd_filter( 'template_include', static function ( \$template ) {\n\t// A route whose document-head replay declares a viewport has already removed core's tag; that replay owns it.\n\tif ( false === has_action( 'wp_head', '_block_template_viewport_meta_tag' ) ) {\n\t\treturn \$template;\n\t}\n\tremove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 );\n\tadd_action( 'wp_head', static function (): void {\n\t\techo '<meta name=\"viewport\" content=\"' . esc_attr( {$literal} ) . '\" />' . \"\\n\";\n\t}, 0 );\n\treturn \$template;\n}, PHP_INT_MAX );\n";
 		}
 
 		return self::result(
