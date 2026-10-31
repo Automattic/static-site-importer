@@ -149,6 +149,21 @@ $assert( ! isset( $diagnostics['diagnostic_summary']['type']['website_artifact_m
 $assert( ! isset( $diagnostics['diagnostic_summary']['type']['document_metadata_routed'] ), 'report-only-metadata-note-excluded' );
 $assert( 'static-site-importer' === ( $diagnostics['by_repair_bucket']['dropped_images'][0]['parser_owner'] ?? '' ), 'dropped-images-owner' );
 $assert( 'blocks-engine' === ( $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['parser_owner'] ?? '' ), 'runtime-target-owner' );
+// An unclassified finding is not evidence of importer ownership (#1761).
+$unclassified = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'diagnostics' => array(
+				array(
+					'type'    => 'wordpress_site_plan_not_self_contained',
+					'message' => 'WordPress site plan page routes reject encoded source paths.',
+				),
+			),
+		),
+	)
+);
+$unclassified_row = $unclassified['by_repair_bucket']['static_site_import_quality'][0] ?? array();
+$assert( 'blocks-engine' === ( $unclassified_row['parser_owner'] ?? '' ) && 'blocks-engine' === ( $unclassified_row['candidate_repo'] ?? '' ), 'unclassified-finding-not-importer-owned', (string) wp_json_encode( $unclassified_row ) );
 $assert( 'unsupported_loss' === ( $diagnostics['by_repair_bucket']['dropped_images'][0]['loss_class'] ?? '' ), 'dropped-images-loss-class' );
 $assert( 'importer_materialization_bug' === ( $diagnostics['by_repair_bucket']['invalid_block_content'][0]['loss_class'] ?? '' ), 'invalid-block-loss-class' );
 $assert( 'editable_approximation' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['loss_class'] ?? '' ), 'semantic-parity-loss-class' );
