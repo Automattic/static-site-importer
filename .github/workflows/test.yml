@@ -17,6 +17,19 @@ permissions:
   pull-requests: write
 
 jobs:
+  test-inventory:
+    name: Test Inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # homeboy.json's standalone PHP list must stay the projection of test-manifest.json;
+      # Homeboy's test gate reads homeboy.json, so drift silently drops tests.
+      - run: npm run test:inventory
+
   editor-presentation-browser:
     name: Editor Presentation Browser
     runs-on: ubuntu-latest
