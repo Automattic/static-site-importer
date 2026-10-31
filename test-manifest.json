@@ -63,7 +63,7 @@
     { "path": "tests/smoke-form-submit-icon-sides.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-submit-colors.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-context-spacing.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-form-visible-required-marker.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-marker-and-button-icon.php", "environment": "standalone-php" },
     { "path": "tests/form-context-spacing.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-contract.php", "environment": "standalone-php" },

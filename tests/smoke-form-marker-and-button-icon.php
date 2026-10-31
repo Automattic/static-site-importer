@@ -1,7 +1,8 @@
 <?php
 /**
  * Regression for #2422: a visible required marker on a `novalidate` form, with
- * no `required` validation, survives into the Jetpack field label.
+ * no `required` validation, survives into the Jetpack field label, and a plain
+ * (non-submit) button keeps its captured inline icon.
  *
  * @package StaticSiteImporter
  */
@@ -16,6 +17,7 @@ use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 $form   = '<form novalidate action="/contact" method="post">'
 	. '<div><label for="naam">Naam <span class="text-accent" aria-hidden="true">*</span></label><input id="naam" name="naam" type="text"></div>'
 	. '<div><label for="note">Note</label><input id="note" name="note" type="text"></div>'
+	. '<button type="button" class="attach"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>Add file</button>'
 	. '<button type="submit">Send</button></form>';
 $html   = '<!doctype html><html><head><style>.text-accent{color:#c00}</style></head><body><main>' . $form . '</main></body></html>';
 $result = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray();
@@ -32,11 +34,12 @@ $checks = array(
 	'unmarked label stays plain'       => str_contains( $markup, '"label":"Note"' ),
 	'field is not made required'       => ! str_contains( $markup, '"required":true' ),
 	'marker keeps its source color'    => (bool) preg_match( '/> \.grunion-label-required\{[^}]*color:#c00/', $overlay ),
+	'plain button keeps its icon'      => (bool) preg_match( '#<button type="button" class="wp-block-button__link wp-element-button"><svg[^>]*><path d="M12 5v14M5 12h14"></path></svg>Add file</button>#', $markup ),
 );
 foreach ( $checks as $name => $ok ) {
 	if ( ! $ok ) {
 		fwrite( STDERR, 'FAIL: ' . $name . "\n" );
 	}
 }
-echo in_array( false, $checks, true ) ? '' : "smoke-form-visible-required-marker: passed\n";
+echo in_array( false, $checks, true ) ? '' : "smoke-form-marker-and-button-icon: passed\n";
 exit( in_array( false, $checks, true ) ? 1 : 0 );

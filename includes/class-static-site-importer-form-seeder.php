@@ -481,7 +481,8 @@ class Static_Site_Importer_Form_Seeder {
 			// Mode and filter controls remain native buttons; they are not submits.
 			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::button_block(
 				Static_Site_Importer_Form_Field_Markup::control_text( $control ),
-				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
+				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] ),
+				self::control_icons( $state->form, $control_index )
 			);
 			$state->record_mapped( $control_index, 'core/button' );
 			return;
@@ -534,7 +535,7 @@ class Static_Site_Importer_Form_Seeder {
 		// carries the marker the projected stylesheet excludes with its tag.
 		$state->submit_presentation['source_tag']        = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
 		$state->submit_presentation['source_tag_marker'] = isset( $control['source_tag_marker'] ) && is_string( $control['source_tag_marker'] ) ? trim( $control['source_tag_marker'] ) : '';
-		foreach ( self::submit_icons( $state->form, $control_index ) as $key => $parts ) {
+		foreach ( self::control_icons( $state->form, $control_index ) as $key => $parts ) {
 			if ( ! isset( $state->submit_presentation[ $key ] ) && ! empty( $parts ) ) {
 				$state->submit_presentation[ $key ] = $parts;
 			}
@@ -828,22 +829,22 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Split a submit control's captured inline SVGs by the producer's label side.
+	 * Split a button control's captured inline SVGs by the producer's label side.
 	 *
 	 * The producer captures every drawable inline SVG descendant of a control
 	 * as a bounded visual part (see the presentation graph's `visual_parts`,
-	 * the same capture the empty-country visual state consumes). A submit
-	 * button with an authored inline icon therefore arrives with that icon
-	 * attached to its control index, while the provider submit only carries
-	 * the button text — so the icon, and the authored gap beside it, vanish.
+	 * the same capture the empty-country visual state consumes). A submit or
+	 * plain button with an authored inline icon therefore arrives with that
+	 * icon attached to its control index, while the control only carries the
+	 * button text — so the icon, and the authored gap beside it, would vanish.
 	 * Only parts that pass the portable inline-SVG admission and the same
 	 * bounded sizes the producer enforced are carried, in source order.
 	 *
 	 * @param array<string,mixed> $form Validated form row.
-	 * @param int                 $control_index Submit control index.
+	 * @param int                 $control_index Button control index.
 	 * @return array<string,array<int,string>> Validated SVGs per side, source order.
 	 */
-	private static function submit_icons( array $form, int $control_index ): array {
+	private static function control_icons( array $form, int $control_index ): array {
 		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
 		$owned = array();
 		foreach ( $parts as $part ) {

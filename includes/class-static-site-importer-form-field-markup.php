@@ -602,9 +602,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 		return $block;
 	}
 
-	/** Build a non-submitting source button without changing the form's submission action. */
-	public static function button_block( string $text, string $class_name = '' ): array {
-		return array(
+	/**
+	 * Build a non-submitting source button without changing the form's submission action.
+	 *
+	 * @param array<string,array<int,string>> $icons Captured inline SVGs keyed `icon` (before the label) and `icon_after`.
+	 */
+	public static function button_block( string $text, string $class_name = '', array $icons = array() ): array {
+		$block = array(
 			'name'    => 'core/button',
 			'attrs'   => array(
 				'tagName'   => 'button',
@@ -616,6 +620,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 			'content' => '' !== trim( $text ) ? trim( $text ) : 'Button',
 			'wrapper' => 'button',
 		);
+		foreach ( array( 'icon', 'icon_after' ) as $key ) {
+			$icon_parts = Static_Site_Importer_Provider_Form_Runtime_V1::valid_icon_parts( is_array( $icons[ $key ] ?? null ) ? $icons[ $key ] : array() );
+			if ( ! empty( $icon_parts ) ) {
+				$block[ $key ] = array( 'parts' => $icon_parts );
+			}
+		}
+		return $block;
 	}
 
 	/**
