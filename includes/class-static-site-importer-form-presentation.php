@@ -311,65 +311,6 @@ final class Static_Site_Importer_Form_Presentation {
 	}
 
 	/**
-	 * Find non-rendering field subtrees using proven ancestor display facts.
-	 *
-	 * The layout graph may omit unstyled descendants, so use control topology
-	 * for ancestry too. Any conditional display patch keeps existing behavior.
-	 * Bookkeeping-only branches retain their existing runtime-control receipt.
-	 *
-	 * @param array<string,mixed> $form Validated source form.
-	 * @return array<string,bool> Hidden subtree node IDs.
-	 * @internal
-	 */
-	public static function unconditionally_hidden_descendants( array $form ): array {
-		$nodes    = array_column( $form['layout_graph']['nodes'] ?? array(), null, 'id' );
-		$hidden   = array();
-		$ancestry = $nodes;
-		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
-			$ancestry[ $node['id'] ] = $node;
-		}
-		foreach ( $nodes as $id => $node ) {
-			if ( 'control' === ( $node['kind'] ?? null ) || 'none' !== ( $node['layout']['display'] ?? null ) || ! self::has_unconditional_proven_property( $node, 'display' ) ) {
-				continue;
-			}
-			foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
-				if ( ( $variant['node'] ?? null ) === $id && isset( $variant['layout_patch']['display'] ) ) {
-					continue 2;
-				}
-			}
-			$subtree = array();
-			foreach ( $ancestry as $descendant_id => $descendant ) {
-				$cursor = $descendant_id;
-				$seen   = array();
-				while ( isset( $ancestry[ $cursor ] ) && ! isset( $seen[ $cursor ] ) ) {
-					if ( $cursor === $id ) {
-						$subtree[ $descendant_id ] = true;
-						break;
-					}
-					$seen[ $cursor ] = true;
-					$cursor          = $ancestry[ $cursor ]['parent'] ?? '';
-				}
-			}
-			foreach ( $form['controls'] ?? array() as $index => $control ) {
-				if ( isset( $subtree[ 'control-' . $index ] ) && self::control_carries_authored_content( self::control_type( $control ) ) ) {
-					$hidden += $subtree;
-					break;
-				}
-			}
-		}
-		return $hidden;
-	}
-
-	/**
-	 * Whether unconditional source provenance proves a property.
-	 *
-	 * @internal
-	 */
-	public static function has_unconditional_proven_property( array $node, string $property ): bool {
-		return self::has_source_fact( $node['provenance'] ?? array(), null, array( $property ) );
-	}
-
-	/**
 	 * @return array<int,string> A topology node's non-empty source class tokens.
 	 *
 	 * @internal
