@@ -120,6 +120,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'receipt_instance_id'       => self::valid_receipt_instance_id( $state['receipt_instance_id'] ?? null ) ? $state['receipt_instance_id'] : self::receipt_instance_id(),
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
+			'applied'                   => array( 'comment_entities' => $state['applied']['comment_entities'] ?? array() ),
 			'completed'                 => array(
 				'pages'                        => $pages,
 				'unresolved_same_origin_links' => $state['applied']['unresolved_same_origin_links'] ?? array(),
@@ -127,6 +128,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				'synced_patterns'              => $state['applied']['synced_patterns'] ?? array(),
 				'taxonomy_entities'            => $state['applied']['taxonomy_entities'] ?? array(),
 				'author_entities'              => $state['applied']['author_entities'] ?? array(),
+				'comment_entities'             => $state['applied']['comment_entities'] ?? array(),
 				'files'                        => $state['applied']['files'],
 				'operations'                   => $state['applied']['operations'],
 				'site_identity'                => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
