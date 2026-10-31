@@ -406,9 +406,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $block_match[0];
 		}
 		if ( $authored ) {
-			$srcset = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			$candidate_ids = array();
+			$srcset        = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $candidate_ids );
 			if ( null !== $error ) {
 				return $block_match[0];
+			}
+			// Exporters may collapse a whole family to one representative file.
+			// Use its real renditions rather than repeat that file at every width.
+			if ( array( $attachment_id ) === array_values( array_unique( $candidate_ids ) ) ) {
+				$attachment_srcset = wp_get_attachment_image_srcset( $attachment_id, 'full' );
+				if ( false !== $attachment_srcset ) {
+					$srcset = $attachment_srcset;
+				}
 			}
 			// The selection stays keyed to the image it describes, now bound.
 			$attrs['metadata']['blocksEngineImageSelection'] = array_merge(
@@ -446,9 +455,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/** Resolve only the explicitly supported formats within the generated theme. */
+	/**
+	 * The still-encoded path of a URL.
+	 *
+	 * PHP's parse_url() rewrites bytes it treats as control characters to `_`,
+	 * which can include UTF-8 bytes such as the 0x80 in `‹`. Percent-encoding
+	 * non-ASCII bytes first keeps the authored filename for rawurldecode().
+	 */
+	private static function url_path( string $url ): string {
+		$encoded = (string) preg_replace_callback( '/[\x80-\xff]+/', static fn( array $bytes ): string => rawurlencode( $bytes[0] ), $url );
+		return (string) wp_parse_url( $encoded, PHP_URL_PATH );
+	}
+
 	private static function theme_relative_asset( string $src, string $theme_uri, array $extensions ): ?string {
-		$path = (string) wp_parse_url( $src, PHP_URL_PATH );
-		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
+		$path = self::url_path( $src );
+		$base = self::url_path( $theme_uri );
 		if ( '' === $path || '' === $base || ! str_starts_with( $path, $base . '/' ) ) {
 			return null;
 		}
@@ -654,7 +675,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				'image/avif'    => 'avif',
 				'image/svg+xml' => 'svg',
 			);
-			$stem       = pathinfo( rawurldecode( (string) wp_parse_url( $record['original']['source_url'], PHP_URL_PATH ) ), PATHINFO_FILENAME );
+			$stem       = pathinfo( rawurldecode( self::url_path( $record['original']['source_url'] ) ), PATHINFO_FILENAME );
 			$filename   = ( '' !== trim( $alt ) ? sanitize_title( $alt ) : sanitize_title( $stem ) ) . '.' . ( $extensions[ $record['original']['content_type'] ] ?? pathinfo( $relative, PATHINFO_EXTENSION ) );
 		}
 		try {
@@ -765,7 +786,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			// theme destination rather than an ambiguous attachment.
 			return 0;
 		}
-		$stem = rawurldecode( (string) wp_parse_url( (string) ( $record['original']['source_url'] ?? '' ), PHP_URL_PATH ) );
+		$stem = rawurldecode( self::url_path( (string) ( $record['original']['source_url'] ?? '' ) ) );
 		$stem = pathinfo( $stem, PATHINFO_FILENAME );
 		$stem = '' !== trim( (string) $stem ) ? (string) $stem : pathinfo( $relative, PATHINFO_FILENAME );
 		// Admit exactly the verified extension and MIME during this upload;
@@ -1147,15 +1168,20 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $attachments
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 * @param int[]|null $candidate_ids Optional resolved candidate IDs, including 0 for unbound URLs.
+	 * @param-out ($candidate_ids is null ? null : int[]) $candidate_ids
 	 */
-	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): string {
+	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, ?array &$candidate_ids = null ): string {
 		// Candidate commas belong to the shared producer parser, not the URL
 		// scanner used for arbitrary markup. Descriptorless candidates end in
 		// commas while URL-internal commas remain part of the asset identity.
 		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite(
 			html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
-			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
+			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error, &$candidate_ids ): string {
 				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+				if ( null !== $candidate_ids ) {
+					$candidate_ids[] = $id;
+				}
 				if ( null !== $error || $id <= 0 ) {
 					return $url;
 				}

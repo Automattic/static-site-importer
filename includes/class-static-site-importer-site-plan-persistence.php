@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
+
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
@@ -804,7 +806,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$page        = $claim['page'];
 			$existing    = (int) ( $page['planned_existing_id'] ?? 0 );
 			$destination = (int) $claim['post_id'];
-			$occupied    = get_page_by_path( trim( $claim['route'], '/' ), OBJECT, array( 'page', 'post' ) );
+			$occupied    = Static_Site_Importer_Route_Occupant::find( $claim['route'], array( 'page', 'post' ) );
 			if ( $occupied && (int) $occupied->ID !== $destination && (int) $occupied->ID !== $existing && 'publish' === $occupied->post_status ) {
 				return new WP_Error( 'whole_page_source_route_occupied', 'An unrelated published post occupies the source route.' );
 			}
@@ -1049,7 +1051,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$post['meta_input'] = wp_slash( $fields );
 		}
-		if ( ! empty( $page['metadata']['detected_date'] ) ) {
+		// A captured document was already public, so a detected date after this
+		// import is not its publication date (e.g. an event's date in its URL).
+		// Persisting it would make WordPress schedule the post instead of
+		// publishing it; leave such a post dated by WordPress.
+		if ( ! empty( $page['metadata']['detected_date'] ) && (string) $page['metadata']['detected_date'] <= gmdate( 'Y-m-d H:i:s' ) ) {
 			// The classifier emits UTC; post_date_gmt stores that absolute value.
 			// When the source stated the same instant with its own offset, that
 			// wall-clock time is the post_date its permalinks use. Otherwise

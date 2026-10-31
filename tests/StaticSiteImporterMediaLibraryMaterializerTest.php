@@ -49,6 +49,21 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( array( $ids[0] ), $state['applied']['attachments'] );
 	}
 
+	/** A theme image whose filename has non-ASCII characters binds whether its URL is raw or percent-encoded. */
+	public function test_non_ascii_image_filename_becomes_attachment(): void {
+		$uri   = get_theme_root_uri() . '/' . $this->slug() . '/media/';
+		$name  = 'Single-‹-Editor-—-WordPress.png';
+		$image = static fn( string $src ): string => '<!-- wp:image --><figure class="wp-block-image"><img src="' . $src . '" alt=""/></figure><!-- /wp:image -->';
+		$state = $this->state_with_page( $image( $uri . $name ) . $image( $uri . rawurlencode( $name ) ) );
+		copy( $this->theme_dir . '/media/photo.png', $this->theme_dir . '/media/' . $name );
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$this->assertSame( 2, $report['bound_block_count'] );
+		$this->assertSame( 1, $report['attachment_count'] );
+	}
+
 	/** A Blocks Engine featured-image handoff becomes the post thumbnail. */
 	public function test_featured_image_metadata_asset_becomes_post_thumbnail(): void {
 		$state = $this->state_with_page( '<!-- wp:paragraph --><p>Post</p><!-- /wp:paragraph -->' );
@@ -329,6 +344,38 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertGreaterThan( 0, $small, 'each theme candidate becomes an attachment' );
 		$this->assertSame( wp_get_original_image_url( $small ) . ' 200w, ' . $bound['src'] . ' 600w, https://cdn.example.org/photo-2048.png 2048w', $bound['srcset'], 'descriptors and foreign candidates keep their authored order' );
 		$this->assertSame( $selection['sizes'], $bound['sizes'] );
+	}
+
+	/** A collapsed source family uses the destination attachment's generated renditions. */
+	public function test_collapsed_image_selection_uses_attachment_srcset(): void {
+		$photo     = get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png';
+		$selection = array(
+			'src'     => $photo,
+			'srcset'  => $photo . ' 1024w, ' . $photo . ' 300w, ' . $photo . ' 768w, ' . $photo . ' 1408w',
+			'sizes'   => '(max-width: 992px) 100vw, 33vw',
+			'loading' => 'lazy',
+		);
+		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
+		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $photo . '" alt="Photo"/></figure><!-- /wp:image -->';
+		$state     = $this->state_with_page( $markup );
+		$image     = imagecreatetruecolor( 1408, 768 );
+		imagepng( $image, $this->theme_dir . '/media/photo.png' );
+		unset( $image );
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$block = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) )[0];
+		$id    = $block['attrs']['id'];
+		$bound = $block['attrs']['metadata']['blocksEngineImageSelection'];
+		$urls  = array_map( static fn ( string $candidate ): string => strtok( trim( $candidate ), ' ' ), explode( ',', $bound['srcset'] ) );
+		$this->assertGreaterThanOrEqual( 2, count( array_unique( $urls ) ) );
+		$this->assertContains( wp_get_attachment_image_url( $id, 'medium' ), $urls, 'a generated sub-size belongs to the new attachment' );
+		$this->assertSame( wp_get_attachment_image_srcset( $id, 'full' ), $bound['srcset'] );
+		$this->assertSame( wp_get_original_image_url( $id ), $bound['src'] );
+		$this->assertStringContainsString( 'src="' . $bound['src'] . '"', $block['innerHTML'] );
+		$this->assertSame( $selection['sizes'], $bound['sizes'] );
+		$this->assertSame( $selection['loading'], $bound['loading'] );
 	}
 
 	/** An owner's existing site icon is kept. */
