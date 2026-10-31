@@ -520,7 +520,6 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'args'                              => $args,
 			'payload_reader'                    => $payload_reader,
 			'font_overlay'                      => isset( $prepared['font_overlay'] ) && is_array( $prepared['font_overlay'] ) ? $prepared['font_overlay'] : null,
-			'viewport_overlay'                  => isset( $prepared['viewport_overlay'] ) && is_array( $prepared['viewport_overlay'] ) ? $prepared['viewport_overlay'] : null,
 			'internal_link_overlay'             => isset( $prepared['internal_link_overlay'] ) && is_array( $prepared['internal_link_overlay'] ) ? $prepared['internal_link_overlay'] : null,
 			'default_content'                   => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
 			'rollback'                          => array(
@@ -712,10 +711,6 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: propagated
 			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
-		$viewport_overlay               = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
-			? $state['viewport_overlay']
-			: Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( $font_resolved, $font_overlay );
-		$link_bootstrap_overlay         = 'materialized' === ( $viewport_overlay['status'] ?? '' ) ? $viewport_overlay : $font_overlay;
 		$internal_link_overlay          = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
 			: ( is_array( $state['args']['theme_runtime_payload'] ?? null )
@@ -724,11 +719,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					'reason' => 'theme_runtime_package_owns_internal_links',
 					'writes' => array(),
 				)
-				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $link_bootstrap_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
+				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $font_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
 		$state['font_overlay']          = $font_overlay;
-		$state['viewport_overlay']      = $viewport_overlay;
 		$state['internal_link_overlay'] = $internal_link_overlay;
-		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ) );
+		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::internal_link_overlay_writes( $state['theme_dir'], $internal_link_overlay ) );
 		// Language ownership: the composed runtime never replays a source
 		// <html lang>; core's language_attributes() emits the site language.
 		Static_Site_Importer_Site_Language::compose_runtime_ownership( $state );

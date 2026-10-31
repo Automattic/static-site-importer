@@ -334,7 +334,6 @@
           "tests/smoke-url-site-collector.php",
           "tests/smoke-url-tls-context.php",
           "tests/smoke-validation-runtime-diagnostics.php",
-          "tests/smoke-viewport-metadata-materializer.php",
           "tests/smoke-visual-parity-oracle.php",
           "tests/smoke-visual-repair-css.php",
           "tests/smoke-webfont-producer-consumer.php",

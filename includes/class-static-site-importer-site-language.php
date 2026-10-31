@@ -210,7 +210,7 @@ final class Static_Site_Importer_Site_Language {
 		if ( isset( $state['composed_theme_writes'][ $path ] ) && is_string( $state['composed_theme_writes'][ $path ] ) ) {
 			$state['composed_theme_writes'][ $path ] = self::with_runtime_ownership( (string) $state['composed_theme_writes'][ $path ] );
 			$composed                                = (string) $state['composed_theme_writes'][ $path ];
-			foreach ( array( 'font_overlay', 'viewport_overlay', 'internal_link_overlay' ) as $key ) {
+			foreach ( array( 'font_overlay', 'internal_link_overlay' ) as $key ) {
 				if ( ! is_array( $state[ $key ]['writes'] ?? null ) ) {
 					continue;
 				}

@@ -183,10 +183,8 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
-	$assert( str_contains( $bootstrap, 'Static Site Importer authored viewport metadata' ) && str_contains( $bootstrap, "'width=320, user-scalable=yes'" ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'theme-bootstrap-materializes-authored-viewport', $bootstrap );
+	$assert( 'width=320, user-scalable=yes' === ( $metadata['meta'][1]['content'] ?? '' ), 'source-viewport-value-is-preserved-in-document-metadata' );
 	$assert( ! str_contains( $bootstrap, 'Static Site Importer authored route document titles' ) && ! str_contains( $bootstrap, 'Static Site Importer authored route head metadata' ), 'theme-does-not-own-route-metadata', $bootstrap );
-	$viewport_receipt = $result['materialization_receipt']['completed']['viewport_metadata'] ?? array();
-	$assert( 'completed' === ( $viewport_receipt['status'] ?? '' ) && 'width=320, user-scalable=yes' === ( $viewport_receipt['declaration'] ?? '' ), 'viewport-materialization-is-recorded-in-receipt' );
 	$previous_query       = $GLOBALS['wp_query'] ?? null;
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();
