@@ -49,6 +49,21 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( array( $ids[0] ), $state['applied']['attachments'] );
 	}
 
+	/** A theme image whose filename has non-ASCII characters binds whether its URL is raw or percent-encoded. */
+	public function test_non_ascii_image_filename_becomes_attachment(): void {
+		$uri   = get_theme_root_uri() . '/' . $this->slug() . '/media/';
+		$name  = 'Single-‹-Editor-—-WordPress.png';
+		$image = static fn( string $src ): string => '<!-- wp:image --><figure class="wp-block-image"><img src="' . $src . '" alt=""/></figure><!-- /wp:image -->';
+		$state = $this->state_with_page( $image( $uri . $name ) . $image( $uri . rawurlencode( $name ) ) );
+		copy( $this->theme_dir . '/media/photo.png', $this->theme_dir . '/media/' . $name );
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$this->assertSame( 2, $report['bound_block_count'] );
+		$this->assertSame( 1, $report['attachment_count'] );
+	}
+
 	/** A Blocks Engine featured-image handoff becomes the post thumbnail. */
 	public function test_featured_image_metadata_asset_becomes_post_thumbnail(): void {
 		$state = $this->state_with_page( '<!-- wp:paragraph --><p>Post</p><!-- /wp:paragraph -->' );

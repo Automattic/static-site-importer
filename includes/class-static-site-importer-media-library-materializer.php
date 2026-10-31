@@ -455,9 +455,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/** Resolve only the explicitly supported formats within the generated theme. */
+	/**
+	 * The still-encoded path of a URL.
+	 *
+	 * PHP's parse_url() rewrites bytes it treats as control characters to `_`,
+	 * which can include UTF-8 bytes such as the 0x80 in `‹`. Percent-encoding
+	 * non-ASCII bytes first keeps the authored filename for rawurldecode().
+	 */
+	private static function url_path( string $url ): string {
+		$encoded = (string) preg_replace_callback( '/[\x80-\xff]+/', static fn( array $bytes ): string => rawurlencode( $bytes[0] ), $url );
+		return (string) wp_parse_url( $encoded, PHP_URL_PATH );
+	}
+
 	private static function theme_relative_asset( string $src, string $theme_uri, array $extensions ): ?string {
-		$path = (string) wp_parse_url( $src, PHP_URL_PATH );
-		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
+		$path = self::url_path( $src );
+		$base = self::url_path( $theme_uri );
 		if ( '' === $path || '' === $base || ! str_starts_with( $path, $base . '/' ) ) {
 			return null;
 		}
@@ -663,7 +675,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				'image/avif'    => 'avif',
 				'image/svg+xml' => 'svg',
 			);
-			$stem       = pathinfo( rawurldecode( (string) wp_parse_url( $record['original']['source_url'], PHP_URL_PATH ) ), PATHINFO_FILENAME );
+			$stem       = pathinfo( rawurldecode( self::url_path( $record['original']['source_url'] ) ), PATHINFO_FILENAME );
 			$filename   = ( '' !== trim( $alt ) ? sanitize_title( $alt ) : sanitize_title( $stem ) ) . '.' . ( $extensions[ $record['original']['content_type'] ] ?? pathinfo( $relative, PATHINFO_EXTENSION ) );
 		}
 		try {
@@ -774,7 +786,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			// theme destination rather than an ambiguous attachment.
 			return 0;
 		}
-		$stem = rawurldecode( (string) wp_parse_url( (string) ( $record['original']['source_url'] ?? '' ), PHP_URL_PATH ) );
+		$stem = rawurldecode( self::url_path( (string) ( $record['original']['source_url'] ?? '' ) ) );
 		$stem = pathinfo( $stem, PATHINFO_FILENAME );
 		$stem = '' !== trim( (string) $stem ) ? (string) $stem : pathinfo( $relative, PATHINFO_FILENAME );
 		// Admit exactly the verified extension and MIME during this upload;

@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
+
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
@@ -804,7 +806,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$page        = $claim['page'];
 			$existing    = (int) ( $page['planned_existing_id'] ?? 0 );
 			$destination = (int) $claim['post_id'];
-			$occupied    = get_page_by_path( trim( $claim['route'], '/' ), OBJECT, array( 'page', 'post' ) );
+			$occupied    = Static_Site_Importer_Route_Occupant::find( $claim['route'], array( 'page', 'post' ) );
 			if ( $occupied && (int) $occupied->ID !== $destination && (int) $occupied->ID !== $existing && 'publish' === $occupied->post_status ) {
 				return new WP_Error( 'whole_page_source_route_occupied', 'An unrelated published post occupies the source route.' );
 			}
