@@ -22,6 +22,11 @@ namespace {
 			return strip_tags( $text );
 		}
 	}
+	if ( ! function_exists( 'esc_html' ) ) {
+		function esc_html( $text ): string {
+			return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8', false );
+		}
+	}
 	if ( ! function_exists( 'sanitize_key' ) ) {
 		function sanitize_key( $key ) {
 			return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
