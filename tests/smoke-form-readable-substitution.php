@@ -3,8 +3,8 @@
 // phpcs:ignoreFile -- Standalone CLI regression.
 require_once __DIR__ . '/fixtures/core-html-api.php';
 $wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
-require_once $wp_root . '/wp-includes/class-wp-block-parser.php';
-require_once $wp_root . '/wp-includes/blocks.php';
+require_once __DIR__ . '/fixtures/core-block-parser.php';
+ssi_test_require_core_block_parser( $wp_root );
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
