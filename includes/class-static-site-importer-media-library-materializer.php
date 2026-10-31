@@ -406,9 +406,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $block_match[0];
 		}
 		if ( $authored ) {
-			$srcset = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			$candidate_ids = array();
+			$srcset        = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $candidate_ids );
 			if ( null !== $error ) {
 				return $block_match[0];
+			}
+			// Exporters may collapse a whole family to one representative file.
+			// Use its real renditions rather than repeat that file at every width.
+			if ( array( $attachment_id ) === array_values( array_unique( $candidate_ids ) ) ) {
+				$attachment_srcset = wp_get_attachment_image_srcset( $attachment_id, 'full' );
+				if ( false !== $attachment_srcset ) {
+					$srcset = $attachment_srcset;
+				}
 			}
 			// The selection stays keyed to the image it describes, now bound.
 			$attrs['metadata']['blocksEngineImageSelection'] = array_merge(
@@ -1147,15 +1156,19 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $attachments
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 * @param int[]|null $candidate_ids Optional resolved candidate IDs, including 0 for unbound URLs.
 	 */
-	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): string {
+	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, ?array &$candidate_ids = null ): string {
 		// Candidate commas belong to the shared producer parser, not the URL
 		// scanner used for arbitrary markup. Descriptorless candidates end in
 		// commas while URL-internal commas remain part of the asset identity.
 		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite(
 			html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
-			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
+			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error, &$candidate_ids ): string {
 				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+				if ( null !== $candidate_ids ) {
+					$candidate_ids[] = $id;
+				}
 				if ( null !== $error || $id <= 0 ) {
 					return $url;
 				}

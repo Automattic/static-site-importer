@@ -331,6 +331,38 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( $selection['sizes'], $bound['sizes'] );
 	}
 
+	/** A collapsed source family uses the destination attachment's generated renditions. */
+	public function test_collapsed_image_selection_uses_attachment_srcset(): void {
+		$photo     = get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png';
+		$selection = array(
+			'src'     => $photo,
+			'srcset'  => $photo . ' 1024w, ' . $photo . ' 300w, ' . $photo . ' 768w, ' . $photo . ' 1408w',
+			'sizes'   => '(max-width: 992px) 100vw, 33vw',
+			'loading' => 'lazy',
+		);
+		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
+		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $photo . '" alt="Photo"/></figure><!-- /wp:image -->';
+		$state     = $this->state_with_page( $markup );
+		$image     = imagecreatetruecolor( 1408, 768 );
+		imagepng( $image, $this->theme_dir . '/media/photo.png' );
+		unset( $image );
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$block = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) )[0];
+		$id    = $block['attrs']['id'];
+		$bound = $block['attrs']['metadata']['blocksEngineImageSelection'];
+		$urls  = array_map( static fn ( string $candidate ): string => strtok( trim( $candidate ), ' ' ), explode( ',', $bound['srcset'] ) );
+		$this->assertGreaterThanOrEqual( 2, count( array_unique( $urls ) ) );
+		$this->assertContains( wp_get_attachment_image_url( $id, 'medium' ), $urls, 'a generated sub-size belongs to the new attachment' );
+		$this->assertSame( wp_get_attachment_image_srcset( $id, 'full' ), $bound['srcset'] );
+		$this->assertSame( wp_get_original_image_url( $id ), $bound['src'] );
+		$this->assertStringContainsString( 'src="' . $bound['src'] . '"', $block['innerHTML'] );
+		$this->assertSame( $selection['sizes'], $bound['sizes'] );
+		$this->assertSame( $selection['loading'], $bound['loading'] );
+	}
+
 	/** An owner's existing site icon is kept. */
 	public function test_existing_site_icon_is_kept(): void {
 		update_option( 'site_icon', 999999 );
