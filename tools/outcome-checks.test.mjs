@@ -228,18 +228,20 @@ test('source inventories retain unsupported controls and require real form submi
 
 // The editor's heartbeat rewrites the draft's post lock, so an editor left open
 // would mutate the site that theme independence then measures.
-test('editor validation leaves the editor before later checks run', async () => {
+test('editor validation reports readable issues and leaves the editor before later checks run', async () => {
   let beats = 0;
   const server = http.createServer((req, res) => {
     if (req.url === '/heartbeat') { beats++; res.end(); return; }
     res.setHeader('Content-Type', 'text/html');
-    res.end('<script>window.wp = { blocks: { parse: () => [], validateBlock: () => [true, []], getBlockTypes: () => [{}] } }; setInterval(() => fetch("/heartbeat"), 50);</script>');
+    res.end('<script>window.wp = { blocks: { parse: () => [{ name: "core/image", innerBlocks: [] }], validateBlock: () => [false, [{ log: () => {}, args: ["Expected attributes %o, instead saw %o.", [["class", "a"]], [["class", "b"]]] }]], getBlockTypes: () => [{}] } }; setInterval(() => fetch("/heartbeat"), 50);</script>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await validateOutcomeDocuments({ page, candidateOrigin: `http://127.0.0.1:${server.address().port}`, documents: [{ id: 1, type: 'page', content: '' }] });
+    const [row] = await validateOutcomeDocuments({ page, candidateOrigin: `http://127.0.0.1:${server.address().port}`, documents: [{ id: 1, type: 'page', content: '' }] });
+    // Invalid-block evidence states what the editor expected and saw.
+    assert.deepEqual(row.results[0].issues, ['Expected attributes [["class","a"]], instead saw [["class","b"]].']);
     const after = beats;
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(beats, after);
