@@ -143,7 +143,7 @@ test('document outcomes measure schemes, alpha, images and exact chrome decision
     // The retained source page: its muted note is the source's own design. It is
     // split across text nodes and revealed only once scrolled into view.
     if (req.url === '/source/') { res.end('<main><div style="height:2000px"></div><p id="note" style="color:#999;background:white;opacity:0;transition:opacity .2s">Muted <!---->note</p><script>new IntersectionObserver(([entry]) => { if (entry.isIntersecting) note.style.opacity = 1; }).observe(note);</script></main>'); return; }
-    res.end(`<style>body{color:#111;background:white} @media(prefers-color-scheme:dark){body{color:white;background:#111}} .image{color:black;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22%3E%3Cpath fill=%22white%22 d=%22M0 0h1v1H0z%22/%3E%3C/svg%3E')}</style><header>Source header</header><main><p class="image">Image text</p><p style="${mutation === 'text' ? 'color:#eee;background:white' : mutation === 'alpha' ? 'color:rgba(0,0,0,.1);background:white' : mutation === 'unsupported' ? 'filter:blur(1px)' : mutation === 'gradient' ? 'background-image:linear-gradient(white,black)' : ''}">Readable text</p><button style="${mutation === 'button' ? 'color:white;background:white' : ''}">Control</button><p style="display:none;color:white;background:white">Hidden text</p>${mutation === 'source-muted' ? '<p style="color:#999;background:white">Muted note</p>' : mutation === 'source-lowered' ? '<p style="color:#ccc;background:white">Muted note</p>' : ''}</main><footer>Source footer</footer>${mutation === 'footer' ? '<aside>Injected widget</aside>' : ''}`);
+    res.end(`<style>body{color:#111;background:white} @media(prefers-color-scheme:dark){body{color:white;background:#111}} .image{color:black;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22%3E%3Cpath fill=%22white%22 d=%22M0 0h1v1H0z%22/%3E%3C/svg%3E')}</style><header>Source header</header><main><p class="image">Image text</p><p style="${mutation === 'text' ? 'color:#eee;background:white' : mutation === 'alpha' ? 'color:rgba(0,0,0,.1);background:white' : mutation === 'unsupported' ? 'filter:blur(1px)' : mutation === 'gradient' ? 'background-image:linear-gradient(white,black)' : ''}">Readable text</p><button style="${mutation === 'button' ? 'color:white;background:white' : ''}">Control</button><p style="display:none;color:white;background:white">Hidden text</p>${mutation === 'source-muted' ? '<p style="color:#999;background:white">Muted note</p>' : mutation === 'source-lowered' ? '<p style="color:#ccc;background:white">Muted note</p>' : mutation === 'source-doubled' ? '<p style="color:#999;background:white">Muted note</p>'.repeat(2) : ''}</main><footer>Source footer</footer>${mutation === 'footer' ? '<aside>Injected widget</aside>' : ''}`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true });
@@ -177,8 +177,8 @@ test('document outcomes measure schemes, alpha, images and exact chrome decision
     const muted = (await run()).readability;
     assert.equal(muted.status, 'pass', JSON.stringify(muted));
     assert.ok(muted.evidence.some(row => row.text === 'Muted note' && row.reason === 'source_contrast_preserved' && row.source_ratio < row.required));
-    mutation = 'source-lowered';
-    assert.equal((await run()).readability.status, 'fail');
+    // Lowered contrast fails, and one source occurrence justifies only one copy.
+    for (mutation of ['source-lowered', 'source-doubled']) assert.equal((await run()).readability.status, 'fail', mutation);
     delete config.documents['/'].sourceUrl;
     mutation = 'gradient';
     const gradient = await run();
