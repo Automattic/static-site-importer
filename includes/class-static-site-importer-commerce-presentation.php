@@ -59,6 +59,68 @@ class Static_Site_Importer_Commerce_Presentation extends Static_Site_Importer_Pr
 	}
 
 	/**
+	 * WooCommerce's block-theme stylesheet styles bare elements on every store
+	 * page (`.woocommerce-page select`, `.woocommerce-page label`), and its
+	 * class-qualified selectors outrank the source design's own element rules.
+	 * On a page rendered from the source design, deliver the same stylesheet
+	 * inside a cascade layer instead: the unlayered source rules then win
+	 * wherever they set a property, and every WooCommerce rule still applies
+	 * where the source says nothing (store notice, select2, cart tables).
+	 * Surfaces WooCommerce renders itself keep the plain stylesheet.
+	 *
+	 * @return void
+	 */
+	protected static function reconcile_provider_styles(): void {
+		$handle = 'woocommerce-blocktheme';
+		if ( ! wp_style_is( $handle, 'enqueued' ) || self::is_provider_rendered_surface() ) {
+			return;
+		}
+		$styles = wp_styles();
+		$style  = $styles->registered[ $handle ] ?? null;
+		if ( ! is_object( $style ) || ! is_string( $style->src ) || '' === $style->src ) {
+			return;
+		}
+
+		$src = $style->src;
+		if ( is_rtl() && 'replace' === $styles->get_data( $handle, 'rtl' ) ) {
+			$src = str_replace( '.css', '-rtl.css', $src );
+		}
+		if ( ! preg_match( '#^(https?:)?//#', $src ) ) {
+			$src = $styles->base_url . $src;
+		}
+		if ( $style->ver ) {
+			$src = add_query_arg( 'ver', $style->ver, $src );
+		}
+		$src = (string) apply_filters( 'style_loader_src', $src, $handle );
+
+		$layered = 'static-site-importer-woocommerce-blocktheme';
+		wp_dequeue_style( $handle );
+		wp_register_style( $layered, false, $style->deps, $style->ver );
+		wp_enqueue_style( $layered );
+		wp_add_inline_style( $layered, '@import url("' . esc_url_raw( $src ) . '") layer(woocommerce);' );
+		foreach ( (array) $styles->get_data( $handle, 'after' ) as $after ) {
+			if ( is_string( $after ) && '' !== $after ) {
+				wp_add_inline_style( $layered, $after );
+			}
+		}
+	}
+
+	/**
+	 * Whether WooCommerce, not the imported design, renders this request: My
+	 * Account, an endpoint such as order-received, or a template WooCommerce
+	 * supplies because the imported theme has none.
+	 *
+	 * @return bool
+	 */
+	private static function is_provider_rendered_surface(): bool {
+		if ( ( function_exists( 'is_account_page' ) && is_account_page() ) || ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url() ) ) {
+			return true;
+		}
+		$template = isset( $GLOBALS['_wp_current_template_id'] ) ? (string) $GLOBALS['_wp_current_template_id'] : '';
+		return str_starts_with( $template, 'woocommerce/woocommerce//' );
+	}
+
+	/**
 	 * The scoped normalization CSS for the inline add-to-cart control.
 	 *
 	 * @return string
