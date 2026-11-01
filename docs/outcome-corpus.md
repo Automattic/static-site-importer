@@ -75,12 +75,40 @@ and the site's `downloads` directory. A runtime is never reused.
 Captured fixture directories may include `outcome-bindings.json` containing the
 JSON portions of the existing outcome configuration (source hosts, exhaustive
 interactive capture, control/form bindings, documents, aliases and colour schemes).
-Missing bindings remain unsupported, not inferred passing evidence. The runtime
-supplies server inventory and theme-switch executors independently.
+Explicit values override automatic bindings, including individual document,
+control and form entries. The runtime supplies inventory and theme-switch executors.
 
-A passing committed multi-site end-to-end regression proof and automatic binding
-of the producer's capture contracts remain unfinished. Override declarations
-also still need installed-artifact verification. The default must not yet be
+The default reads only `blocks-engine-capture/capture-receipt/v1` and its declared
+reports (including the cleanup evidence path), plus the website's `_redirects`.
+Capture sidecars remain outside the website; both directory and JSON artifact
+intake are supported. No producer-specific filename is consulted.
+
+- Redirect source paths become aliases with destination-relative expected paths;
+  duplicate-route receipt entries also declare aliases. String aliases remain valid
+  explicit bindings. Alias probes verify one redirect to the declared destination.
+- A complete `source-cleanup` report declares telemetry markers: hosts and selectors
+  of telemetry/analytics records with action `remove` or `removed`. Only actual
+  removal records count, not policy rules. Complete reports with no such records
+  explicitly declare an empty array. Truncated, failed or absent evidence does not.
+  Selectors are also checked against the candidate head DOM.
+- Documents use the retained PHP source server as `sourceOrigin`. A uniquely
+  preserved declared content landmark or document scope class is a boundary;
+  otherwise `main` is used only when both documents contain exactly one. Without
+  a boundary the full-document check stays unsupported.
+- Captured interaction pages supply widths, components and route navigation.
+  Source native forms are enumerated exhaustively. Candidate identities require
+  a unique preserved id or `data-blocks-engine-capture-*` evidence attribute;
+  classes, text and positional similarity are not identities. Transitions also
+  require captured boolean visibility expectations or changed `hidden`/ARIA
+  attributes in captured before/after snapshots. Unsupported controls retain
+  individual reasons, including kinds the probe cannot exercise.
+- A preserved form can be checked for missing delivery ownership (a failure),
+  but automatic binding never invents a recipient, provider, submission fields
+  or success assertion. An unidentifiable form remains unsupported. Explicit
+  form contracts enable real submission probes.
+
+A passing committed multi-site end-to-end regression proof remains unfinished.
+Override declarations also still need installed-artifact verification. The default must not yet be
 used as complete release certification.
 
 Broader architecture slices remain tracked in

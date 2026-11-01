@@ -1,0 +1,1 @@
+{"schema":"blocks-engine-capture/source-cleanup/v8","pages":[{"url":"https://source.example/","reports":[{"records":[{"category":"telemetry","rule":"tracker","host":"analytics.example","selector":"script.tracker","action":"removed"}],"truncated":false,"failures":[]}]}]}

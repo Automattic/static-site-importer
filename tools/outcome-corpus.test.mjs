@@ -5,13 +5,77 @@ import os from 'node:os';
 import path from 'node:path';
 import { outcomeMatrix, outcomeMatrixMarkdown } from '../lib/outcome-matrix.mjs';
 import { validateCorpus, runOutcomeCorpus } from './run-outcome-corpus.mjs';
-import { unavailableOutcomes } from '../lib/outcome-checks.mjs';
+import { deriveOutcomeBindings } from '../lib/outcome-capture-bindings.mjs';
+import { unavailableOutcomes, runOutcomeChecks } from '../lib/outcome-checks.mjs';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { validateOutcomeDocuments } from '../lib/outcome-editor-validation.mjs';
 import http from 'node:http';
 import { installedIdentities } from '../lib/default-outcome-toolchain.mjs';
 import { execFileSync } from 'node:child_process';
+
+test('capture contracts bind real outcome probes without producer knowledge', async () => {
+  const root = path.resolve('tests/fixtures/outcome-capture');
+  const html = fs.readFileSync(path.join(root, 'website/index.html'), 'utf8');
+  const server = http.createServer((request, response) => {
+    if (request.url === '/old') { response.writeHead(301, { location: '/' }); response.end(); }
+    else { response.setHeader('Content-Type', 'text/html'); response.end(html); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch();
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const fixture = { source: root, directory: path.join(root, 'website') };
+    const args = { fixture, documents: { '/': { html, sourceUrl: origin } }, candidateOrigin: origin, sourceOrigin: origin, browser };
+    const config = await deriveOutcomeBindings(args);
+    assert.deepEqual(config.aliases, [{ path: '/old', destination: '/' }]);
+    assert.deepEqual(config.telemetryMarkers, ['analytics.example', 'script.tracker']);
+    assert.equal(config.documents['/'].sourceContent, 'main');
+    assert.deepEqual(config.widths, [390]);
+    assert.equal(config.capture.pages[0].forms.length, 1);
+    assert.equal(config.controls['/:control:0'].trigger, '#toggle');
+    const types = ['post', 'page', 'wp_template', 'wp_template_part', 'wp_navigation'];
+    config.collectInventory = () => ({ schema: 'static-site-importer/outcome-inventory/v1', types, documents: [{ id: 1, type: 'page', content: '', parse: { parser: 'parse_blocks', valid: true } }] });
+    config.colourSchemes = ['light'];
+    const page = await browser.newPage();
+    const report = await runOutcomeChecks({ browser, page, candidateOrigin: origin, routes: ['/'], widths: config.widths, config });
+    for (const name of ['head_singletons', 'link_graph', 'full_document', 'control_inventory']) assert.ok(['pass', 'fail'].includes(report.checks[name].status), name);
+    assert.equal(report.checks.forms.status, 'fail');
+    assert.equal(report.checks.forms.evidence[0].reason, 'recipient_provider_or_owner_handoff_required');
+    // Explicit owner delivery evidence enables the form probe; a broken handler
+    // is a measured failure, never an inferred pass.
+    const overridden = await deriveOutcomeBindings({ ...args, bindings: { forms: { '/:form:0': { selector: '#contact', ownerHandoff: 'Owner must configure delivery', successSelector: '#sent' } }, telemetryMarkers: [] } });
+    assert.deepEqual(overridden.telemetryMarkers, []);
+    const { interactiveOutcomes } = await import('../lib/interactive-outcomes.mjs');
+    const checked = await interactiveOutcomes({ browser, candidateOrigin: origin, routes: ['/'], widths: [390], config: overridden });
+    assert.equal(checked.forms.status, 'fail');
+    const unbound = structuredClone(overridden);
+    unbound.controls['/:control:0'] = { unsupportedReason: 'identity_not_preserved' };
+    const missing = await interactiveOutcomes({ browser, candidateOrigin: origin, routes: ['/'], widths: [390], config: unbound });
+    assert.equal(missing.control_inventory.status, 'unsupported');
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-binding-evidence-'));
+    try {
+      fs.cpSync(root, temporary, { recursive: true });
+      const copy = { source: path.join(temporary, 'website'), source_kind: 'website_directory', directory: path.join(temporary, 'website') };
+      const cleanupFile = path.join(temporary, 'cleanup.json');
+      const cleanup = JSON.parse(fs.readFileSync(cleanupFile, 'utf8'));
+      cleanup.pages[0].reports[0].records = [];
+      fs.writeFileSync(cleanupFile, JSON.stringify(cleanup));
+      const none = await deriveOutcomeBindings({ ...args, fixture: copy });
+      assert.deepEqual(none.telemetryMarkers, []);
+      cleanup.pages[0].reports[0].truncated = true;
+      fs.writeFileSync(cleanupFile, JSON.stringify(cleanup));
+      const incomplete = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html: html.replace('<main>', '<div>').replace('</main>', '</div>') } } });
+      assert.equal(incomplete.telemetryMarkers, undefined);
+      assert.equal(incomplete.documents['/'].sourceContent, undefined);
+      fs.rmSync(path.join(temporary, 'capture-receipt.json'));
+      const absent = await deriveOutcomeBindings({ ...args, fixture: copy });
+      assert.equal(absent.capture, undefined);
+      assert.equal(absent.telemetryMarkers, undefined);
+    } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+    await page.close();
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
 
 test('saved documents use real client parser and save-contract validation for every owner type', async () => {
   const bundle = await build({ stdin: { contents: `import * as blocks from '@wordpress/blocks'; import {createElement} from '@wordpress/element'; window.wp={blocks}; blocks.registerBlockType('synthetic/text', {title:'Text', category:'text', attributes:{text:{type:'string',source:'text',selector:'p'}}, save:({attributes})=>createElement('p',null,attributes.text)});`, resolveDir: process.cwd() }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } });
