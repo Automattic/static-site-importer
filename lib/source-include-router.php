@@ -3,6 +3,12 @@
  * Router for the retained source server: serves each page with its shared
  * parts expanded, so outcome probes compare against the document a visitor saw.
  * Directive grammar and bounds come from Blocks Engine's artifact includes.
+ *
+ * This is a `php -S` router for local outcome probes, not WordPress code: it
+ * runs without WordPress, reads local files and serves the source page's own
+ * markup unescaped by design.
+ *
+ * phpcs:disable WordPress.Security.EscapeOutput, WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.WP.AlternativeFunctions.parse_url_parse_url, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPress.Security.ValidatedSanitizedInput
  */
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\HtmlFragmentIncludes;
