@@ -59,6 +59,11 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( ! empty( $page['whole_page_candidates'] ) || ( '' !== $source && trim( $source, '/' ) !== trim( (string) ( $page['route']['path'] ?? '' ), '/' ) ) ) {
 				return true; }
 		}
+		foreach ( array_merge( $plan['taxonomy_entities'] ?? array(), $plan['author_entities'] ?? array() ) as $entity ) {
+			if ( ! empty( $entity['archive']['source_route'] ) ) {
+				return true;
+			}
+		}
 		$owned = function_exists( 'get_option' ) ? get_option( self::OWNERSHIP_OPTION, array() ) : array();
 		return is_array( $owned ) && isset( $owned[ (string) ( $args['slug'] ?? '' ) ] );
 	}
@@ -213,9 +218,8 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( ! is_string( $target ) || '' === $target ) {
 				return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed source document has no native destination URL.' );
 			}
-			$target_path = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
-			$public      = self::served_source_path( $source );
-			$sources     = array_merge(
+			$public  = self::served_source_path( $source );
+			$sources = array_merge(
 				array( $route_path, $public ),
 				$aliases[ $source ] ?? array()
 			);
@@ -223,31 +227,77 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( '' === (string) $from ) {
 					continue;
 				}
-				$from         = '/' . ltrim( rawurldecode( (string) $from ), '/' );
-				$request_path = $home_path . $from;
-				if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) || self::core_route_id( $from ) === $id ) {
-					continue; }
-				if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
-					return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+				$result = self::add_route( $routes, (string) $from, $target, $home_path, $id );
+				if ( is_wp_error( $result ) ) {
+					return $result;
 				}
-				$occupied = self::published_route_owner( $from );
-				if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $id ) {
-					return new WP_Error( 'static_site_importer_redirect_route_occupied', 'Unrelated published content owns a requested source route.' );
+			}
+		}
+		// Only applied entities may claim archive routes. Terms carry their
+		// source route in the receipt; authors bind the plan archive by slug.
+		foreach ( array( 'taxonomy_entities', 'author_entities' ) as $collection ) {
+			foreach ( $receipt['completed'][ $collection ] ?? array() as $entity ) {
+				if ( 'taxonomy_entities' === $collection ) {
+					if ( (int) ( $entity['term_id'] ?? 0 ) <= 0 ) {
+						continue;
+					}
+					$from   = (string) ( $entity['archive_route'] ?? '' );
+					$target = get_term_link( (int) $entity['term_id'], (string) ( $entity['taxonomy'] ?? '' ) );
+				} else {
+					if ( (int) ( $entity['user_id'] ?? 0 ) <= 0 ) {
+						continue;
+					}
+					$from = '';
+					foreach ( $receipt['plan']['author_entities'] ?? array() as $author ) {
+						if ( ( $author['slug'] ?? '' ) === ( $entity['slug'] ?? '' ) ) {
+							$from = (string) ( $author['archive']['source_route'] ?? '' );
+							break;
+						}
+					}
+					$target = get_author_posts_url( (int) $entity['user_id'] );
 				}
-				$routes[ $request_path ] = $target;
+				if ( '' === $from ) {
+					continue;
+				}
+				if ( ! is_string( $target ) || '' === $target ) {
+					return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed archive has no native destination URL.' );
+				}
+				$result = self::add_route( $routes, $from, $target, $home_path );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 			}
 		}
 		if ( count( $routes ) > self::MAX_RULES ) {
 			return new WP_Error( 'static_site_importer_redirect_bound_exceeded', 'The source redirect inventory exceeds its supported bound.' );
 		}
 		foreach ( $routes as $from => $target ) {
-			$path = wp_parse_url( $target, PHP_URL_PATH );
+			$path = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
 			if ( isset( $routes[ $path ] ) ) {
 				return new WP_Error( 'static_site_importer_redirect_chain_unproven', 'A destination is itself a source redirect; native final destinations are required.' );
 			}
 		}
 		ksort( $routes, SORT_STRING );
 		return $routes;
+	}
+
+	/** Apply the same canonical source and collision checks to every native entity. */
+	private static function add_route( array &$routes, string $from, string $target, string $home_path, int $post_id = 0 ) {
+		$from         = '/' . ltrim( rawurldecode( $from ), '/' );
+		$request_path = $home_path . $from;
+		$target_path  = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
+		if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) || ( $post_id > 0 && self::core_route_id( $from ) === $post_id ) ) {
+			return true;
+		}
+		if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
+			return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+		}
+		$occupied = self::published_route_owner( $from );
+		if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $post_id ) {
+			return new WP_Error( 'static_site_importer_redirect_route_occupied', 'Unrelated published content owns a requested source route.' );
+		}
+		$routes[ $request_path ] = $target;
+		return true;
 	}
 
 	/** Resolve a real core request without leaking its query or server state. */
