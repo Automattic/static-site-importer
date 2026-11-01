@@ -43,6 +43,10 @@ $actual = $provider['innerBlocks'][0];
 $compare = static function( array $before, array $after, string $path = 'root' ) use ( &$compare, &$checks ): void {
 	if ( isset( $before['form_control_index'] ) ) {
 		$index = $before['form_control_index'];
+		if ( 'core/buttons' === ( $after['blockName'] ?? '' ) ) {
+			$checks[ 'button parent at ' . $path ] = 1 === count( $after['innerBlocks'] );
+			$after = $after['innerBlocks'][0];
+		}
 		$checks[ 'control at ' . $path ] = 14 === $index ? 'core/button' === $after['blockName'] && 'submit' === ( $after['attrs']['type'] ?? '' ) && '' !== trim( wp_strip_all_tags( $after['innerHTML'] ) ) : ( in_array( $index, array( 0, 1, 2, 9, 10, 11 ), true ) ? 'core/button' === $after['blockName'] : str_starts_with( $after['blockName'], 'jetpack/field-' ) );
 		return;
 	}

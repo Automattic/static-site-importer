@@ -69,6 +69,7 @@
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-button-parent.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-linked-placeholder-colors.php", "environment": "standalone-php" },
     { "path": "tests/form-linked-placeholder-colors.test.mjs", "environment": "operator-only", "reason": "Chromium linked stylesheet placeholder colour regression." },

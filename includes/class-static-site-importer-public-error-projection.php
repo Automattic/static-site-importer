@@ -339,6 +339,12 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$row[ $field ] = self::project_public_token( $diagnostic[ $field ], 128 );
 			}
 		}
+		foreach ( array( 'block_name', 'parent_block_name' ) as $field ) {
+			$value = self::project_public_text( $diagnostic[ $field ] ?? null, 128 );
+			if ( 1 === preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $value ) ) {
+				$row[ $field ] = $value;
+			}
+		}
 		if ( isset( $diagnostic['declaration_id'] ) ) {
 			$row['declaration_id'] = self::project_public_identity( $diagnostic['declaration_id'] );
 		}

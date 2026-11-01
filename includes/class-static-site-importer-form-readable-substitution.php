@@ -299,7 +299,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/** Preserve saved wrapper fragments, changing only their child slots. */
-	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
+	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name = '' ): ?array {
 		if ( isset( $block['form_choice_group_index'] ) ) {
 			return self::choice_field( $block, $state );
 		}
@@ -312,6 +312,14 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( 'core/button' === $field['name'] && preg_match_all( '/(?:^|\s)ssi-source-submit--(\S+)/', $field['attrs']['className'] ?? '', $source ) ) {
 				// The wrapper is the source button's box (with_source_box_submit_wrapper()).
 				$field['attrs']['className'] .= ' ' . implode( ' ', $source[1] );
+			}
+			// The source control can occupy a group or a captured layout-shell
+			// slot. Core buttons require their own immediate buttons parent.
+			if ( 'core/button' === $field['name'] && 'core/buttons' !== $parent_name ) {
+				$field = array(
+					'name'        => 'core/buttons',
+					'innerBlocks' => array( $field ),
+				);
 			}
 			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 		}
@@ -331,7 +339,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				}
 				continue;
 			}
-			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state );
+			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state, (string) ( $block['blockName'] ?? '' ) );
 			if ( null !== $child ) {
 				$children[] = $child;
 				$slots[]    = null;

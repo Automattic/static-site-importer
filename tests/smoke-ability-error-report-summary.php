@@ -82,6 +82,8 @@ $hostile = static_site_importer_ability_error(
 				'selector'    => 'form.contact',
 				'provider'    => 'generic-provider',
 				'reason_code' => 'provider_unavailable',
+				'block_name' => 'core/button',
+				'parent_block_name' => 'neutral/layout-shell',
 			),
 			array(
 				'code'        => 'provider_entity_materialization_failed',
@@ -96,6 +98,9 @@ $hostile = static_site_importer_ability_error(
 );
 $hostile_diagnostics = $hostile['diagnostics'] ?? array();
 $hostile_json        = json_encode( $hostile );
+$assert( 'core/button' === ( $hostile_diagnostics[0]['block_name'] ?? '' ) && 'neutral/layout-shell' === ( $hostile_diagnostics[0]['parent_block_name'] ?? '' ), 'admission-block-names-survive-public-error-projection' );
+$public_admission = Static_Site_Importer_Public_Error_Projection::project_public_error_data( array( 'diagnostics' => $hostile_diagnostics ) );
+$assert( 'core/button' === ( $public_admission['diagnostics'][0]['block_name'] ?? '' ) && 'neutral/layout-shell' === ( $public_admission['diagnostics'][0]['parent_block_name'] ?? '' ), 'admission-block-names-survive-receipt-data-projection' );
 $assert( 'pages/é.html' === ( $hostile_diagnostics[0]['source_path'] ?? '' ) && 'form.contact' === ( $hostile_diagnostics[0]['selector'] ?? '' ), 'canonical-ability-error-retains-safe-relative-unicode-location' );
 $assert( ! isset( $hostile_diagnostics[1]['source_path'], $hostile_diagnostics[1]['selector'], $hostile_diagnostics[1]['provider'], $hostile_diagnostics[1]['reason_code'] ) && ! str_contains( (string) ( $hostile['error']['message'] ?? '' ), 'secret' ) && false !== $hostile_json && ! str_contains( $hostile_json, 'password' ), 'canonical-ability-error-redacts-unsafe-fields-and-emits-valid-json' );
 

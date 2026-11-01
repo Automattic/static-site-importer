@@ -20,7 +20,7 @@ $overlay = $row['provider_layout_overlay_css']['css'];
 $markup = $row['block_markup'];
 preg_match( '/<!-- wp:(?:core\/)?button (.*?) -->/', $markup, $match );
 $attrs = json_decode( $match[1] ?? '{}', true );
-preg_match( '/<div class="wp-block-button[^>]*>.*?<\/div>/s', $markup, $match );
+preg_match( '/<div class="wp-block-button(?:\s|")[^>]*>.*?<\/div>/s', $markup, $match );
 $button = Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $match[0] ?? '', array( 'attrs' => $attrs ) );
 $checks = array(
 	'fixture maps' => 'mapped' === $row['status'] && empty( $validated['errors'] ),
