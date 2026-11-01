@@ -34,6 +34,25 @@ class Static_Site_Importer_Dependency_Manager {
 		return $reports;
 	}
 
+	/** Provision an on-demand adapter without losing its readiness diagnostics. */
+	public static function materialize_deferred_dependencies( array $adapter, array $args ) {
+		unset( $adapter['defer_dependencies'] );
+		// A direct materializer call cannot promise a subsequent fresh request.
+		unset( $args['runtime_lifecycle_phase'] );
+		$id = (string) ( $adapter['id'] ?? $adapter['provider'] ?? 'deferred' );
+		return self::materialize_lifecycle_dependencies(
+			array(
+				'dependencies' => array(
+					$id => array(
+						'adapter'  => $adapter,
+						'required' => true,
+					),
+				),
+			),
+			$args
+		);
+	}
+
 	/** @return array<string,mixed> */
 	public static function dependency_plan( array $lifecycle, string $artifact_sha256 ): array {
 		$entries = array();
@@ -93,9 +112,10 @@ class Static_Site_Importer_Dependency_Manager {
 		$reports = array();
 		foreach ( $lifecycle['dependencies'] ?? array() as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
-			// These providers need committed content before deciding whether any
-			// dependency is necessary. Their materializer provisions on demand.
-			if ( ! empty( $adapter['defer_dependencies'] ) ) {
+			// Deferred providers still need boot-time registrations in the fresh
+			// runtime. Prepare their planned intent before the continuation; keep
+			// the final, content-dependent decision in their materializer.
+			if ( ! empty( $adapter['defer_dependencies'] ) && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				continue;
 			}
 			$required = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );

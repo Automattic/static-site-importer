@@ -461,11 +461,12 @@ final class Static_Site_Importer_Redirection_Materializer {
 		if ( array() === $routes && empty( $owned ) ) {
 			return $report;
 		}
-		if ( ! self::available() && ! empty( $args['materialize_dependencies'] ) ) {
-			Static_Site_Importer_Dependency_Manager::materialize_plugin_dependencies( self::adapter(), ! empty( $args['overwrite'] ) );
-		}
 		if ( ! self::available() ) {
-			return new WP_Error( 'static_site_importer_redirection_unavailable', 'The native redirect provider is unavailable.' );
+			$dependencies = Static_Site_Importer_Dependency_Manager::materialize_deferred_dependencies( self::adapter(), $args );
+			if ( is_wp_error( $dependencies ) ) {
+				return $dependencies;
+			}
+			$report['dependencies'] = $dependencies;
 		}
 		$next = array(
 			'group_id' => (int) ( $owned['group_id'] ?? 0 ),

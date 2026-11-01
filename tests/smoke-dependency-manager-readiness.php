@@ -30,6 +30,17 @@ function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
  */
 class Static_Site_Importer_Plugin_Materializer {
 	public static function ensure_wp_org_plugin( string $slug, string $plugin_file, ?callable $availability_check = null, ?callable $preparation_callback = null ): array {
+		if ( ! empty( $GLOBALS['ssi_deferred_runtime'] ) ) {
+			$GLOBALS['ssi_deferred_active'] = true;
+			$ready = $preparation_callback();
+			return array(
+				'slug' => $slug,
+				'installed' => true,
+				'active' => true,
+				'status' => true === $ready ? 'already_available' : 'activated_pending_fresh_runtime',
+				'error' => true === $ready ? null : array( 'code' => $ready->get_error_code(), 'message' => $ready->get_error_message() ),
+			);
+		}
 		return $GLOBALS['ssi_next_report'];
 	}
 }
@@ -132,6 +143,34 @@ $available_adapter['dependencies'][0]['availability_callback'] = static fn (): b
 $available_lifecycle = array( 'dependencies' => array( 'products' => array( 'adapter' => $available_adapter, 'required' => true ) ) );
 $ready = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $available_lifecycle, array( 'materialize_dependencies' => true ) );
 $assert( ! is_wp_error( $ready ), 'available-dependency-materializes-without-error' );
+
+// 5. Any deferred adapter must be prepared before the fresh-runtime handoff.
+// Simulate a REST registration that is fixed only by booting with the plugin active.
+$GLOBALS['ssi_deferred_runtime'] = true;
+$GLOBALS['ssi_deferred_boot_ready'] = false;
+$deferred_adapter = array(
+	'id' => 'boot_only_routes',
+	'defer_dependencies' => true,
+	'dependencies' => array( array(
+		'type' => 'wp_org_plugin',
+		'slug' => 'boot-only',
+		'plugin_file' => 'boot-only/plugin.php',
+		'availability_callback' => static fn (): bool => ! empty( $GLOBALS['ssi_deferred_boot_ready'] ),
+		'preparation_callback' => static fn () => ! empty( $GLOBALS['ssi_deferred_boot_ready'] ) ? true : new WP_Error( 'rest_no_route', 'Routes register only at boot.' ),
+	) ),
+);
+$deferred_lifecycle = array( 'dependencies' => array( 'boot_only_routes' => array( 'adapter' => $deferred_adapter, 'required' => true ) ) );
+$deferred_prepare = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $deferred_lifecycle, array( 'materialize_dependencies' => true, 'runtime_lifecycle_phase' => 'prepare' ) );
+$assert( ! is_wp_error( $deferred_prepare ) && ! empty( $GLOBALS['ssi_deferred_active'] ), 'deferred-plugin-activated-before-fresh-runtime' );
+$assert( 'activated_pending_fresh_runtime' === ( $deferred_prepare['boot_only_routes']['boot-only']['status'] ?? '' ), 'deferred-prepare-preserves-pending-report' );
+$pending_deferred = Static_Site_Importer_Dependency_Manager::materialize_deferred_dependencies( $deferred_adapter, array( 'materialize_dependencies' => true ) );
+$assert( is_wp_error( $pending_deferred ) && 'static_site_importer_required_runtime_dependency_missing' === $pending_deferred->get_error_code(), 'direct-deferred-materialization-uses-generic-readiness-not-unavailable' );
+$pending_data = $pending_deferred->get_error_data();
+$assert( 'pending_fresh_runtime' === ( $pending_data['readiness_stage'] ?? '' ), 'deferred-error-preserves-readiness-stage' );
+$assert( $deferred_prepare === ( $pending_data['dependency_reports'] ?? null ), 'deferred-error-preserves-complete-report-including-rest-error' );
+$GLOBALS['ssi_deferred_boot_ready'] = ! empty( $GLOBALS['ssi_deferred_active'] );
+$deferred_ready = Static_Site_Importer_Dependency_Manager::materialize_deferred_dependencies( $deferred_adapter, array( 'materialize_dependencies' => true ) );
+$assert( ! is_wp_error( $deferred_ready ) && 'already_available' === ( $deferred_ready['boot_only_routes']['boot-only']['status'] ?? '' ), 'deferred-plugin-ready-after-fresh-boot' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, "FAIL: \n - " . implode( "\n - ", $failures ) . "\n" );

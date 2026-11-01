@@ -916,8 +916,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$report = self::materialize( $adapter, $prepared['manifest'], $entity_args );
 			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
-					'status' => 'error',
-					'reason' => $report->get_error_code(),
+					'status'     => 'error',
+					'reason'     => $report->get_error_code(),
+					'error_data' => $report->get_error_data(),
 				);
 				return array(
 					'reports' => $reports,
