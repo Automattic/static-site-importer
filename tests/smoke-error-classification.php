@@ -229,6 +229,13 @@ function ssi_error_classification_check( array $sites, array $registry, string $
 		}
 	}
 
+	// Taxonomy archive routing belongs to Redirection, not persistence rewrites.
+	foreach ( array( 'taxonomy_archive_rewrite_conflict', 'taxonomy_archive_rewrite_failed', 'taxonomy_archive_route_invalid' ) as $retired ) {
+		if ( isset( $entries[ $retired ] ) || isset( $live[ $retired ] ) ) {
+			$failures[] = 'Retired taxonomy rewrite error must not return: ' . $retired;
+		}
+	}
+
 	// Representability ratchet.
 	foreach ( $pending as $key ) {
 		if ( 'representability' !== ( $entries[ $key ]['class'] ?? null ) ) {

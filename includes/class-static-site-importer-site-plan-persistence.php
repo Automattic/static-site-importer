@@ -746,10 +746,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! taxonomy_exists( $taxonomy ) ) {
 				return new WP_Error( 'taxonomy_unavailable' );
 			}
-			$route_result = self::register_taxonomy_archive_route( $state, $entity );
-			if ( is_wp_error( $route_result ) ) {
-				return $route_result;
-			}
 			$parent   = isset( $entity['parent'] ) ? (int) $resolved_terms[ $taxonomy . ':' . $entity['parent'] ] : 0;
 			$existing = term_exists( $entity['slug'], $taxonomy );
 			$created  = false;
@@ -858,41 +854,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		return $reports;
-	}
-
-	/** Register an exact source archive route without changing site-wide taxonomy bases. */
-	private static function register_taxonomy_archive_route( array &$state, array $entity ) {
-		$route = trim( (string) $entity['archive']['source_route'], '/' );
-		$slug  = (string) $entity['slug'];
-		if ( '' === $route || ! preg_match( '~^/?[a-z0-9-]+(?:/[a-z0-9-]+)*$~', $route ) || basename( $route ) !== $slug ) {
-			return new WP_Error( 'taxonomy_archive_route_invalid' );
-		}
-		if ( isset( $entity['parent'] ) && 'category' === $entity['taxonomy'] && str_starts_with( $route, 'category/' ) && ! get_option( 'category_base' ) ) {
-			// Core's hierarchical category rewrite already accepts the full path.
-			return true;
-		}
-		$base_regex = '^' . $route . '/?$';
-		$page_regex = '^' . $route . '/page/' . \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE . '/?$';
-		$query_var  = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
-		$base_query = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
-		$page_query = $base_query . '&paged=$matches[1]';
-		$rules      = get_option( 'rewrite_rules', array() );
-		$rules      = is_array( $rules ) ? $rules : array();
-		if ( ( isset( $rules[ $base_regex ] ) && $rules[ $base_regex ] !== $base_query ) || ( isset( $rules[ $page_regex ] ) && $rules[ $page_regex ] !== $page_query ) ) {
-			return new WP_Error( 'taxonomy_archive_rewrite_conflict' );
-		}
-		if ( ( $rules[ $base_regex ] ?? null ) === $base_query && ( $rules[ $page_regex ] ?? null ) === $page_query ) {
-			return true;
-		}
-		self::journal_option( $state, 'rewrite_rules' );
-		add_rewrite_rule( $base_regex, $base_query, 'top' );
-		add_rewrite_rule( $page_regex, $page_query, 'top' );
-		flush_rewrite_rules( false );
-		$rules = get_option( 'rewrite_rules', array() );
-		if ( ! is_array( $rules ) || ( $rules[ $base_regex ] ?? null ) !== $base_query || ( $rules[ $page_regex ] ?? null ) !== $page_query ) {
-			return new WP_Error( 'taxonomy_archive_rewrite_failed' );
-		}
-		return true;
 	}
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */

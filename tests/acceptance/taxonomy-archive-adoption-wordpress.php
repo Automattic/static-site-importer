@@ -117,6 +117,11 @@ $assert(
 
 $adopted = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
 $assert( 'completed' === ( $adopted['status'] ?? '' ) && 'draft' === get_post_status( $frozen_id ) && ! metadata_exists( 'post', $frozen_id, '_static_site_importer_reconciliation_identity' ), 'Reconciliation-matched frozen archive page was not retired on successful adoption.' );
+$archive_redirects = Static_Site_Importer_Redirection_Materializer::routes( $adopted, array() );
+$term_receipt      = $adopted['completed']['taxonomy_entities'][0];
+$native_archive    = get_term_link( (int) $term_receipt['term_id'], $term_receipt['taxonomy'] );
+$assert( ! is_wp_error( $archive_redirects ) && ( $archive_redirects[ '/' . $route ] ?? null ) === $native_archive, 'Adopted archive source must redirect to the native term.' );
+$assert( ! isset( $adopted['rollback']['options']['rewrite_rules'] ), 'Adoption must not journal taxonomy rewrites.' );
 $owner_body = 'Destination-owned archive remains untouched.';
 wp_update_post(
 	array(

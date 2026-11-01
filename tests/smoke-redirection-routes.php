@@ -126,10 +126,20 @@ foreach ( array(
 		: array( 'user_id' => 42, 'slug' => 'news' );
 	$GLOBALS['archive_links'][42] = 'https://native.test' . $native;
 	$archive_receipt = array( 'plan' => array( $collection => array( $entity ) ), 'completed' => array( $collection => array( $applied ) ) );
-	$expected = $redirect ? array( $source => 'https://native.test' . $native ) : array();
+	$expected = $redirect ? array( $source => 'https://native.test' . $native, '^' . preg_quote( rtrim( $source, '/' ), '~' ) . '/page/([1-9][0-9]*)/?$' => 'https://native.test' . rtrim( $native, '/' ) . '/page/$1/' ) : array();
+	ksort( $expected, SORT_STRING );
+	if ( $redirect ) {
+		$pattern = array_key_last( $expected );
+		$assert( 'https://native.test' . rtrim( $native, '/' ) . '/page/27/' === preg_replace( '~' . $pattern . '~', $expected[ $pattern ], rtrim( $source, '/' ) . '/page/27/' ), 'Paged source archives preserve the page number through Redirection.' );
+	}
 	$assert( $expected === Static_Site_Importer_Redirection_Materializer::routes( $archive_receipt, array() ), 'Archive routes redirect exactly when their native destinations differ.' );
 	$assert( Static_Site_Importer_Redirection_Materializer::has_intent( $archive_receipt['plan'], array() ), 'Planned archives retain route intent until commitment.' );
 	$assert( $redirect === Static_Site_Importer_Redirection_Materializer::has_intent( $archive_receipt['plan'], array( 'materialized_receipt' => $archive_receipt ) ), 'Committed archive intent reflects native redirects.' );
+	if ( $redirect ) {
+		foreach ( array( '0', '-2', '2/extra' ) as $invalid_page ) {
+			$assert( 0 === preg_match( '~' . $pattern . '~', rtrim( $source, '/' ) . '/page/' . $invalid_page . '/' ), 'Archive pagination rejects non-positive or extra-segment requests.' );
+		}
+	}
 	$archive_receipt['completed'] = array();
 	$assert( array() === Static_Site_Importer_Redirection_Materializer::routes( $archive_receipt, array() ), 'Uncommitted archives cannot claim routes.' );
 }
