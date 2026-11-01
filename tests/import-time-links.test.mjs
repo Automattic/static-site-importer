@@ -44,11 +44,13 @@ $posts = get_posts(array('post_type' => array('page', 'post', 'wp_navigation', '
 $stored = array_map(static fn($p) => array('type' => $p->post_type, 'content' => $p->post_content), $posts);
 $parts = array();
 foreach (glob(get_stylesheet_directory() . '/parts/*.html') as $file) { $parts[] = file_get_contents($file); }
-echo wp_json_encode(array('stored' => $stored, 'parts' => $parts, 'about' => get_permalink(get_page_by_path('about')->ID), 'contact' => get_permalink(get_page_by_path('contact')->ID)));
+echo wp_json_encode(array('stored' => $stored, 'parts' => $parts, 'about' => wp_make_link_relative(get_permalink(get_page_by_path('about')->ID)), 'contact' => wp_make_link_relative(get_permalink(get_page_by_path('contact')->ID))));
 `);
     const result = JSON.parse(runtime.wpRun(['eval-file', script]).stdout.trim().split('\n').pop());
     for (const document of [...result.stored.map(p => p.content), ...result.parts]) {
       assert.doesNotMatch(document, /(?:page_id=|\?p=)/);
+      // Stored links carry no host, so they survive a domain change.
+      assert.ok(!document.includes(origin), document);
     }
     const pages = result.stored.filter(p => p.type === 'page' && p.content.includes('Meet our team'));
     assert.equal(pages.length, 3);
@@ -73,14 +75,14 @@ echo wp_json_encode(array('stored' => $stored, 'parts' => $parts, 'about' => get
     server = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', runtime.wpDir, router], { stdio: 'ignore' });
     let response;
     for (let retry = 0; retry < 60; retry++) {
-      try { response = await fetch(result.about); break; } catch { await new Promise(r => setTimeout(r, 100)); }
+      try { response = await fetch(new URL(result.about, origin)); break; } catch { await new Promise(r => setTimeout(r, 100)); }
     }
     assert.equal(response?.status, 200);
     const html = await response.text();
     assert.ok(html.includes('Meet our team'));
     for (const target of [result.about, result.contact]) {
-      assert.ok(html.includes(target), `rendered link ${target}`);
-      assert.equal((await fetch(target)).status, 200);
+      assert.ok(html.includes(`href="${target}`), `rendered link ${target}`);
+      assert.equal((await fetch(new URL(target, origin))).status, 200);
     }
   } finally {
     server?.kill();

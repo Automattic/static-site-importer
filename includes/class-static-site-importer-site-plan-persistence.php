@@ -1197,7 +1197,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return is_array( $values ) && in_array( $value, array_map( 'strval', $values ), true );
 	}
 
-	/** Resolve internal routes once, after WordPress has assigned every destination. */
+	/**
+	 * Resolve internal routes once, after WordPress has assigned every destination.
+	 * Links are stored root-relative so they survive a change of host.
+	 */
 	public static function rewrite_materialized_route_links( array &$state ) {
 		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
@@ -1209,7 +1212,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$post_type = 'page';
 			}
 			if ( '' !== $route && $post_id > 0 ) {
-				$reference        = (string) get_permalink( $post_id );
+				$reference        = wp_make_link_relative( (string) get_permalink( $post_id ) );
 				$routes[ $route ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
@@ -1223,7 +1226,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( '' !== $source_route && $term_id > 0 && in_array( $taxonomy, array( 'category', 'post_tag' ), true ) ) {
 				$link = get_term_link( $term_id, $taxonomy );
 				if ( ! is_wp_error( $link ) ) {
-					$routes[ $source_route ] = $link;
+					$routes[ $source_route ] = wp_make_link_relative( $link );
 				}
 			}
 		}
@@ -1233,7 +1236,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$id    = (int) ( $product['id'] ?? 0 );
 				$route = self::normalized_route_path( (string) ( $product['source_route'] ?? '' ) );
 				if ( $id > 0 && '' !== $route ) {
-					$product_routes[ $route ] = (string) get_permalink( $id );
+					$product_routes[ $route ] = wp_make_link_relative( (string) get_permalink( $id ) );
 				}
 			}
 		}
@@ -1405,11 +1408,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
 				if ( '/search' === $route ) {
 					parse_str( ltrim( $suffix, '?' ), $query );
-					$target = home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' );
+					$target = wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
 					return $matches[1] . $target . $matches[3];
 				}
 				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
-				$target = $id > 0 ? get_permalink( $id ) : false;
+				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
 				if ( is_string( $target ) && '' !== $target ) {
 					return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
 				}

@@ -201,26 +201,6 @@ class Static_Site_Importer_Theme_Exporter {
 		$taxonomy_archive_count = count( array_unique( array_map( static fn( array $file ): string => (string) ( $file['taxonomy'] ?? '' ) . ':' . (string) ( $file['term_id'] ?? '' ), $taxonomy_archive_files ) ) );
 
 		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
-		// Exports may also read older imports that stored query-ID references.
-		// Routes are native source paths; never ship destination database IDs.
-		foreach ( $files as &$file ) {
-			if ( ! is_string( $file['content'] ?? null ) || 'utf8' !== ( $file['encoding'] ?? '' ) ) {
-				continue;
-			}
-			$file['content'] = str_replace( rtrim( home_url( '/' ), '/' ) . '/', '/', $file['content'] );
-			$file['content'] = preg_replace_callback(
-				'~(?:https?://[^/"\s<>]+)?/\?(?:page_id|p)=([0-9]+)([^"\s<>]*)~',
-				static function ( array $reference ): string {
-					$link = get_permalink( (int) $reference[1] );
-					$path = is_string( $link ) ? wp_parse_url( $link, PHP_URL_PATH ) : null;
-					return is_string( $path ) ? $path . (string) preg_replace( '/^&(?:amp;)?/', '?', $reference[2] ) : $reference[0];
-				},
-				$file['content']
-			) ?? $file['content'];
-			$file['bytes']   = strlen( $file['content'] );
-			$file['sha256']  = hash( 'sha256', $file['content'] );
-		}
-		unset( $file );
 
 		$import_report = self::read_theme_import_report( $theme_dir );
 		if ( ! empty( $import_report ) ) {

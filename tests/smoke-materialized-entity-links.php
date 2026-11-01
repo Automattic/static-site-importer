@@ -34,6 +34,10 @@ function wp_update_post( $post, $error = false ) {
 	return $post['ID']; }
 function is_wp_error( $value ) {
 	return false; }
+function wp_make_link_relative( $link ) {
+	return preg_replace( '|^(https?:)?//[^/]+(/?.*)|i', '$2', (string) $link );
+}
+
 function get_permalink( $id ) {
 	return 'https://local.example/entity/' . $id . '/'; }
 function home_url( $path = '' ) {
@@ -122,16 +126,16 @@ $state                          = array(
 );
 $assert( true === Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state ), 'Rewrite completes.' );
 $template = $state['resolved']['writes'][0];
-$assert( '<title>Overlay</title><a href="https://local.example/entity/10/">Tools</a>' === $template['payload']['data'] && ! isset( $template['payload_hash'] ), 'A composed template is rewritten from its overlaid text and its stale hash dropped.' );
+$assert( '<title>Overlay</title><a href="/entity/10/">Tools</a>' === $template['payload']['data'] && ! isset( $template['payload_hash'] ), 'A composed template is rewritten from its overlaid text and its stale hash dropped.' );
 $assert( $template['payload']['data'] === $state['composed_theme_writes']['/theme/templates/archive.html'], 'The composed copy matches the rewritten write, so the write is not skipped.' );
 $stored = $GLOBALS['entity_link_content'];
-$assert( 2 === substr_count( $stored, 'href="https://local.example/entity/42/"' ), 'Scoped card and bare nav resolve to the seeded product.' );
-$assert( str_contains( $stored, 'href="https://local.example/entity/10/"' ), 'Category listing retains its imported page identity.' );
+$assert( 2 === substr_count( $stored, 'href="/entity/42/"' ), 'Scoped card and bare nav resolve to the seeded product.' );
+$assert( str_contains( $stored, 'href="/entity/10/"' ), 'Category listing retains its imported page identity.' );
 $assert( str_contains( $stored, 'https://source.example/journal/missing' ), 'Unimported route stays unchanged.' );
 $assert( array( 'journal' => 1 ) === $state['applied']['unresolved_same_origin_links'], 'Receipt counts unresolved links by first segment.' );
 $assert( str_contains( $stored, 'https://elsewhere.example/products/field-kit' ), 'Cross-origin URL stays unchanged.' );
-$assert( 2 === substr_count( $stored, 'https://local.example/entity/42/' ), 'Both references store the product permalink.' );
-$assert( str_contains( $stored, 'https://local.example/entity/88/' ), 'Cart stores the Woo page permalink at import.' );
+$assert( 2 === substr_count( $stored, '/entity/42/' ), 'Both references store the product permalink.' );
+$assert( str_contains( $stored, '/entity/88/' ), 'Cart stores the Woo page permalink at import.' );
 $assert( str_contains( $stored, '?s=field%20kit&post_type=product' ), 'Search is a local product search.' );
 $assert( null === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/products/not-field-kit', array( '/products/field-kit' => '/?p=42' ) ), 'Other handles do not match.' );
 $unresolved = array();
