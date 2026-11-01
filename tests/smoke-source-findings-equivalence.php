@@ -12,9 +12,10 @@
  *    assigned, and must yield identical loss rows, counts, acceptability and
  *    compact summaries. A second run with another owning layer must differ
  *    only in that label, which now comes from the row.
- * 2. Capture attributes. The baseline is the client-script policy and the
- *    member sign-in rewrite applied to pages that use the producer-specific
- *    attribute names. This checkout applies them to the same pages with the
+ * 2. Capture attributes. The baseline is the member sign-in rewrite applied
+ *    to markup that uses the producer-specific attribute names (the device
+ *    selection scripts are pinned to the producer's current output by
+ *    tests/smoke-client-script-policy.php). This checkout applies them to the same pages with the
  *    names mapped to the Blocks Engine capture vocabulary and must produce the
  *    same output under that mapping.
  *
@@ -114,7 +115,7 @@ function ssi_equivalence_attributes_part( string $root, bool $rename ): array {
 	$_SERVER['HTTP_HOST']     = 'playground.test';
 	$_SERVER['REQUEST_URI']   = '/scope:abc/bylaws/';
 	require __DIR__ . '/fixtures/link-runtime-stubs.php';
-	foreach ( array( 'capture-evidence', 'client-script-policy', 'internal-link-runtime' ) as $name ) {
+	foreach ( array( 'capture-evidence', 'internal-link-runtime' ) as $name ) {
 		$file = $root . '/includes/class-static-site-importer-' . $name . '.php';
 		if ( is_readable( $file ) ) {
 			require_once $file;
@@ -122,25 +123,6 @@ function ssi_equivalence_attributes_part( string $root, bool $rename ): array {
 	}
 	$legacy = json_decode( (string) file_get_contents( SSI_EQUIVALENCE_DIR . '/legacy-attributes.json' ), true );
 	$map    = static fn ( string $text ): string => $rename ? ssi_equivalence_rename( $text ) : $text;
-	$page   = $map( $legacy['device_page'] );
-	$policy = Static_Site_Importer_Client_Script_Policy::apply(
-		array(
-			'entrypoint' => 'website/index.html',
-			'files'      => array(
-				array(
-					'path'      => 'website/index.html',
-					'mime_type' => 'text/html',
-					'content'   => $page,
-				),
-			),
-		),
-		array()
-	);
-	$report = $policy['report'];
-	foreach ( array( 'preserved', 'dropped', 'quarantined' ) as $bucket ) {
-		// A row's sha256 hashes the script bytes, which include the attribute names.
-		$report[ $bucket ] = array_map( static fn ( array $row ): array => array_diff_key( $row, array( 'sha256' => true ) ), $report[ $bucket ] ?? array() );
-	}
 	$links = array();
 	foreach ( $legacy['member_login'] as $label => $markup ) {
 		$links[ $label ] = array(
@@ -149,13 +131,7 @@ function ssi_equivalence_attributes_part( string $root, bool $rename ): array {
 		);
 	}
 	return array(
-		'device_page'   => (string) $policy['artifact']['files'][0]['content'],
-		'device_report' => array(
-			'preserved'   => $report['preserved'],
-			'dropped'     => $report['dropped'],
-			'quarantined' => $report['quarantined'],
-		),
-		'member_login'  => $links,
+		'member_login' => $links,
 	);
 }
 
@@ -253,9 +229,6 @@ $assert( 12 === count( array_filter( $other['loss_rows'], static fn ( array $row
 $expected_attributes = json_decode( ssi_equivalence_rename( (string) json_encode( $baseline['attributes'] ) ), true );
 $actual_attributes   = ssi_equivalence_run( array( '--part=attributes', '--root=' . $root, '--rename' ) );
 $assert( ssi_equivalence_diff( $expected_attributes, $actual_attributes ), 'attributes' );
-$assert( 2 === count( $actual_attributes['device_report']['preserved'] ) ? null : 'device-selection scripts were not preserved', 'attributes-device-scripts-preserved' );
-$legacy = json_decode( (string) file_get_contents( SSI_EQUIVALENCE_DIR . '/legacy-attributes.json' ), true );
-$assert( ssi_equivalence_rename( $legacy['device_page'] ) === file_get_contents( __DIR__ . '/fixtures/device-selection/index.html' ) ? null : 'tests/fixtures/device-selection/index.html is not the mapped legacy page', 'attributes-device-fixture-is-the-mapped-page' );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, 'FAIL: ' . implode( "\nFAIL: ", $failures ) . "\n" );

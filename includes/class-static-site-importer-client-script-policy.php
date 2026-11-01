@@ -421,16 +421,17 @@ class Static_Site_Importer_Client_Script_Policy {
 		}
 		$open = '(function(){' . self::device_overlay_runtime();
 		if ( Static_Site_Importer_Capture_Evidence::DEVICE_SELECTION === $marker[1] ) {
-			foreach ( self::device_selection_tails() as $tail ) {
-				$config = self::device_script_data( $body, $open . 'var c=', $tail );
-				if ( null !== $config && self::is_valid_device_config( $config ) ) {
-					return true;
-				}
-			}
+			$config = self::device_script_data( $body, $open . 'var c=', self::device_selection_tail() );
+			return null !== $config && self::is_valid_device_config( $config );
+		}
+		// The body tail embeds the default document key, which the roots data must declare.
+		list( $tail_start, $tail_end ) = self::device_body_tail();
+		$head                          = str_ends_with( $body, $tail_end ) ? substr( $body, 0, -strlen( $tail_end ) ) : '';
+		if ( 1 !== preg_match( '/"([a-z][a-z0-9_-]{0,63})"$/', $head, $default ) ) {
 			return false;
 		}
-		$roots = self::device_script_data( $body, $open . 'var roots=', self::device_body_tail() );
-		return null !== $roots && self::is_valid_device_roots( $roots, null );
+		$roots = self::device_script_data( substr( $head, 0, -strlen( $default[0] ) ), $open . 'var roots=', $tail_start );
+		return null !== $roots && isset( $roots[ $default[1] ] ) && self::is_valid_device_roots( $roots, null );
 	}
 
 	/**
@@ -566,8 +567,7 @@ class Static_Site_Importer_Client_Script_Policy {
 	 * scripts"): a producer emits these pieces byte for byte, naming attributes from
 	 * {@see Static_Site_Importer_Capture_Evidence}. tests/fixtures/device-selection/index.html is a generated
 	 * two-document page (tools/regenerate-device-selection-fixture.mjs), and the client-script policy smoke
-	 * fails when its scripts differ from these pieces; the selection script may use any tail accepted by
-	 * {@see self::device_selection_tails()}.
+	 * fails when its scripts differ from these pieces.
 	 */
 	private static function device_overlay_runtime(): string {
 		return implode(
@@ -591,31 +591,23 @@ class Static_Site_Importer_Client_Script_Policy {
 		);
 	}
 
+	/** The selection-script bytes after the embedded config. */
+	private static function device_selection_tail(): string {
+		return ',s=c.selection,ua=navigator.userAgent,key=s.defaultDocument;for(var i=0;i<s.rules.length;i++){var r=s.rules[i];if(new RegExp(r.userAgent,r.flags||\'\').test(ua)){key=r.document;break;}}var root=document.documentElement;root.setAttribute(\'' . Static_Site_Importer_Capture_Evidence::SELECTED_DOCUMENT . '\',key);var vp=c.viewports[key],meta=document.querySelector(\'meta[name="viewport"]\');meta.removeAttribute(\'content\');meta.removeAttribute(\'id\');if(vp){overlayRoot(root,c.roots,\'html\',key);Object.keys(vp).forEach(function(k){meta.setAttribute(k,vp[k]);});root.removeAttribute(\'' . Static_Site_Importer_Capture_Evidence::DOCUMENT_UNAVAILABLE . '\');}else{root.setAttribute(\'' . Static_Site_Importer_Capture_Evidence::DOCUMENT_UNAVAILABLE . '\',key);}var styles=document.querySelectorAll(\'[' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . ']\');for(var j=0;j<styles.length;j++){var node=styles[j];if(node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\').split(/\\s+/).indexOf(key)===-1)continue;var copy=node.cloneNode(true);copy.setAttribute(\'media\',node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::SOURCE_MEDIA . '\'));copy.removeAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\');copy.setAttribute(\'blocking\',\'render\');node.after(copy);}})();';
+	}
+
 	/**
-	 * The selection-script bytes after the embedded config that this policy accepts, newest template first.
+	 * The body-script bytes after the embedded roots, split around the JSON-encoded default document key.
 	 *
-	 * @return array<int,string>
+	 * @return array{0:string,1:string}
 	 */
-	private static function device_selection_tails(): array {
+	private static function device_body_tail(): array {
+		$document = Static_Site_Importer_Capture_Evidence::DEVICE_DOCUMENT;
+		// Template bytes only: SSI never reads this attribute, so it is not a capture-evidence name.
+		$inline = 'data-blocks-engine-capture-device-inline';
 		return array(
-			// Token-list tail: a device stylesheet's marker is the space-separated list of device keys it serves.
-			self::device_selection_tail( 'node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\').split(/\\s+/).indexOf(key)===-1' ),
-			// The scalar-equality tail is accepted for captures from producer releases before the token-list change.
-			self::device_selection_tail( 'node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\')!==key' ),
-		);
-	}
-
-	/** The selection-script bytes after the embedded config, closing on the one device-style membership test `$style_check`. */
-	private static function device_selection_tail( string $style_check ): string {
-		return ',s=c.selection,ua=navigator.userAgent,key=s.defaultDocument;for(var i=0;i<s.rules.length;i++){var r=s.rules[i];if(new RegExp(r.userAgent,r.flags||\'\').test(ua)){key=r.document;break;}}var root=document.documentElement;root.setAttribute(\'' . Static_Site_Importer_Capture_Evidence::SELECTED_DOCUMENT . '\',key);var vp=c.viewports[key],meta=document.querySelector(\'meta[' . Static_Site_Importer_Capture_Evidence::SELECTED_VIEWPORT . ']\');meta.removeAttribute(\'content\');meta.removeAttribute(\'id\');if(vp){overlayRoot(root,c.roots,\'html\',key);Object.keys(vp).forEach(function(k){meta.setAttribute(k,vp[k]);});root.removeAttribute(\'' . Static_Site_Importer_Capture_Evidence::DOCUMENT_UNAVAILABLE . '\');}else{root.setAttribute(\'' . Static_Site_Importer_Capture_Evidence::DOCUMENT_UNAVAILABLE . '\',key);}var styles=document.querySelectorAll(\'[' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . ']\');for(var j=0;j<styles.length;j++){var node=styles[j];if(' . $style_check . ')continue;var copy=node.cloneNode(true);copy.setAttribute(\'media\',node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::SOURCE_MEDIA . '\'));copy.removeAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\');copy.setAttribute(\'blocking\',\'render\');node.after(copy);}})();';
-	}
-
-	private static function device_body_tail(): string {
-		return implode(
-			"\n",
-			array(
-				',key=document.documentElement.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::SELECTED_DOCUMENT . '\');overlayRoot(document.body,roots,\'body\',key);})();',
-			)
+			',key=document.documentElement.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::SELECTED_DOCUMENT . '\');overlayRoot(document.body,roots,\'body\',key);document.addEventListener(\'DOMContentLoaded\',function(){var wrapper=document.querySelector(\'[' . $document . '="\'+key+\'"]\')||document.querySelector(\'[' . $document . '="\'+',
+			'+\'"]\');if(wrapper)overlayRoot(wrapper,roots,\'body\',key);document.querySelectorAll(\'[' . $inline . ']\').forEach(function(node){var styles=JSON.parse(node.getAttribute(\'' . $inline . '\'));if(Object.prototype.hasOwnProperty.call(styles,key))node.setAttribute(\'style\',styles[key]);});});})();',
 		);
 	}
 

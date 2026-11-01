@@ -264,20 +264,11 @@ list( $device_html, $device_report ) = $run_policy( $device_page );
 $assert( $markers === $kept_markers( $device_html ), 'producer-generated-device-scripts-match-the-policy-template' . $drift_hint );
 $assert( $device_page === $device_html, 'device-selection-page-is-unchanged' );
 
-// Both accepted producer templates are kept byte for byte: the token-list tail the producer emits since its
-// device-stylesheet marker became a space-separated key list (data-liberation-agent#1011), and the scalar-equality
-// tail captured before that change. The fixture carries the scalar tail; the token-list page swaps only that check.
-$scalar_check    = 'if(node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\')!==key)continue;';
-$token_check     = 'if(node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\').split(/\\s+/).indexOf(key)===-1)continue;';
-$token_list_page = $mutate( $device_page, $scalar_check, $token_check );
-$accepted_tails  = array(
-	'scalar-equality' => $device_page,
-	'token-list'      => $token_list_page,
-);
-foreach ( $accepted_tails as $label => $tail_page ) {
-	list( $tail_html, $tail_report ) = $run_policy( $tail_page );
-	$assert( $markers === $kept_markers( $tail_html ) && $tail_page === $tail_html && array() === $tail_report['dropped'] && array() === $tail_report['quarantined'] && 2 === count( $tail_report['preserved'] ), 'accepted-device-selection-tail-is-kept-byte-for-byte: ' . $label );
-}
+// A retired template (the scalar device-style check from before the token-list marker) is dropped.
+$scalar_check = 'if(node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\')!==key)continue;';
+$token_check  = 'if(node.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::DEVICE_STYLE . '\').split(/\\s+/).indexOf(key)===-1)continue;';
+list( $scalar_html, $scalar_report ) = $run_policy( $mutate( $device_page, $token_check, $scalar_check ) );
+$assert( array( $markers[1] ) === $kept_markers( $scalar_html ) && 1 === count( $scalar_report['dropped'] ), 'retired-scalar-device-selection-tail-is-dropped' );
 
 // Only the published capture vocabulary is trusted: the same scripts under producer-specific names are dropped.
 list( $foreign_html, $foreign_report ) = $run_policy( str_replace( 'data-blocks-engine-capture-', 'data-producer-', $device_page ) );
@@ -312,8 +303,10 @@ $rejected       = array(
 	'literal-less-than-in-embedded-data'                  => array( 'data-blocks-engine-capture-device-selection', $mutate( $device_page, '"evidence":"neutral fixture"', '"evidence":"<!--<script>"' ) ),
 	'unknown-root-attribute'                              => array( 'data-blocks-engine-capture-device-body', $mutate_in_body_script( $device_page, '"body":{"class":"body-mobile"}', '"body":{"onload":"x"}' ) ),
 	'literal-less-than-in-body-script-data'               => array( 'data-blocks-engine-capture-device-body', $mutate_in_body_script( $device_page, '"body":{"class":"body-mobile"}', '"body":{"class":"<!--"}' ) ),
-	'token-list-tail-near-miss-comparison'                => array( 'data-blocks-engine-capture-device-selection', $mutate( $token_list_page, '.split(/\\s+/).indexOf(key)===-1', '.split(/\\s+/).indexOf(key)<0' ) ),
-	'token-list-tail-near-miss-regex'                     => array( 'data-blocks-engine-capture-device-selection', $mutate( $token_list_page, '.split(/\\s+/).indexOf(key)===-1', '.split(/ +/).indexOf(key)===-1' ) ),
+	'token-list-tail-near-miss-comparison'                => array( 'data-blocks-engine-capture-device-selection', $mutate( $device_page, '.split(/\\s+/).indexOf(key)===-1', '.split(/\\s+/).indexOf(key)<0' ) ),
+	'token-list-tail-near-miss-regex'                     => array( 'data-blocks-engine-capture-device-selection', $mutate( $device_page, '.split(/\\s+/).indexOf(key)===-1', '.split(/ +/).indexOf(key)===-1' ) ),
+	'retired-selected-viewport-marker-lookup'                => array( 'data-blocks-engine-capture-device-selection', $mutate( $device_page, 'meta[name="viewport"]', 'meta[data-blocks-engine-capture-selected-viewport]' ) ),
+	'body-default-document-outside-roots'                   => array( 'data-blocks-engine-capture-device-body', $mutate_in_body_script( $device_page, '\'+"desktop"+\'', '\'+"tablet"+\'' ) ),
 );
 foreach ( $rejected as $label => $case ) {
 	list( $marker, $html )  = $case;
