@@ -44,10 +44,10 @@ if ( 'completed' !== $receipt['status'] ) {
 	throw new RuntimeException( wp_json_encode( $receipt ) );
 }
 // Explicit fixture-owned stylesheet, submission endpoint and head stand-ins, not
-// production importer behavior. Descriptions, social titles and og:url are
-// materialized into native WordPress fields by the importer's own head-metadata
-// emitter; the fixture adds only the canonical link and og:image that no native
-// owner provides in this disposable runtime. The checks must measure them rather
+// production importer behavior. The importer writes route descriptions and
+// titles into native WordPress fields; rendering them is the SEO owner's job
+// (Jetpack in production). This disposable runtime has no SEO owner, so the
+// fixture stands in for one from those native fields. The checks must measure them rather
 // than claiming that current imports always pass.
 $theme = get_stylesheet_directory();
 if ( ! wp_mkdir_p( $theme . '/assets' ) ) {
@@ -56,7 +56,7 @@ if ( ! wp_mkdir_p( $theme . '/assets' ) ) {
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable fixture writes an intentionally controlled stylesheet.
 file_put_contents( $theme . '/assets/site.css', "main { color: #16324f; }\n" );
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable fixture writes an intentionally controlled head policy.
-file_put_contents( $theme . '/functions.php', '<?php add_action("wp_enqueue_scripts", function() { wp_enqueue_style("outcome-fixture-site", get_stylesheet_directory_uri() . "/assets/site.css", array(), "1"); }); add_action("wp_head", function() { echo \'<link rel="canonical" href="\' . esc_url(get_permalink()) . \'"><meta property="og:image" content="\' . esc_url(home_url("/fixture.png")) . \'">\'; }, 1); remove_action("wp_head", "wp_generator"); remove_action("wp_head", "rel_canonical"); add_filter("wp_robots", "__return_empty_array", PHP_INT_MAX);' );
+file_put_contents( $theme . '/functions.php', '<?php add_action("wp_enqueue_scripts", function() { wp_enqueue_style("outcome-fixture-site", get_stylesheet_directory_uri() . "/assets/site.css", array(), "1"); }); add_action("wp_head", function() { echo \'<link rel="canonical" href="\' . esc_url(get_permalink()) . \'"><meta name="description" content="\' . esc_attr(get_the_excerpt()) . \'"><meta property="og:title" content="\' . esc_attr(get_the_title()) . \'"><meta property="og:url" content="\' . esc_url(get_permalink()) . \'"><meta property="og:image" content="\' . esc_url(home_url("/fixture.png")) . \'">\'; }, 1); remove_action("wp_head", "wp_generator"); remove_action("wp_head", "rel_canonical"); add_filter("wp_robots", "__return_empty_array", PHP_INT_MAX);' );
 // The recovered fixture provider owns this local submission endpoint.
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable fixture handler.
 file_put_contents( $theme . '/functions.php', ' add_action("admin_post_nopriv_ssi_outcome_form", function() { echo \'<p id="fixture-success">Submission received</p>\'; exit; });', FILE_APPEND );

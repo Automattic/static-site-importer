@@ -23,9 +23,8 @@ if ( ! class_exists( WordPressSitePlanResolver::class ) && is_readable( dirname(
 }
 
 final class Static_Site_Importer_Route_Head_Metadata {
-	private const PROVENANCE_META_KEY = '_static_site_importer_provenance';
-	private const TEXT_LIMIT          = 1000;
-	private const URL_LIMIT           = 2048;
+	private const TEXT_LIMIT = 1000;
+	private const URL_LIMIT  = 2048;
 
 	/** @var array<string,true> */
 	private const URL_KEYS = array(
@@ -35,55 +34,6 @@ final class Static_Site_Importer_Route_Head_Metadata {
 		'twitter:image'       => true,
 		'twitter:image:src'   => true,
 	);
-
-	public static function register(): void {
-		add_action( 'wp_head', array( self::class, 'print_tags' ), 1 );
-	}
-
-	public static function print_tags(): void {
-		if ( ! empty( $GLOBALS['static_site_importer_head_metadata_emitted'] ) || self::another_producer_owns_head() ) {
-			return;
-		}
-		if ( ! is_singular() && ! is_front_page() ) {
-			return;
-		}
-
-		$post_id = get_queried_object_id();
-		if ( '' === (string) get_post_meta( $post_id, self::PROVENANCE_META_KEY, true ) ) {
-			return;
-		}
-		$GLOBALS['static_site_importer_head_metadata_emitted'] = true;
-		$tags = array(
-			array(
-				'attr'    => 'name',
-				'key'     => 'description',
-				'content' => get_post_field( 'post_excerpt', $post_id ),
-			),
-			array(
-				'attr'    => 'property',
-				'key'     => 'og:title',
-				'content' => get_the_title( $post_id ),
-			),
-			array(
-				'attr'    => 'property',
-				'key'     => 'og:description',
-				'content' => get_post_field( 'post_excerpt', $post_id ),
-			),
-			array(
-				'attr'    => 'property',
-				'key'     => 'og:url',
-				'content' => get_permalink( $post_id ),
-				'kind'    => 'url',
-			),
-			array(
-				'attr'    => 'property',
-				'key'     => 'og:image',
-				'content' => (string) get_the_post_thumbnail_url( $post_id, 'full' ),
-				'kind'    => 'url',
-			),
-		);
-		self::emit_tags( $tags );
-	}
 
 	/** @param array<string,mixed> $page */
 	public static function description_from_page( array $page ): string {
@@ -101,7 +51,9 @@ final class Static_Site_Importer_Route_Head_Metadata {
 	/**
 	 * Write registered platform SEO owners, alongside the native post fields.
 	 * Jetpack consumes the featured image itself; never copy a source image URL
-	 * into an SEO override. Unknown plugin storage is not guessed.
+	 * into an SEO override. Unknown plugin storage is not guessed. A route
+	 * description with no registered SEO owner stays in post_excerpt, which
+	 * core does not render in the head, so the receipt names it as a loss.
 	 *
 	 * @param array<string,mixed> $state
 	 * @return true|WP_Error
@@ -110,6 +62,7 @@ final class Static_Site_Importer_Route_Head_Metadata {
 		if ( ! function_exists( 'get_registered_meta_keys' ) ) {
 			return true;
 		}
+		$unrendered = array();
 		foreach ( $state['ordered_pages'] ?? array() as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -120,7 +73,10 @@ final class Static_Site_Importer_Route_Head_Metadata {
 			}
 			$registered  = array_merge( get_registered_meta_keys( 'post' ), get_registered_meta_keys( 'post', (string) get_post_type( $id ) ) );
 			$description = self::description_from_page( $page );
-			$values      = array(
+			if ( '' !== $description && ! isset( $registered['advanced_seo_description'] ) ) {
+				$unrendered[] = (string) $page['source_path'];
+			}
+			$values = array(
 				'jetpack_seo_html_title'   => Static_Site_Importer_Route_Document_Metadata::title_from_page( $page ),
 				'advanced_seo_description' => '' !== $description ? $description : (string) ( $page['metadata']['excerpt'] ?? '' ),
 			);
@@ -133,6 +89,17 @@ final class Static_Site_Importer_Route_Head_Metadata {
 					return new WP_Error( 'route_seo_write_failed', 'The registered SEO owner rejected authored metadata.' );
 				}
 			}
+		}
+		if ( array() !== $unrendered ) {
+			$state['diagnostics'][] = array(
+				'code'         => 'static_site_importer_route_description_unrendered',
+				'type'         => 'static-site-importer',
+				'severity'     => 'warning',
+				'reason_code'  => 'route_description_unrendered',
+				'constraints'  => 'owner_handoff',
+				'message'      => 'Route descriptions are kept as post excerpts, but no registered SEO owner renders them as a meta description.',
+				'source_paths' => $unrendered,
+			);
 		}
 		return true;
 	}
@@ -212,15 +179,6 @@ final class Static_Site_Importer_Route_Head_Metadata {
 
 		return $diagnostics;
 	}
-
-	public static function another_producer_owns_head(): bool {
-		return defined( 'WPSEO_VERSION' )
-			|| defined( 'RANK_MATH_VERSION' )
-			|| defined( 'THE_SEO_FRAMEWORK_VERSION' )
-			|| defined( 'AIOSEO_VERSION' )
-			|| ( function_exists( 'has_action' ) && (bool) has_action( 'wp_head', 'jetpack_og_tags' ) );
-	}
-
 
 	/**
 	 * @param array<string,mixed> $row
@@ -380,22 +338,6 @@ final class Static_Site_Importer_Route_Head_Metadata {
 
 	private static function is_absolute_http_url( string $content ): bool {
 		return 1 === preg_match( '#^https?://#i', $content );
-	}
-
-	/** @param array<int,mixed> $tags */
-	private static function emit_tags( array $tags ): void {
-		foreach ( $tags as $tag ) {
-			if ( ! is_array( $tag ) || ! is_string( $tag['attr'] ?? null ) || ! is_string( $tag['key'] ?? null ) || ! is_string( $tag['content'] ?? null ) ) {
-				continue;
-			}
-			$attr    = $tag['attr'];
-			$key     = $tag['key'];
-			$content = 'url' === ( $tag['kind'] ?? 'text' ) ? esc_url( $tag['content'] ) : $tag['content'];
-			if ( '' === $content || ! in_array( $attr, array( 'name', 'property' ), true ) ) {
-				continue;
-			}
-			echo '<meta ' . esc_attr( $attr ) . '="' . esc_attr( $key ) . '" content="' . esc_attr( $content ) . '" />' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Attr, key, and content are passed through esc_attr after URL sanitization.
-		}
 	}
 
 	/** @param array<string,mixed> $diagnostic */

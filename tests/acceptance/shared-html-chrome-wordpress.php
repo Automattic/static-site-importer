@@ -163,7 +163,6 @@ function chrome_render( int $id ): string {
 	}
 	chrome_assert( ! empty( $GLOBALS['_wp_current_template_content'] ), 'Core must select a native block template' );
 	chrome_blocks( $GLOBALS['_wp_current_template_content'] );
-	$GLOBALS['static_site_importer_head_metadata_emitted'] = false;
 	// wp_head emits each queued style once per request. Each oracle render
 	// models a separate request while keeping the disposable persisted data.
 	$GLOBALS['wp_styles'] = new WP_Styles();
@@ -207,7 +206,7 @@ function chrome_check_render( int $id, string $title, string $header ): void {
 	chrome_assert( str_contains( $xpath->query( '//header' )->item( 0 )->textContent, $header ), 'Rendered shared header must reflect native persistence' );
 	chrome_assert( str_contains( $xpath->query( '//footer' )->item( 0 )->textContent, 'Shared footer oracle' ), 'Rendered shared footer' );
 	chrome_assert( 1 === $xpath->query( '//header/following::main[.//h1[contains(., "' . $title . ' body oracle")]]/following::footer' )->length, 'Chrome must surround the page main in DOM order' );
-	chrome_assert( 1 === $xpath->query( '//head/meta[@name="description" and @content="' . $title . ' source description"]' )->length, 'Route source description must survive in actual wp_head output' );
+	chrome_assert( get_post_field( 'post_excerpt', $id ) === $title . ' source description', 'Route source description must be owned by the native excerpt' );
 	chrome_assert( str_contains( wp_get_document_title(), $title . ' Chrome' ), 'Source document title must survive native title rendering' );
 	$stylesheet = false;
 	foreach ( $xpath->query( '//head/link[@rel="stylesheet"]' ) as $link ) {

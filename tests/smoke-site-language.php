@@ -268,7 +268,6 @@ $compose_state = static function ( array $writes, array $composed = array() ): a
 		'resolved'              => array( 'writes' => $writes ),
 		'composed_theme_writes' => $composed,
 		'font_overlay'          => array(),
-		'viewport_overlay'      => array(),
 		'internal_link_overlay' => array(),
 	);
 };

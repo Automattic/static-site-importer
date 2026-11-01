@@ -121,7 +121,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-product-finding-materializer.php',
 	'class-static-site-importer-report-diagnostics.php',
 	'class-static-site-importer-failed-plan-validation.php',
-	'class-static-site-importer-viewport-metadata-materializer.php',
+	'class-static-site-importer-viewport-metadata.php',
 	'class-static-site-importer-font-materializer.php',
 	'class-static-site-importer-document-type-classifier.php',
 	'class-static-site-importer-current-site-capabilities.php',
@@ -174,7 +174,6 @@ Static_Site_Importer_Layout_Release::register();
 Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Product_Grid_Runtime::register();
 Static_Site_Importer_Woo_Product_Listing_Materializer::register();
-Static_Site_Importer_Route_Head_Metadata::register();
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-comment-avatar.php';
 Static_Site_Importer_Comment_Avatar::register();
 

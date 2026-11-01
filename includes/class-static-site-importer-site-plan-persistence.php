@@ -195,7 +195,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$args                  = $state['args'];
 		$font_overlay          = $state['font_overlay'];
-		$viewport_overlay      = $state['viewport_overlay'];
 		$internal_link_overlay = $state['internal_link_overlay'] ?? array();
 
 		$state['source_route_aliases'] = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths(
@@ -433,12 +432,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
-		$viewport_materialization                 = self::apply_viewport_overlay( $state, $viewport_overlay );
-		if ( is_wp_error( $viewport_materialization ) ) {
-			return self::failed_receipt_from_error( $state, $viewport_materialization );
-		}
-		$state['applied']['viewport_metadata'] = $viewport_materialization;
-		$internal_link_materialization         = self::apply_internal_link_overlay( $state, $internal_link_overlay );
+		$state['applied']['viewport_metadata']    = $state['viewport_metadata'];
+		$internal_link_materialization            = self::apply_internal_link_overlay( $state, $internal_link_overlay );
 		if ( is_wp_error( $internal_link_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $internal_link_materialization );
 		}
@@ -1913,58 +1908,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/** @param array<string,mixed> $overlay */
-	public static function apply_viewport_overlay( array &$state, array $overlay ) {
-		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
-			return array(
-				'status'      => (string) ( $overlay['status'] ?? 'not_requested' ),
-				'declaration' => '',
-				'files'       => array(),
-				'diagnostics' => $overlay['diagnostics'] ?? array(),
-			);
-		}
-		$reports = array();
-		foreach ( $overlay['writes'] ?? array() as $write ) {
-			$target  = (string) ( $write['target_path'] ?? '' );
-			$content = (string) ( $write['content'] ?? '' );
-			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
-				return new WP_Error( 'static_site_importer_viewport_metadata_materialization_invalid' );
-			}
-			$path = $state['theme_dir'] . '/' . $target;
-			self::journal_file( $state, $path );
-			$result = self::write_file(
-				$state['theme_dir'],
-				array(
-					'target_path'             => $target,
-					'source_path'             => (string) ( $write['source_path'] ?? $target ),
-					'payload'                 => array(
-						'encoding' => 'utf8',
-						'data'     => $content,
-					),
-					'payload_hash'            => hash( 'sha256', $content ),
-					'reconciliation_identity' => hash( 'sha256', "viewport-metadata\n" . $target ),
-				)
-			);
-			if ( is_wp_error( $result ) ) {
-				return $result;
-			}
-			$reports[] = $result;
-			foreach ( $state['applied']['files'] as $index => $file ) {
-				if ( ( $file['target_path'] ?? null ) === $target ) {
-					$state['applied']['files'][ $index ] = $result;
-					continue 2;
-				}
-			}
-			$state['applied']['files'][] = $result;
-		}
-		return array(
-			'status'      => 'completed',
-			'declaration' => (string) ( $overlay['declaration'] ?? '' ),
-			'files'       => $reports,
-			'diagnostics' => $overlay['diagnostics'] ?? array(),
-		);
-	}
-
-	/** @param array<string,mixed> $overlay */
 	public static function apply_internal_link_overlay( array &$state, array $overlay ) {
 		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
 			return array(
@@ -2013,7 +1956,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/** @param array<string,mixed> $overlay @return array<string,string> */
-	public static function viewport_overlay_writes( string $theme_dir, array $overlay ): array {
+	public static function overlay_writes( string $theme_dir, array $overlay ): array {
 		$writes = array();
 		foreach ( $overlay['writes'] ?? array() as $write ) {
 			if ( is_array( $write ) && is_string( $write['target_path'] ?? null ) && is_string( $write['content'] ?? null ) ) {
