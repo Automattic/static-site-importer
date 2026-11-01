@@ -49,7 +49,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
       { id: 1, type: 'wp_navigation', content: regression === 'anchor' ? '<!-- wp:html --><a href="#fixture-panel">Information</a><!-- /wp:html -->' : '<!-- wp:html --><a href="/#fixture-panel">Information</a><a href="#">Top</a><a href="/#retired">Retired</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } },
       { id: 2, type: 'wp_template_part', content: '<!-- wp:html --><a href="/about/#about-section">About</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
       { id: 4, type: 'wp_template_part', content: '<!-- wp:html --><a href="#home-only">Home only</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
-      { id: 3, type: 'page', content: regression === 'source' ? '<a href="https://SOURCE.example/path">Bad</a>' : regression === 'cdn' ? '<img src="//cdn.source.example/image.png">' : regression === 'link' ? '<a href="/?page_id=1">Bad</a>' : '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
+      { id: 3, type: 'page', content: regression === 'source' ? '<a href="https://SOURCE.example/path">Bad</a>' : regression === 'scoped-source' ? '<a href="https://platform.example/site/about">Bad</a>' : regression === 'scoped-platform' ? '<a href="https://platform.example/badge">Made with Platform</a>' : regression === 'cdn' ? '<img src="//cdn.source.example/image.png">' : regression === 'link' ? '<a href="/?page_id=1">Bad</a>' : '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
     ] });
     const ownerSnapshot = () => ({
       schema: THEME_OWNER_SNAPSHOT_SCHEMA,
@@ -73,7 +73,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
       // authored description fails.
       documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav${regression === 'lost-anchor' ? ' id="retired"' : ''}><a href="/#fixture-panel">Information</a></nav><main id="fixture-panel"></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
       capture: { schema: 'static-site-importer/interactive-capture/v1', pages: ['/', '/about/'].map(route => ({ route, sourceUrl: `https://source.example${route}`, interactionStates: { schema: 'blocks-engine-capture/interaction-states/v2', states: [] }, navigation: [], forms: [] })) },
-      sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias', '/legacy', { path: '/about.html', destination: '/about' }], telemetryMarkers: ['source-analytics'],
+      sourceHosts: ['source.example', 'cdn.source.example', 'platform.example/site'], aliases: ['/alias', '/legacy', { path: '/about.html', destination: '/about' }], telemetryMarkers: ['source-analytics'],
       collectInventory: async () => inventory(),
       themeIndependence: {
         theme: 'twentytwentyfive',
@@ -114,7 +114,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
     const noTheme = structuredClone(passing);
     delete noTheme.checks.theme_independence;
     assert.equal(outcomeGate(noTheme).status, 'pending', 'reports without theme independence no longer certify acceptance');
-    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['lost-anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
+    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['scoped-source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['lost-anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
       regression = mutation;
       const report = await run();
       assert.equal(report.checks[check].status, 'fail', `${mutation}: ${JSON.stringify(report.checks[check])}`);
@@ -122,6 +122,10 @@ test('outcome report detects independent regressions, chains and cycles', async 
       const gates = Object.fromEntries(['capture', 'materialization', 'editor', 'health'].map(name => [name, { status: 'passed' }]));
       assert.equal(aggregateAcceptance({ scope: acceptanceScope({ routes: ['/', '/about/'] }), gates: { ...gates, outcomes: outcomeGate(report) }, importReportVerified: true, importReport: { schema: 'static-site-importer/import-report/v1', quality: { fallback_count: 0 } } }).status, 'failed');
     }
+    // A site scoped below a shared platform host does not own the platform's
+    // other paths, such as its badge link.
+    regression = 'scoped-platform';
+    assert.equal((await run()).checks.link_graph.status, 'pass');
     regression = 'theme-route-about';
     const aboutFailure = await run();
     assert.equal(aboutFailure.checks.theme_independence.status, 'fail');

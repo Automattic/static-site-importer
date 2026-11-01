@@ -182,6 +182,7 @@ Supply `outcomes` in the same caller config:
 ```js
 outcomes: {
   sourceHosts: ['source.example', 'cdn.source.example'], // exhaustive source + CDN hosts
+  // A site scoped below a shared host lists `host/prefix`; the host's other paths are not its own.
   aliases: ['/old-path/'], // exhaustive aliases; [] explicitly means none
   telemetryMarkers: ['source-analytics'], // source telemetry fingerprints; [] means none
   collectInventory: async ({page, candidateOrigin}) => {
