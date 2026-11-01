@@ -21,6 +21,8 @@ class WP_Query {
 	public function is_404() { return true; }
 }
 function get_post_status( $id ) { return 'publish'; }
+function get_term_link( $id, $taxonomy ) { return $GLOBALS['archive_links'][ $id ]; }
+function get_author_posts_url( $id ) { return $GLOBALS['archive_links'][ $id ]; }
 function get_permalink( $id ) { return $GLOBALS['permalinks'][ $id ] ?? 'https://native.test/' . ( 1 === $id ? '' : 'native-' . $id . '/' ); }
 function home_url( $path = '' ) { return ( $GLOBALS['home'] ?? 'https://native.test' ) . $path; }
 function wp_parse_url( $url, $component ) { return parse_url( $url, $component ); }
@@ -104,4 +106,25 @@ $scoped_pages          = array(
 );
 $scoped_receipt        = array( 'plan' => array( 'pages' => $scoped_pages ), 'completed' => array( 'pages' => array( 'website/index.html' => 1, 'website/about.html' => 2 ) ) );
 $assert( array( '/scope:build/about.html' => 'https://native.test/scope:build/about/' ) === Static_Site_Importer_Redirection_Materializer::routes( $scoped_receipt, array() ), 'A path-scoped home redirects only its served HTML address, never a route to itself.' );
+// Archive destinations come from completed native entities, never guessed paths.
+unset( $GLOBALS['home'] );
+foreach ( array(
+	array( 'taxonomy_entities', '/topics/news', '/category/news/', true ),
+	array( 'taxonomy_entities', '/category/news/', '/category/news/', false ),
+	array( 'author_entities', '/author/news', '/writers/news/', true ),
+	array( 'author_entities', '/author/news/', '/author/news/', false ),
+) as [ $collection, $source, $native, $redirect ] ) {
+	$entity = array( 'slug' => 'news', 'archive' => array( 'source_route' => $source ) );
+	$applied = 'taxonomy_entities' === $collection
+		? array( 'term_id' => 42, 'taxonomy' => 'category', 'archive_route' => $source )
+		: array( 'user_id' => 42, 'slug' => 'news' );
+	$GLOBALS['archive_links'][42] = 'https://native.test' . $native;
+	$archive_receipt = array( 'plan' => array( $collection => array( $entity ) ), 'completed' => array( $collection => array( $applied ) ) );
+	$expected = $redirect ? array( $source => 'https://native.test' . $native ) : array();
+	$assert( $expected === Static_Site_Importer_Redirection_Materializer::routes( $archive_receipt, array() ), 'Archive routes redirect exactly when their native destinations differ.' );
+	$assert( Static_Site_Importer_Redirection_Materializer::has_intent( $archive_receipt['plan'], array() ), 'Planned archives retain route intent until commitment.' );
+	$assert( $redirect === Static_Site_Importer_Redirection_Materializer::has_intent( $archive_receipt['plan'], array( 'materialized_receipt' => $archive_receipt ) ), 'Committed archive intent reflects native redirects.' );
+	$archive_receipt['completed'] = array();
+	$assert( array() === Static_Site_Importer_Redirection_Materializer::routes( $archive_receipt, array() ), 'Uncommitted archives cannot claim routes.' );
+}
 echo "Redirection source route contract passed.\n";
