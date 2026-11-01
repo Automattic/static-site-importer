@@ -26,8 +26,8 @@ $checks = array(
 	'fixture maps' => 'mapped' === $row['status'] && empty( $validated['errors'] ),
 	'base colour binds to primary in source stylesheet' => str_contains( $css, 'background-color:var(--wp--preset--color--primary,' ),
 	'overlay does not freeze class-owned colours' => ! preg_match( '/wp-block-button__link\{[^}]*(?:[;{])(?:background-color|color):/', $overlay ),
-	'hover utility reaches submit control' => (bool) preg_match( '/<button[^>]*class="[^"]*hover:bg-blue-700/', $button ),
-	'base utilities reach submit control' => (bool) preg_match( '/<button[^>]*class="[^"]*bg-blue-600/', $button ),
+	'projected submit carries control identity' => str_contains( $button, 'blocks-engine-role-control' ),
+	'author utilities are not repeated on inner submit' => ! preg_match( '/<button[^>]*class="[^"]*(?:hover:bg-blue-700|bg-blue-600)/', $button ),
 );
 if ( in_array( '--json', $argv, true ) ) {
 	echo json_encode( compact( 'css', 'overlay', 'button' ) );
