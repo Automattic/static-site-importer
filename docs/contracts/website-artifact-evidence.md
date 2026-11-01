@@ -87,8 +87,9 @@ Captured HTML can mark what the producer observed. Blocks Engine publishes the n
 |---|---|---|
 | `data-blocks-engine-capture-device-selection` | client-script policy | Marker on the device selection script |
 | `data-blocks-engine-capture-device-body` | client-script policy | Marker on the device body script |
+| `data-blocks-engine-capture-device-document` | device body script | Device document key of a reconciled document wrapper |
+| `data-blocks-engine-capture-device-inline` | device body script | JSON map of a node's inline style per device document |
 | `data-blocks-engine-capture-selected-document` | device selection scripts | Selected device document key on `<html>` |
-| `data-blocks-engine-capture-selected-viewport` | device selection scripts | The viewport `<meta>` the selection rewrites |
 | `data-blocks-engine-capture-document-unavailable` | device selection scripts | Device document key without a viewport |
 | `data-blocks-engine-capture-device-style` | device selection scripts | Space-separated device document keys an inert stylesheet serves |
 | `data-blocks-engine-capture-source-media` | device selection scripts | Original `media` of an inert stylesheet |
@@ -103,7 +104,7 @@ A marked member sign-in control links to `wp_login_url()`. Generated themes and 
 
 A producer that captures one document per device keeps each device stylesheet inert (`media="not all"`, marked with `data-blocks-engine-capture-device-style` and `data-blocks-engine-capture-source-media`) and emits two scripts:
 
-- `<script data-blocks-engine-capture-device-selection="">` picks the document for the visitor's user agent, stamps it on `<html>`, applies its viewport and `<html>` attributes, and activates its stylesheets.
-- `<script data-blocks-engine-capture-device-body="">` applies the selected document's `<body>` attributes.
+- `<script data-blocks-engine-capture-device-selection="">` picks the document for the visitor's user agent, stamps it on `<html>`, applies its viewport to the page's standard `<meta name="viewport">` (the one any host renders), applies its `<html>` attributes, and activates its stylesheets.
+- `<script data-blocks-engine-capture-device-body="">` applies the selected document's `<body>` attributes, then, once the document is parsed, overlays them on the selected `data-blocks-engine-capture-device-document` wrapper (or the default document's) and applies each `data-blocks-engine-capture-device-inline` node's style for the selected document.
 
-The client-script policy keeps exactly these two scripts when their bodies match one of the accepted producer templates in `Static_Site_Importer_Client_Script_Policy` byte for byte (the current template treats a stylesheet's `data-blocks-engine-capture-device-style` marker as the space-separated list of device keys it serves; the older template that compared it to one scalar key stays accepted for captures from releases before that change) and the embedded data passes its allowlist; every other script is dropped like any imported code. `tests/fixtures/device-selection/index.html` is the reference page. `tools/regenerate-device-selection-fixture.mjs <module> --producer <name@revision>` regenerates it from a producer module that exports `assembleDeviceDocuments()` and `installDeviceSelection()`, and `tests/smoke-client-script-policy.php` proves the producer's output matches.
+The client-script policy keeps exactly these two scripts when their bodies match the producer template in `Static_Site_Importer_Client_Script_Policy` byte for byte (a stylesheet's `data-blocks-engine-capture-device-style` marker is the space-separated list of device keys it serves) and the embedded data passes its allowlist (the body script's default document key must be one of its roots); every other script is dropped like any imported code. `tests/fixtures/device-selection/index.html` is the reference page. `tools/regenerate-device-selection-fixture.mjs <module> --producer <name@revision>` regenerates it from a producer module that exports `assembleDeviceDocuments()` and `installDeviceSelection()`, and `tests/smoke-client-script-policy.php` proves the producer's output matches.

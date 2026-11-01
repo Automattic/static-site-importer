@@ -35,8 +35,8 @@ final class Static_Site_Importer_Capture_Evidence {
 	/** Device document key the selection script stamps on `<html>`. */
 	public const SELECTED_DOCUMENT = 'data-blocks-engine-capture-selected-document';
 
-	/** The viewport `<meta>` the selection script rewrites for the selected document. */
-	public const SELECTED_VIEWPORT = 'data-blocks-engine-capture-selected-viewport';
+	/** Device document key of a reconciled document wrapper the body script overlays. */
+	public const DEVICE_DOCUMENT = 'data-blocks-engine-capture-device-document';
 
 	/** Device document key recorded on `<html>` when that document has no viewport. */
 	public const DOCUMENT_UNAVAILABLE = 'data-blocks-engine-capture-document-unavailable';
