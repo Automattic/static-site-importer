@@ -76,6 +76,11 @@ test('capture contracts bind real outcome probes without producer knowledge', as
       const incomplete = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html: html.replace('<main>', '<div>').replace('</main>', '</div>') } } });
       assert.equal(incomplete.telemetryMarkers, undefined);
       assert.equal(incomplete.documents['/'].sourceContent, undefined);
+      // A site scoped to a path on a shared host owns only that path there.
+      const scopedReceipt = JSON.parse(fs.readFileSync(path.join(temporary, 'capture-receipt.json'), 'utf8'));
+      scopedReceipt.source.routeScope = { origin: 'https://source.example', pathPrefixes: ['/site/'] };
+      fs.writeFileSync(path.join(temporary, 'capture-receipt.json'), JSON.stringify(scopedReceipt));
+      assert.deepEqual((await deriveOutcomeBindings({ ...args, fixture: copy })).sourceHosts, ['source.example/site']);
       fs.rmSync(path.join(temporary, 'capture-receipt.json'));
       const absent = await deriveOutcomeBindings({ ...args, fixture: copy });
       assert.equal(absent.capture, undefined);
