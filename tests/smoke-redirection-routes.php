@@ -2,7 +2,7 @@
 /** Pure route binding contract; the real provider is exercised in acceptance. */
 define( 'ABSPATH', '/' );
 class WP_Error {
-	public function __construct( public string $code, public string $message ) {}
+	public function __construct( public string $code, public string $message, public mixed $data = null ) {}
 }
 function get_option( $key, $default = false ) { return $default; }
 function url_to_postid( $url ) { return 0; }
@@ -29,6 +29,12 @@ function wp_parse_url( $url, $component ) { return parse_url( $url, $component )
 function sanitize_title_for_query( $value ) { return $value; }
 function get_posts( $args ) { return $GLOBALS['route_owners'] ?? array(); }
 function get_page_uri( $post ) { return $post->path; }
+class Static_Site_Importer_Plugin_Materializer {
+	public static function ensure_wp_org_plugin( ...$args ): array {
+		return $GLOBALS['dependency_report'];
+	}
+}
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-redirects-manifest.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-redirection-materializer.php';
@@ -127,4 +133,19 @@ foreach ( array(
 	$archive_receipt['completed'] = array();
 	$assert( array() === Static_Site_Importer_Redirection_Materializer::routes( $archive_receipt, array() ), 'Uncommitted archives cannot claim routes.' );
 }
+// An on-demand activation must expose its real report before native writes.
+$GLOBALS['dependency_report'] = array(
+	'slug' => 'redirection',
+	'status' => 'activated_pending_fresh_runtime',
+	'installed' => true,
+	'active' => true,
+	'error' => array( 'code' => 'rest_no_route', 'message' => 'Routes require a fresh boot.' ),
+);
+$pending = Static_Site_Importer_Redirection_Materializer::materialize( array(), array( 'slug' => 'deferred', 'materialized_receipt' => $scoped_receipt, 'materialize_dependencies' => true ) );
+$assert( $pending instanceof WP_Error && 'static_site_importer_required_runtime_dependency_missing' === $pending->code, 'Deferred activation returns generic readiness, never redirection_unavailable.' );
+$assert( 'pending_fresh_runtime' === ( $pending->data['readiness_stage'] ?? '' ), 'Deferred readiness stage survives materialization.' );
+$assert( $GLOBALS['dependency_report'] === ( $pending->data['dependency_reports']['redirection_routes']['redirection'] ?? null ), 'Materializer preserves the complete dependency report.' );
+$GLOBALS['dependency_report']['status'] = 'failed';
+$failed = Static_Site_Importer_Redirection_Materializer::materialize( array(), array( 'slug' => 'deferred', 'materialized_receipt' => $scoped_receipt, 'materialize_dependencies' => true ) );
+$assert( $failed instanceof WP_Error && $GLOBALS['dependency_report'] === ( $failed->data['dependency'] ?? null ), 'Terminal readiness failure also preserves the real report.' );
 echo "Redirection source route contract passed.\n";
