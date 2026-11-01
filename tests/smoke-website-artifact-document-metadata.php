@@ -183,10 +183,25 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
-	$assert( str_contains( $bootstrap, 'Static Site Importer authored viewport metadata' ) && str_contains( $bootstrap, "'width=320, user-scalable=yes'" ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'theme-bootstrap-materializes-authored-viewport', $bootstrap );
+	$assert( ! str_contains( $bootstrap, 'viewport' ), 'theme-bootstrap-never-overrides-core-viewport', $bootstrap );
 	$assert( ! str_contains( $bootstrap, 'Static Site Importer authored route document titles' ) && ! str_contains( $bootstrap, 'Static Site Importer authored route head metadata' ), 'theme-does-not-own-route-metadata', $bootstrap );
+	// The plugin itself prints nothing into a front-end head: core and the SEO
+	// owner render what the import wrote into native fields.
+	$request_hooks = array();
+	foreach ( array( 'wp_head', 'template_include' ) as $hook ) {
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				$reflect  = is_array( $function ) ? new ReflectionMethod( $function[0], $function[1] ) : ( is_string( $function ) && str_contains( $function, '::' ) ? new ReflectionMethod( $function ) : new ReflectionFunction( $function ) );
+				if ( str_starts_with( (string) $reflect->getFileName(), $plugin_root . '/includes/' ) || $plugin_root . '/static-site-importer.php' === $reflect->getFileName() ) {
+					$request_hooks[] = $hook . ':' . $reflect->getName();
+				}
+			}
+		}
+	}
+	$assert( array() === $request_hooks, 'plugin-registers-no-head-or-template-callbacks', implode( ', ', $request_hooks ) );
 	$viewport_receipt = $result['materialization_receipt']['completed']['viewport_metadata'] ?? array();
-	$assert( 'completed' === ( $viewport_receipt['status'] ?? '' ) && 'width=320, user-scalable=yes' === ( $viewport_receipt['declaration'] ?? '' ), 'viewport-materialization-is-recorded-in-receipt' );
+	$assert( 'report_only' === ( $viewport_receipt['status'] ?? '' ) && 'viewport_metadata_not_core_default' === ( $viewport_receipt['diagnostics'][0]['reason_code'] ?? '' ), 'non-core-viewport-is-a-named-receipt-loss', (string) wp_json_encode( $viewport_receipt ) );
 	$previous_query       = $GLOBALS['wp_query'] ?? null;
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();

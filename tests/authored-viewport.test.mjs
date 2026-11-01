@@ -8,7 +8,7 @@ import { createServer } from 'node:net';
 import { JSDOM } from 'jsdom';
 import { provisionWordPress } from '../lib/disposable-wordpress.mjs';
 
-test('imported site renders one source-owned viewport per route, replayed head or not', async () => {
+test('core owns the imported viewport; a different authored one is a receipt loss', async () => {
   const workDir = await mkdtemp(join(tmpdir(), 'ssi-viewport-'));
   const port = await new Promise(resolvePort => {
     const socket = createServer();
@@ -25,8 +25,8 @@ test('imported site renders one source-owned viewport per route, replayed head o
     const sourceValue = 'width=device-width, initial-scale=1, viewport-fit=cover';
     const artifact = {
       entrypoint: 'website/index.html',
-      // The index head carries a selector, so the document-head replay owns it;
-      // the about head is plain, so the authored viewport bootstrap owns it.
+      // The index head carries a selector, so the document-head replay still
+      // owns it; the about head is plain, so only core's canvas renders one.
       files: [['index', ' id="authored-viewport"'], ['about', '']].map(([name, selector]) => ({
         path: `website/${name}.html`,
         content: `<!doctype html><html><head><title>${name}</title><meta${selector} name="viewport" content="${sourceValue}"></head><body><main><h1>${name}</h1><a href="about.html">About</a></main></body></html>`,
@@ -43,11 +43,14 @@ $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifa
 if (is_wp_error($compiled)) { throw new RuntimeException($compiled->get_error_message()); }
 $result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize($compiled['plan'], $compiled['args']);
 if ('completed' !== ($result['status'] ?? '')) { throw new RuntimeException(wp_json_encode($result)); }
-echo wp_json_encode(array_map('get_permalink', get_posts(array('post_type' => 'page', 'numberposts' => -1, 'post_status' => 'publish'))));
+echo wp_json_encode(array('viewport' => $result['completed']['viewport_metadata'] ?? null, 'routes' => array_map(static fn($post) => array('title' => $post->post_title, 'url' => get_permalink($post)), get_posts(array('post_type' => 'page', 'numberposts' => -1, 'post_status' => 'publish')))));
 `);
     const output = runtime.wpRun(['eval-file', script]).stdout;
-    const routes = JSON.parse(output.trim());
-    assert.equal(routes.length, 2, 'both imported routes exist');
+    const { viewport, routes } = JSON.parse(output.trim());
+    assert.deepEqual(routes.map(row => row.title).sort(), ['about', 'index'], 'both imported routes exist');
+    assert.equal(viewport.status, 'report_only', 'the import does not carry a non-core viewport');
+    assert.deepEqual(viewport.diagnostics.map(row => [row.reason_code, row.source_paths.length]), [['viewport_metadata_not_core_default', 2]], 'every route that declared it is a named loss');
+    assert.equal('writes' in viewport || 'files' in viewport, false, 'no theme code is written for the viewport');
     server = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', runtime.wpDir], { stdio: 'ignore' });
     for (let attempt = 0; ; attempt++) {
       try { await fetch(origin); break; } catch (error) {
@@ -55,13 +58,13 @@ echo wp_json_encode(array_map('get_permalink', get_posts(array('post_type' => 'p
         await new Promise(resolveWait => setTimeout(resolveWait, 50));
       }
     }
-    for (const route of routes) {
+    for (const { title, url: route } of routes) {
       const response = await fetch(route);
       assert.equal(response.status, 200, route);
       const dom = new JSDOM(await response.text());
       const viewports = dom.window.document.querySelectorAll('meta[name="viewport"]');
       assert.equal(viewports.length, 1, `${route} has exactly one viewport`);
-      assert.equal(viewports[0].getAttribute('content'), sourceValue, 'source declaration replaces the core default');
+      if (title === 'about') assert.equal(viewports[0].getAttribute('content'), 'width=device-width, initial-scale=1', 'core renders its viewport on a route the head replay does not own');
       dom.window.close();
     }
   } finally {

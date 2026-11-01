@@ -563,7 +563,6 @@
     "static_site_importer_url_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_validation_artifact_dir_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_validation_artifact_missing": { "class": "integrity", "owning_layer": "static-site-importer" },
-    "static_site_importer_viewport_metadata_materialization_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_zip_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
     "synced_pattern_declaration_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "synced_pattern_explicit_references_required": { "class": "integrity", "owning_layer": "blocks-engine" },

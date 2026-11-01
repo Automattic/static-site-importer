@@ -1,5 +1,5 @@
 <?php
-/** Native route head projection: edits to WordPress owners win over provenance. */
+/** Route head metadata is written to WordPress owners at import time. */
 declare(strict_types=1);
 define( 'ABSPATH', __DIR__ . '/' );
 require dirname( __DIR__ ) . '/vendor/autoload.php';
@@ -16,26 +16,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return true;
 	}
 }
-function is_singular(): bool {
-	return true; }
-function get_queried_object_id(): int {
-	return 1; }
-function get_post_meta( int $id, string $key, bool $single = true ): string {
-	return '{"head_metadata":[{"key":"og:url","content":"https://source.example/"}]}'; }
-function get_post_field( string $field, int $id ): string {
-	return 'post_excerpt' === $field ? 'Edited description' : 'Edited title'; }
-function get_the_title( int $id ): string {
-	return 'Edited title'; }
-function get_permalink( int $id ): string {
-	return 'https://destination.example/about/'; }
-function get_the_post_thumbnail_url( int $id, string $size ): string {
-	return 'https://destination.example/uploads/social.png'; }
-function has_action( string $hook, string $callback ): bool {
-	return ! empty( $GLOBALS['platform'] ); }
-function esc_attr( string $value ): string {
-	return htmlspecialchars( $value, ENT_QUOTES ); }
-function esc_url( string $value ): string {
-	return $value; }
+function get_post_meta( int $id, string $key, bool $single = true ): array {
+	return array(); }
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); }
@@ -59,17 +41,6 @@ $page   = array(
 	),
 );
 $assert( 'Authored & plain' === Static_Site_Importer_Route_Head_Metadata::description_from_page( $page ), 'Description has deterministic precedence and entity decoding.' );
-ob_start();
-Static_Site_Importer_Route_Head_Metadata::print_tags();
-$html = ob_get_clean();
-$assert( str_contains( $html, 'Edited title' ) && str_contains( $html, 'Edited description' ), 'Native owners render, not stale provenance.' );
-$assert( str_contains( $html, '/uploads/social.png' ) && ! str_contains( $html, 'source.example' ), 'Image and URL come from WordPress.' );
-$assert( 1 === substr_count( $html, 'name="description"' ), 'One description.' );
-$GLOBALS['static_site_importer_head_metadata_emitted'] = false;
-$GLOBALS['platform']                                   = true;
-ob_start();
-Static_Site_Importer_Route_Head_Metadata::print_tags();
-$assert( '' === ob_get_clean(), 'Platform remains sole emitter when registered.' );
 $page['source_path']                = 'about.html';
 $page['document_metadata']['title'] = 'Authored title';
 $state                              = array(
@@ -79,6 +50,8 @@ $state                              = array(
 $GLOBALS['seo_written']             = array();
 Static_Site_Importer_Route_Head_Metadata::materialize_platform_fields( $state );
 $assert( array() === $GLOBALS['seo_written'], 'Absent SEO owners are not invented.' );
+$assert( array( 'about.html' ) === ( $state['diagnostics'][0]['source_paths'] ?? null ) && 'route_description_unrendered' === $state['diagnostics'][0]['reason_code'], 'A description no owner renders is a named loss.' );
+unset( $state['diagnostics'] );
 $GLOBALS['registered_seo'] = array(
 	'advanced_seo_description' => array(),
 	'jetpack_seo_html_title'   => array(),
@@ -92,4 +65,5 @@ $assert(
 	'Registered platform owners receive authored values, not content-generated descriptions.'
 );
 $assert( isset( $state['rollback']['route_seo'][1]['advanced_seo_description'] ), 'Platform fields participate in compensation.' );
+$assert( ! isset( $state['diagnostics'] ), 'A registered owner renders the description, so nothing is lost.' );
 echo "native route head metadata passed\n";
