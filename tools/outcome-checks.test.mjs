@@ -23,6 +23,8 @@ test('outcome report detects independent regressions, chains and cycles', async 
     if (theme.active !== 'outcome-fixture') theme.rendered = true;
     // Only the home route renders the home-only part and its section.
     const body = page(url.pathname === '/about/' ? '<p id="about-section">About content</p>' : '<details id="fixture-panel"><summary>More</summary></details><a href="#home-only">Home only</a><p id="home-only"></p>');
+    // WordPress redirects a source `.html` alias to its trailing-slash permalink.
+    if (req.url === '/about.html') { res.writeHead(301, { Location: '/about/' }); res.end(); return; }
     if (req.url === '/alias' || req.url === '/legacy') {
       if (req.url === '/legacy' && theme.active !== 'outcome-fixture' && regression === 'theme-alias') { res.setHeader('Content-Type', 'text/html'); res.end(body); return; }
       res.writeHead(301, { Location: regression === 'cycle' ? req.url : regression === 'chain' ? '/next' : '/' }); res.end(); return;
@@ -71,7 +73,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
       // authored description fails.
       documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav${regression === 'lost-anchor' ? ' id="retired"' : ''}><a href="/#fixture-panel">Information</a></nav><main id="fixture-panel"></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
       capture: { schema: 'static-site-importer/interactive-capture/v1', pages: ['/', '/about/'].map(route => ({ route, sourceUrl: `https://source.example${route}`, interactionStates: { schema: 'blocks-engine-capture/interaction-states/v2', states: [] }, navigation: [], forms: [] })) },
-      sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias', '/legacy'], telemetryMarkers: ['source-analytics'],
+      sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias', '/legacy', { path: '/about.html', destination: '/about' }], telemetryMarkers: ['source-analytics'],
       collectInventory: async () => inventory(),
       themeIndependence: {
         theme: 'twentytwentyfive',
@@ -150,12 +152,12 @@ test('document outcomes measure schemes, alpha, images and exact chrome decision
     // split across text nodes, revealed only once scrolled into view, and authored
     // in a non-legacy colour space that computes as color(), not rgb().
     if (req.url === '/source/') { res.end('<main><div style="height:2000px"></div><p id="note" style="color:color(srgb 0.6 0.6 0.6);background:white;opacity:0;transition:opacity .2s">Muted <!---->note</p><script>new IntersectionObserver(([entry]) => { if (entry.isIntersecting) note.style.opacity = 1; }).observe(note);</script></main>'); return; }
-    res.end(`<style>body{color:#111;background:white} @media(prefers-color-scheme:dark){body{color:white;background:#111}} .image{color:black;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22%3E%3Cpath fill=%22white%22 d=%22M0 0h1v1H0z%22/%3E%3C/svg%3E')}</style><header>Source header</header><main><p class="image">Image text</p><p style="${mutation === 'text' ? 'color:#eee;background:white' : mutation === 'alpha' ? 'color:rgba(0,0,0,.1);background:white' : mutation === 'unsupported' ? 'filter:blur(1px)' : mutation === 'gradient' ? 'background-image:linear-gradient(white,black)' : ''}">Readable text</p><button style="${mutation === 'button' ? 'color:white;background:white' : ''}">Control</button><p style="display:none;color:white;background:white">Hidden text</p>${mutation === 'source-muted' ? '<p style="color:#999;background:white">Muted note</p>' : mutation === 'source-lowered' ? '<p style="color:#ccc;background:white">Muted note</p>' : mutation === 'source-doubled' ? '<p style="color:#999;background:white">Muted note</p>'.repeat(2) : ''}</main><footer>Source footer</footer>${mutation === 'footer' ? '<aside>Injected widget</aside>' : ''}`);
+    res.end(`<style>a{color:inherit} body{color:#111;background:white} @media(prefers-color-scheme:dark){body{color:white;background:#111}} .image{color:black;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22%3E%3Cpath fill=%22white%22 d=%22M0 0h1v1H0z%22/%3E%3C/svg%3E')}</style><a class="skip-link" href="#wp--skip-link--target">Skip to content</a><header><p>Source <mark role="none">header</mark></p>${mutation === 'lost-link' ? '' : '<p><a href="/about/">About</a></p><a href="/about/"><img src="/card.png" alt=""></a>'}<p><a href="/#retired">Retired</a></p></header><main><p class="image">Image text</p><p style="${mutation === 'text' ? 'color:#eee;background:white' : mutation === 'alpha' ? 'color:rgba(0,0,0,.1);background:white' : mutation === 'unsupported' ? 'filter:blur(1px)' : mutation === 'gradient' ? 'background-image:linear-gradient(white,black)' : ''}">Readable text</p><button style="${mutation === 'button' ? 'color:white;background:white' : ''}">Control</button><p style="display:none;color:white;background:white">Hidden text</p>${mutation === 'source-muted' ? '<p style="color:#999;background:white">Muted note</p>' : mutation === 'source-lowered' ? '<p style="color:#ccc;background:white">Muted note</p>' : mutation === 'source-doubled' ? '<p style="color:#999;background:white">Muted note</p>'.repeat(2) : ''}</main><footer>Source footer</footer>${mutation === 'footer' ? '<aside>Injected widget</aside>' : ''}`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true });
   try {
-    const config = { colourSchemes: ['light', 'dark'], documents: { '/': { sourceOrigin: 'https://source.example', sourceContent: 'main', candidateContent: 'main', html: '<header>Source header</header><main></main><footer>Source footer</footer>' } } };
+    const config = { colourSchemes: ['light', 'dark'], documents: { '/': { sourceOrigin: 'https://source.example', sourceContent: 'main', candidateContent: 'main', html: '<header>Source header <span><a href="/about/index.html">About</a></span> <a href="#retired">Retired</a></header><main></main><footer>Source footer</footer>' } } };
     const run = () => documentOutcomes({ browser, candidateOrigin: `http://127.0.0.1:${server.address().port}`, routes: ['/'], widths: [390, 1440], config });
     const baseline = await run();
     assert.equal(baseline.readability.status, 'pass', JSON.stringify(baseline));
@@ -163,13 +165,17 @@ test('document outcomes measure schemes, alpha, images and exact chrome decision
     assert.equal(baseline.full_document.evidence.length, 4);
     assert.ok(baseline.readability.evidence.some(row => row.text === 'Image text' && row.status === 'pass'));
     assert.ok(!baseline.readability.evidence.some(row => row.text === 'Hidden text'));
-    for (const value of ['text', 'alpha', 'button', 'footer']) {
+    // Wrapper markup, the platform skip link, a repeated card link, `/about/`
+    // for `/about/index.html` and a dead source fragment are the same chrome.
+    assert.ok(!baseline.full_document.evidence.some(row => row.differences), JSON.stringify(baseline.full_document.evidence[0]));
+    for (const value of ['text', 'alpha', 'button', 'footer', 'lost-link']) {
       mutation = value;
       const outcomes = await run();
-      const check = value === 'footer' ? 'full_document' : 'readability';
+      const check = ['footer', 'lost-link'].includes(value) ? 'full_document' : 'readability';
       assert.equal(outcomes[check].status, 'fail', value);
       assert.equal(outcomes[check === 'readability' ? 'full_document' : 'readability'].status, 'pass');
       assert.equal(outcomeGate({ checks: outcomes }).status, 'failed');
+      if (value === 'lost-link') assert.deepEqual(outcomes.full_document.evidence[0].differences.find(row => row.kind === 'links'), { side: 'before', kind: 'links', missing: ['/about'], added: [] });
       if (value === 'footer') {
         const row = outcomes.full_document.evidence[0];
         config.documents['/'].decisions = [{ reason: 'Owner-approved widget', expected: row.expected, actual: row.actual }];
