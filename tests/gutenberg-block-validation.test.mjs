@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 
 const require = createRequire( import.meta.url );
 const {
@@ -30,6 +31,26 @@ registerValidationBlockType( SAVE_MISMATCH_NAME, {
 	save( { attributes } ) {
 		return createElement( 'select', { name: attributes.name } );
 	},
+} );
+
+test( 'generated form button parents match core save with their destination slot classes', () => {
+	const markup = execFileSync( 'php', [ 'tests/smoke-form-button-parent.php' ], { encoding: 'utf8' } );
+	// Isolate native subtrees: the surrounding provider/layout-shell blocks are
+	// not registered in this core-only validation runtime.
+	const buttons = markup.match( /<!-- wp:buttons\b[\s\S]*?<!-- \/wp:buttons -->/g ) || [];
+	assert.equal( buttons.length, 2 );
+	const result = validateMarkup( buttons.join( '\n' ) );
+	assert.equal( result.ok, true, JSON.stringify( result.failures ) );
+	assert.equal( result.blocksChecked, 4 );
+	assert.equal( result.results.filter( ( block ) => block.name === 'core/buttons' && block.isValid ).length, 2 );
+	const { parse, validateBlock } = ensureRuntime();
+	const [ parent ] = parse( buttons[ 0 ] );
+	assert.match( parent.attributes.className, /-destination-slot$/ );
+	const missingSavedClass = {
+		...parent,
+		originalContent: parent.originalContent.replace( /class="wp-block-buttons [^"]*"/, 'class="wp-block-buttons"' ),
+	};
+	assert.equal( validateBlock( missingSavedClass )[ 0 ], false, 'Dropping the saved slot class must invalidate core/buttons' );
 } );
 
 test( 'validateBlock flags stored markup that registered save() would not reproduce', () => {

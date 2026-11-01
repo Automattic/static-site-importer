@@ -267,12 +267,13 @@ function ssi_role_box_render_block( array $block ): string {
 	if ( 'core/button' === $block['name'] ) {
 		return ssi_role_box_render_button( $block );
 	}
-	if ( 'core/group' === $block['name'] ) {
+	if ( in_array( $block['name'], array( 'core/group', 'core/buttons' ), true ) ) {
 		$inner = '';
 		foreach ( $block['innerBlocks'] as $child ) {
 			$inner .= ssi_role_box_render_block( $child );
 		}
-		$class = trim( 'wp-block-group ' . (string) ( $block['attrs']['className'] ?? '' ) . ' ' . ssi_role_box_layout_classes( 'group', (array) ( $block['attrs']['layout'] ?? array() ), 'flow' ) );
+		$slug  = 'core/buttons' === $block['name'] ? 'buttons' : 'group';
+		$class = trim( 'wp-block-' . $slug . ' ' . (string) ( $block['attrs']['className'] ?? '' ) . ' ' . ssi_role_box_layout_classes( $slug, (array) ( $block['attrs']['layout'] ?? array() ), 'buttons' === $slug ? 'flex' : 'flow' ) );
 		return '<div class="' . ssi_role_box_esc( $class ) . '">' . $inner . '</div>';
 	}
 	// Blocks Engine's generated layout shell saves its authored wrapper

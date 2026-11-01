@@ -211,6 +211,7 @@
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-contract.php",
           "tests/smoke-form-readable-substitution.php",
+          "tests/smoke-form-button-parent.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/smoke-form-linked-placeholder-colors.php",
           "tests/provider-adapter-runtime-smoke.php",

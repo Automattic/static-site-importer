@@ -85,6 +85,11 @@ test( 'imported forms keep the source form geometry on the front end and in the 
 				const boxes = {};
 				for ( const [ surface, html ] of Object.entries( documents ) ) {
 					await page.setContent( html );
+					if ( surface !== 'source' ) {
+						const slots = await page.locator( '.wp-block-buttons[class*="-destination-slot"]' ).evaluateAll( ( nodes ) => nodes.map( ( node ) => getComputedStyle( node ).display ) );
+						assert.ok( slots.length, `${ form.name } ${ surface }: submit keeps its required buttons parent` );
+						assert.ok( slots.every( ( display ) => display === 'contents' ), `${ form.name } ${ surface }: the required parent does not introduce a source layout box` );
+					}
 					boxes[ surface ] = await page.evaluate( measure, SURFACES[ surface ] );
 				}
 				results.push( { form: form.name, width, boxes } );

@@ -842,6 +842,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
 			$suffix = "</div>\n";
+		} elseif ( 'core/buttons' === $name ) {
+			$classes = 'wp-block-buttons';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
+			$suffix = "</div>\n";
 		} elseif ( in_array( $wrapper, array( 'submit', 'button' ), true ) ) {
 			$classes    = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
 			$type       = 'submit' === $wrapper ? 'submit' : 'button';

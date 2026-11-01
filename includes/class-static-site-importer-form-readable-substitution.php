@@ -276,6 +276,15 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		foreach ( $descriptor['destinations'] as $destination ) {
 			if ( 'submit_wrapper' === ( $destination['part'] ?? null ) ) {
 				$descriptor['destinations'][] = array(
+					'part'       => 'source_button_slot',
+					'editor'     => array(),
+					'role'       => 'control',
+					'selector'   => $destination['selector'] . '-destination-slot',
+					'properties' => array(),
+					'resets'     => array( 'display' => 'contents' ),
+					'priority'   => 'important',
+				);
+				$descriptor['destinations'][] = array(
 					'part'       => 'source_submit_wrapper_paint_reset',
 					'role'       => 'control',
 					'selector'   => $destination['selector'],
@@ -299,7 +308,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/** Preserve saved wrapper fragments, changing only their child slots. */
-	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
+	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name = '' ): ?array {
 		if ( isset( $block['form_choice_group_index'] ) ) {
 			return self::choice_field( $block, $state );
 		}
@@ -312,6 +321,17 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( 'core/button' === $field['name'] && preg_match_all( '/(?:^|\s)ssi-source-submit--(\S+)/', $field['attrs']['className'] ?? '', $source ) ) {
 				// The wrapper is the source button's box (with_source_box_submit_wrapper()).
 				$field['attrs']['className'] .= ' ' . implode( ' ', $source[1] );
+			}
+			// The source control can occupy a group or a captured layout-shell
+			// slot. Core buttons require their own immediate buttons parent.
+			if ( 'core/button' === $field['name'] && 'core/buttons' !== $parent_name ) {
+				$field = array(
+					'name'        => 'core/buttons',
+					// Keep the required editor parent without introducing a new
+					// layout item: the button wrapper still owns the source box.
+					'attrs'       => array( 'className' => self::button_slot_class( $field ) ),
+					'innerBlocks' => array( $field ),
+				);
 			}
 			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 		}
@@ -331,7 +351,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				}
 				continue;
 			}
-			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state );
+			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state, (string) ( $block['blockName'] ?? '' ) );
 			if ( null !== $child ) {
 				$children[] = $child;
 				$slots[]    = null;
@@ -345,6 +365,12 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/** The required buttons parent is not another source layout box. */
+	private static function button_slot_class( array $field ): string {
+		preg_match_all( '/\bssi-node-[a-f0-9]{12}\b/', (string) ( $field['attrs']['className'] ?? '' ), $matches );
+		return implode( ' ', array_map( static fn( string $token ): string => $token . '-destination-slot', $matches[0] ) );
 	}
 
 	/**
