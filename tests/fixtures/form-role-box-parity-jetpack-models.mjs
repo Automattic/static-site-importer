@@ -373,9 +373,11 @@ export function editorBlockHtml( block, parent = null ) {
 			return `<div ${ blockProps( name, attrs ) }><div class="${ classes( 'wp-block-jetpack-contact-form', attrs.className, 'jetpack-contact-form', 'has-no-jetpack-form-layout', 'block-editor-block-list__layout', legacyLayoutClasses( { type: 'flex', flexWrap: 'wrap', orientation: 'horizontal', justifyContent: 'left', verticalAlignment: 'top' } ), 'is-layout-flex', 'wp-container-jetpack-contact-form-is-layout-default', 'wp-block-jetpack-contact-form-is-layout-flex' ) }">${ inner() }</div></div>`;
 		}
 		// block-library/src/group/edit.js: useInnerBlocksProps( blockProps ).
-		case 'core/group': {
-			const layout = attrs.layout?.type ?? 'flow';
-			return `<div ${ blockProps( name, attrs, 'block-editor-block-list__layout', legacyLayoutClasses( attrs.layout ?? {} ), `is-layout-${ layout }`, `wp-block-group-is-layout-${ layout }` ) }>${ inner() }</div>`;
+		case 'core/group':
+		case 'core/buttons': {
+			const slug = name === 'core/buttons' ? 'buttons' : 'group';
+			const layout = attrs.layout?.type ?? ( slug === 'buttons' ? 'flex' : 'flow' );
+			return `<div ${ blockProps( name, attrs, 'block-editor-block-list__layout', legacyLayoutClasses( attrs.layout ?? {} ), `is-layout-${ layout }`, `wp-block-${ slug }-is-layout-${ layout }` ) }>${ inner() }</div>`;
 		}
 		// block-library/src/button/edit.js: wrapper plus a RichText (div) whose
 		// class is the edit className (generated + custom) and the link classes.

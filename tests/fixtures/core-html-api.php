@@ -6,6 +6,24 @@ if ( ! $ssi_wp_root ) {
 }
 if ( ! $ssi_wp_root ) {
 	$ssi_wp_root = dirname( __DIR__, 2 ) . '/vendor/wordpress-core';
+	if ( ! is_readable( $ssi_wp_root . '/wp-includes/html-api/class-wp-html-tag-processor.php' ) ) {
+		// Direct PHP and node --test runs need the same pinned fixture as CI.
+		// Explicit runtime roots above remain authoritative and fail if invalid.
+		// Browser suites can start several PHP fixtures concurrently.
+		$ssi_fixture_lock = fopen( sys_get_temp_dir() . '/ssi-core-fixture-' . md5( $ssi_wp_root ) . '.lock', 'c' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Standalone CLI bootstrap needs a cross-process provisioning lock.
+		if ( false === $ssi_fixture_lock || ! flock( $ssi_fixture_lock, LOCK_EX ) ) {
+			fwrite( STDERR, "FAIL: Cannot lock WordPress fixture provisioning.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Standalone dependency bootstrap reports to CLI stderr.
+			exit( 1 );
+		}
+		passthru( 'bash ' . escapeshellarg( dirname( __DIR__, 2 ) . '/tools/prepare-wordpress-core-fixture.sh' ), $ssi_fixture_status ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_passthru -- Standalone CLI tests provision their pinned dependency through the shared setup script.
+		flock( $ssi_fixture_lock, LOCK_UN );
+		fclose( $ssi_fixture_lock ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Release the standalone provisioning lock handle.
+		unset( $ssi_fixture_lock );
+		if ( 0 !== $ssi_fixture_status ) {
+			exit( (int) $ssi_fixture_status );
+		}
+		unset( $ssi_fixture_status );
+	}
 }
 $ssi_html_api = rtrim( (string) $ssi_wp_root, '/\\' ) . '/wp-includes/html-api/';
 if ( ! is_readable( $ssi_html_api . 'class-wp-html-tag-processor.php' ) ) {
