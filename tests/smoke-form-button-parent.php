@@ -22,6 +22,14 @@ $shell = false;
 $walk = static function( array $blocks, string $parent = '' ) use ( &$walk, &$errors, &$count, &$shell ): void {
  foreach ( $blocks as $block ) {
   if ( str_ends_with( $parent, '/layout-shell' ) && 'core/buttons' === $block['blockName'] ) $shell = true;
+  if ( 'core/buttons' === $block['blockName'] ) {
+   $slot = $block['attrs']['className'] ?? '';
+   if ( ! str_ends_with( $slot, '-destination-slot' ) ) $errors[] = 'core/buttons must declare a destination slot';
+   $saved = new WP_HTML_Tag_Processor( $block['innerHTML'] );
+   if ( ! $saved->next_tag( array( 'tag_name' => 'DIV', 'class_name' => 'wp-block-buttons' ) ) || ! $saved->has_class( $slot ) ) {
+    $errors[] = 'Saved wp-block-buttons div must carry its destination slot class';
+   }
+  }
   if ( 'core/button' === $block['blockName'] ) {
    ++$count;
    if ( 'core/buttons' !== $parent ) $errors[] = 'core/button parent=' . $parent;

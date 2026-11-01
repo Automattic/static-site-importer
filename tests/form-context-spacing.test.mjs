@@ -20,7 +20,9 @@ test( 'trailing context copy keeps the source submit spacing', async () => {
 	try {
 		for ( const width of [ 390, 1440 ] ) {
 			const page = await browser.newPage( { viewport: { width, height: 900 } } );
-			const spacing = () => page.locator( 'p.note' ).evaluate( ( note ) => note.getBoundingClientRect().top - note.previousElementSibling.getBoundingClientRect().bottom );
+			// The saved core/buttons destination slot is display:contents and
+			// has no box; measure the visible control, not its transparent parent.
+			const spacing = () => page.locator( 'p.note' ).evaluate( ( note ) => note.getBoundingClientRect().top - note.closest( 'form, .wp-block-jetpack-contact-form' ).querySelector( 'button' ).getBoundingClientRect().bottom );
 			await page.setContent( source );
 			const expected = await spacing();
 			assert.equal( expected, 16 );
