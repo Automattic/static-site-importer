@@ -16,12 +16,13 @@ test('outcome report detects independent regressions, chains and cycles', async 
   // The theme switch flips the served theme without touching any native owner;
   // regressions mutate owners, routes, aliases or CSS under that switch.
   const theme = { active: 'outcome-fixture' };
-  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png"><meta name="generator" content="WordPress 7.1"><meta name="robots" content="${regression === 'head-robots' ? 'noindex' : 'max-image-preview:large'}">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="/#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
+  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png"><meta name="generator" content="WordPress 7.1"><meta name="robots" content="${regression === 'head-robots' ? 'noindex' : 'max-image-preview:large'}">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="${regression === 'anchor' ? '' : '/'}#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
   const server = http.createServer((req, res) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const url = new URL(req.url, origin);
     if (theme.active !== 'outcome-fixture') theme.rendered = true;
-    const body = page(url.pathname === '/about/' ? '<p id="about-section">About content</p>' : '<details id="fixture-panel"><summary>More</summary></details>');
+    // Only the home route renders the home-only part and its section.
+    const body = page(url.pathname === '/about/' ? '<p id="about-section">About content</p>' : '<details id="fixture-panel"><summary>More</summary></details><a href="#home-only">Home only</a><p id="home-only"></p>');
     if (req.url === '/alias' || req.url === '/legacy') {
       if (req.url === '/legacy' && theme.active !== 'outcome-fixture' && regression === 'theme-alias') { res.setHeader('Content-Type', 'text/html'); res.end(body); return; }
       res.writeHead(301, { Location: regression === 'cycle' ? req.url : regression === 'chain' ? '/next' : '/' }); res.end(); return;
@@ -43,8 +44,9 @@ test('outcome report detects independent regressions, chains and cycles', async 
     browser = await chromium.launch({ headless: true });
     const candidateOrigin = `http://127.0.0.1:${server.address().port}`;
     const inventory = () => ({ schema: 'static-site-importer/outcome-inventory/v1', types: ['post', 'page', 'wp_template', 'wp_template_part', 'wp_navigation'], documents: [
-      { id: 1, type: 'wp_navigation', content: regression === 'anchor' ? '<!-- wp:html --><a href="#fixture-panel">Information</a><!-- /wp:html -->' : '<!-- wp:html --><a href="/#fixture-panel">Information</a><a href="#">Top</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } },
+      { id: 1, type: 'wp_navigation', content: regression === 'anchor' ? '<!-- wp:html --><a href="#fixture-panel">Information</a><!-- /wp:html -->' : '<!-- wp:html --><a href="/#fixture-panel">Information</a><a href="#">Top</a><a href="/#retired">Retired</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: regression !== 'block', errors: regression === 'block' ? [{ reason: 'stray_delimiter' }] : [] } },
       { id: 2, type: 'wp_template_part', content: '<!-- wp:html --><a href="/about/#about-section">About</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
+      { id: 4, type: 'wp_template_part', content: '<!-- wp:html --><a href="#home-only">Home only</a><!-- /wp:html -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
       { id: 3, type: 'page', content: regression === 'source' ? '<a href="https://SOURCE.example/path">Bad</a>' : regression === 'cdn' ? '<img src="//cdn.source.example/image.png">' : regression === 'link' ? '<a href="/?page_id=1">Bad</a>' : '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->', parse: { parser: 'parse_blocks', valid: true, errors: [] } },
     ] });
     const ownerSnapshot = () => ({
@@ -67,7 +69,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
       // The source head declares what was authored: destination-owned robots
       // and generator tags pass, an echoed source directive or a replaced
       // authored description fails.
-      documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav><a href="/#fixture-panel">Information</a></nav><main></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
+      documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav${regression === 'lost-anchor' ? ' id="retired"' : ''}><a href="/#fixture-panel">Information</a></nav><main id="fixture-panel"></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
       capture: { schema: 'static-site-importer/interactive-capture/v1', pages: ['/', '/about/'].map(route => ({ route, sourceUrl: `https://source.example${route}`, interactionStates: { schema: 'blocks-engine-capture/interaction-states/v2', states: [] }, navigation: [], forms: [] })) },
       sourceHosts: ['source.example', 'cdn.source.example'], aliases: ['/alias', '/legacy'], telemetryMarkers: ['source-analytics'],
       collectInventory: async () => inventory(),
@@ -90,6 +92,10 @@ test('outcome report detects independent regressions, chains and cycles', async 
     assert.ok(passing.checks.theme_independence.evidence.some(row => row.kind === 'theme_render_additions' && row.owners.join() === 'menus.13'), 'the probe theme owns the menu its render created');
     assert.ok(passing.checks.link_graph.evidence.some(row => row.surface?.startsWith('css:/') && row.violations.length === 0), 'rendered stylesheets are scanned');
     assert.ok(passing.checks.link_graph.evidence.some(row => row.surface === 'chrome:wp_navigation:1' && row.status === 'pass'), 'navigation anchors resolve');
+    // A bare fragment is checked only on the routes that render its part.
+    assert.deepEqual(passing.checks.link_graph.evidence.filter(row => row.anchor === '#home-only').map(row => [row.route, row.status]), [['/', 'pass']]);
+    // The source's own `#retired` link targets nothing; keeping it is not a loss.
+    assert.ok(passing.checks.link_graph.evidence.some(row => row.anchor === '/#retired' && row.status === 'pass' && row.reason === 'source_target_absent'), 'a fragment the source never defined is inherited');
     assert.ok(passing.checks.link_graph.evidence.filter(row => row.surface === 'chrome:wp_template_part:2' && row.status === 'pass').length === 2, 'template part anchors resolve on every route');
     assert.ok(passing.checks.theme_independence.evidence.some(row => row.phase === 'switched' && row.kind === 'route' && row.route === '/about/' && row.status === 'pass'));
     const unscoped = structuredClone(passing);
@@ -106,7 +112,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
     const noTheme = structuredClone(passing);
     delete noTheme.checks.theme_independence;
     assert.equal(outcomeGate(noTheme).status, 'pending', 'reports without theme independence no longer certify acceptance');
-    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
+    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['lost-anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
       regression = mutation;
       const report = await run();
       assert.equal(report.checks[check].status, 'fail', `${mutation}: ${JSON.stringify(report.checks[check])}`);
