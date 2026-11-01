@@ -63,6 +63,14 @@ test('capture contracts bind real outcome probes without producer knowledge', as
       fs.writeFileSync(cleanupFile, JSON.stringify(cleanup));
       const none = await deriveOutcomeBindings({ ...args, fixture: copy });
       assert.deepEqual(none.telemetryMarkers, []);
+      // A site captured below a path prefix is served from the WordPress root,
+      // so its duplicate addresses redirect to the imported route.
+      const receiptFile = path.join(temporary, 'capture-receipt.json');
+      const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+      receipt.duplicateRoutes = [{ url: 'https://source.example/site/', canonicalUrl: 'https://source.example/site', path: 'website/index.html' }];
+      fs.writeFileSync(receiptFile, JSON.stringify(receipt));
+      const prefixed = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html, sourceUrl: origin, originalUrl: 'https://source.example/site' } } });
+      assert.deepEqual(prefixed.aliases.find(alias => alias.path === '/site/'), { path: '/site/', destination: '/' });
       cleanup.pages[0].reports[0].truncated = true;
       fs.writeFileSync(cleanupFile, JSON.stringify(cleanup));
       const incomplete = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html: html.replace('<main>', '<div>').replace('</main>', '</div>') } } });
