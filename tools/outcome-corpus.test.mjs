@@ -11,7 +11,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { validateOutcomeDocuments } from '../lib/outcome-editor-validation.mjs';
 import http from 'node:http';
-import { installedIdentities } from '../lib/default-outcome-toolchain.mjs';
+import { installedIdentities, stageImportSource } from '../lib/default-outcome-toolchain.mjs';
 import { execFileSync } from 'node:child_process';
 
 test('capture contracts bind real outcome probes without producer knowledge', async () => {
@@ -226,4 +226,30 @@ test('the retained source server serves pages with their shared parts expanded',
     }
     assert.equal(body, '<body><header><a href="/about/">About</a></header><main>About</main></body>');
   } finally { server.kill(); fs.rmSync(site, { recursive: true, force: true }); }
+});
+
+test('imports a capture with its declared evidence reports, and a bare tree as a zip', () => {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-stage-'));
+  try {
+    const capture = path.join(work, 'source');
+    fs.mkdirSync(path.join(capture, 'site'), { recursive: true });
+    fs.writeFileSync(path.join(capture, 'capture-receipt.json'), JSON.stringify({ schema: 'blocks-engine-capture/capture-receipt/v1', websiteRoot: 'site', reports: ['capture-receipt.json', 'interaction-states.json', '../outside.json'] }));
+    fs.writeFileSync(path.join(capture, 'interaction-states.json'), '{}');
+    fs.writeFileSync(path.join(capture, 'site/index.html'), '<p>raw</p>');
+    const fixtureDirectory = path.join(work, 'fixture');
+    fs.mkdirSync(fixtureDirectory);
+    fs.writeFileSync(path.join(fixtureDirectory, 'index.html'), '<p>fixture</p>');
+    for (const [fixture, expected] of [
+      [{ source: path.join(capture, 'site'), directory: fixtureDirectory }, { type: 'files', ref: 'request-bundle:import-capture' }],
+      [{ source: fixtureDirectory, directory: fixtureDirectory }, { type: 'zip', ref: 'request-bundle:website.zip' }],
+    ]) {
+      const run = fs.mkdtempSync(path.join(work, 'run-'));
+      assert.deepEqual(stageImportSource(fixture, run), expected);
+      if (expected.type === 'files') {
+        const staged = path.join(run, 'import-capture');
+        assert.deepEqual(fs.readdirSync(staged).sort(), ['capture-receipt.json', 'interaction-states.json', 'site']);
+        assert.equal(fs.readFileSync(path.join(staged, 'site/index.html'), 'utf8'), '<p>fixture</p>');
+      } else assert.ok(fs.existsSync(path.join(run, 'website.zip')));
+    }
+  } finally { fs.rmSync(work, { recursive: true, force: true }); }
 });
