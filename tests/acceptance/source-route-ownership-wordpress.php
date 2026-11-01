@@ -16,7 +16,7 @@ $assert = static function ( bool $ok, string $label ): void {
 $theme  = 'ssi-source-route-ownership-proof';
 $dir    = get_theme_root() . '/' . $theme;
 wp_mkdir_p( $dir );
-$overlay = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( array(), array(), $theme );
+$overlay = Static_Site_Importer_Internal_Link_Runtime::prepare_interaction_overlay( array(), array(), $theme );
 foreach ( $overlay['writes'] as $write ) {
 	$filesystem->put_contents( $dir . '/' . $write['target_path'], $write['content'], 0644 );
 }

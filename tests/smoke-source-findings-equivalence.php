@@ -144,8 +144,8 @@ function ssi_equivalence_attributes_part( string $root, bool $rename ): array {
 	$links = array();
 	foreach ( $legacy['member_login'] as $label => $markup ) {
 		$links[ $label ] = array(
-			'content'        => Static_Site_Importer_Internal_Link_Runtime::filter_content( $map( $markup ) ),
-			'rendered_block' => Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $map( $markup ) ),
+			'content'        => Static_Site_Importer_Internal_Link_Runtime::filter_member_login( $map( $markup ) ),
+			'rendered_block' => Static_Site_Importer_Internal_Link_Runtime::filter_member_login( $map( $markup ) ),
 		);
 	}
 	return array(

@@ -329,7 +329,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $taxonomy_entities );
 		}
 		$state['applied']['taxonomy_entities'] = $taxonomy_entities;
-		$route_links                           = self::rewrite_materialized_route_links( $state );
+		// Reading settings determine the front-page permalink before links are stored.
+		if ( ! empty( $args['activate'] ) ) {
+			self::journal_runtime( $state );
+			foreach ( $state['resolved']['operations'] as $operation ) {
+				if ( 'site_reading' !== $operation['kind'] ) {
+					continue;
+				}
+				$result = self::apply_operation( $operation, $state['page_ids'], $args );
+				if ( is_wp_error( $result ) ) {
+					return self::failed_receipt( $state, $result->get_error_code() );
+				}
+				$state['applied']['operations'][] = $result;
+			}
+		}
+		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
 			return self::failed_receipt_from_error( $state, $route_links );
 		}
@@ -456,7 +470,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! empty( $args['activate'] ) ) {
 			self::journal_runtime( $state );
 			foreach ( $state['resolved']['operations'] as $operation ) {
-				if ( 'create_page' === $operation['kind'] ) {
+				if ( in_array( $operation['kind'], array( 'create_page', 'site_reading' ), true ) ) {
 					continue;
 				}
 				$result = self::apply_operation( $operation, $state['page_ids'], $args );
@@ -1183,7 +1197,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return is_array( $values ) && in_array( $value, array_map( 'strval', $values ), true );
 	}
 
-	/** Rewrite internal routes to portable post-id references after WordPress has assigned every post. */
+	/**
+	 * Resolve internal routes once, after WordPress has assigned every destination.
+	 * Links are stored root-relative so they survive a change of host.
+	 */
 	public static function rewrite_materialized_route_links( array &$state ) {
 		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
@@ -1195,7 +1212,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$post_type = 'page';
 			}
 			if ( '' !== $route && $post_id > 0 ) {
-				$reference        = self::portable_internal_reference( $post_id, $post_type );
+				$reference        = wp_make_link_relative( (string) get_permalink( $post_id ) );
 				$routes[ $route ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
@@ -1207,7 +1224,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$term_id      = (int) ( $entity['term_id'] ?? 0 );
 			$taxonomy     = (string) ( $entity['taxonomy'] ?? '' );
 			if ( '' !== $source_route && $term_id > 0 && in_array( $taxonomy, array( 'category', 'post_tag' ), true ) ) {
-				$routes[ $source_route ] = $source_route;
+				$link = get_term_link( $term_id, $taxonomy );
+				if ( ! is_wp_error( $link ) ) {
+					$routes[ $source_route ] = wp_make_link_relative( $link );
+				}
 			}
 		}
 		$product_routes = array();
@@ -1216,7 +1236,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$id    = (int) ( $product['id'] ?? 0 );
 				$route = self::normalized_route_path( (string) ( $product['source_route'] ?? '' ) );
 				if ( $id > 0 && '' !== $route ) {
-					$product_routes[ $route ] = self::portable_internal_reference( $id, 'product' );
+					$product_routes[ $route ] = wp_make_link_relative( (string) get_permalink( $id ) );
 				}
 			}
 		}
@@ -1286,6 +1306,28 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$state['composed_theme_writes'][ $path ] = $rewritten;
 			}
 		}
+		// Navigation posts own their links independently of the shell referencing them.
+		foreach ( $state['applied']['navigation_entities'] ?? array() as $navigation ) {
+			$id      = (int) $navigation['id'];
+			$content = get_post_field( 'post_content', $id );
+			if ( ! is_string( $content ) ) {
+				return new WP_Error( 'route_link_rewrite_failed', 'Navigation content could not be read.' );
+			}
+			$unresolved = array();
+			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes );
+			if ( $content !== $rewritten ) {
+				$updated = wp_update_post(
+					array(
+						'ID'           => $id,
+						'post_content' => wp_slash( $rewritten ),
+					),
+					true
+				);
+				if ( is_wp_error( $updated ) ) {
+					return $updated;
+				}
+			}
+		}
 		// Synced patterns are page content too; an owner-edited one is left alone.
 		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
 			$content    = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
@@ -1329,10 +1371,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return '';
 	}
 
-	public static function portable_internal_reference( int $post_id, string $post_type ): string {
-		return 'page' === $post_type ? '/?page_id=' . $post_id : '/?p=' . $post_id;
-	}
-
 	/**
 	 * Rewrite portable identities in HTML attributes and serialized block attributes.
 	 *
@@ -1368,7 +1406,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
 			}
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
-				return $matches[1] . '/?ssi_store_route=' . substr( $route, 1 ) . ( '' !== $suffix ? '&' . ltrim( $suffix, '?' ) : '' ) . $matches[3];
+				if ( '/search' === $route ) {
+					parse_str( ltrim( $suffix, '?' ), $query );
+					$target = wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
+					return $matches[1] . $target . $matches[3];
+				}
+				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
+				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
+				if ( is_string( $target ) && '' !== $target ) {
+					return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+				}
 			}
 			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
 				$unresolved[] = $route;

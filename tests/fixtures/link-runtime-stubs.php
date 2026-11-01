@@ -10,6 +10,10 @@
 function wp_json_encode( $value ) {
 	return json_encode( $value );
 }
+function wp_make_link_relative( $link ) {
+	return preg_replace( '|^(https?:)?//[^/]+(/?.*)|i', '$2', (string) $link );
+}
+
 function get_permalink( int $id ): string {
 	return $GLOBALS['ssi_link_permalinks'][ $id ] ?? '';
 }

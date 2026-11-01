@@ -724,7 +724,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					'reason' => 'theme_runtime_package_owns_internal_links',
 					'writes' => array(),
 				)
-				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $link_bootstrap_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
+				: Static_Site_Importer_Internal_Link_Runtime::prepare_interaction_overlay( $font_resolved, $link_bootstrap_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
 		$state['font_overlay']          = $font_overlay;
 		$state['viewport_overlay']      = $viewport_overlay;
 		$state['internal_link_overlay'] = $internal_link_overlay;
