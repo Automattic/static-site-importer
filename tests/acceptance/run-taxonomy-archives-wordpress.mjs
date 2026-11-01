@@ -66,7 +66,7 @@ if ( releasePackageIdentity ) {
 	blueprintConsts.SSI_TAXONOMY_RELEASE_VERSION = releasePackageIdentity.version.replace( /^v/, '' );
 	blueprintConsts.SSI_TAXONOMY_RELEASE_REFERENCE = releasePackageIdentity.sourceReference;
 }
-const blueprint = { steps: [ { step: 'defineWpConfigConsts', consts: blueprintConsts } ] };
+const blueprint = { steps: [ { step: 'defineWpConfigConsts', consts: blueprintConsts }, { step: 'installPlugin', pluginData: { resource: 'wordpress.org/plugins', slug: 'redirection' }, options: { activate: true } } ] };
 const releasePackageProofInPhp = releasePackageMode
 	? `require_once '/wordpress/wp-content/plugins/static-site-importer/tests/acceptance/taxonomy-release-package-proof.php';
 $packageProof = ssi_taxonomy_release_package_proof();
@@ -153,7 +153,7 @@ const next = document.querySelector('.wp-block-query-pagination-next');
 const links = [...document.querySelectorAll('.wp-block-post-title a')].map(link => link.textContent.trim());
 const proof = { heading: Boolean(document.querySelector('h1')?.textContent.includes('Personal')), addedPost: text.includes('Added after import'), sourceOrder: links.indexOf('Story 12') >= 0 && links.indexOf('Story 12') < links.indexOf('Story 11'), unrelatedExcluded: !text.includes('Outside the archive'), sharedHeader: text.includes('Shared source header'), sharedFooter: text.includes('Shared source footer'), nextHref: next?.getAttribute('href') || '' };
 document.documentElement.dataset.ssiTaxonomyBaseHttpProof = JSON.stringify(proof);
-if (!proof.heading || !proof.addedPost || !proof.sourceOrder || !proof.unrelatedExcluded || !proof.sharedHeader || !proof.sharedFooter || !proof.nextHref.includes('/writing/category/personal/page/2/')) throw new Error('Native source archive base HTTP proof failed: ' + JSON.stringify(proof));
+if (!proof.heading || !proof.addedPost || !proof.sourceOrder || !proof.unrelatedExcluded || !proof.sharedHeader || !proof.sharedFooter || !proof.nextHref.includes('/category/personal/page/2/')) throw new Error('Native source archive base HTTP proof failed: ' + JSON.stringify(proof));
 console.log('SSI-TAXONOMY-BASE-HTTP-PROOF', JSON.stringify(proof));
 })();`;
 const pageTwoArchiveHttpProbe = `return (async () => {
@@ -161,7 +161,7 @@ const text = document.body.innerText;
 const previous = document.querySelector('.wp-block-query-pagination-previous');
 const proof = { title: document.title, pageTwo: document.body.classList.contains('paged-2'), secondPageMember: text.includes('Story 2'), previousPage: Boolean(previous && previous.textContent.includes('Previous Page')), previousHref: previous?.getAttribute('href') || '', firstPageExcluded: !text.includes('Story 12'), unrelatedExcluded: !text.includes('Outside the archive') };
 document.documentElement.dataset.ssiTaxonomyPageTwoHttpProof = JSON.stringify(proof);
-if (!proof.title.includes('Page 2') || !proof.pageTwo || !proof.secondPageMember || !proof.previousPage || !proof.previousHref.includes('/writing/category/personal/') || !proof.firstPageExcluded || !proof.unrelatedExcluded) throw new Error('Native source archive page-2 HTTP proof failed: ' + JSON.stringify(proof));
+if (!proof.title.includes('Page 2') || !proof.pageTwo || !proof.secondPageMember || !proof.previousPage || !proof.previousHref.includes('/category/personal/') || !proof.firstPageExcluded || !proof.unrelatedExcluded) throw new Error('Native source archive page-2 HTTP proof failed: ' + JSON.stringify(proof));
 console.log('SSI-TAXONOMY-PAGE-TWO-HTTP-PROOF', JSON.stringify(proof));
 const paths = ['/writing/category/personal/page/0/', '/writing/category/personal/page/-2/', '/writing/category/personal/page/1000000/'];
 const responses = await Promise.all(paths.map(async path => {
@@ -334,7 +334,7 @@ const browserAssertions = {
 	nativeArchiveExported: editorVerify.exported === true && 'website/writing/category/personal/index.html' === editorVerify.archive_path,
 	exportArchiveHasDigest: 'string' === typeof editorVerify.archive_sha256 && 64 === editorVerify.archive_sha256.length,
 	exportPaginationHasSecondPage: 2 === editorVerify.archive_page_count && 'website/writing/category/personal/page/2/index.html' === editorVerify.next_page_path && String( editorVerify.next_page_html ?? '' ).includes( 'Story 2' ),
-	sourceArchiveHeading: browserStep?.exitCode === 0 && new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/writing/category/personal',
+	sourceArchiveHeading: browserStep?.exitCode === 0 && new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/category/personal',
 	dynamicPostAppears: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
 	sourceMemberOrderingPreserved: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
 	sharedHeaderRetained: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
@@ -342,7 +342,7 @@ const browserAssertions = {
 	categoryTemplateEditRendered: editorVerify.persisted === true && editorVerify.reloaded === true,
 	nativePaginationRendered: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
 	unrelatedPostExcluded: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
-	requestedSourceRoute: new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/writing/category/personal',
+	requestedSourceRoute: new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/category/personal',
 	noBrowserErrors: 0 === ( browser.summary?.errors ?? -1 ),
 };
 let pageTwoBrowser;
@@ -351,7 +351,7 @@ try {
 } catch {
 	pageTwoBrowser = {};
 }
-browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow ) && 0 === ( pageTwoBrowser.summary?.errors ?? -1 );
+browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow ) && 0 === ( pageTwoBrowser.summary?.errors ?? -1 );
 browserAssertions.invalidPagedRoutesRejected = invalidPagedBrowserStep?.exitCode === 0 && 'ssi-taxonomy/invalid-paged-routes/v1' === invalidPagedProof.schema && 3 === invalidPagedProof.responses?.length && invalidPagedProof.responses.every( response => !( response.original_status >= 200 && response.original_status < 300 ) && 404 === response.final_status && false === response.taxonomy_archive_rendered );
 let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 and invalid-page HTTP requests.' ) && packageProofMatchesPin( primaryPackageProof ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && invalidPagedBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
 

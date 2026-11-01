@@ -266,19 +266,48 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( is_wp_error( $result ) ) {
 					return $result;
 				}
+				$request_path = $home_path . '/' . ltrim( rawurldecode( $from ), '/' );
+				$target_path  = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
+				if ( trim( $request_path, '/' ) !== trim( $target_path, '/' ) ) {
+					// Redirection owns the entire paged family, not a theme or WP rewrite.
+					$pattern = '^' . preg_quote( rtrim( $request_path, '/' ), '~' ) . '/page/([1-9][0-9]*)/?$';
+					global $wp_rewrite;
+					if ( wp_parse_url( $target, PHP_URL_QUERY ) ) {
+						$paged_target = $target . '&paged=$1';
+					} else {
+						$pagination_base = $wp_rewrite->pagination_base ?? 'page';
+						$paged_target    = rtrim( $target, '/' ) . '/' . $pagination_base . '/$1/';
+					}
+					if ( isset( $routes[ $pattern ] ) && $routes[ $pattern ] !== $paged_target ) {
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+					}
+					$routes[ $pattern ] = $paged_target;
+				}
 			}
 		}
 		if ( count( $routes ) > self::MAX_RULES ) {
 			return new WP_Error( 'static_site_importer_redirect_bound_exceeded', 'The source redirect inventory exceeds its supported bound.' );
 		}
 		foreach ( $routes as $from => $target ) {
+			if ( str_starts_with( $from, '^' ) ) {
+				foreach ( $routes as $other => $destination ) {
+					if ( ! str_starts_with( $other, '^' ) && 1 === preg_match( '~' . $from . '~', $other ) ) {
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'An exact source route overlaps an archive pagination family.' );
+					}
+				}
+			}
 			$path = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
-			if ( isset( $routes[ $path ] ) ) {
+			if ( isset( $routes[ $path ] ) || array_filter( array_keys( $routes ), static fn( string $source ): bool => str_starts_with( $source, '^' ) && 1 === preg_match( '~' . $source . '~', $path ) ) ) {
 				return new WP_Error( 'static_site_importer_redirect_chain_unproven', 'A destination is itself a source redirect; native final destinations are required.' );
 			}
 		}
 		ksort( $routes, SORT_STRING );
 		return $routes;
+	}
+
+	/** A concrete request for provider collision checks of our paged family. */
+	private static function route_sample( string $from ): string {
+		return str_starts_with( $from, '^' ) ? str_replace( array( '\\', '([1-9][0-9]*)/?$' ), array( '', '2/' ), substr( $from, 1 ) ) : $from;
 	}
 
 	/** Apply the same canonical source and collision checks to every native entity. */
@@ -480,7 +509,9 @@ final class Static_Site_Importer_Redirection_Materializer {
 			$existing = array();
 			foreach ( $routes as $from => $target ) {
 				foreach ( $inventory as $item ) {
-					if ( ( $item['url'] ?? '' ) !== $from && ! self::matches( $item, $from ) ) {
+					// Exact owner rules anywhere in the paged family also conflict.
+					$family_match = str_starts_with( $from, '^' ) && empty( $item['regex'] ) && 1 === preg_match( '~' . $from . '~', (string) ( $item['url'] ?? '' ) );
+					if ( ( $item['url'] ?? '' ) !== $from && ! $family_match && ! self::matches( $item, self::route_sample( $from ) ) ) {
 						continue; }
 					if ( isset( $existing[ $from ] ) || (int) ( $item['id'] ?? 0 ) !== (int) ( $owned['rules'][ $from ]['id'] ?? 0 ) || self::config( $item ) !== ( $owned['rules'][ $from ]['config'] ?? null ) ) {
 						return new WP_Error( 'static_site_importer_redirect_owner_conflict', 'An owner-created or edited native rule occupies a source route.' );
@@ -549,7 +580,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 					'action_data' => array( 'url' => $target ),
 					'match_data'  => array(
 						'source' => array(
-							'flag_regex'    => false,
+							'flag_regex'    => str_starts_with( $from, '^' ),
 							'flag_case'     => false,
 							'flag_trailing' => true,
 							'flag_query'    => 'pass',
@@ -607,7 +638,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( null !== $journal_index ) {
 					$report['rollback']['rules'][ $journal_index ]['after'] = self::config( $item );
 				}
-				if ( ( $item['action_data']['url'] ?? null ) !== $target || 301 !== (int) ( $item['action_code'] ?? 0 ) || ! empty( $item['regex'] ) || empty( $item['enabled'] ) ) {
+				if ( ( $item['action_data']['url'] ?? null ) !== $target || 301 !== (int) ( $item['action_code'] ?? 0 ) || ( ! empty( $item['regex'] ) !== str_starts_with( $from, '^' ) ) || empty( $item['enabled'] ) ) {
 					// ssi-error-class: operational
 					throw new RuntimeException( 'The native rule did not commit its required exact source and destination behavior.' );
 				}

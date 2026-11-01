@@ -118,16 +118,17 @@ $taxonomy_assert( $personal_term instanceof WP_Term && 'Personal' === $personal_
 $taxonomy_assert( '' === trim( (string) get_option( 'category_base', '' ), '/' ), 'The exact source archive route must not mutate the destination global category base.' );
 $source_archive_url = untrailingslashit( home_url( $archive_route ) );
 $native_term_url    = untrailingslashit( (string) get_term_link( $personal_term ) );
-$taxonomy_assert( $source_archive_url === $native_term_url, 'Native term permalink must own the exact canonical source archive route.' );
-$rewrite_rules         = get_option( 'rewrite_rules', array() );
-$taxonomy_page_capture = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE;
-$taxonomy_page_regex   = '^writing/category/personal/page/' . $taxonomy_page_capture . '/?$';
-$taxonomy_assert( 'index.php?category_name=personal' === ( $rewrite_rules['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $rewrite_rules[ $taxonomy_page_regex ] ?? null ), 'The source base and vendor-canonical paged routes have exact taxonomy rewrites without moving the global category base.' );
-foreach ( array( '1', '2', '999999' ) as $valid_taxonomy_page ) {
-	$taxonomy_assert( 1 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $valid_taxonomy_page . '/' ), 'Vendor-canonical pagination capture must admit page ' . $valid_taxonomy_page . '.' );
+$taxonomy_assert( $source_archive_url !== $native_term_url, 'The native archive keeps its WordPress permalink.' );
+$archive_redirects = Static_Site_Importer_Redirection_Materializer::routes( $receipt, array() );
+$taxonomy_assert( trailingslashit( $native_term_url ) === ( $archive_redirects[ $archive_route ] ?? null ), 'The source archive redirects to its native term URL.' );
+$taxonomy_page_regex = '^' . preg_quote( $archive_route, '~' ) . '/page/([1-9][0-9]*)/?$';
+$taxonomy_assert( ( $archive_redirects[ $taxonomy_page_regex ] ?? null ) === $native_term_url . '/page/$1/', 'Paged source archives redirect to native pagination.' );
+$taxonomy_assert( ! isset( $receipt['rollback']['options']['rewrite_rules'] ), 'Archive imports do not journal rewrite rules.' );
+foreach ( array( '1', '2', '999999', '1000000' ) as $valid_taxonomy_page ) {
+	$taxonomy_assert( 1 === preg_match( '~' . $taxonomy_page_regex . '~', $archive_route . '/page/' . $valid_taxonomy_page . '/' ), 'Redirection pagination admits positive page ' . $valid_taxonomy_page . '.' );
 }
-foreach ( array( '0', '-2', '1000000' ) as $invalid_taxonomy_page ) {
-	$taxonomy_assert( 0 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $invalid_taxonomy_page . '/' ), 'Vendor-canonical pagination capture must reject invalid page ' . $invalid_taxonomy_page . '.' );
+foreach ( array( '0', '-2' ) as $invalid_taxonomy_page ) {
+	$taxonomy_assert( 0 === preg_match( '~' . $taxonomy_page_regex . '~', $archive_route . '/page/' . $invalid_taxonomy_page . '/' ), 'Redirection pagination rejects invalid page ' . $invalid_taxonomy_page . '.' );
 }
 $archive_template = get_block_template( get_stylesheet() . '//category-' . $slug );
 $taxonomy_assert( $archive_template instanceof WP_Block_Template && str_contains( $archive_template->content, '"inherit":true' ) && str_contains( $archive_template->content, 'query-pagination' ), 'WordPress must resolve the contextual inherited category template with pagination.' );
@@ -254,6 +255,14 @@ $empty_html          = do_blocks( $archive_template->content );
 $GLOBALS['wp_query'] = $previous_query;
 $GLOBALS['post']     = $previous_post;
 $taxonomy_assert( ! is_wp_error( $empty_term ) && 0 === (int) $empty_query->found_posts && str_contains( $empty_html, 'No posts found.' ), 'An empty native term archive remains a valid empty query with its captured native empty state.' );
+$redirect_report = Static_Site_Importer_Redirection_Materializer::materialize(
+	array(),
+	array(
+		'materialized_receipt' => $receipt,
+		'slug'                 => $compiled['args']['slug'],
+	)
+);
+$taxonomy_assert( ! is_wp_error( $redirect_report ) && 'completed' === ( $redirect_report['status'] ?? '' ), 'Native archive redirects must commit before the importer is absent.' );
 $ssi_plugin_active = in_array( 'static-site-importer/static-site-importer.php', (array) get_option( 'active_plugins', array() ), true );
 $taxonomy_assert( ! $ssi_plugin_active, 'Browser route proof must exercise the generated theme bootstrap with SSI absent from the active plugin list.' );
 
