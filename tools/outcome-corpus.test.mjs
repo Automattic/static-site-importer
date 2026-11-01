@@ -196,3 +196,21 @@ test('corpus runner retains unavailable evidence when capture intake cannot run'
     assert.ok(fs.existsSync(path.join(directory, 'run/matrix.md')));
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('the retained source server serves pages with their shared parts expanded', async () => {
+  const site = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-source-'));
+  fs.mkdirSync(path.join(site, 'parts'));
+  fs.mkdirSync(path.join(site, 'about'));
+  fs.writeFileSync(path.join(site, 'parts/header.html'), '<header><a href="/about/">About</a></header>');
+  fs.writeFileSync(path.join(site, 'about/index.html'), '<body><!--#include virtual="/parts/header.html" --><main>About</main></body>');
+  const { spawn } = await import('node:child_process');
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  const server = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', site, path.resolve('lib/source-include-router.php')], { stdio: 'ignore' });
+  try {
+    let body;
+    for (let attempt = 0; attempt < 50 && body === undefined; attempt++) {
+      try { body = await (await fetch(`http://127.0.0.1:${port}/about/`)).text(); } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
+    }
+    assert.equal(body, '<body><header><a href="/about/">About</a></header><main>About</main></body>');
+  } finally { server.kill(); fs.rmSync(site, { recursive: true, force: true }); }
+});

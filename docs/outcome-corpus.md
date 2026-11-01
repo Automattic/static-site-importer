@@ -94,7 +94,17 @@ intake are supported. No producer-specific filename is consulted.
 - Documents use the retained PHP source server as `sourceOrigin`. A uniquely
   preserved declared content landmark or document scope class is a boundary;
   otherwise `main` is used only when both documents contain exactly one. Without
-  a boundary the full-document check stays unsupported.
+  a boundary the full-document check stays unsupported. The source server
+  expands `<!--#include virtual="/parts/…" -->` shared parts with Blocks
+  Engine's include grammar, so source documents are the pages a visitor saw.
+- The full-document check compares what a visitor perceives in the chrome
+  around the content, on each side of the boundary: text in reading order
+  (whitespace-insensitive), the set of link destinations, labelled images, and
+  landmarks, headings and controls. `/about/index.html`, `/about.html`,
+  `/about/` and `/about` are one destination. A fragment the source page never
+  defines matches the same fragment on any page. Wrapper markup, repeated links
+  to one destination, decorative images and WordPress's skip link are not
+  differences. Each failing row lists its `differences`.
 - Captured interaction pages supply widths, components and route navigation.
   Source native forms are enumerated exhaustively. Candidate identities require
   a unique preserved id or `data-blocks-engine-capture-*` evidence attribute;
