@@ -1165,7 +1165,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		$keys = array_merge( $keys, array( 'flex', 'flex_basis', 'flex_grow', 'margin_block', 'margin_inline', 'order', 'z_index' ) );
 		// A source can author vertical/horizontal padding through the same two-value
 		// logical shorthand already admitted for margin above.
-		$keys = array_merge( $keys, array( 'padding_block', 'padding_inline' ) );
+		$keys = array_merge( $keys, array( 'padding_block', 'padding_inline', 'grid_column', 'grid_row', 'grid_area' ) );
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
