@@ -938,6 +938,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 					'message'     => $message,
 					'stage'       => 'validation',
 					'owner'       => 'static-site-importer',
+					'data'        => is_array( $data ) ? array_intersect_key( $data, array_flip( array( 'path', 'bytes', 'max_bytes' ) ) ) : null,
 				),
 			)
 		);

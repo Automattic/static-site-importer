@@ -166,7 +166,7 @@ $assert( $admitted( $admit( $alias, $reader ) ), 'reference-canonical-alias-acce
 $error_code = static function ( $result ): string { return is_wp_error( $result ) ? $result->get_error_code() : ''; };
 $assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $referenced ) ), 'reference-missing-reader-rejected' );
 $assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $referenced, new stdClass() ) ), 'reference-non-reader-rejected' );
-foreach ( array( 'string-reference', array_diff_key( $reference, array( 'bytes' => true ) ), array_diff_key( $reference, array( 'sha256' => true ) ), array_diff_key( $reference, array( 'id' => true ) ), array_replace( $reference, array( 'bytes' => -1 ) ), array_replace( $reference, array( 'bytes' => 10485761 ) ), array_replace( $reference, array( 'bytes' => '36' ) ) ) as $invalid ) {
+foreach ( array( 'string-reference', array_diff_key( $reference, array( 'bytes' => true ) ), array_diff_key( $reference, array( 'sha256' => true ) ), array_diff_key( $reference, array( 'id' => true ) ), array_replace( $reference, array( 'bytes' => -1 ) ), array_replace( $reference, array( 'bytes' => '36' ) ) ) as $invalid ) {
 	$bad = $referenced;
 	$bad['files'][0]['payload_reference'] = $invalid;
 	$before = $reader->reads;

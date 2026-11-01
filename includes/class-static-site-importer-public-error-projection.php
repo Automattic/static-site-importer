@@ -44,6 +44,14 @@ final class Static_Site_Importer_Public_Error_Projection {
 	/** @param array<string,mixed> $data @return array<string,mixed> */
 	public static function project_public_error_data( array $data ): array {
 		$projected = array();
+		if ( array_key_exists( 'path', $data ) ) {
+			$projected['path'] = self::project_public_source_path( $data['path'] );
+		}
+		foreach ( array( 'bytes', 'max_bytes' ) as $field ) {
+			if ( array_key_exists( $field, $data ) ) {
+				$projected[ $field ] = is_int( $data[ $field ] ) ? $data[ $field ] : null;
+			}
+		}
 		foreach ( array( 'status', 'code', 'phase', 'entity_collection' ) as $field ) {
 			if ( isset( $data[ $field ] ) ) {
 				$value = self::project_public_token( $data[ $field ], 128 );
@@ -364,6 +372,12 @@ final class Static_Site_Importer_Public_Error_Projection {
 			$exception_class = self::project_public_token( substr( (string) strrchr( '\\' . $diagnostic['exception_class'], '\\' ), 1 ), 128 );
 			if ( '' !== $exception_class ) {
 				$row['exception_class'] = $exception_class;
+			}
+		}
+		if ( is_array( $diagnostic['data'] ?? null ) ) {
+			$context = array_intersect_key( $diagnostic['data'], array_flip( array( 'path', 'bytes', 'max_bytes' ) ) );
+			if ( ! empty( $context ) ) {
+				$row['data'] = self::project_public_error_data( $context );
 			}
 		}
 		if ( isset( $diagnostic['source_path'] ) ) {

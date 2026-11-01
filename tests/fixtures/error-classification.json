@@ -454,6 +454,7 @@
     "static_site_importer_page_ready_runtime_bindings_deferred": { "class": "operational", "owning_layer": "blocks-engine" },
     "static_site_importer_payload_reader_missing": { "class": "programmer", "owning_layer": "static-site-importer" },
     "static_site_importer_payload_reference_hash_mismatch": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "static_site_importer_payload_file_too_large": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_payload_reference_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_payload_reference_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_plan_checkpoint_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
