@@ -1413,7 +1413,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
 				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
-				if ( is_string( $target ) && '' !== $target ) {
+				if ( '' !== $target ) {
 					return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
 				}
 			}

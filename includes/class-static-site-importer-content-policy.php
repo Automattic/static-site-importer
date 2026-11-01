@@ -437,8 +437,16 @@ final class Static_Site_Importer_Content_Policy {
 		if ( self::is_redirects_manifest_path( (string) $file['path'] ) ) {
 			$maximum = self::REDIRECTS_MANIFEST_MAX_BYTES;
 		}
-		if ( ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( $reference ) || ! is_int( $reference['bytes'] ?? null ) || $reference['bytes'] > $maximum ) {
-			return new WP_Error( 'static_site_importer_payload_reference_invalid', 'Textual source references require a bounded byte count and SHA-256 digest.' );
+		$data = array(
+			'path'      => (string) $file['path'],
+			'bytes'     => $reference['bytes'] ?? null,
+			'max_bytes' => $maximum,
+		);
+		if ( ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( $reference ) || ! is_int( $reference['bytes'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_payload_reference_invalid', 'Textual source references require a bounded byte count and SHA-256 digest.', $data );
+		}
+		if ( $reference['bytes'] > $maximum ) {
+			return new WP_Error( 'static_site_importer_payload_file_too_large', sprintf( 'Textual source %1$s declares %2$d bytes, exceeding the maximum of %3$d bytes.', $file['path'], $reference['bytes'], $maximum ), $data );
 		}
 		return Static_Site_Importer_Site_Plan_Persistence::write_payload_bytes( $file, $payload_reader );
 	}

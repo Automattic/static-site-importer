@@ -82,7 +82,10 @@ echo wp_json_encode(array('stored' => $stored, 'parts' => $parts, 'about' => wp_
     assert.ok(html.includes('Meet our team'));
     for (const target of [result.about, result.contact]) {
       assert.ok(html.includes(`href="${target}`), `rendered link ${target}`);
-      assert.equal((await fetch(new URL(target, origin))).status, 200);
+      const linkedResponse = await fetch(new URL(target, origin));
+      // Finish reading before teardown closes the PHP server's sockets.
+      await linkedResponse.arrayBuffer();
+      assert.equal(linkedResponse.status, 200);
     }
   } finally {
     server?.kill();
