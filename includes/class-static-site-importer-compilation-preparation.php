@@ -68,7 +68,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 		// or a real extracted document title; it never falls back to the host or
 		// generic constant the way the theme name/slug do.
 		if ( empty( $args['site_title'] ) ) {
-			$site_title = Static_Site_Importer_Site_Identity::title_from_website_artifact( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
+			$site_title = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 			if ( '' !== $site_title ) {
 				$args['site_title'] = $site_title;
 			}
