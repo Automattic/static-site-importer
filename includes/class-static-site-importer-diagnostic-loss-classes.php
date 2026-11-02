@@ -203,11 +203,6 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'item',
 			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
 		),
-		'document_head_attribute_dropped'                => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'item',
-			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
-		),
 		'document_head_element_dropped'                  => array(
 			'loss_class'   => self::OMITTED_UNIT,
 			'unit'         => 'item',

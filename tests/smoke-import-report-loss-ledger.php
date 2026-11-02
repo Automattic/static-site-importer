@@ -235,24 +235,14 @@ $plan_rows = array(
 		'rejected_count'          => 1,
 	),
 	array(
-		'code'          => 'document_head_attribute_dropped',
-		'severity'      => 'warning',
-		'unit'          => 'item',
-		'message'       => 'Document head <meta> attribute onload cannot be carried (event_handler); it was dropped.',
-		'source_path'   => 'website/index.html',
-		'reason_code'   => 'event_handler',
-		'tag'           => 'meta',
-		'attribute'     => 'onload',
-		'omitted_count' => 1,
-	),
-	array(
 		'code'          => 'document_head_element_dropped',
 		'severity'      => 'warning',
 		'unit'          => 'item',
-		'message'       => 'Document head <base> element cannot be carried (unsupported_element); it was dropped.',
+		'message'       => 'Document head <meta> theme-color is not rendered by WordPress (unrendered); it was dropped.',
 		'source_path'   => 'website/index.html',
-		'reason_code'   => 'unsupported_element',
-		'tag'           => 'base',
+		'reason_code'   => 'unrendered',
+		'tag'           => 'meta',
+		'name'          => 'theme-color',
 		'omitted_count' => 1,
 	),
 );
@@ -388,7 +378,6 @@ $expected = array(
 	'runtime_entity_binding_unanchored'              => array( 'omitted_unit', 'binding', 'blocks-engine', 'website/shop.html' ),
 	'runtime_form_graph_rejected'                    => array( 'omitted_unit', 'item', 'blocks-engine', 'website/contact.html' ),
 	'runtime_declaration_rejected'                   => array( 'degraded_unit', 'item', 'blocks-engine', 'website/contact.html' ),
-	'document_head_attribute_dropped'                => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'document_head_element_dropped'                  => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'static_site_importer_non_static_file_skipped'   => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/style.php' ),
 	'static_site_importer_non_static_page_dropped'   => array( 'omitted_unit', 'page', 'static-site-importer', 'website/blog/feed.php' ),
@@ -536,12 +525,12 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 34 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 33 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
 		'degraded_unit'                => 12,
-		'omitted_unit'                 => 21,
+		'omitted_unit'                 => 20,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,
 	) === ( $summary['loss_counts'] ?? null ),
