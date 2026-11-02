@@ -34,3 +34,16 @@ test('provisioning refuses to reuse an existing runtime without deleting it', as
     assert.equal(fs.readFileSync(marker, 'utf8'), 'existing');
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('WP-CLI output is not truncated by a fixed buffer', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-provision-'));
+  let runtime;
+  try {
+    runtime = await provisionWordPress({ workDir: directory });
+    // A whole-site inventory or theme snapshot exceeds Node's 1 MiB default.
+    assert.equal(runtime.wpRun(['eval', 'echo str_repeat("x", 2 * 1024 * 1024);']).stdout.length, 2 * 1024 * 1024);
+  } finally {
+    await runtime?.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
