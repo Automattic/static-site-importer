@@ -16,7 +16,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
   // The theme switch flips the served theme without touching any native owner;
   // regressions mutate owners, routes, aliases or CSS under that switch.
   const theme = { active: 'outcome-fixture' };
-  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css"><meta name="description" content="Imported fixture"><meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png"><meta name="generator" content="WordPress 7.1"><meta name="robots" content="${regression === 'head-robots' ? 'noindex' : 'max-image-preview:large'}">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="${regression === 'anchor' ? '' : '/'}#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
+  const page = body => `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="canonical" href="HOME/"><link rel="stylesheet" href="/assets/site.css">${regression.startsWith('head-excerpt') ? '' : '<meta name="description" content="Imported fixture">'}<meta property="og:title" content="Fixture"><meta property="og:url" content="HOME/"><meta property="og:image" content="HOME/image.png"><meta name="generator" content="WordPress 7.1"><meta name="robots" content="${regression === 'head-robots' ? 'noindex' : 'max-image-preview:large'}">${regression === 'head' ? '<link rel="canonical" href="https://source.example/">' : ''}</head><body><nav><a href="${regression === 'anchor' ? '' : '/'}#fixture-panel">Information</a></nav><main>${body}</main></body></html>`.replaceAll('HOME', 'PLACEHOLDER');
   const server = http.createServer((req, res) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const url = new URL(req.url, origin);
@@ -73,8 +73,10 @@ test('outcome report detects independent regressions, chains and cycles', async 
       // The source head declares what was authored: destination-owned robots
       // and generator tags pass, an echoed source directive or a replaced
       // authored description fails.
-      documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${regression === 'head-description' ? '<meta name="description" content="Authored description">' : ''}</head><nav${regression === 'lost-anchor' ? ' id="retired"' : ''}><a href="/#fixture-panel">Information</a></nav><main id="fixture-panel"></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
+      documents: { '/': { sourceOrigin: 'https://source.example', html: `<head><meta name="robots" content="noindex"><meta name="generator" content="Source Builder">${['head-description', 'head-excerpt', 'head-excerpt-lost'].includes(regression) ? '<meta name="description" content="Authored description">' : ''}</head><nav${regression === 'lost-anchor' ? ' id="retired"' : ''}><a href="/#fixture-panel">Information</a></nav><main id="fixture-panel"></main>`, sourceContent: 'main', candidateContent: 'main' }, '/about/': { sourceOrigin: 'https://source.example', html: '<nav><a href="/#fixture-panel">Information</a></nav><main></main>', sourceContent: 'main', candidateContent: 'main' } },
       capture: { schema: 'static-site-importer/interactive-capture/v1', pages: ['/', '/about/'].map(route => ({ route, sourceUrl: `https://source.example${route}`, interactionStates: { schema: 'blocks-engine-capture/interaction-states/v2', states: [] }, navigation: [], forms: [] })) },
+      // No SEO owner renders the description: the stored excerpt carries it.
+      ...(regression.startsWith('head-excerpt') ? { postExcerpts: { '/': regression === 'head-excerpt-lost' ? 'Imported fixture' : 'Authored description', '/about/': '' } } : {}),
       sourceHosts: ['source.example', 'cdn.source.example', 'platform.example/site'], aliases: ['/alias', '/legacy', { path: '/about.html', destination: '/about' }], telemetryMarkers: ['source-analytics'],
       collectInventory: async () => inventory(),
       themeIndependence: {
@@ -102,6 +104,11 @@ test('outcome report detects independent regressions, chains and cycles', async 
     assert.ok(passing.checks.link_graph.evidence.some(row => row.anchor === '/#retired' && row.status === 'pass' && row.reason === 'source_target_absent'), 'a fragment the source never defined is inherited');
     assert.ok(passing.checks.link_graph.evidence.filter(row => row.surface === 'chrome:wp_template_part:2' && row.status === 'pass').length === 2, 'template part anchors resolve on every route');
     assert.ok(passing.checks.theme_independence.evidence.some(row => row.phase === 'switched' && row.kind === 'route' && row.route === '/about/' && row.status === 'pass'));
+    regression = 'head-excerpt';
+    const excerpt = await run();
+    assert.equal(excerpt.checks.head_singletons.status, 'pass', JSON.stringify(excerpt.checks.head_singletons));
+    assert.equal(excerpt.checks.head_singletons.evidence[0].description_owner, 'post_excerpt');
+    regression = '';
     const unscoped = structuredClone(passing);
     unscoped.colour_schemes.push('dark');
     unscoped.checks.readability.evidence = unscoped.checks.readability.evidence.filter(row => row.colour_scheme !== 'dark');
@@ -116,7 +123,7 @@ test('outcome report detects independent regressions, chains and cycles', async 
     const noTheme = structuredClone(passing);
     delete noTheme.checks.theme_independence;
     assert.equal(outcomeGate(noTheme).status, 'pending', 'reports without theme independence no longer certify acceptance');
-    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['scoped-source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['lost-anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
+    for (const [mutation, check] of [['link', 'link_graph'], ['source', 'link_graph'], ['scoped-source', 'link_graph'], ['cdn', 'link_graph'], ['block', 'block_validity'], ['head', 'head_singletons'], ['head-robots', 'head_singletons'], ['head-description', 'head_singletons'], ['head-excerpt-lost', 'head_singletons'], ['cycle', 'link_graph'], ['chain', 'link_graph'], ['css', 'link_graph'], ['css-import', 'link_graph'], ['anchor', 'link_graph'], ['lost-anchor', 'link_graph'], ['theme-title', 'theme_independence'], ['theme-redirect', 'theme_independence'], ['theme-route', 'theme_independence'], ['theme-alias', 'theme_independence'], ['theme-restore-addition', 'theme_independence']]) {
       regression = mutation;
       const report = await run();
       assert.equal(report.checks[check].status, 'fail', `${mutation}: ${JSON.stringify(report.checks[check])}`);
