@@ -64,6 +64,15 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return $redirects;
 		}
 		$artifact = $redirects['artifact'];
+		// site_title (blogname) intentionally stays restricted to an explicit arg
+		// or a real extracted document title; it never falls back to the host or
+		// generic constant the way the theme name/slug do.
+		if ( empty( $args['site_title'] ) ) {
+			$site_title = Static_Site_Importer_Site_Identity::title_from_website_artifact( $artifact );
+			if ( '' !== $site_title ) {
+				$args['site_title'] = $site_title;
+			}
+		}
 		// Preserve explicit producer evidence for the native Site Identity handoff.
 		// The runtime materializer will use the source write mapping; no asset URL
 		// is fetched or inferred from a theme directory convention.
@@ -71,7 +80,8 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$args['native_site_identity_evidence'] = Static_Site_Importer_Site_Identity::evidence_from_website_artifact(
 				$artifact,
 				is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null,
-				isset( $args['site_tagline'] ) && is_scalar( $args['site_tagline'] ) ? (string) $args['site_tagline'] : ''
+				isset( $args['site_tagline'] ) && is_scalar( $args['site_tagline'] ) ? (string) $args['site_tagline'] : '',
+				(string) ( $args['site_title'] ?? '' )
 			);
 		}
 		if ( empty( $args['source_route_aliases'] ) || ! is_array( $args['source_route_aliases'] ) ) {
@@ -97,15 +107,6 @@ final class Static_Site_Importer_Compilation_Preparation {
 					static fn( mixed $file ): bool => ! is_array( $file ) || (string) ( $file['path'] ?? '' ) !== $preview_evidence['source_path']
 				)
 			);
-		}
-		// site_title (blogname) intentionally stays restricted to an explicit arg
-		// or a real extracted document title; it never falls back to the host or
-		// generic constant the way the theme name/slug do.
-		if ( empty( $args['site_title'] ) ) {
-			$site_title = Static_Site_Importer_Site_Identity::title_from_website_artifact( $artifact );
-			if ( '' !== $site_title ) {
-				$args['site_title'] = $site_title;
-			}
 		}
 		$identity = Static_Site_Importer_Site_Identity::resolve(
 			array(

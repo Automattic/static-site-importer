@@ -311,7 +311,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$report[ $option ] = $entry;
 		}
-		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? $evidence['tagline'] ?? '' ) );
+		// Explicit input wins; evidence prefers JSON-LD over the entrypoint title.
+		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? '' ) );
 		if ( '' === $tagline ) {
 			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
 		}
