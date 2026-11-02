@@ -21,9 +21,9 @@ documents and video verify by byte signature (WOFF/WOFF2/sfnt, PDF/ZIP/OOXML/
 gzip/7z/RTF, MP4/WebM/Theora) against the declared content type. Missing,
 conflicting or unverified originals fail with `image_resource_unresolved`; they
 never fall back to an optimizer response or placeholder. The compiler must
-declare recorded image destinations according to their consumers: images with a
-block consumer use `media_library`; head-only and CSS-only images stay `theme`.
-Fonts stay theme-owned; documents and video remain attachment-bound. An unsupported ownership
+declare recorded non-font destinations according to their consumers: records
+with a block consumer use `media_library`; records without a block consumer stay
+`theme`. Fonts stay theme-owned. An unsupported ownership
 declaration fails explicitly rather than claiming a successful destination, and
 theme-owned records verify their exact declared write bytes immediately before
 the theme package materializes.
@@ -83,9 +83,9 @@ WebM video with poster, all linked from content and navigation. Refresh it with
 WordPress: one attachment per document, download and video with every content,
 navigation and CSS reference rewritten, four verified theme-owned font files
 behind theme.json fontFace, and an explicitly failed import for a lying digest.
-The standalone record test also exercises head-only recorded image theme writes,
-block-consumed image attachments, and digest/MIME rejection through the real
-materialization helpers with a stubbed WordPress upload/database boundary.
+The standalone record test also exercises consumer-routed recorded assets,
+verified theme writes, and digest/MIME rejection through the real materialization
+helpers with a stubbed WordPress upload/database boundary.
 
 ## Follow-up slices
 
