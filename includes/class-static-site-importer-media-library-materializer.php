@@ -87,7 +87,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$featured_path = $featured_image['target_path'];
 				$featured_alt  = is_string( $featured_image['alt'] ?? null ) ? $featured_image['alt'] : '';
 			}
-			$social_id = 0;
+			$social_id  = 0;
+			$social_tag = null;
 			if ( '' === $featured_path ) {
 				foreach ( Static_Site_Importer_Route_Head_Metadata::from_page( $page, $state['resolved'] ) as $tag ) {
 					if ( ! in_array( $tag['key'], array( 'og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src' ), true ) ) {
@@ -107,6 +108,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 						}
 						if ( $social_id <= 0 ) {
 							$featured_path = $relative;
+							$social_tag    = $tag;
 						}
 						break;
 					}
@@ -170,11 +172,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
 				}
 				if ( null !== $error || $featured <= 0 ) {
-					return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
-				}
-				set_post_thumbnail( $post_id, $featured );
-				if ( (int) get_post_thumbnail_id( $post_id ) !== $featured ) {
-					return new WP_Error( 'provider_featured_image_write_failed', 'The native provider image was not persisted.' );
+					if ( null === $social_tag ) {
+						return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
+					}
+					// Source social metadata is optional, unlike an explicit featured-image handoff.
+					$state['diagnostics'][] = array(
+						'reason_code' => 'route_social_image_not_retained',
+						'source_path' => $source_path,
+						'key'         => $social_tag['key'],
+						'url'         => $social_tag['content'],
+					);
+				} else {
+					set_post_thumbnail( $post_id, $featured );
+					if ( (int) get_post_thumbnail_id( $post_id ) !== $featured ) {
+						return new WP_Error( 'provider_featured_image_write_failed', 'The native provider image was not persisted.' );
+					}
 				}
 			}
 			if ( $rewritten === $content ) {
