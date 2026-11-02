@@ -1826,7 +1826,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['native_site_identity_evidence'], $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'], $args['image_asset_records'] );
+		unset( $args['native_site_identity_evidence'], $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['unsafe_layout_constraint_diagnostics'], $args['captured_interaction_diagnostics'], $args['captured_interaction_state_count'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'], $args['source_route_aliases'], $args['image_asset_records'], $args['consent_banner'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
