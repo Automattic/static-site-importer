@@ -219,6 +219,7 @@
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-comment-entities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-plan-media-destination.php", "environment": "wordpress-runtime", "reason": "Run with wp eval-file in a disposable WordPress runtime; creates real attachments and rolls back the import." },
+    { "path": "tests/smoke-page-slug-media-collision.php", "environment": "wordpress-runtime", "reason": "Imports a page and a Media Library image sharing its basename in disposable WordPress; the page keeps its source-route slug, the attachment is suffixed and referenced, then rolls back." },
     { "path": "tests/smoke-image-asset-record-import.php", "environment": "wordpress-runtime", "reason": "Imports capture image evidence through public compilation/persistence in disposable WordPress, verifies one attachment across inline, CSS, lightbox and icon uses, then rolls back." },
     { "path": "tests/smoke-resource-asset-record-import.php", "environment": "wordpress-runtime", "reason": "Imports capture document/video/font evidence through public compilation/persistence in disposable WordPress, verifies attachment-bound references, theme-owned verified font writes and lying-digest failure, then rolls back." },
     { "path": "tests/smoke-woo-product-whole-page.php", "environment": "standalone-php" },
