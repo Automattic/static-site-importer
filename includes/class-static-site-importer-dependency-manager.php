@@ -140,7 +140,7 @@ class Static_Site_Importer_Dependency_Manager {
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? self::materialize_plugin_dependencies( $adapter, ! empty( $args['overwrite'] ) ) : array( 'status' => 'available' );
 			foreach ( $reports[ $id ] as $plugin_report ) {
-				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
+				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) && ! $best_effort ) {
 					return self::dependency_materialization_failed_error( $id, $plugin_report );
 				}
 			}

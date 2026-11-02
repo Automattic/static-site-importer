@@ -130,12 +130,17 @@ $assert( str_contains( $not_ready->get_error_message(), 'fresh' ), 'pending-read
 $assert( ! str_contains( $not_ready->get_error_message(), 'could not install' ) && ! str_contains( $not_ready->get_error_message(), 'could not activate' ), 'pending-readiness-message-never-claims-install-or-activation-failed' );
 $assert( 'pending_fresh_runtime' === ( $not_ready->get_error_data()['readiness_stage'] ?? '' ), 'pending-readiness-stage-is-recorded' );
 
-// Optional provider chrome tolerates an installed plugin whose capability never registers.
-$optional_adapter = $adapter;
-$optional_adapter['best_effort_dependency'] = true;
-$optional_lifecycle = array( 'dependencies' => array( 'consent' => array( 'adapter' => $optional_adapter, 'required' => true ) ) );
-$optional_result = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $optional_lifecycle, array( 'materialize_dependencies' => true ) );
-$assert( ! is_wp_error( $optional_result ) && isset( $optional_result['consent'] ), 'best-effort-consent-dependency-does-not-fail-resume' );
+// The consent banner is optional chrome: its real adapter must not fail the
+// import when Jetpack installs but `jetpack/cookie-consent` never registers
+// (disconnected, non-offline host), nor when Jetpack cannot be installed.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-consent-banner.php';
+$consent_lifecycle = array( 'dependencies' => array( 'consent' => array( 'adapter' => Static_Site_Importer_Consent_Banner::adapter(), 'required' => true ) ) );
+$consent_result    = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $consent_lifecycle, array( 'materialize_dependencies' => true ) );
+$assert( ! is_wp_error( $consent_result ) && isset( $consent_result['consent'] ), 'consent-banner-dependency-not-ready-does-not-fail-resume' );
+$GLOBALS['ssi_next_report'] = array( 'slug' => 'jetpack', 'status' => 'failed', 'installed' => false, 'active' => false, 'error' => array( 'code' => 'static_site_importer_plugin_install_failed', 'message' => 'Plugin jetpack install failed.' ) );
+$consent_install = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $consent_lifecycle, array( 'materialize_dependencies' => true ) );
+$assert( ! is_wp_error( $consent_install ) && 'failed' === ( $consent_install['consent']['jetpack']['status'] ?? '' ), 'consent-banner-dependency-install-failure-does-not-fail-import' );
+$GLOBALS['ssi_next_report'] = array( 'slug' => 'woocommerce', 'plugin_file' => 'woocommerce/woocommerce.php', 'status' => 'activated_pending_fresh_runtime', 'installed' => true, 'active' => true );
 // Required forms continue to fail under the exact same not-ready conditions.
 $forms_result = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle(), array( 'materialize_dependencies' => true ) );
 $assert( is_wp_error( $forms_result ) && 'static_site_importer_required_runtime_dependency_missing' === $forms_result->get_error_code(), 'required-forms-dependency-still-fails-when-not-ready' );
