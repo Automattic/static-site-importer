@@ -577,6 +577,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$root  = get_temp_dir() . 'ssi-media-' . wp_generate_uuid4();
 		$dir   = $root . '/' . basename( $state['theme_dir'] );
 		$files = array();
+		// Media resolves before pages materialize, and top-level pages share
+		// their slug namespace with attachments. Reserve the planned page slugs
+		// so an image never takes its page's source route: core suffixes the
+		// attachment exactly as it would beside an existing page.
+		$page_slugs = array();
+		foreach ( $state['ordered_pages'] ?? array() as $page ) {
+			if ( 'page' === ( $page['post_type'] ?? 'page' ) && '' === ( $page['parent_source_path'] ?? '' ) ) {
+				$page_slugs[ (string) $page['slug'] ] = true;
+			}
+		}
+		$reserve_page_slugs = static fn( bool $bad, string $slug ): bool => $bad || isset( $page_slugs[ $slug ] );
+		add_filter( 'wp_unique_post_slug_is_bad_attachment_slug', $reserve_page_slugs, 10, 2 );
 		try {
 			$writes = array_column( $state['resolved']['writes'], null, 'target_path' );
 			foreach ( $state['plan']['assets'] as $asset ) {
@@ -635,6 +647,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			return $resolutions;
 		} finally {
+			remove_filter( 'wp_unique_post_slug_is_bad_attachment_slug', $reserve_page_slugs, 10 );
 			foreach ( $files as $file ) {
 				wp_delete_file( $file );
 				$parent = dirname( $file );
