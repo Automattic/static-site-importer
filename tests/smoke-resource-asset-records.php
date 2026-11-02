@@ -154,6 +154,9 @@ function wp_get_attachment_url( $id ) { return 'https://destination.example/uplo
 function wp_generate_attachment_metadata( ...$args ) { return array(); }
 function wp_update_attachment_metadata( ...$args ) {}
 function update_post_meta( ...$args ) {}
+function _wp_relative_upload_path( $path ) { return basename( $path ); }
+function add_filter( ...$args ) {}
+function remove_filter( ...$args ) {}
 
 $test_dir = get_temp_dir() . 'ssi-record-test-' . wp_generate_uuid4();
 wp_mkdir_p( $test_dir );
@@ -213,6 +216,38 @@ try {
 			unlink( $state['theme_dir'] . '/' . $icon['target_path'] );
 		}
 	}
+
+	// A two-source video: the block-consumed MP4 goes to the media library, the <source>-only WebM stays in the theme.
+	$mp4  = "\0\0\0\x18ftypmp42\0\0\0\0mp42isom";
+	$webm = "\x1a\x45\xdf\xa3\x01\0\0\0\0\0\0\x1fB\x82\x84webm";
+	$video_artifact = array(
+		'entrypoint' => 'index.html',
+		'files' => array(
+			array( 'path' => 'index.html', 'content' => '<html><body><main><h1>Clip</h1><video autoplay loop muted playsinline src="/media/clip.mp4"><source src="/media/clip.mp4"><source src="/media/clip.webm"></video></main></body></html>' ),
+			array( 'path' => 'media/clip.mp4', 'content_base64' => base64_encode( $mp4 ) ),
+			array( 'path' => 'media/clip.webm', 'content_base64' => base64_encode( $webm ) ),
+		),
+	);
+	$video_records = array(
+		'media/clip.mp4' => array( 'kind' => 'video', 'original' => array( 'source_url' => 'https://source.example/media/clip.mp4', 'sha256' => hash( 'sha256', $mp4 ), 'content_type' => 'video/mp4' ) ),
+		'media/clip.webm' => array( 'kind' => 'video', 'original' => array( 'source_url' => 'https://source.example/media/clip.webm', 'sha256' => hash( 'sha256', $webm ), 'content_type' => 'video/webm' ) ),
+	);
+	$video_plan = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $video_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+	$video_assets = array_column( $video_plan['assets'], null, 'source_path' );
+	$assert( 'media_library' === ( $video_assets['media/clip.mp4']['destination'] ?? null ), 'video: block-consumed MP4 must go to the media library.' );
+	$assert( 'theme' === ( $video_assets['media/clip.webm']['destination'] ?? null ), 'video: source-only WebM must stay in the theme.' );
+	$video_state = array(
+		'plan' => $video_plan,
+		'args' => array( 'image_asset_records' => $video_records ),
+		'theme_dir' => $test_dir . '/video-theme',
+		'resolved' => ( new Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $video_plan, array( 'theme_uri' => 'https://destination.example/themes/fixture' ) ),
+		'applied' => array( 'attachments' => array() ),
+	);
+	$GLOBALS['ssi_record_test_attachments'] = 0;
+	$video_media = Static_Site_Importer_Media_Library_Materializer::resolve_plan_assets( $video_state );
+	$assert( ! is_wp_error( $video_media ), 'video: media resolution must succeed. ' . ( is_wp_error( $video_media ) ? $video_media->code . ' ' . $video_media->message : '' ) );
+	$assert( 1 === $GLOBALS['ssi_record_test_attachments'] && 1 === count( $video_state['applied']['attachments'] ), 'video: exactly one attachment must be created.' );
+	$assert( true === Static_Site_Importer_Media_Library_Materializer::verify_record_theme_writes( $video_state ), 'video: theme writes must verify.' );
 } finally {
 	$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $test_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 	foreach ( $files as $file ) {
