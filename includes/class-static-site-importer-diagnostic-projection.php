@@ -1433,6 +1433,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'content_loss_count'                      => (int) ( $quality['content_loss_count'] ?? 0 ),
 			'empty_conversion_count'                  => (int) ( $quality['empty_conversion_count'] ?? 0 ),
 			'core_html_block_count'                   => (int) ( $quality['core_html_block_count'] ?? 0 ),
+			'raw_html_companion_block_count'          => (int) ( $quality['raw_html_companion_block_count'] ?? 0 ),
 			'freeform_block_count'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
 			'invalid_block_count'                     => null === ( $editor_validation['invalid_block_count'] ?? null ) ? null : ( (int) ( $quality['invalid_block_count'] ?? 0 ) + $editor_invalid_count ),
 			'parser_invalid_block_count'              => (int) ( $quality['invalid_block_count'] ?? 0 ),

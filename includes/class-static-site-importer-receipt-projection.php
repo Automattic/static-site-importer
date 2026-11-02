@@ -168,8 +168,10 @@ class Static_Site_Importer_Receipt_Projection {
 								'path'    => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content',
 								'content' => $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'] ?? '',
 							);
-							if ( isset( $page['core_html_block_count'] ) ) {
-								$document['core_html_block_count'] = $page['core_html_block_count'];
+							foreach ( array( 'core_html_block_count', 'raw_html_companion_block_count' ) as $count_key ) {
+								if ( isset( $page[ $count_key ] ) ) {
+									$document[ $count_key ] = $page[ $count_key ];
+								}
 							}
 							return $document;
 						},
@@ -227,7 +229,8 @@ class Static_Site_Importer_Receipt_Projection {
 					array_values( array_filter( is_array( $plan['templates'] ?? null ) ? $plan['templates'] : array(), static fn( $template ): bool => is_array( $template ) && is_string( $template['slug'] ?? null ) && '' !== $template['slug'] ) )
 				)
 			),
-			$report
+			$report,
+			$plan['source_reports']['companion_plugin_payload']['blocks'] ?? array()
 		);
 		// Page markup is persisted in WordPress and analyzed above; the report
 		// keeps each document's identity, not a second copy of its content.

@@ -1200,6 +1200,7 @@ if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
 			'content_loss_abort'           => 'content_loss_count',
 			'empty_conversion'             => 'empty_conversion_count',
 			'core_html_block'              => 'core_html_block_count',
+			'raw_html_companion_block'     => 'raw_html_companion_block_count',
 			'freeform_block'               => 'freeform_block_count',
 			'invalid_block'                => 'invalid_block_count',
 			'unsafe_inline_svg'            => 'unsafe_svg_count',

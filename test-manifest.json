@@ -8,6 +8,7 @@
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
+    { "path": "tests/smoke-raw-html-companion-quality.php", "environment": "standalone-php" },
     { "path": "tests/consent-banner.test.mjs", "environment": "node" },
     { "path": "tests/acceptance/consent-banner-lifecycle.php", "environment": "operator-only", "reason": "Separate plan, prepare and resume requests on disposable WordPress starting without Jetpack." },
     { "path": "tests/acceptance/consent-banner-browser.mjs", "environment": "operator-only", "reason": "Set SSI_CONSENT_ORIGIN to the disposable imported WordPress site; tests real Jetpack click and reload." },

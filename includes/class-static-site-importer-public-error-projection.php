@@ -331,7 +331,7 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$projected[ $field ] = $values;
 			}
 		}
-		foreach ( array( 'core_html_block_count', 'fallback_count', 'diagnostic_count', 'loss_count' ) as $field ) {
+		foreach ( array( 'core_html_block_count', 'raw_html_companion_block_count', 'fallback_count', 'diagnostic_count', 'loss_count' ) as $field ) {
 			if ( is_numeric( $summary[ $field ] ?? null ) ) {
 				$projected[ $field ] = max( 0, (int) $summary[ $field ] );
 			}
