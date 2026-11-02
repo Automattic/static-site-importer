@@ -481,7 +481,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			$opening .= $wrapper['opening'];
 			$closing  = $wrapper['closing'] . $closing;
 		}
-		$block['attrs']['wrappers']       = array_slice( $wrappers, 0, $keep );
+		$block['attrs']['wrappers']      = array_slice( $wrappers, 0, $keep );
 		$block['_layout_shell_wrappers'] = $markup;
 		$block['innerHTML']              = $opening . $closing;
 		$block['innerContent']           = array( $opening, null, $closing );
@@ -506,7 +506,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			return null;
 		}
 		foreach ( $form['presentation_graph']['controls'] ?? array() as $presented ) {
-			if ( $index === ( $presented['index'] ?? null ) ) {
+			if ( ( $presented['index'] ?? null ) === $index ) {
 				foreach ( array( 'height', 'min_height', 'max_height' ) as $size ) {
 					if ( str_contains( (string) ( $presented['control']['styles'][ $size ] ?? '' ), '%' ) ) {
 						return null;
@@ -539,7 +539,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	private static function control_box_depth( array $form, int $index ): ?int {
 		$selector = (string) ( $form['controls'][ $index ]['selector'] ?? '' );
 		foreach ( $form['presentation_graph']['control_containers'] ?? array() as $container ) {
-			if ( $index !== ( $container['index'] ?? null ) ) {
+			if ( ( $container['index'] ?? null ) !== $index ) {
 				continue;
 			}
 			$box = (string) ( $container['source_selector'] ?? '' );
