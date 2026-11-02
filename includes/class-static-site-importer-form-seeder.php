@@ -698,6 +698,8 @@ class Static_Site_Importer_Form_Seeder {
 			'field_contract'              => array_values( self::contract_rows_in_source_order( $state->field_contract ) ),
 			'handoff_items'               => $state->handoff_items,
 			'recipient'                   => $state->recipient,
+			// The provider's own confirmation surface, shown only after it accepts a submission.
+			'success_selector'            => '.contact-form-submission',
 			'runtime_readiness'           => $readiness,
 			'complete'                    => $available && 'ready' === $readiness['status'],
 			'block_markup'                => '',

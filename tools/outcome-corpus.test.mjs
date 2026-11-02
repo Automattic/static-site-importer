@@ -90,6 +90,30 @@ test('capture contracts bind real outcome probes without producer knowledge', as
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
+test('import receipt form rows bind provider delivery facts and the provider success surface', async () => {
+  const root = path.resolve('tests/fixtures/outcome-capture');
+  const source = fs.readFileSync(path.join(root, 'website/index.html'), 'utf8');
+  // The provider form owns its own element, so the source id survives on a
+  // node inside it; it submits to its own local endpoint and reveals its own
+  // confirmation beside the form.
+  const candidate = '<!doctype html><html><body><main><div class="provider-form"><div class="sent" hidden>Thanks</div><form action="/" method="post"><div id="contact"><input name="email" type="email" required></div><button type="submit">Send</button></form></div></main><script>document.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const body = new FormData(event.target); if ((await fetch("/provider-endpoint", { method: "POST", body })).ok) document.querySelector(".sent").hidden = false; });</script></body></html>';
+  const server = http.createServer((request, response) => {
+    if (request.method === 'POST') { let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { response.writeHead(body.includes('outcome@example.com') ? 200 : 400); response.end(); }); return; }
+    response.setHeader('Content-Type', 'text/html'); response.end(candidate);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch();
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const formReceipts = [{ selector: 'main > form', source_path: 'index.html', provider: 'provider', recipient: { status: 'handoff', reason_code: 'no_recovered_recipient' }, handoff_items: [{ kind: 'recipient', message: 'The owner sets a recipient.' }], success_selector: '.sent' }];
+    const config = await deriveOutcomeBindings({ fixture: { source: root, directory: path.join(root, 'website') }, documents: { '/': { html: source, sourceUrl: origin, sourcePath: 'index.html' } }, candidateOrigin: origin, sourceOrigin: origin, browser, formReceipts });
+    assert.deepEqual(config.forms['/:form:0'], { selector: '#contact', provider: 'provider', ownerHandoff: 'The owner sets a recipient.', successSelector: '.sent' });
+    const { interactiveOutcomes } = await import('../lib/interactive-outcomes.mjs');
+    const checked = await interactiveOutcomes({ browser, candidateOrigin: origin, routes: ['/'], widths: [390], config });
+    assert.deepEqual(checked.forms.evidence.filter(row => row.width).map(row => [row.status, row.handler]), [['pass', `${origin}/provider-endpoint`]]);
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
 test('saved documents use real client parser and save-contract validation for every owner type', async () => {
   const bundle = await build({ stdin: { contents: `import * as blocks from '@wordpress/blocks'; import {createElement} from '@wordpress/element'; window.wp={blocks}; blocks.registerBlockType('synthetic/text', {title:'Text', category:'text', attributes:{text:{type:'string',source:'text',selector:'p'}}, save:({attributes})=>createElement('p',null,attributes.text)});`, resolveDir: process.cwd() }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } });
   const server = http.createServer((request, response) => {
