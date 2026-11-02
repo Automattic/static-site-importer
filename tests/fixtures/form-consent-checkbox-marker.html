@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<style>
+.consent{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#223}
+.marker{margin-inline-start:4px}
+</style>
+</head>
+<body>
+<main>
+<form aria-label="Newsletter">
+<label for="email">Email<span class="marker" aria-hidden="true">*</span></label>
+<input id="email" name="email" type="email" required>
+<label class="consent"><input id="consent" name="consent" type="checkbox" required><span>Yes, subscribe me to the newsletter.</span><span class="marker" aria-hidden="true">*</span></label>
+<button type="submit">Sign up</button>
+</form>
+</main>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<style>
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:24px;grid-auto-rows:minmax(min-content,max-content) 1fr;width:100%}
+.label-cell{display:flex;align-items:flex-end}
+.field-label{display:inline-block;margin-bottom:8px;font-size:14px;font-weight:700;color:#223}
+.marker{display:inline-block;margin-inline-start:4px}
+.field-box{border:1px solid #223;border-radius:40px;height:36px;background-color:#fafaf0}
+.field-box input{border:0;width:100%;height:34px;padding:0 12px;background-color:transparent;font-size:15px}
+.area-box{border:1px solid #223;border-radius:20px;height:92px;padding:8px 0;box-sizing:border-box;background-color:#fafaf0}
+.area-box textarea{border:0;height:100%;width:100%;padding:0 12px;background-color:transparent}
+.send{padding:8px 16px;border:0;background-color:#223;color:#fff}
+</style>
+</head>
+<body>
+<main>
+<form aria-label="Pre order"><div class="grid">
+<div class="label-cell" style="grid-row:1;grid-column:1 / span 6"><label class="field-label" for="first">First name<span class="marker" aria-hidden="true">*</span></label></div>
+<div style="grid-row:2;grid-column:1 / span 6"><div class="field-root"><div class="field-box"><input id="first" name="first" type="text" required></div></div></div>
+<div class="label-cell" style="grid-row:1;grid-column:7 / span 6"><label class="field-label" for="last">Last name<span class="marker" aria-hidden="true">*</span></label></div>
+<div style="grid-row:2;grid-column:7 / span 6"><div class="field-root"><div class="field-box"><input id="last" name="last" type="text" required></div></div></div>
+<div class="label-cell" style="grid-row:3;grid-column:1 / span 12"><label class="field-label" for="note">Message</label></div>
+<div style="grid-row:4;grid-column:1 / span 12"><div class="field-root"><div class="area-box"><textarea id="note" name="note"></textarea></div></div></div>
+<div style="grid-row:5;grid-column:1 / span 3"><button class="send" type="submit">Send</button></div>
+</div></form>
+</main>
+</body>
+</html>

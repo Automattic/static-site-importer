@@ -337,8 +337,10 @@ class Static_Site_Importer_Form_Seeder {
 		$maps    = self::target_maps( $state, $presentation_form );
 		$overlay = Static_Site_Importer_Form_Presentation::collapse_inactive_field_errors(
 			// Core's editor does not run the server-side source-class transfer hook,
-			// so only the front end leaves class-owned submit colours to the live source rules.
-			Static_Site_Importer_Form_Presentation_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'], Static_Site_Importer_Form_Presentation::without_class_carried_submit_colors( $presentation_form['presentation_graph'], $state->controls ) ),
+			// so only the front end leaves class-owned submit colours, and the
+			// paint of source boxes that still wrap their fields, to the live
+			// source rules.
+			Static_Site_Importer_Form_Presentation_Overlay::compile_surfaces( $presentation_form['layout_graph'], $maps['target'], $maps['editor'], $presentation_form['presentation_graph'], Static_Site_Importer_Form_Readable_Substitution::without_source_painted_boxes( Static_Site_Importer_Form_Presentation::without_class_carried_submit_colors( $presentation_form['presentation_graph'], $state->controls ), $state->source_painted_boxes ) ),
 			$state->scope
 		);
 		$receipt = array();
@@ -464,7 +466,7 @@ class Static_Site_Importer_Form_Seeder {
 			return;
 		}
 		$choice_box                                        = null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $form, $control_index );
-		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Presentation_Descriptor::source_label_row_carried_margins( $form, $control_index ) );
+		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Presentation_Descriptor::source_label_row_carried_margins( $form, $control_index ), null !== Static_Site_Importer_Form_Readable_Substitution::painted_control_box_depth( $form, $control_index ) );
 		if ( isset( $state->suppressed_controls[ $control_index ] ) ) {
 			$state->record_suppressed( $control_index, isset( $state->choice_pairs[ $control_index ] ) ? 'choice_carrier' : 'radio_group_member' );
 			return;

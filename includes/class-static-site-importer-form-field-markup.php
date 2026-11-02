@@ -337,6 +337,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'attrs' => array_filter( array(
 					'label'        => $label,
 					'isStandalone' => true,
+					// A standalone checkbox's option is its label, so it states the
+					// source's required marker in place of the provider default.
+					'requiredText' => ! empty( $attrs['required'] ) ? self::required_marker_text( $control ) : '',
 					'className'    => trim( $control_class . ' ' . $label_class ),
 				) ),
 			);
@@ -345,9 +348,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( isset( $attrs['requiredIndicator'] ) ) {
 				$label_attrs['requiredIndicator'] = $attrs['requiredIndicator'];
 			}
-			if ( is_string( $control['required_text'] ?? null ) && '' !== trim( $control['required_text'] ) && strlen( $control['required_text'] ) <= 32 ) {
+			if ( '' !== self::required_marker_text( $control ) ) {
 				if ( ! empty( $attrs['required'] ) ) {
-					$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
+					$label_attrs['requiredText'] = self::required_marker_text( $control );
 				} else {
 					// A visible marker without validation: Jetpack renders its
 					// indicator only for required fields, so carry the same span.
@@ -658,6 +661,17 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return $attrs;
+	}
+
+	/**
+	 * The source's visible required marker, as plain text, or '' when the
+	 * source states none a provider label can carry.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 */
+	private static function required_marker_text( array $control ): string {
+		$text = $control['required_text'] ?? null;
+		return is_string( $text ) && '' !== trim( $text ) && strlen( $text ) <= 32 ? wp_strip_all_tags( $text ) : '';
 	}
 
 	/**

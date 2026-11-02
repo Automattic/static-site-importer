@@ -180,6 +180,74 @@ $collect_labels( parse_blocks( $cells_row['block_markup'] ?? '' ) );
 $checks['sibling cell labels: form maps'] = 'mapped' === $cells_row['status'];
 $checks['sibling cell labels: one label per field'] = array( 'First name', 'Last name', 'Fields marked * are required' ) === $cells_labels;
 $checks['sibling cell labels: unowned label stays authored'] = 1 === preg_match( '/authored-label \{"htmlFor":"nowhere"/', $cells_row['block_markup'] ?? '' );
+$seed_fixture = static function ( string $fixture ): array {
+	$result      = ( new ArtifactCompiler() )->compile( array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => file_get_contents( __DIR__ . '/fixtures/' . $fixture ) ),
+	) )->toArray();
+	$plan        = $result['source_reports']['wordpress_site_plan'];
+	$declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $entry ): bool => 'forms' === ( $entry['type'] ?? null ) ) );
+	return Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan ) ) ) )['forms'][0];
+};
+$find_blocks = static function ( array $blocks, string $name, array $parents = array() ) use ( &$find_blocks ): array {
+	$found = array();
+	foreach ( $blocks as $block ) {
+		if ( $name === $block['blockName'] ) {
+			$found[] = array( 'block' => $block, 'parents' => $parents );
+		}
+		$found = array_merge( $found, $find_blocks( $block['innerBlocks'], $name, array_merge( $parents, array( $block ) ) ) );
+	}
+	return $found;
+};
+// A grid form keeps each label in its own cell and each control in a painted
+// box. The provider control carries the box's paint, so the box's own
+// wrapper leaves the field: one border, and the provider caption above the
+// box rather than inside it. The grid tracks and the cells around each
+// field stay where the source put them.
+$box_row     = $seed_fixture( 'form-grid-field-box-labels.html' );
+$box_markup  = $box_row['block_markup'] ?? '';
+$box_css     = $box_row['provider_layout_overlay_css']['css'] ?? '';
+$box_fields  = $find_blocks( parse_blocks( $box_markup ), 'jetpack/field-text' );
+$box_parents = array_map(
+	static function ( array $found ): string {
+		$shell    = end( $found['parents'] );
+		$wrappers = $shell['attrs']['wrappers'] ?? array();
+		return (string) ( end( $wrappers )['attributes']['class'] ?? '' );
+	},
+	$box_fields
+);
+$checks['field box: form maps'] = 'mapped' === $box_row['status'];
+$checks['field box: painted box wrapper leaves the field'] = 2 === count( $box_fields ) && ! str_contains( $box_markup, 'field-box' ) && array( 'field-root', 'field-root' ) === $box_parents;
+$checks['field box: grid tracks and cells stay'] = str_contains( $box_markup, 'class="grid"' ) && str_contains( $box_markup, 'grid-row:2;grid-column:1 / span 6' ) && str_contains( $box_markup, 'grid-row:2;grid-column:7 / span 6' ) && str_contains( $box_markup, 'grid-row:5;grid-column:1 / span 3' );
+$box_field_classes = array_map( static fn( array $found ): string => (string) $found['block']['attrs']['className'], $box_fields );
+$checks['field box: provider control carries the one box border'] = 1 === substr_count( $box_css, 'border:1px solid #223!important' ) && 1 === preg_match( '/\.' . preg_quote( $box_field_classes[0] ?? 'missing', '/' ) . ', [^{]*\.' . preg_quote( $box_field_classes[1] ?? 'missing', '/' ) . '\{background-color:#fafaf0!important;border:1px solid #223!important;border-radius:40px!important\}/', $box_css );
+$box_labels = array_map( static fn( array $found ): array => array( $found['block']['attrs']['label'] ?? '', $found['block']['attrs']['requiredText'] ?? '' ), $find_blocks( parse_blocks( $box_markup ), 'jetpack/label' ) );
+$checks['field box: one provider label per field with the source marker'] = array( array( 'First name', '*' ), array( 'Last name', '*' ), array( 'Message', '' ) ) === $box_labels && ! str_contains( $box_markup, 'authored-label' );
+// A control sized against its box (height:100%) takes its size from that
+// box, which the graph does not state, so that box stays around its field.
+// Its source rules paint it on the front end, so the overlay does not paint
+// the control inside it a second time; the editor still carries the paint.
+$area_fields = $find_blocks( parse_blocks( $box_markup ), 'jetpack/field-textarea' );
+$area_shell  = 1 === count( $area_fields ) ? end( $area_fields[0]['parents'] ) : array();
+$area_class  = (string) ( $area_fields[0]['block']['attrs']['className'] ?? 'missing' );
+$checks['field box: box that sizes its control stays'] = 'area-box' === ( end( $area_shell['attrs']['wrappers'] )['attributes']['class'] ?? null ) && ! str_contains( $box_css, '#fafaf0;border:1px solid #223;border-radius:20px' ) && str_contains( $box_row['provider_layout_overlay_css']['editor_css'] ?? '', 'border-radius:20px' );
+$checks['field box: required marker keeps the label weight'] = 2 === preg_match_all( '/> \.grunion-label-required\{font-size:inherit!important;font-weight:inherit!important;/', $box_css );
+// A standalone consent checkbox states the source's required marker, not
+// the provider's default "(required)" text, at the label's own weight.
+$consent_row     = $seed_fixture( 'form-consent-checkbox-marker.html' );
+$consent_options = $find_blocks( parse_blocks( $consent_row['block_markup'] ?? '' ), 'jetpack/option' );
+$consent_css     = $consent_row['provider_layout_overlay_css']['css'] ?? '';
+$checks['consent checkbox: form maps'] = 'mapped' === $consent_row['status'];
+$checks['consent checkbox: option carries the source marker'] = 1 === count( $consent_options ) && true === ( $consent_options[0]['block']['attrs']['isStandalone'] ?? null ) && '*' === ( $consent_options[0]['block']['attrs']['requiredText'] ?? null );
+$checks['consent checkbox: marker keeps the label weight'] = 2 === preg_match_all( '/> \.grunion-label-required\{font-size:inherit!important;font-weight:inherit!important;/', $consent_css );
+$checks['consent checkbox: source row stays'] = str_contains( $consent_row['block_markup'] ?? '', 'class="consent"' );
+// The provider phone field renders its own country selector, so the captured
+// country listbox popup leaves with the trigger the field consumes.
+$phone_row    = $seed_fixture( 'form-phone-listbox-popup.html' );
+$phone_markup = $phone_row['block_markup'] ?? '';
+$checks['phone popup: form maps'] = 'mapped' === $phone_row['status'] && 1 === count( $find_blocks( parse_blocks( $phone_markup ), 'jetpack/field-telephone' ) );
+$checks['phone popup: captured listbox panel is dropped'] = ! str_contains( $phone_markup, 'data-blocks-engine-capture-listbox-panel' ) && ! str_contains( $phone_markup, 'Andorra' ) && ! str_contains( $phone_markup, 'country-option' ) && ! str_contains( $phone_markup, 'class="prefix"' );
+$checks['phone popup: field box stays'] = str_contains( $phone_markup, 'class="phone-box"' );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );

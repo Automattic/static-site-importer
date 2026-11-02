@@ -148,7 +148,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	/**
 	 * @param array<int,string> $row_carried_label_margins Label margin properties the rebuilt source row already supplies.
 	 */
-	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false, array $row_carried_label_margins = array() ): array {
+	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false, array $row_carried_label_margins = array(), bool $unwrapped_box = false ): array {
 		$control_class      = isset( $roles['control'] ) ? self::presentation_node_class( $scope, $index, 'control' ) : '';
 		$label_class        = isset( $roles['label'] ) || isset( $roles['required_marker'] ) ? self::presentation_node_class( $scope, $index, 'label' ) : '';
 		$phone_destinations = array();
@@ -335,6 +335,12 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'selector'   => '.' . $scope . ' .' . Static_Site_Importer_Form_Presentation::layout_node_class( $scope, 'control-' . $index ),
 				'properties' => array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
 			);
+			if ( $unwrapped_box ) {
+				// The source box no longer wraps the provider field, so its paint
+				// is the control's paint at every breakpoint, ahead of the source
+				// control's own rule that clears the control's border.
+				$destinations[ array_key_last( $destinations ) ]['priority'] = 'important';
+			}
 		}
 		if ( isset( $roles['label'] ) ) {
 			$text_properties = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'letter_spacing', 'line_height', 'text_align', 'text_decoration', 'text_transform' );
@@ -392,7 +398,12 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'role'       => 'required_marker',
 				'selector'   => '.' . $scope . ' .' . $label_class . ' > .grunion-label-required',
 				'properties' => array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
-				'resets'     => array( 'font-size' => 'inherit' ),
+				// The source marker is text inside its label, and the provider's
+				// marker would otherwise take Jetpack's smaller, normal-weight type.
+				'resets'     => array(
+					'font-size'   => 'inherit',
+					'font-weight' => 'inherit',
+				),
 				'priority'   => 'important',
 			);
 		}

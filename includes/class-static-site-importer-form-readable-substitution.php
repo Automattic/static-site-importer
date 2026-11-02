@@ -231,6 +231,30 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/**
+	 * A source box that still wraps its provider field keeps its own source
+	 * rules, which paint it at every breakpoint. On the front end the overlay
+	 * leaves that paint to them rather than painting the control inside the
+	 * box a second time.
+	 *
+	 * @param array<string,mixed> $graph   Presentation graph.
+	 * @param array<int,true>     $indices Controls whose source box still wraps the field.
+	 * @return array<string,mixed>
+	 */
+	public static function without_source_painted_boxes( array $graph, array $indices ): array {
+		if ( array() === $indices ) {
+			return $graph;
+		}
+		$kept = static fn( array $entry ): bool => ! isset( $indices[ $entry['index'] ?? -1 ] ) || 'control_container' !== ( $entry['role'] ?? 'control_container' );
+		if ( isset( $graph['control_containers'] ) ) {
+			$graph['control_containers'] = array_values( array_filter( $graph['control_containers'], $kept ) );
+		}
+		if ( isset( $graph['variants'] ) ) {
+			$graph['variants'] = array_values( array_filter( $graph['variants'], static fn( array $variant ): bool => ! isset( $indices[ $variant['index'] ?? -1 ] ) || 'control_container' !== ( $variant['role'] ?? null ) ) );
+		}
+		return $graph;
+	}
+
+	/**
 	 * The source submit is one element, both the item its layout box places
 	 * and the painted button; core/button splits it into a wrapper and a link.
 	 * The wrapper takes the source button's place: it carries the source
@@ -367,10 +391,18 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		if ( self::is_provider_field_label( $block, $state ) ) {
 			return null;
 		}
+		$block = self::without_painted_control_box( $block, $state );
+		if ( isset( $block['form_control_index'] ) ) {
+			return self::substitute( $block, $state, $parent_name );
+		}
 		$children = array();
 		$slots    = array();
 		$index    = 0;
 		$legend   = self::legend_block( $block );
+		// A captured listbox popup follows the trigger that opens it. When the
+		// provider field owns that trigger, it renders its own popup, so the
+		// captured one leaves with the trigger.
+		$consumed_trigger = false;
 		foreach ( $block['innerContent'] ?? array() as $part ) {
 			if ( null !== $part ) {
 				$slots[] = $part;
@@ -383,7 +415,13 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				}
 				continue;
 			}
-			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state, (string) ( $block['blockName'] ?? '' ) );
+			$source = $block['innerBlocks'][ $index++ ];
+			if ( $consumed_trigger && self::is_captured_listbox_panel( $source ) ) {
+				$consumed_trigger = false;
+				continue;
+			}
+			$consumed_trigger = self::is_consumed_listbox_trigger( $source, $state );
+			$child            = self::substitute( $source, $state, (string) ( $block['blockName'] ?? '' ) );
 			if ( null !== $child ) {
 				$children[] = $child;
 				$slots[]    = null;
@@ -397,6 +435,148 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * A provider field leaves the source box that painted its control.
+	 *
+	 * The presentation graph states that box's paint as the control's
+	 * container, and the overlay puts it on the provider control. The box's
+	 * own wrapper would paint it a second time, and the provider field's
+	 * caption would render inside it. So the shell keeps only the wrappers
+	 * above that box; the source layout cells around the field stay.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 * @return array<string,mixed> The shell without the box, or its field when nothing else wraps it.
+	 */
+	private static function without_painted_control_box( array $block, Static_Site_Importer_Form_Plan_State $state ): array {
+		$wrappers = $block['attrs']['wrappers'] ?? null;
+		$markup   = $block['_layout_shell_wrappers'] ?? null;
+		$child    = $block['innerBlocks'][0] ?? null;
+		if ( ! is_array( $wrappers ) || ! is_array( $markup ) || count( $wrappers ) !== count( $markup ) || 1 !== count( $block['innerBlocks'] ?? array() ) || ! is_array( $child ) || ! is_int( $child['form_control_index'] ?? null ) || 3 !== count( $block['innerContent'] ?? array() ) || null !== $block['innerContent'][1] ) {
+			return $block;
+		}
+		$index = $child['form_control_index'];
+		$box   = self::is_text_control( $state->form, $index ) ? self::control_box_depth( $state->form, $index ) : null;
+		if ( null === $box || $box > count( $wrappers ) || isset( $state->suppressed_controls[ $index ] ) || ! str_starts_with( (string) ( $state->field_blocks[ $index ]['name'] ?? '' ), 'jetpack/field-' ) ) {
+			return $block;
+		}
+		$depth = self::painted_control_box_depth( $state->form, $index );
+		if ( null === $depth ) {
+			// The box stays around the field and its source rules paint it.
+			$state->source_painted_boxes[ $index ] = true;
+			return $block;
+		}
+		$keep = count( $wrappers ) - $depth;
+		if ( 0 === $keep ) {
+			return $child;
+		}
+		$markup  = array_slice( $markup, 0, $keep );
+		$opening = '';
+		$closing = '';
+		foreach ( $markup as $wrapper ) {
+			if ( ! is_string( $wrapper['opening'] ?? null ) || ! is_string( $wrapper['closing'] ?? null ) ) {
+				return $block;
+			}
+			$opening .= $wrapper['opening'];
+			$closing  = $wrapper['closing'] . $closing;
+		}
+		$block['attrs']['wrappers']       = array_slice( $wrappers, 0, $keep );
+		$block['_layout_shell_wrappers'] = $markup;
+		$block['innerHTML']              = $opening . $closing;
+		$block['innerContent']           = array( $opening, null, $closing );
+		return $block;
+	}
+
+	/**
+	 * How many element levels above a single-line or multi-line text control
+	 * its painted source box sits, when the provider field leaves that box;
+	 * null when the field keeps it.
+	 *
+	 * The graph states the box's paint, not its size. A control sized against
+	 * its box (a percentage height) takes its size from the box, so that box
+	 * stays. Choice controls paint their options, and a wrapping label is the
+	 * field box itself. Both selectors are the producer's child-combinator
+	 * paths, so the box is a path prefix of the control.
+	 *
+	 * @param array<string,mixed> $form Normalized form entity.
+	 */
+	public static function painted_control_box_depth( array $form, int $index ): ?int {
+		if ( ! self::is_text_control( $form, $index ) ) {
+			return null;
+		}
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $presented ) {
+			if ( $index === ( $presented['index'] ?? null ) ) {
+				foreach ( array( 'height', 'min_height', 'max_height' ) as $size ) {
+					if ( str_contains( (string) ( $presented['control']['styles'][ $size ] ?? '' ), '%' ) ) {
+						return null;
+					}
+				}
+			}
+		}
+		return self::control_box_depth( $form, $index );
+	}
+
+	/**
+	 * Whether a control is a text-entry control outside a wrapping label.
+	 *
+	 * @param array<string,mixed> $form Normalized form entity.
+	 */
+	private static function is_text_control( array $form, int $index ): bool {
+		$control = $form['controls'][ $index ] ?? null;
+		return is_array( $control )
+			&& in_array( strtolower( (string) ( $control['tag'] ?? '' ) ), array( 'input', 'textarea' ), true )
+			&& ! in_array( strtolower( (string) ( $control['type'] ?? '' ) ), array( 'checkbox', 'radio', 'hidden', 'submit', 'button', 'image', 'reset', 'file', 'range', 'color' ), true )
+			&& ! Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $form, $index );
+	}
+
+	/**
+	 * How many element levels above a control the graph's painted container
+	 * sits, or null when the graph states none.
+	 *
+	 * @param array<string,mixed> $form Normalized form entity.
+	 */
+	private static function control_box_depth( array $form, int $index ): ?int {
+		$selector = (string) ( $form['controls'][ $index ]['selector'] ?? '' );
+		foreach ( $form['presentation_graph']['control_containers'] ?? array() as $container ) {
+			if ( $index !== ( $container['index'] ?? null ) ) {
+				continue;
+			}
+			$box = (string) ( $container['source_selector'] ?? '' );
+			if ( '' === $box || ! str_starts_with( $selector, $box . ' > ' ) ) {
+				return null;
+			}
+			return substr_count( substr( $selector, strlen( $box ) ), ' > ' );
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a readable block is a captured listbox trigger the provider field
+	 * renders as part of itself (a phone field's country selector).
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function is_consumed_listbox_trigger( array $block, Static_Site_Importer_Form_Plan_State $state ): bool {
+		$index = $block['form_control_index'] ?? null;
+		return is_int( $index )
+			&& 'listbox' === strtolower( trim( (string) ( $state->controls[ $index ]['aria_haspopup'] ?? $state->controls[ $index ]['aria-haspopup'] ?? '' ) ) )
+			&& Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $state->controls, $index );
+	}
+
+	/**
+	 * Whether a readable block is a captured listbox panel: its outermost
+	 * element carries the capture's listbox panel binding.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function is_captured_listbox_panel( array $block ): bool {
+		$opening = $block['innerContent'][0] ?? null;
+		if ( ! is_string( $opening ) || '' === $opening ) {
+			return false;
+		}
+		$tag = new WP_HTML_Tag_Processor( $opening );
+		return $tag->next_tag() && null !== $tag->get_attribute( 'data-blocks-engine-capture-listbox-panel' );
 	}
 
 	/**
