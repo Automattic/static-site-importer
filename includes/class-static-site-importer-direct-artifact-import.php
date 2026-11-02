@@ -70,6 +70,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$artifact = $admission['artifact'];
 		$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
+		require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
+		Static_Site_Importer_Consent_Banner::extract( $artifact, $args, $payload_reader );
 		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 		$images = Static_Site_Importer_Image_Assets::extract( $artifact, $payload_reader );
 		if ( is_wp_error( $images ) ) {

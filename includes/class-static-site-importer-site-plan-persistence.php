@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
+require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -489,7 +490,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( is_wp_error( $identity ) ) {
 				return self::failed_receipt_from_error( $state, $identity );
 			}
-			$state['applied']['site_identity'] = $identity;
+			$state['applied']['site_identity']  = $identity;
+			$state['applied']['consent_banner'] = Static_Site_Importer_Consent_Banner::materialize( $state );
 			// Site identity: the source document language becomes the WPLANG
 			// owner through the core language-pack path. Never fails; a pack
 			// that cannot be installed keeps the site default and records an

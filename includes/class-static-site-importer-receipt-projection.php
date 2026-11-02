@@ -75,6 +75,7 @@ class Static_Site_Importer_Receipt_Projection {
 			$lifecycle['diagnostics'] ?? array(),
 			Static_Site_Importer_Diagnostic_Projection::provider_entity_decline_diagnostics( $entities )
 		);
+		$diagnostics    = array_merge( $diagnostics, $receipt['completed']['consent_banner']['findings'] ?? array() );
 		$gutenberg_gaps = is_array( $receipt['extensions']['gutenberg_gaps'] ?? null ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics    = array_merge( $diagnostics, $gutenberg_gaps );
 		if ( is_array( $args['missing_author_stylesheet_diagnostics'] ?? null ) ) {

@@ -1,0 +1,9 @@
+{
+  "schema": "static-site-importer/consent-banner/v1",
+  "text": "This example uses cookies for analytics & preferences.",
+  "accept_label": "Accept cookies",
+  "policy_link": { "label": "Privacy policy", "href": "https://example.test/privacy/" },
+  "position": "bottom",
+  "colors": { "background": "#222222", "text": "#ffffff", "button_background": "#999999", "button_text": "#ffffff" },
+  "source_selector": ".example-consent"
+}

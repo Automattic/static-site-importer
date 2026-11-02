@@ -110,6 +110,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
 	'class-static-site-importer-source-findings.php',
+	'class-static-site-importer-consent-banner.php',
 	'class-static-site-importer-compiler-diagnostic-normalizer.php',
 	'class-static-site-importer-import-report.php',
 	'class-static-site-importer-diagnostic-contract.php',

@@ -132,6 +132,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				'files'                        => $state['applied']['files'],
 				'operations'                   => $state['applied']['operations'],
 				'site_identity'                => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
+				'consent_banner'               => $state['applied']['consent_banner'] ?? array(),
 				'site_language'                => $state['applied']['site_language'] ?? array( 'status' => 'not_requested' ),
 				'route_languages'              => $state['applied']['route_languages'] ?? array(
 					'status' => 'not_requested',
