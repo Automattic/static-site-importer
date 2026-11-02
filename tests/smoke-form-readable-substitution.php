@@ -155,6 +155,31 @@ $plain_declaration = current( array_filter( $plain_plan['runtime_declarations'],
 $plain_row = Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $plain_declaration['payload']['entities'], $plain_plan ) ) ) )['forms'][0];
 $plain_overlays = Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( array( array( 'forms' => array( $plain_row ) ) ) );
 $checks['unstyled form overlay is admitted'] = 'mapped' === $plain_row['status'] && 1 === count( $plain_overlays ) && null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $plain_overlays[0] );
+// A label in a sibling layout cell names its control by `for`: the provider
+// field that renders that control's label consumes it, so each field renders
+// one label. A label naming no control stays authored copy.
+$cells_result      = ( new ArtifactCompiler() )->compile( array(
+	'entrypoint' => 'index.html',
+	'files'      => array( 'index.html' => file_get_contents( __DIR__ . '/fixtures/form-sibling-cell-labels.html' ) ),
+) )->toArray();
+$cells_plan        = $cells_result['source_reports']['wordpress_site_plan'];
+$cells_declaration = current( array_filter( $cells_plan['runtime_declarations'], static fn( array $entry ): bool => 'forms' === ( $entry['type'] ?? null ) ) );
+$cells_row         = Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $cells_declaration['payload']['entities'], $cells_plan ) ) ) )['forms'][0];
+$cells_labels      = array();
+$collect_labels    = static function ( array $blocks ) use ( &$collect_labels, &$cells_labels ): void {
+	foreach ( $blocks as $block ) {
+		if ( 'jetpack/label' === $block['blockName'] ) {
+			$cells_labels[] = $block['attrs']['label'] ?? '';
+		} elseif ( str_ends_with( (string) $block['blockName'], '/authored-label' ) ) {
+			$cells_labels[] = trim( wp_strip_all_tags( $block['attrs']['content'] ?? '' ) );
+		}
+		$collect_labels( $block['innerBlocks'] );
+	}
+};
+$collect_labels( parse_blocks( $cells_row['block_markup'] ?? '' ) );
+$checks['sibling cell labels: form maps'] = 'mapped' === $cells_row['status'];
+$checks['sibling cell labels: one label per field'] = array( 'First name', 'Last name', 'Fields marked * are required' ) === $cells_labels;
+$checks['sibling cell labels: unowned label stays authored'] = 1 === preg_match( '/authored-label \{"htmlFor":"nowhere"/', $cells_row['block_markup'] ?? '' );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );

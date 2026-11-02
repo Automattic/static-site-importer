@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head>
+<style>.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}</style>
+</head>
+<body>
+<main>
+<form aria-label="Pre order"><div class="grid">
+<div style="grid-row:1;grid-column:1"><label for="f">First name<span aria-hidden="true">*</span></label></div>
+<div style="grid-row:2;grid-column:1"><input id="f" type="text" required aria-label="First name"></div>
+<div style="grid-row:1;grid-column:2"><label for="l">Last name<span aria-hidden="true">*</span></label></div>
+<div style="grid-row:2;grid-column:2"><input id="l" type="text" required aria-label="Last name"></div>
+<div style="grid-row:3;grid-column:1"><label for="nowhere">Fields marked * are required</label></div>
+</div><button type="submit">Send</button></form>
+</main>
+</body>
+</html>
