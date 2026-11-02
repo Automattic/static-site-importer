@@ -118,8 +118,9 @@ class Static_Site_Importer_Dependency_Manager {
 			if ( ! empty( $adapter['defer_dependencies'] ) && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				continue;
 			}
-			$required = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );
-			$waived   = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
+			$required    = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );
+			$best_effort = ! empty( $adapter['best_effort_dependency'] );
+			$waived      = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
 			if ( $waived ) {
 				$reports[ $id ] = array(
 					'status'   => 'waived',
@@ -143,7 +144,7 @@ class Static_Site_Importer_Dependency_Manager {
 					return self::dependency_materialization_failed_error( $id, $plugin_report );
 				}
 			}
-			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && $required ) {
+			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && $required && ! $best_effort ) {
 				return self::dependency_not_ready_error( $id, $reports );
 			}
 		}

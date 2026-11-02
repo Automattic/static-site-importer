@@ -47,13 +47,14 @@ class Static_Site_Importer_Consent_Banner {
 	/** Declare the same plugin dependency lifecycle used by native form adapters. */
 	public static function adapter(): array {
 		return array(
-			'id'                   => 'jetpack_cookie_consent',
-			'capability'           => 'consent_banner',
-			'rollback_contract_id' => 'static-site-importer/consent-option-journal/v1',
-			'intent_callback'      => array( self::class, 'has_intent' ),
-			'provider'             => 'jetpack',
-			'waiver_arg'           => 'allow_missing_jetpack',
-			'dependencies'         => array(
+			'id'                     => 'jetpack_cookie_consent',
+			'capability'             => 'consent_banner',
+			'rollback_contract_id'   => 'static-site-importer/consent-option-journal/v1',
+			'intent_callback'        => array( self::class, 'has_intent' ),
+			'provider'               => 'jetpack',
+			'best_effort_dependency' => true,
+			'waiver_arg'             => 'allow_missing_jetpack',
+			'dependencies'           => array(
 				array(
 					'type'                  => 'wp_org_plugin',
 					'slug'                  => 'jetpack',

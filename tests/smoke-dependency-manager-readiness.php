@@ -130,6 +130,16 @@ $assert( str_contains( $not_ready->get_error_message(), 'fresh' ), 'pending-read
 $assert( ! str_contains( $not_ready->get_error_message(), 'could not install' ) && ! str_contains( $not_ready->get_error_message(), 'could not activate' ), 'pending-readiness-message-never-claims-install-or-activation-failed' );
 $assert( 'pending_fresh_runtime' === ( $not_ready->get_error_data()['readiness_stage'] ?? '' ), 'pending-readiness-stage-is-recorded' );
 
+// Optional provider chrome tolerates an installed plugin whose capability never registers.
+$optional_adapter = $adapter;
+$optional_adapter['best_effort_dependency'] = true;
+$optional_lifecycle = array( 'dependencies' => array( 'consent' => array( 'adapter' => $optional_adapter, 'required' => true ) ) );
+$optional_result = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $optional_lifecycle, array( 'materialize_dependencies' => true ) );
+$assert( ! is_wp_error( $optional_result ) && isset( $optional_result['consent'] ), 'best-effort-consent-dependency-does-not-fail-resume' );
+// Required forms continue to fail under the exact same not-ready conditions.
+$forms_result = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle(), array( 'materialize_dependencies' => true ) );
+$assert( is_wp_error( $forms_result ) && 'static_site_importer_required_runtime_dependency_missing' === $forms_result->get_error_code(), 'required-forms-dependency-still-fails-when-not-ready' );
+
 // 4. Once available, no error at all — the normal resumed-request outcome.
 $GLOBALS['ssi_next_report'] = array(
 	'slug'        => 'woocommerce',
