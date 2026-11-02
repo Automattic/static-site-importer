@@ -292,11 +292,12 @@ class Static_Site_Importer_Form_Seeder {
 
 		// No wrapper/layout facts enter the overlay. Its presentation destinations
 		// still own label paint, input sizing and the textarea rows policy.
-		$presentation_form                 = $state->form;
-		$presentation_form['layout_graph'] = array( 'nodes' => array() );
-		$state->presentation_descriptors   = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
-		$field_box_labels                  = array();
-		$checkbox_layouts                  = Static_Site_Importer_Form_Readable_Substitution::checkbox_layouts( $state->form );
+		$presentation_form                       = $state->form;
+		$presentation_form['layout_graph']       = array( 'nodes' => array() );
+		$presentation_form['presentation_graph'] = Static_Site_Importer_Form_Readable_Substitution::with_submit_item_placement( $state->form );
+		$state->presentation_descriptors         = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
+		$field_box_labels                        = array();
+		$checkbox_layouts                        = Static_Site_Importer_Form_Readable_Substitution::checkbox_layouts( $state->form );
 		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			if ( isset( $checkbox_layouts[ $control_index ], $state->presentation_descriptors[ $control_index ] ) ) {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, $checkbox_layouts[ $control_index ] );
@@ -319,7 +320,7 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
 			}
 		}
-		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout_rows( Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( is_array( $presentation_form['presentation_graph'] ?? null ) ? $presentation_form['presentation_graph'] : array(), $field_box_labels ), array_intersect_key( $checkbox_layouts, $state->field_blocks ) );
+		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout_rows( Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( $presentation_form['presentation_graph'], $field_box_labels ), array_intersect_key( $checkbox_layouts, $state->field_blocks ) );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		// Substituted choice groups paint their options and lay out their option list.
 		$choices                         = Static_Site_Importer_Form_Readable_Substitution::choice_presentation( $state, $presentation_form['presentation_graph'] );
@@ -520,6 +521,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Map the indexed source submit and its presentation. */
 	private static function map_submit_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control, array $presentation_descriptor ): void {
+		$state->submit_presentation['control_carrier_classes'] = $control['control_carrier_classes'] ?? array();
 		$text               = Static_Site_Importer_Form_Field_Markup::control_text( $control );
 		$state->submit_text = '' !== $text ? $text : $state->submit_text;
 		if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {

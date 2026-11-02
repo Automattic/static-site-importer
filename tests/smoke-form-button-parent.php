@@ -23,8 +23,9 @@ $walk = static function( array $blocks, string $parent = '' ) use ( &$walk, &$er
  foreach ( $blocks as $block ) {
   if ( str_ends_with( $parent, '/layout-shell' ) && 'core/buttons' === $block['blockName'] ) $shell = true;
   if ( 'core/buttons' === $block['blockName'] ) {
-   $slot = $block['attrs']['className'] ?? '';
-   if ( ! str_ends_with( $slot, '-destination-slot' ) ) $errors[] = 'core/buttons must declare a destination slot';
+   preg_match( '/\bssi-node-[a-f0-9]{12}-destination-slot\b/', $block['attrs']['className'] ?? '', $slots );
+   $slot = $slots[0] ?? '';
+   if ( '' === $slot ) $errors[] = 'core/buttons must declare a destination slot';
    $saved = new WP_HTML_Tag_Processor( $block['innerHTML'] );
    if ( ! $saved->next_tag( array( 'tag_name' => 'DIV', 'class_name' => 'wp-block-buttons' ) ) || ! $saved->has_class( $slot ) ) {
     $errors[] = 'Saved wp-block-buttons div must carry its destination slot class';
