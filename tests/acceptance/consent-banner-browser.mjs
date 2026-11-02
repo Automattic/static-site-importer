@@ -12,7 +12,8 @@ try {
   assert.match(await page.locator('.wp-block-jetpack-cookie-consent[role="dialog"]').innerText(), /analytics & preferences/);
  }
  await page.getByRole('button', {name:'Accept cookies', exact:true}).click();
- await page.waitForFunction(() => { const banner = document.querySelector('.wp-block-jetpack-cookie-consent[role="dialog"]'); return !banner || getComputedStyle(banner).opacity === '0'; });
+ // Released Jetpack wraps the banner and fades the wrapper, so wait for the consent cookie rather than a style.
+ await page.waitForFunction(() => document.cookie.includes('eucookielaw='));
  await page.reload();
  assert.equal(await page.locator('.wp-block-jetpack-cookie-consent[role="dialog"]').count(), 0);
  await page.goto(origin);
