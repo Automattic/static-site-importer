@@ -231,6 +231,13 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/**
+	 * A source button's offset from its place. The wrapper takes that place, so
+	 * the offset (and a percentage resolved against it) moves the wrapper once;
+	 * on the link it would resolve against the wrapper and shift a second time.
+	 */
+	private const SUBMIT_OFFSET_FACTS = array( 'position', 'inset', 'top', 'right', 'bottom', 'left', 'transform', 'z_index' );
+
+	/**
 	 * The source submit is one element, both the item its layout box places
 	 * and the painted button; core/button splits it into a wrapper and a link.
 	 * The wrapper takes the source button's place: it carries the source
@@ -245,7 +252,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		foreach ( $descriptor['destinations'] as $index => $destination ) {
 			$part = $destination['part'] ?? null;
 			if ( 'submit_wrapper' === $part ) {
-				$descriptor['destinations'][ $index ]['properties'] = array_merge( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ) );
+				$descriptor['destinations'][ $index ]['properties'] = array_merge( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ), self::SUBMIT_OFFSET_FACTS );
 				$descriptor['destinations'][ $index ]['resets']     = array(
 					'display'     => 'inline-block',
 					// A source button is never capped by its container; Jetpack's
@@ -258,7 +265,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					'line-height' => 'inherit',
 				);
 			} elseif ( 'submit_link' === $part ) {
-				$descriptor['destinations'][ $index ]['properties'] = array_values( array_diff( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ) ) );
+				$descriptor['destinations'][ $index ]['properties'] = array_values( array_diff( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ), self::SUBMIT_OFFSET_FACTS ) );
 				// The editor repeats the wrapper classes on its RichText link.
 				// Keep the button paint above the wrapper's box neutralization.
 				$descriptor['destinations'][ $index ]['priority'] = 'important';
