@@ -206,17 +206,27 @@ final class Static_Site_Importer_Site_Language {
 	 * @param array<string,mixed> $state Prepared materialization state.
 	 */
 	public static function compose_runtime_ownership( array &$state ): void {
+		self::compose_theme_bootstrap( $state, array( self::class, 'with_runtime_ownership' ) );
+	}
+
+	/**
+	 * Apply one idempotent section transform to the destination theme bootstrap,
+	 * wherever this import's `functions.php` currently lives: the composed
+	 * overlay writes, or the plan's own bootstrap write.
+	 *
+	 * @param callable(string):string $with_section Returns the bootstrap with its section.
+	 */
+	public static function compose_theme_bootstrap( array &$state, callable $with_section ): void {
 		$path = (string) $state['theme_dir'] . '/functions.php';
 		if ( isset( $state['composed_theme_writes'][ $path ] ) && is_string( $state['composed_theme_writes'][ $path ] ) ) {
-			$state['composed_theme_writes'][ $path ] = self::with_runtime_ownership( (string) $state['composed_theme_writes'][ $path ] );
-			$composed                                = (string) $state['composed_theme_writes'][ $path ];
+			$state['composed_theme_writes'][ $path ] = $with_section( (string) $state['composed_theme_writes'][ $path ] );
 			foreach ( array( 'font_overlay', 'internal_link_overlay' ) as $key ) {
 				if ( ! is_array( $state[ $key ]['writes'] ?? null ) ) {
 					continue;
 				}
 				foreach ( $state[ $key ]['writes'] as &$write ) {
-					if ( is_array( $write ) && 'functions.php' === ( $write['target_path'] ?? '' ) && isset( $write['content'] ) && is_string( $write['content'] ) && ! str_contains( $write['content'], self::RUNTIME_MARKER ) ) {
-						$write['content'] = self::with_runtime_ownership( $write['content'] );
+					if ( is_array( $write ) && 'functions.php' === ( $write['target_path'] ?? '' ) && isset( $write['content'] ) && is_string( $write['content'] ) ) {
+						$write['content'] = $with_section( $write['content'] );
 					}
 				}
 				unset( $write );
@@ -233,7 +243,7 @@ final class Static_Site_Importer_Site_Language {
 			if ( false === $content || '' === $content ) {
 				continue;
 			}
-			$composed = self::with_runtime_ownership( $content );
+			$composed = $with_section( $content );
 			if ( $composed === $content ) {
 				continue;
 			}

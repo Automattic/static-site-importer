@@ -383,31 +383,21 @@ class Static_Site_Importer_Site_Identity {
 		return $evidence;
 	}
 
-	/** Compose title presentation with the existing theme bootstrap writes. */
+	/**
+	 * The source's title separator is presentation, so the theme carries it;
+	 * WordPress's own default (`–`) needs nothing.
+	 */
 	public static function compose_title_separator( array &$state ): void {
 		$separator = $state['args']['native_site_identity_evidence']['title_separator'] ?? '';
 		if ( ! in_array( $separator, array( '-', '—', '|', '·', '•' ), true ) ) {
 			return;
 		}
-		$path      = $state['theme_dir'] . '/functions.php';
-		$bootstrap = $state['composed_theme_writes'][ $path ] ?? Static_Site_Importer_Internal_Link_Runtime::interaction_bootstrap( $state['resolved'], array() );
-		$marker    = '/* Static Site Importer document title separator. */';
-		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$bootstrap .= "\n{$marker}\nadd_filter( 'document_title_separator', static function () { return '{$separator}'; } );\n";
-		}
-		$state['composed_theme_writes'][ $path ]  = $bootstrap;
-		$state['internal_link_overlay']['status'] = 'materialized';
-		foreach ( $state['internal_link_overlay']['writes'] ?? array() as $index => $write ) {
-			if ( 'functions.php' === ( $write['target_path'] ?? '' ) ) {
-				$state['internal_link_overlay']['writes'][ $index ]['content'] = $bootstrap;
-				return;
-			}
-		}
-		$state['internal_link_overlay']['writes'][] = array(
-			'target_path' => 'functions.php',
-			'content'     => $bootstrap,
-			'encoding'    => 'utf8',
-			'source_path' => 'static-site-importer/title-separator',
+		$marker = '/* Static Site Importer document title separator. */';
+		Static_Site_Importer_Site_Language::compose_theme_bootstrap(
+			$state,
+			static fn( string $bootstrap ): string => str_contains( $bootstrap, $marker )
+				? $bootstrap
+				: $bootstrap . "\n{$marker}\nadd_filter( 'document_title_separator', static fn() => '{$separator}' );\n"
 		);
 	}
 

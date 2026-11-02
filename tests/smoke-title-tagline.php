@@ -23,7 +23,7 @@ function add_filter( string $name, callable $callback ): void {
 	$GLOBALS['title_filters'][ $name ] = $callback;
 }
 require_once ABSPATH . 'includes/class-static-site-importer-site-identity.php';
-require_once ABSPATH . 'includes/class-static-site-importer-internal-link-runtime.php';
+require_once ABSPATH . 'includes/class-static-site-importer-site-language.php';
 require_once ABSPATH . 'includes/class-static-site-importer-import-destination.php';
 require_once ABSPATH . 'includes/class-static-site-importer-site-plan-persistence.php';
 require_once ABSPATH . 'includes/class-static-site-importer-media-library-materializer.php';
@@ -70,25 +70,24 @@ foreach ( $cases as $index => $case ) {
 	Static_Site_Importer_Media_Library_Materializer::materialize_identity( $state );
 	$assert( 'Owner tagline' === get_option( 'blogdescription' ), "$index owner preserved" );
 	foreach ( array( false, true ) as $composed ) {
-		unset( $state['composed_theme_writes'], $state['internal_link_overlay'] );
+		$run = $state;
 		if ( $composed ) {
-			$state['composed_theme_writes']['/theme/functions.php'] = "<?php\n// Prior overlay.\n";
+			$run['composed_theme_writes']['/theme/functions.php'] = "<?php\n// Prior overlay.\n";
 		}
-		Static_Site_Importer_Site_Identity::compose_title_separator( $state );
-		$bootstrap = $state['composed_theme_writes']['/theme/functions.php'] ?? '';
-		$needed = '' !== $separator && '–' !== $separator;
+		Static_Site_Importer_Site_Identity::compose_title_separator( $run );
+		$bootstrap = $run['composed_theme_writes']['/theme/functions.php'] ?? '';
+		$needed    = '' !== $separator && '–' !== $separator;
 		$assert( $needed === str_contains( $bootstrap, "add_filter( 'document_title_separator'" ), "$index filter presence" );
 		if ( $needed ) {
 			$assert( str_contains( $bootstrap, $composed ? '// Prior overlay.' : '// Plan bootstrap.' ), "$index bootstrap preserved" );
-			$assert( 'materialized' === $state['internal_link_overlay']['status'] && $bootstrap === $state['internal_link_overlay']['writes'][0]['content'], "$index persistence overlay" );
+			$assert( $composed || $bootstrap === $run['resolved']['writes'][0]['payload']['data'], "$index plan write carries the filter" );
 			$before = $bootstrap;
-			Static_Site_Importer_Site_Identity::compose_title_separator( $state );
-			$assert( $before === $state['composed_theme_writes']['/theme/functions.php'], "$index idempotent" );
+			Static_Site_Importer_Site_Identity::compose_title_separator( $run );
+			$assert( $before === $run['composed_theme_writes']['/theme/functions.php'], "$index idempotent" );
 			$GLOBALS['title_filters'] = array();
 			eval( substr( $bootstrap, 5 ) );
 			$actual = $GLOBALS['title_filters']['document_title_separator']( '–' );
 			$assert( $separator === $actual, "$index executable separator" );
-			$assert( 'Name ' . $separator . ' Tagline' === implode( ' ' . $actual . ' ', array( 'Name', 'Tagline' ) ), "$index core-equivalent title join" );
 		}
 	}
 }

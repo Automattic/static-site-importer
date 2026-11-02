@@ -213,7 +213,7 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	}
 
 	/** @param array<string,mixed> $resolved_plan @param array<string,mixed> $overlay */
-	public static function interaction_bootstrap( array $resolved_plan, array $overlay ): string {
+	private static function interaction_bootstrap( array $resolved_plan, array $overlay ): string {
 		foreach ( array_reverse( $overlay['writes'] ?? array() ) as $write ) {
 			if ( is_array( $write ) && 'functions.php' === ( $write['target_path'] ?? null ) && is_string( $write['content'] ?? null ) ) {
 				return $write['content'];
