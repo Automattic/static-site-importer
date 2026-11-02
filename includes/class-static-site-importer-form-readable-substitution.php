@@ -399,7 +399,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( ! is_array( $control ) || isset( $state->suppressed_controls[ $index ] ) || ! str_starts_with( (string) ( $field['name'] ?? '' ), 'jetpack/field-' ) || in_array( $field['name'], array( 'jetpack/field-radio', 'jetpack/field-checkbox-multiple' ), true ) ) {
 				continue;
 			}
-			if ( ( '' !== $for && $for === (string) ( $control['id'] ?? '' ) ) || ( '' !== $id && $id === (string) ( $control['label_id'] ?? '' ) ) ) {
+			if ( ( '' !== $for && (string) ( $control['id'] ?? '' ) === $for ) || ( '' !== $id && (string) ( $control['label_id'] ?? '' ) === $id ) ) {
 				return true;
 			}
 		}
