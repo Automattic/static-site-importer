@@ -239,9 +239,34 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * its paint. The link fills the wrapper and keeps the paint.
 	 *
 	 * @param array<string,mixed> $descriptor Submit presentation descriptor.
+	 * @param bool                $has_control_carriers Whether author CSS owns the control surfaces.
 	 * @return array<string,mixed>
 	 */
-	public static function with_source_box_submit_wrapper( array $descriptor ): array {
+	public static function with_source_box_submit_wrapper( array $descriptor, bool $has_control_carriers = false ): array {
+		// Blocks Engine already projects author declarations onto the buttons,
+		// button and link surfaces. Replaying captured presentation here would
+		// apply the same source declaration to a second rendered element.
+		if ( $has_control_carriers && array_filter( $descriptor['destinations'], static fn ( array $destination ): bool => 'submit_wrapper' === ( $destination['part'] ?? '' ) ) ) {
+			$descriptor['destinations'] = array_values( array_filter( $descriptor['destinations'], static fn ( array $destination ): bool => 'submit_wrapper' === ( $destination['part'] ?? '' ) ) );
+			foreach ( $descriptor['destinations'] as &$destination ) {
+				$destination['properties'] = array( 'grid_column', 'grid_row', 'grid_area' );
+				$destination['resets']     = array();
+			}
+			unset( $destination );
+			$descriptor['destinations'][] = array(
+				'part'       => 'source_button_slot',
+				'editor'     => array(),
+				'role'       => 'control',
+				'selector'   => $descriptor['destinations'][0]['selector'] . '-destination-slot',
+				'properties' => array(),
+				'resets'     => array(
+					'display' => 'inline-flex',
+					'width'   => 'fit-content',
+				),
+				'priority'   => 'important',
+			);
+			return $descriptor;
+		}
 		foreach ( $descriptor['destinations'] as $index => $destination ) {
 			$part = $destination['part'] ?? null;
 			if ( 'submit_wrapper' === $part ) {
@@ -312,6 +337,20 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	/** Carry grid item facts on the provider wrapper, not its inner button. */
 	public static function with_submit_item_placement( array $form ): array {
 		$graph = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
+		foreach ( $graph['controls'] ?? array() as $key => $node ) {
+			$control = $form['controls'][ $node['index'] ?? -1 ] ?? array();
+			if ( 'submit' === ( $control['type'] ?? '' ) && ! empty( $control['control_carrier_classes'] ) ) {
+				$graph['controls'][ $key ]['control'] = array( 'styles' => array() );
+			}
+		}
+		$graph['controls'] = array_values( $graph['controls'] ?? array() );
+		foreach ( $graph['variants'] ?? array() as $key => $variant ) {
+			$control = $form['controls'][ $variant['index'] ?? -1 ] ?? array();
+			if ( 'submit' === ( $control['type'] ?? '' ) && ! empty( $control['control_carrier_classes'] ) ) {
+				unset( $graph['variants'][ $key ] );
+			}
+		}
+		$graph['variants'] = array_values( $graph['variants'] ?? array() );
 		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
 			if ( ! preg_match( '/^control-([0-9]+)$/D', $variant['node'], $match ) ) {
 				continue;

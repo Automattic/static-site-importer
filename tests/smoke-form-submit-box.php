@@ -38,8 +38,8 @@ $wrapper_selector = '\\.(?:' . implode( '|', $hooks[0] ) . ')';
 $checks           = array(
 	'fixture maps'                       => 'mapped' === $row['status'] && empty( $validated['errors'] ),
 	'wrapper has no fixed source height' => ! preg_match( '/' . $wrapper_selector . '\\{(?:[^}]*;)?height:/', $overlay ),
-	'link owns base source height'       => (bool) preg_match( '/> \.wp-block-button__link\{[^}]*[;{]height:2\.25rem/', $overlay ),
-	'link owns responsive source height' => (bool) preg_match( '/> \.wp-block-button__link\{(?:[^}]*;)?height:2rem/', $overlay ),
+	'link owns base source height'       => (bool) preg_match( '/wp-block-button__link[^{}]*\{[^}]*height:2\.25rem/', $css ),
+	'link owns responsive source height' => (bool) preg_match( '/wp-block-button__link[^{}]*\{[^}]*height:2rem/', $css ),
 );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {

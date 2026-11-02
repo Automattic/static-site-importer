@@ -303,7 +303,7 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, $checkbox_layouts[ $control_index ] );
 			}
 			if ( 'core/button' === $field_block['name'] && isset( $state->presentation_descriptors[ $control_index ] ) ) {
-				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ] );
+				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_source_box_submit_wrapper( $state->presentation_descriptors[ $control_index ], ! empty( $field_block['control_carrier_classes'] ) );
 				continue;
 			}
 			// A field's own caption arrangement applies where the provider renders

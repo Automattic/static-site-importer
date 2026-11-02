@@ -5,7 +5,7 @@ require_once __DIR__ . '/core-html-api.php';
 require_once __DIR__ . '/form-seeder-cli-stubs.php';
 require_once __DIR__ . '/form-jetpack-render.php';
 
-$source = '<style>*{margin:0;font-family:Georgia,serif}.cta{display:inline-block;font-family:inherit;font-size:16px;padding:12px 24px;background:#123456;border:2px solid #789abc;color:white;text-decoration:none}.box{font-family:"Courier New",monospace}</style><div class="box"><p>Box text</p><a class="cta" href="https://example.com/">Go</a></div><form class="box" action="https://example.com/s" method="post"><input type="email" name="email"><button class="cta" type="submit">Submit</button></form>';
+$source = '<style>*{margin:0;font-family:Georgia,serif}.cta{display:inline-block;font-family:inherit;font-size:16px;padding:12px 24px;background:#123456;border:2px solid #789abc;color:white;text-decoration:none}.box{font-family:"Courier New",monospace;width:390px}.center{position:relative;left:50%;transform:translate(-50%)}input{display:block}</style><div class="box"><p>Box text</p><a class="cta" href="https://example.com/">Go</a></div><form class="box" action="https://example.com/s" method="post"><input type="email" name="email"><button class="cta center" type="submit">Submit</button></form>';
 $compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $source ) ) )->toArray();
 $plan = $compiled['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
