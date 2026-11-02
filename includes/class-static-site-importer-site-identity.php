@@ -386,6 +386,8 @@ class Static_Site_Importer_Site_Identity {
 	/**
 	 * The source's title separator is presentation, so the theme carries it;
 	 * WordPress's own default (`–`) needs nothing.
+	 *
+	 * @param array<string,mixed> $state Prepared materialization state.
 	 */
 	public static function compose_title_separator( array &$state ): void {
 		$separator = $state['args']['native_site_identity_evidence']['title_separator'] ?? '';

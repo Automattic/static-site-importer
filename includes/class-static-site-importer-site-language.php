@@ -214,6 +214,7 @@ final class Static_Site_Importer_Site_Language {
 	 * wherever this import's `functions.php` currently lives: the composed
 	 * overlay writes, or the plan's own bootstrap write.
 	 *
+	 * @param array<string,mixed>     $state        Prepared materialization state.
 	 * @param callable(string):string $with_section Returns the bootstrap with its section.
 	 */
 	public static function compose_theme_bootstrap( array &$state, callable $with_section ): void {
