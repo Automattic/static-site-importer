@@ -364,6 +364,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			}
 			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 		}
+		if ( self::is_provider_field_label( $block, $state ) ) {
+			return null;
+		}
 		$children = array();
 		$slots    = array();
 		$index    = 0;
@@ -394,6 +397,42 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * Whether a readable block is a source label a provider field now renders.
+	 *
+	 * The producer rides a control's label on the control (`form_field`), and
+	 * the provider field renders it as its own label. A label laid out apart
+	 * from its control (a grid's label cell beside its input cell) still reaches
+	 * the tree as authored copy, so the field consumes the label that names it:
+	 * by `for` against the control's id, or by the label id the producer bound
+	 * to the control (an `aria-labelledby` label). A label no provider field
+	 * renders stays authored content.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function is_provider_field_label( array $block, Static_Site_Importer_Form_Plan_State $state ): bool {
+		if ( ! str_ends_with( (string) ( $block['blockName'] ?? '' ), '/authored-label' ) ) {
+			return false;
+		}
+		$for = trim( (string) ( $block['attrs']['htmlFor'] ?? '' ) );
+		$id  = trim( (string) ( $block['attrs']['id'] ?? '' ) );
+		if ( '' === $for && '' === $id ) {
+			return false;
+		}
+		foreach ( $state->field_blocks as $index => $field ) {
+			$control = $state->form['controls'][ $index ] ?? null;
+			// An option group's caption is its legend, and each option label
+			// becomes an option, so only a field's own label is consumed here.
+			if ( ! is_array( $control ) || isset( $state->suppressed_controls[ $index ] ) || ! str_starts_with( (string) ( $field['name'] ?? '' ), 'jetpack/field-' ) || in_array( $field['name'], array( 'jetpack/field-radio', 'jetpack/field-checkbox-multiple' ), true ) ) {
+				continue;
+			}
+			if ( ( '' !== $for && (string) ( $control['id'] ?? '' ) === $for ) || ( '' !== $id && (string) ( $control['label_id'] ?? '' ) === $id ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The required buttons parent is not another source layout box. */
