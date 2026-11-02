@@ -200,17 +200,17 @@ final class Static_Site_Importer_Image_Assets {
 		return 'font' === self::kind( $record ) ? 'theme' : 'media-library';
 	}
 
-	/** Images follow plan consumers; fonts stay theme-owned and other resources attachment-bound. */
+	/** Non-font resources follow plan consumers; fonts stay theme-owned. */
 	public static function plan_destination( array $record, array $asset ): string {
-		if ( 'image' === self::kind( $record ) ) {
-			foreach ( $asset['consumers'] ?? array() as $consumer ) {
-				if ( 'block' === ( $consumer['kind'] ?? '' ) ) {
-					return 'media_library';
-				}
-			}
+		if ( 'font' === self::kind( $record ) ) {
 			return 'theme';
 		}
-		return 'theme' === self::destination_owner( $record ) ? 'theme' : 'media_library';
+		foreach ( $asset['consumers'] ?? array() as $consumer ) {
+			if ( 'block' === ( $consumer['kind'] ?? '' ) ) {
+				return 'media_library';
+			}
+		}
+		return 'theme';
 	}
 
 	/** Export-root-relative and document-relative references share one file key. */
