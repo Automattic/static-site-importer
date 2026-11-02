@@ -201,6 +201,7 @@
           }
         ],
         "standalone_php_test_paths": [
+          "tests/smoke-raw-html-companion-quality.php",
           "tests/form-fallback-contract-equivalence.php",
           "tests/smoke-form-submit-box.php",
           "tests/smoke-form-hidden-controls.php",

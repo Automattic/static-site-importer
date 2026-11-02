@@ -480,6 +480,7 @@
             "content_loss_count": 0,
             "empty_conversion_count": 0,
             "core_html_block_count": 0,
+            "raw_html_companion_block_count": 0,
             "freeform_block_count": 0,
             "invalid_block_count": 0,
             "invalid_block_document_count": 0,
@@ -1179,6 +1180,7 @@
             "content_loss_count": 0,
             "empty_conversion_count": 0,
             "core_html_block_count": 0,
+            "raw_html_companion_block_count": 0,
             "freeform_block_count": 0,
             "invalid_block_count": 0,
             "invalid_block_document_count": 0,
@@ -1377,9 +1379,6 @@
                     "loss_class": "degraded_unit",
                     "source": "https://example.test/",
                     "message": "a code the importer does not register"
-                },
-                {
-                    "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow"
                 }
             ]
         }

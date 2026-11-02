@@ -34,11 +34,12 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * persisted page post content, the generated templates/*.html and the shared
 	 * parts/*.html.
 	 *
+	 * @param array<int,array<string,mixed>> $companion_blocks Companion definitions carrying block_json metadata.
 	 * @param array<int,array<string,mixed>>       $documents Materialized documents with path and content.
 	 * @param Static_Site_Importer_Import_Report $report    Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function analyze_materialized_block_documents( array $documents, Static_Site_Importer_Import_Report $report ): void {
+	public static function analyze_materialized_block_documents( array $documents, Static_Site_Importer_Import_Report $report, array $companion_blocks = array() ): void {
 		$documents = array_values( array_filter( $documents, static fn( $document ): bool => is_string( $document['path'] ?? null ) && is_string( $document['content'] ?? null ) && '' !== trim( $document['content'] ) ) );
 		if ( empty( $documents ) ) {
 			return;
@@ -47,7 +48,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 		$report->set_in_section( 'materialized_content', 'block_documents', array() );
 
 		foreach ( $documents as $document ) {
-			$analysis = self::analyze_generated_block_document( $document['path'], $document['content'], $report );
+			$analysis = self::analyze_generated_block_document( $document['path'], $document['content'], $report, $companion_blocks );
 			$report->append_to_section( 'materialized_content', 'block_documents', $analysis );
 		}
 	}
@@ -57,10 +58,11 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * @param array<string,string> $writes    Generated theme writes keyed by absolute path.
 	 * @param string               $theme_dir Generated theme directory.
+	 * @param array<int,array<string,mixed>> $companion_blocks Companion definitions carrying block_json metadata.
 	 * @param Static_Site_Importer_Import_Report  $report    Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, Static_Site_Importer_Import_Report $report ): void {
+	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, Static_Site_Importer_Import_Report $report, array $companion_blocks = array() ): void {
 		foreach ( $writes as $path => $content ) {
 			$relative_path = ltrim( str_replace( trailingslashit( $theme_dir ), '', $path ), '/' );
 			if ( ! self::is_generated_block_document_path( $relative_path ) ) {
@@ -68,7 +70,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			}
 
 			$block_markup = self::generated_block_document_markup( $relative_path, $content );
-			$analysis     = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
+			$analysis     = self::analyze_generated_block_document( $relative_path, $block_markup, $report, $companion_blocks );
 			$report->append_to_section( 'generated_theme', 'block_documents', $analysis );
 		}
 	}
@@ -88,12 +90,13 @@ class Static_Site_Importer_Block_Document_Reporter {
 	private static function reset_block_document_quality( Static_Site_Importer_Import_Report $report ): void {
 		$report->merge_quality(
 			array(
-				'block_count'                  => 0,
-				'core_html_block_count'        => 0,
-				'freeform_block_count'         => 0,
-				'invalid_block_count'          => 0,
-				'invalid_block_document_count' => 0,
-				'image_missing_source_count'   => 0,
+				'block_count'                    => 0,
+				'core_html_block_count'          => 0,
+				'raw_html_companion_block_count' => 0,
+				'freeform_block_count'           => 0,
+				'invalid_block_count'            => 0,
+				'invalid_block_document_count'   => 0,
+				'image_missing_source_count'     => 0,
 			)
 		);
 		$report->filter_diagnostics(
@@ -137,22 +140,33 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * Public so the theme generator can reuse it for materialized post_content analysis.
 	 *
+	 * @param array<int,array<string,mixed>> $companion_blocks Companion definitions carrying block_json metadata.
 	 * @param string              $relative_path Theme-relative path.
 	 * @param string              $block_markup  Block markup.
 	 * @param Static_Site_Importer_Import_Report $report        Conversion report (mutated by reference).
 	 * @return array<string,mixed>
 	 */
-	public static function analyze_generated_block_document( string $relative_path, string $block_markup, Static_Site_Importer_Import_Report $report ): array {
-		$validation_method = function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ? 'wordpress_parse_blocks_serialize_blocks' : 'unavailable';
+	public static function analyze_generated_block_document( string $relative_path, string $block_markup, Static_Site_Importer_Import_Report $report, array $companion_blocks = array() ): array {
+		$raw_html_names = array();
+		foreach ( $companion_blocks as $definition ) {
+			$metadata = $definition['block_json'] ?? array();
+			if ( 'raw_html' === ( $metadata['blocksEngine']['editingSurface'] ?? null ) && is_string( $metadata['name'] ?? null ) && '' !== $metadata['name'] ) {
+				$raw_html_names[ $metadata['name'] ] = true;
+			}
+		}
+		$raw_html_companion_count = 0;
+		$validation_method        = function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ? 'wordpress_parse_blocks_serialize_blocks' : 'unavailable';
 		if ( 'unavailable' === $validation_method ) {
 			$counts = self::serialized_block_counts( $block_markup );
 			$report->increment_quality( 'block_count', $counts['block_count'] );
 			$report->increment_quality( 'core_html_block_count', $counts['core_html_block_count'] );
 			$report->increment_quality( 'freeform_block_count', $counts['freeform_block_count'] );
+			$report->increment_quality( 'raw_html_companion_block_count', 0 );
 			return array(
 				'path'                             => $relative_path,
 				'block_count'                      => $counts['block_count'],
 				'core_html_block_count'            => $counts['core_html_block_count'],
+				'raw_html_companion_block_count'   => 0,
 				'freeform_block_count'             => $counts['freeform_block_count'],
 				'invalid_block_count'              => 0,
 				'serialization_mismatch'           => false,
@@ -172,7 +186,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 
 		/** @var array<int, array<string, mixed>> $analyzed_blocks */
 		$analyzed_blocks = $blocks;
-		self::analyze_generated_block_list( $analyzed_blocks, $block_count, $core_html_count, $freeform_count, $invalid_count, $invalid_blocks, $report, $relative_path );
+		self::analyze_generated_block_list( $analyzed_blocks, $block_count, $core_html_count, $freeform_count, $invalid_count, $invalid_blocks, $report, $relative_path, array(), $raw_html_names, $raw_html_companion_count );
 		if ( 0 === $block_count ) {
 			$serialized_counts = self::serialized_block_counts( $block_markup );
 			$block_count       = $serialized_counts['block_count'];
@@ -190,6 +204,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 
 		$report->increment_quality( 'block_count', $block_count );
 		$report->increment_quality( 'core_html_block_count', $core_html_count );
+		$report->increment_quality( 'raw_html_companion_block_count', $raw_html_companion_count );
 		$report->increment_quality( 'freeform_block_count', $freeform_count );
 		$report->increment_quality( 'invalid_block_count', $invalid_count );
 		self::report_sourceless_images( $block_markup, $relative_path, $report );
@@ -228,6 +243,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			'path'                             => $relative_path,
 			'block_count'                      => $block_count,
 			'core_html_block_count'            => $core_html_count,
+			'raw_html_companion_block_count'   => $raw_html_companion_count,
 			'freeform_block_count'             => $freeform_count,
 			'invalid_block_count'              => $invalid_count,
 			'serialization_mismatch'           => $serialization_mismatch,
@@ -313,14 +329,32 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param Static_Site_Importer_Import_Report            $report          Conversion report (mutated by reference).
 	 * @param string                         $source          Theme-relative source document path.
 	 * @param array<int,int>                 $path            Parsed block path.
+	 * @param array<string,bool> $raw_html_names Declared raw-markup block names.
+	 * @param int $raw_html_companion_count Raw-markup companion instance count.
 	 * @return void
 	 */
-	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, Static_Site_Importer_Import_Report $report, string $source = '', array $path = array() ): void {
+	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, Static_Site_Importer_Import_Report $report, string $source, array $path, array $raw_html_names, int &$raw_html_companion_count ): void {
 		foreach ( $blocks as $index => $block ) {
 			$block_path = array_merge( $path, array( $index ) );
 			$name       = isset( $block['blockName'] ) ? $block['blockName'] : null;
 			if ( is_string( $name ) && '' !== $name ) {
 				++$block_count;
+				if ( isset( $raw_html_names[ $name ] ) ) {
+					++$raw_html_companion_count;
+					$report->append_diagnostic(
+						Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry(
+							'raw_html_companion_block',
+							$source,
+							(string) ( $block['attrs']['content'] ?? $block['innerHTML'] ?? '' ),
+							array(
+								'reason' => 'generated_document_contains_raw_html_companion',
+								'stage'  => 'generated_theme_block_analysis',
+								'path'   => implode( '.', $block_path ),
+							),
+							$block
+						)
+					);
+				}
 				if ( 'core/html' === $name ) {
 					++$core_html_count;
 					self::record_generated_core_html_block( $source, $block_path, $block, $report );
@@ -343,7 +377,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			}
 
 			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
-				self::analyze_generated_block_list( $block['innerBlocks'], $block_count, $core_html_count, $freeform_count, $invalid_count, $invalid_blocks, $report, $source, $block_path );
+				self::analyze_generated_block_list( $block['innerBlocks'], $block_count, $core_html_count, $freeform_count, $invalid_count, $invalid_blocks, $report, $source, $block_path, $raw_html_names, $raw_html_companion_count );
 			}
 		}
 	}

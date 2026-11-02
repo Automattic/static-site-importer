@@ -27,6 +27,7 @@ final class Static_Site_Importer_Quality_Count_Keys {
 		'content_loss'                       => 'content_loss_count',
 		'empty_conversions'                  => 'empty_conversion_count',
 		'core_html_blocks'                   => 'core_html_block_count',
+		'raw_html_companion_blocks'          => 'raw_html_companion_block_count',
 		'freeform_blocks'                    => 'freeform_block_count',
 		'invalid_blocks'                     => 'invalid_block_count',
 		'invalid_block_documents'            => 'invalid_block_document_count',

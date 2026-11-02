@@ -248,7 +248,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 * @return array<string,mixed>
 	 */
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
-		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'image_missing_source_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count', 'unsafe_layout_constraint_count' );
+		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'raw_html_companion_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'image_missing_source_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count', 'unsafe_layout_constraint_count' );
 		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
 		$report_quality                    = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
 		$source_counts                     = self::quality_metric_values( $compiler_quality, $keys );
@@ -483,9 +483,10 @@ class Static_Site_Importer_Diagnostic_Contract {
 			? $materialized
 			: ( isset( $import_report['generated_theme']['block_documents'] ) && is_array( $import_report['generated_theme']['block_documents'] ) ? $import_report['generated_theme']['block_documents'] : array() );
 		$counts       = array(
-			'block_count'           => 0,
-			'core_html_block_count' => 0,
-			'freeform_block_count'  => 0,
+			'block_count'                    => 0,
+			'core_html_block_count'          => 0,
+			'raw_html_companion_block_count' => 0,
+			'freeform_block_count'           => 0,
 		);
 
 		foreach ( $documents as $document ) {
@@ -494,9 +495,10 @@ class Static_Site_Importer_Diagnostic_Contract {
 			}
 			$document_count = isset( $document['block_count'] ) && is_numeric( $document['block_count'] ) ? (int) $document['block_count'] : 0;
 			if ( $document_count > 0 ) {
-				$counts['block_count']           += $document_count;
-				$counts['core_html_block_count'] += isset( $document['core_html_block_count'] ) && is_numeric( $document['core_html_block_count'] ) ? (int) $document['core_html_block_count'] : 0;
-				$counts['freeform_block_count']  += isset( $document['freeform_block_count'] ) && is_numeric( $document['freeform_block_count'] ) ? (int) $document['freeform_block_count'] : 0;
+				$counts['block_count']                    += $document_count;
+				$counts['core_html_block_count']          += isset( $document['core_html_block_count'] ) && is_numeric( $document['core_html_block_count'] ) ? (int) $document['core_html_block_count'] : 0;
+				$counts['raw_html_companion_block_count'] += isset( $document['raw_html_companion_block_count'] ) && is_numeric( $document['raw_html_companion_block_count'] ) ? (int) $document['raw_html_companion_block_count'] : 0;
+				$counts['freeform_block_count']           += isset( $document['freeform_block_count'] ) && is_numeric( $document['freeform_block_count'] ) ? (int) $document['freeform_block_count'] : 0;
 				continue;
 			}
 
@@ -504,7 +506,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				if ( isset( $document[ $field ] ) && is_string( $document[ $field ] ) && '' !== trim( $document[ $field ] ) ) {
 					$parsed = self::serialized_block_quality_counts( $document[ $field ] );
 					foreach ( $counts as $key => $value ) {
-						$counts[ $key ] = $value + $parsed[ $key ];
+						$counts[ $key ] = $value + ( $parsed[ $key ] ?? 0 );
 					}
 					break;
 				}

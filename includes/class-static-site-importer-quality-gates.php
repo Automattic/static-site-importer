@@ -64,6 +64,7 @@ final class Static_Site_Importer_Quality_Gates {
 			(int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			self::interaction_candidate_count( $report['diagnostics'] ?? array() )
 		);
+		// Reviewed exception: raw-HTML companions are reported, not gated, until structured editors ship.
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
@@ -164,6 +165,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'content_loss_count'                      => 0,
 			'empty_conversion_count'                  => 0,
 			'core_html_block_count'                   => 0,
+			'raw_html_companion_block_count'          => 0,
 			'freeform_block_count'                    => 0,
 			'invalid_block_count'                     => 0,
 			'invalid_block_document_count'            => 0,
