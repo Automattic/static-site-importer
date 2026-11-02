@@ -29,7 +29,7 @@ final class Static_Site_Importer_Image_Assets {
 	private const VIDEO_CONTENT_TYPES    = array( 'video/mp4', 'video/webm', 'video/ogg' );
 	private const FONT_FACE_FIELDS       = array( 'family', 'weight', 'style', 'unicode_range', 'format' );
 
-	/** Consume optional capture evidence before it can become a theme asset. */
+	/** Extract resource records, consuming only the dedicated image report. */
 	public static function extract( array $artifact, ?object $reader = null ) {
 		$records = null;
 		$files   = array();
@@ -52,11 +52,15 @@ final class Static_Site_Importer_Image_Assets {
 					return self::invalid();
 				}
 				$records = $data['images'];
-			} elseif ( null === $records ) {
-				if ( 'blocks-engine-capture/capture-receipt/v1' !== ( $data['schema'] ?? null ) || ! is_array( $data['assets'] ?? null ) ) {
-					return self::invalid();
+			} else {
+				// The receipt also owns route evidence used by compiler projectors.
+				$files[] = $file;
+				if ( null === $records ) {
+					if ( 'blocks-engine-capture/capture-receipt/v1' !== ( $data['schema'] ?? null ) || ! is_array( $data['assets'] ?? null ) ) {
+						return self::invalid();
+					}
+					$records = array_values( array_filter( $data['assets'], static fn( mixed $asset ): bool => is_array( $asset ) && array_key_exists( 'original', $asset ) ) );
 				}
-				$records = array_values( array_filter( $data['assets'], static fn( mixed $asset ): bool => is_array( $asset ) && array_key_exists( 'original', $asset ) ) );
 			}
 		}
 		$artifact['files'] = $files;

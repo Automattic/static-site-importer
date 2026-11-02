@@ -1,0 +1,7 @@
+{
+  "schema": "blocks-engine-capture/capture-receipt/v1",
+  "websiteRoot": "website",
+  "reports": ["capture-receipt.json", "interaction-states.json"],
+  "routes": [{"url": "https://example.test/", "path": "website/index.html"}],
+  "assets": []
+}
