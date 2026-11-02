@@ -6,9 +6,9 @@ import { resolve, join } from 'node:path';
 import { createServer } from 'node:net';
 import { provisionWordPress } from '../lib/disposable-wordpress.mjs';
 
-// A third-party social image the producer did not retain costs one metadata
-// field, not the import; one on the source origin that never resolved is a fault.
-test('an unretained third-party social image is a reported loss; an unresolved source-origin one fails', async () => {
+// Unattachable or unretained social images cost one metadata field, not the
+// import; a source-origin reference that never resolved is still a fault.
+test('optional social image losses are reported; unresolved source-origin references fail', async () => {
   const workDir = await mkdtemp(join(tmpdir(), 'ssi-social-'));
   const port = await new Promise(resolvePort => {
     const socket = createServer();
@@ -22,10 +22,10 @@ test('an unretained third-party social image is a reported loss; an unresolved s
   try {
     runtime = await provisionWordPress({ workDir, origin });
     await symlink(resolve('.'), join(runtime.wpDir, 'wp-content/plugins/static-site-importer'));
-    const run = async (slug, image) => {
+    const run = async (slug, image, files = [], markup = `<!doctype html><html><head><title>Studio</title><meta property="og:image" content="${image}"></head><body><main><h1>Studio</h1><p>Paintings.</p></main></body></html>`) => {
       const artifact = {
         entrypoint: 'website/index.html',
-        files: [{ path: 'website/index.html', content: `<!doctype html><html><head><title>Studio</title><meta property="og:image" content="${image}"></head><body><main><h1>Studio</h1><p>Paintings.</p></main></body></html>` }],
+        files: [{ path: 'website/index.html', content: markup }, ...files],
       };
       const script = join(workDir, `${slug}.php`);
       await writeFile(script, `<?php
@@ -38,10 +38,23 @@ $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifa
 if (is_wp_error($compiled)) { throw new RuntimeException($compiled->get_error_message()); }
 $compiled['args']['source_metadata']['source_path'] = 'https://studio.example/';
 $result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize($compiled['plan'], $compiled['args']);
-echo wp_json_encode(array('status' => $result['status'] ?? '', 'error' => $result['errors'][0]['code'] ?? null, 'lost' => array_values(array_filter($result['diagnostics'] ?? array(), static fn($d) => 'route_social_image_not_retained' === ($d['reason_code'] ?? '')))));
+$page = get_page_by_path('home');
+echo wp_json_encode(array('thumbnail' => $page ? (int) get_post_thumbnail_id($page->ID) : null, 'status' => $result['status'] ?? '', 'error' => $result['errors'][0]['code'] ?? null, 'lost' => array_values(array_filter($result['diagnostics'] ?? array(), static fn($d) => 'route_social_image_not_retained' === ($d['reason_code'] ?? '')))));
 `);
       return JSON.parse(runtime.wpRun(['eval-file', script]).stdout.trim().split('\n').pop());
     };
+    // Embedded rasters are now supported upstream; percentage dimensions keep
+    // this source SVG unattachable and exercise the optional-metadata fallback.
+    const socialSvg = await run('social-svg', '/media/social.svg', [{
+      path: 'website/media/social.svg',
+      content: '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%"><image width="1" height="1" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="/></svg>',
+    }], '<!doctype html><html><head><meta charset="utf-8"><title>Social SVG</title><meta content="/media/social.svg" property="og:image"></head><body><h1>Heading</h1><p>Text.</p></body></html>');
+    assert.equal(socialSvg.status, 'completed', JSON.stringify(socialSvg));
+    assert.equal(socialSvg.thumbnail, 0, 'the route imports without a thumbnail');
+    assert.equal(socialSvg.lost.length, 1, JSON.stringify(socialSvg));
+    assert.equal(socialSvg.lost[0].source_path, 'website/index.html');
+    assert.equal(socialSvg.lost[0].key, 'og:image');
+    assert.match(socialSvg.lost[0].url, /\/media\/social\.svg$/);
     const sourceOrigin = await run('social-source', 'https://studio.example/media/missing.jpg');
     assert.equal(sourceOrigin.error, 'route_social_image_unresolved', JSON.stringify(sourceOrigin));
     const image = 'https://images.cdn.example/photo.jpg?fm=jpg&q=85';
