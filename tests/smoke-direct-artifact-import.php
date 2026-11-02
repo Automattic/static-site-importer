@@ -1266,6 +1266,34 @@ $assert( 'available' === ( $pending_terminal['test_dependency_reports']['form'][
 $pending_prepared_index = array_search( $pending_prepared[0], $pending_results, true );
 $assert( count( $pending_results ) - 2 === $pending_prepared_index && count( $pending_results ) === $pending_receipt['steps'] && empty( $pending_terminal['continuation'] ), 'the CLI host must materialize in the very next fresh request after dependency preparation' );
 
+// Studio stages the capture root and declares the receipt's reports.
+$capture_root = __DIR__ . '/fixtures/captured-menu';
+$capture_receipt = json_decode( (string) file_get_contents( $capture_root . '/capture-receipt.json' ), true );
+$capture_stage = $test_root . '/captured-menu';
+wp_mkdir_p( $capture_stage . '/website' );
+foreach ( array_merge( $capture_receipt['reports'], array( 'website/index.html' ) ) as $capture_path ) {
+	copy( $capture_root . '/' . $capture_path, $capture_stage . '/' . $capture_path );
+}
+$capture_request_path = $test_root . '/captured-menu-request.json';
+file_put_contents( $capture_request_path, wp_json_encode( array(
+	'operation' => 'apply',
+	'slug'      => 'captured-menu',
+	'source'    => array(
+		'type'     => 'files',
+		'ref'      => 'request-bundle:captured-menu',
+		'metadata' => array( 'reports' => $capture_receipt['reports'] ),
+	),
+) ) );
+$capture_request = static_site_importer_cli_import_input( array(), array( 'request' => $capture_request_path ) );
+$assert( is_array( $capture_request ), 'capture request-bundle must resolve' );
+$capture_result = $drive_apply( $capture_request );
+$assert( empty( $capture_result['continuation'] ) && ! empty( $capture_result['success'] ), 'capture request-bundle must compile and materialize' );
+$capture_compiled = end( $GLOBALS['ssi_direct_compiled_results'] );
+$capture_output = (string) wp_json_encode( $capture_compiled );
+$assert( ! str_contains( $capture_output, '_route_map_missing' ), 'capture request-bundle must retain the receipt route map for every projector' );
+$capture_markup = implode( '\n', array_column( $capture_compiled['wordpress_site_plan']['pages'] ?? array(), 'canonical_block_markup' ) );
+$assert( str_contains( $capture_markup, '<dialog' ) && str_contains( $capture_markup, 'data-blocks-engine-triggers="menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
+
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
 echo "Direct artifact import smoke passed.\n";
