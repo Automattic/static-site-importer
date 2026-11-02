@@ -66,4 +66,29 @@ $assert(
 );
 $assert( isset( $state['rollback']['route_seo'][1]['advanced_seo_description'] ), 'Platform fields participate in compensation.' );
 $assert( ! isset( $state['diagnostics'] ), 'A registered owner renders the description, so nothing is lost.' );
+// Jetpack is installed but SEO Tools is off by default: the import turns the
+// module on through Jetpack's lifecycle so its registered owner renders routes.
+// Declared here, not hoisted: the earlier cases run without Jetpack.
+if ( ! class_exists( 'Jetpack' ) ) {
+	final class Jetpack {
+		public static array $active = array();
+		public static function is_module_active( string $module ): bool {
+			return in_array( $module, self::$active, true ); }
+		public static function activate_default_modules( $min, $max, array $modules ): void {
+			self::$active = array_merge( self::$active, $modules ); }
+	}
+	final class Jetpack_SEO_Posts {
+		public static function register_post_meta(): void {
+			$GLOBALS['registered_seo'] = array(
+				'advanced_seo_description' => array(),
+				'jetpack_seo_html_title'   => array(),
+			);
+		}
+	}
+}
+$GLOBALS['registered_seo'] = array();
+$GLOBALS['seo_written']    = array();
+Static_Site_Importer_Route_Head_Metadata::materialize_platform_fields( $state );
+$assert( array( 'seo-tools' ) === Jetpack::$active, 'An installed Jetpack renders route metadata through its SEO Tools module.' );
+$assert( 'Authored & plain' === ( $GLOBALS['seo_written']['advanced_seo_description'] ?? null ) && ! isset( $state['diagnostics'] ), 'The prepared module owns the description, so nothing is lost.' );
 echo "native route head metadata passed\n";
