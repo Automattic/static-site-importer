@@ -216,23 +216,24 @@ class Static_Site_Importer_Site_Identity {
 	 * Extract a cleaned, suffix-stripped title from a raw HTML document.
 	 *
 	 * @param string $html HTML document.
+	 * @param bool   $strip_suffix Whether to strip a title suffix.
 	 * @return string
 	 */
-	public static function title_from_html( string $html ): string {
+	public static function title_from_html( string $html, bool $strip_suffix = true ): string {
 		if ( '' === trim( $html ) || ! preg_match( '/<title[^>]*>(.*?)<\/title>/is', $html, $matches ) ) {
 			return '';
 		}
 
-		return self::clean_title( (string) $matches[1] );
+		return self::clean_title( (string) $matches[1], $strip_suffix );
 	}
 
 	/**
-	 * Extract the entrypoint document title from a website artifact bundle.
+	 * Resolve metadata first, then a unique majority edge segment, then the entry title.
 	 *
 	 * @param array<string,mixed> $artifact Website artifact bundle.
 	 * @return string
 	 */
-	public static function title_from_website_artifact( array $artifact, ?object $payload_reader = null ): string {
+	public static function site_title_from_website_artifact( array $artifact, ?object $payload_reader = null ): string {
 		$entrypoint = isset( $artifact['entrypoint'] ) && is_scalar( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
 		$files      = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 
@@ -246,81 +247,44 @@ class Static_Site_Importer_Site_Identity {
 				continue;
 			}
 
-			$content = isset( $file['content'] ) && is_scalar( $file['content'] ) ? (string) $file['content'] : '';
-			if ( '' === $content && is_string( $file['content_base64'] ?? null ) ) {
-				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes static HTML transport solely to read its document title.
-				$decoded = base64_decode( $file['content_base64'], true );
-				$content = is_string( $decoded ) ? $decoded : '';
-			}
-			if ( '' === $content && is_array( $file['payload_reference'] ?? null ) && is_object( $payload_reader ) && is_callable( array( $payload_reader, 'read' ) ) ) {
-				$reference = $file['payload_reference'];
-				try {
-					$bytes = $payload_reader->read( $reference );
-				} catch ( Throwable $error ) {
-					$bytes = null;
-				}
-				if ( is_string( $bytes ) && strlen( $bytes ) === ( $reference['bytes'] ?? null ) && hash_equals( (string) ( $reference['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) ) {
-					$content = $bytes;
+			$html = self::artifact_file_content( $file, $payload_reader );
+			if ( preg_match_all( '~<meta\b([^>]+)>~i', $html, $metas ) ) {
+				foreach ( $metas[1] as $meta ) {
+					$attrs = self::evidence_attributes( $meta );
+					if ( 'og:site_name' === strtolower( $attrs['property'] ?? $attrs['name'] ?? '' ) && '' !== trim( $attrs['content'] ?? '' ) ) {
+						return self::sanitize_name( $attrs['content'] );
+					}
 				}
 			}
-			$title = self::title_from_html( $content );
+			$status = array();
+			foreach ( self::jsonld_branding_nodes( $html, $status ) as $node ) {
+				if ( is_string( $node['name'] ?? null ) && '' !== trim( $node['name'] ) ) {
+					return self::sanitize_name( $node['name'] );
+				}
+			}
+			$title = self::title_from_html( $html, false );
 			if ( '' !== $title ) {
-				return $title;
+				return self::majority_route_title( $artifact, $payload_reader, $title );
 			}
 		}
 
 		return '';
 	}
 
-	/** Resolve metadata first, then a unique majority edge segment, then the entry title. */
-	public static function site_title_from_website_artifact( array $artifact, ?object $payload_reader = null ): string {
-		$entrypoint = self::normalize_route_path( (string) ( $artifact['entrypoint'] ?? '' ) );
-		$title      = '';
-		$edges      = array();
-		$counts     = array( array(), array() );
-		$routes     = 0;
-		$pattern    = '/\s+(?:' . implode( '|', array_map( static fn( string $separator ): string => preg_quote( $separator, '/' ), self::TITLE_SEPARATORS ) ) . ')\s+/u';
+	/** Derive a unique majority edge segment, retaining the entry title otherwise. */
+	private static function majority_route_title( array $artifact, ?object $payload_reader, string $title ): string {
+		$counts  = array( array(), array() );
+		$routes  = 0;
+		$pattern = '/\s+(?:' . implode( '|', array_map( static fn( string $separator ): string => preg_quote( $separator, '/' ), self::TITLE_SEPARATORS ) ) . ')\s+/u';
+		$parts   = preg_split( $pattern, $title );
+		$edges   = is_array( $parts ) && count( $parts ) >= 2 ? array( trim( $parts[0] ), trim( $parts[ count( $parts ) - 1 ] ) ) : array();
 		foreach ( $artifact['files'] ?? array() as $file ) {
 			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
 				continue;
 			}
-			$html     = self::artifact_file_content( $file, $payload_reader );
-			$is_entry = self::normalize_route_path( (string) $file['path'] ) === $entrypoint;
-			if ( $is_entry ) {
-				if ( preg_match_all( '~<meta\b([^>]+)>~i', $html, $metas ) ) {
-					foreach ( $metas[1] as $meta ) {
-						$attrs = self::evidence_attributes( $meta );
-						if ( 'og:site_name' === strtolower( $attrs['property'] ?? $attrs['name'] ?? '' ) && '' !== trim( $attrs['content'] ?? '' ) ) {
-							return self::sanitize_name( $attrs['content'] );
-						}
-					}
-				}
-				if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
-					foreach ( $scripts as $script ) {
-						$attrs = self::evidence_attributes( $script[1] );
-						if ( 'application/ld+json' !== strtolower( trim( $attrs['type'] ?? '' ) ) ) {
-							continue;
-						}
-						$data = json_decode( $script[2], true );
-						foreach ( is_array( $data ) ? self::jsonld_nodes( $data ) : array() as $node ) {
-							$type = (array) ( $node['@type'] ?? array() );
-							if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) && is_string( $node['name'] ?? null ) && '' !== trim( $node['name'] ) ) {
-								return self::sanitize_name( $node['name'] );
-							}
-						}
-					}
-				}
-			}
-			if ( ! preg_match( '~<title\b[^>]*>(.*?)</title\s*>~is', $html, $match ) ) {
-				continue;
-			}
-			$document_title = self::sanitize_name( html_entity_decode( (string) preg_replace( '/<[^>]*>/', '', $match[1] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			$document_title = self::title_from_html( self::artifact_file_content( $file, $payload_reader ), false );
 			$parts          = preg_split( $pattern, $document_title );
 			$route_edges    = is_array( $parts ) && count( $parts ) >= 2 ? array( trim( $parts[0] ), trim( $parts[ count( $parts ) - 1 ] ) ) : array();
-			if ( $is_entry ) {
-				$title = $document_title;
-				$edges = $route_edges;
-			}
 			if ( $route_edges ) {
 				++$routes;
 				foreach ( $route_edges as $edge => $segment ) {
@@ -361,39 +325,15 @@ class Static_Site_Importer_Site_Identity {
 			return $evidence;
 		}
 		$evidence['status'] = 'explicit_evidence';
-		$json_bytes         = 0;
-		$json_count         = 0;
-		if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
-			foreach ( $scripts as $script ) {
-				$attributes = self::evidence_attributes( $script[1] );
-				if ( 'application/ld+json' !== strtolower( trim( $attributes['type'] ?? '' ) ) ) {
-					continue;
+		foreach ( self::jsonld_branding_nodes( $html, $evidence ) as $node ) {
+			if ( empty( $evidence['logo'] ) && isset( $node['logo'] ) ) {
+				$evidence['logo'] = self::logo_reference( $node['logo'] );
+				if ( null === $evidence['logo'] ) {
+					$evidence['logo_status'] = 'unsupported_evidence';
 				}
-				$json_bytes += strlen( $script[2] );
-				if ( ++$json_count > 64 || $json_bytes > 256 * 1024 ) {
-					$evidence['truncated'] = true;
-					break;
-				}
-				$data = json_decode( $script[2], true );
-				if ( ! is_array( $data ) ) {
-					$evidence['invalid_jsonld'] = true;
-					continue;
-				}
-				foreach ( self::jsonld_nodes( $data ) as $node ) {
-					$type = $node['@type'] ?? array();
-					$type = array_filter( is_array( $type ) ? $type : array( $type ), 'is_string' );
-					if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) ) {
-						if ( empty( $evidence['logo'] ) && isset( $node['logo'] ) ) {
-							$evidence['logo'] = self::logo_reference( $node['logo'] );
-							if ( null === $evidence['logo'] ) {
-								$evidence['logo_status'] = 'unsupported_evidence';
-							}
-						}
-						if ( '' === $evidence['tagline'] && is_string( $node['slogan'] ?? null ) ) {
-							$evidence['tagline'] = trim( $node['slogan'] );
-						}
-					}
-				}
+			}
+			if ( '' === $evidence['tagline'] && is_string( $node['slogan'] ?? null ) ) {
+				$evidence['tagline'] = trim( $node['slogan'] );
 			}
 		}
 		// Match the complete site name, which may itself contain separators.
@@ -547,6 +487,39 @@ class Static_Site_Importer_Site_Identity {
 		return '' !== $root && ! str_starts_with( $path, $root . '/' ) ? null : $path;
 	}
 
+	/** Read Organization/WebSite nodes within the shared JSON-LD byte/count budget. */
+	private static function jsonld_branding_nodes( string $html, array &$status ): array {
+		$nodes      = array();
+		$json_bytes = 0;
+		$json_count = 0;
+		if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
+			foreach ( $scripts as $script ) {
+				$attributes = self::evidence_attributes( $script[1] );
+				if ( 'application/ld+json' !== strtolower( trim( $attributes['type'] ?? '' ) ) ) {
+					continue;
+				}
+				$json_bytes += strlen( $script[2] );
+				if ( ++$json_count > 64 || $json_bytes > 256 * 1024 ) {
+					$status['truncated'] = true;
+					break;
+				}
+				$data = json_decode( $script[2], true );
+				if ( ! is_array( $data ) ) {
+					$status['invalid_jsonld'] = true;
+					continue;
+				}
+				foreach ( self::jsonld_nodes( $data ) as $node ) {
+					$type = $node['@type'] ?? array();
+					$type = array_filter( is_array( $type ) ? $type : array( $type ), 'is_string' );
+					if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) ) {
+						$nodes[] = $node;
+					}
+				}
+			}
+		}
+		return $nodes;
+	}
+
 	/** @return array<int,array<string,mixed>> */
 	private static function jsonld_nodes( array $data ): array {
 		$nodes   = array();
@@ -655,7 +628,7 @@ class Static_Site_Importer_Site_Identity {
 		}
 
 		if ( isset( $context['artifact'] ) && is_array( $context['artifact'] ) ) {
-			$title = self::title_from_website_artifact( $context['artifact'], is_object( $context['payload_reader'] ?? null ) ? $context['payload_reader'] : null );
+			$title = self::clean_title( self::site_title_from_website_artifact( $context['artifact'], is_object( $context['payload_reader'] ?? null ) ? $context['payload_reader'] : null ) );
 			if ( '' !== $title ) {
 				return $title;
 			}
@@ -695,12 +668,13 @@ class Static_Site_Importer_Site_Identity {
 	 * Decode, tag-strip, suffix-strip, and sanitize a raw title fragment.
 	 *
 	 * @param string $raw Raw title fragment.
+	 * @param bool   $strip_suffix Whether to strip a title suffix.
 	 * @return string
 	 */
-	private static function clean_title( string $raw ): string {
+	private static function clean_title( string $raw, bool $strip_suffix = true ): string {
 		$title = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $raw ) : preg_replace( '/<[^>]*>/', '', $raw );
 		$title = html_entity_decode( trim( (string) $title ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$title = self::strip_title_suffix( $title );
+		$title = $strip_suffix ? self::strip_title_suffix( $title ) : $title;
 
 		return self::sanitize_name( $title );
 	}
