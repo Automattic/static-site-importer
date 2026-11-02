@@ -45,7 +45,7 @@ test( 'generated form button parents match core save with their destination slot
 	assert.equal( result.results.filter( ( block ) => block.name === 'core/buttons' && block.isValid ).length, 2 );
 	const { parse, validateBlock } = ensureRuntime();
 	const [ parent ] = parse( buttons[ 0 ] );
-	assert.match( parent.attributes.className, /-destination-slot$/ );
+	assert.match( parent.attributes.className, /\bssi-node-[a-f0-9]{12}-destination-slot\b/ );
 	const missingSavedClass = {
 		...parent,
 		originalContent: parent.originalContent.replace( /class="wp-block-buttons [^"]*"/, 'class="wp-block-buttons"' ),

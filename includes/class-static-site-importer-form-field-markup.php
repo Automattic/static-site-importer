@@ -555,7 +555,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( isset( $presentation['source_tag_marker'] ) && is_string( $presentation['source_tag_marker'] ) && '' !== $presentation['source_tag_marker'] && '' !== $source_tag && 'button' !== $source_tag ) {
 			$source_classes[] = $presentation['source_tag_marker'];
 		}
-		$source_markers = implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) );
+		$carriers = array_filter( $presentation['control_carrier_classes'] ?? array(), 'is_string' );
+		// Like link buttons, projected controls use subject identities instead of
+		// repeating the author classes on both the wrapper and the inner button.
+		$source_markers = empty( $carriers )
+			? implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) )
+			: implode( ' ', $carriers );
 		$block_style    = isset( $presentation['block_attrs']['style'] ) && is_array( $presentation['block_attrs']['style'] ) ? $presentation['block_attrs']['style'] : array();
 		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name );
 		$attrs          = array(
@@ -572,10 +577,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 		// made the saved markup disagree with core's save() output, which is
 		// what marked every imported form dirty in the editor.
 		$block = array(
-			'name'    => 'core/button',
-			'attrs'   => $attrs,
-			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
-			'wrapper' => 'submit',
+			'name'                    => 'core/button',
+			'attrs'                   => $attrs,
+			'content'                 => '' !== trim( $text ) ? trim( $text ) : 'Submit',
+			'wrapper'                 => 'submit',
+			'control_carrier_classes' => $carriers,
 		);
 		// The source can own the label's typography through its own inline element,
 		// which sizes the rendered line box. Declare that element so the serializer

@@ -234,7 +234,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * The source submit is one element, both the item its layout box places
 	 * and the painted button; core/button splits it into a wrapper and a link.
 	 * The wrapper takes the source button's place: it carries the source
-	 * classes, so every source rule that places or sizes the button reaches
+	 * carrier identities (or legacy source classes), so rules that place or size the button reach
 	 * it, with the button's own box (an inline-block by default) and none of
 	 * its paint. The link fills the wrapper and keeps the paint.
 	 *
@@ -245,18 +245,20 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		foreach ( $descriptor['destinations'] as $index => $destination ) {
 			$part = $destination['part'] ?? null;
 			if ( 'submit_wrapper' === $part ) {
-				$descriptor['destinations'][ $index ]['resets'] = array(
-					'display'    => 'inline-block',
+				$descriptor['destinations'][ $index ]['properties'] = array_merge( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ) );
+				$descriptor['destinations'][ $index ]['resets']     = array(
+					'display'     => 'inline-block',
 					// A source button is never capped by its container; Jetpack's
 					// editor caps every field block at 100%.
-					'max-width'  => 'none',
-					'padding'    => '0',
-					'border'     => '0',
-					'background' => 'transparent',
+					'max-width'   => 'none',
+					'padding'     => '0',
+					'border'      => '0',
+					'background'  => 'transparent',
 					// Jetpack's editor sets the button block's line-height.
-					'font'       => 'inherit',
+					'line-height' => 'inherit',
 				);
 			} elseif ( 'submit_link' === $part ) {
+				$descriptor['destinations'][ $index ]['properties'] = array_values( array_diff( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ) ) );
 				// The editor repeats the wrapper classes on its RichText link.
 				// Keep the button paint above the wrapper's box neutralization.
 				$descriptor['destinations'][ $index ]['priority'] = 'important';
@@ -307,6 +309,33 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		return $descriptor;
 	}
 
+	/** Carry grid item facts on the provider wrapper, not its inner button. */
+	public static function with_submit_item_placement( array $form ): array {
+		$graph = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
+		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
+			if ( ! preg_match( '/^control-([0-9]+)$/D', $variant['node'], $match ) ) {
+				continue;
+			}
+			$index   = (int) $match[1];
+			$control = $form['controls'][ $index ] ?? array();
+			$patch   = array_intersect_key( $variant['layout_patch'], array_flip( array( 'column', 'row', 'area' ) ) );
+			if ( 'submit' !== ( $control['type'] ?? '' ) || empty( $control['control_carrier_classes'] ) || empty( $patch ) ) {
+				continue;
+			}
+			$styles = array();
+			foreach ( $patch as $key => $value ) {
+				$styles[ 'grid_' . $key ] = $value;
+			}
+			$graph['variants'][] = array(
+				'index'       => $index,
+				'role'        => 'control',
+				'condition'   => $variant['condition'],
+				'style_patch' => $styles,
+			);
+		}
+		return $graph;
+	}
+
 	/** Preserve saved wrapper fragments, changing only their child slots. */
 	public static function substitute( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name = '' ): ?array {
 		if ( isset( $block['form_choice_group_index'] ) ) {
@@ -329,7 +358,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					'name'        => 'core/buttons',
 					// Keep the required editor parent without introducing a new
 					// layout item: the button wrapper still owns the source box.
-					'attrs'       => array( 'className' => self::button_slot_class( $field ) ),
+					'attrs'       => array( 'className' => trim( self::button_slot_class( $field ) . ' ' . implode( ' ', $field['control_carrier_classes'] ?? array() ) ) ),
 					'innerBlocks' => array( $field ),
 				);
 			}
