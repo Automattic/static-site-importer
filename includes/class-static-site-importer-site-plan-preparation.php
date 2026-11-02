@@ -727,6 +727,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		// Language ownership: the composed runtime never replays a source
 		// <html lang>; core's language_attributes() emits the site language.
 		Static_Site_Importer_Site_Language::compose_runtime_ownership( $state );
+		Static_Site_Importer_Site_Identity::compose_title_separator( $state );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
 				// ssi-error-class: integrity

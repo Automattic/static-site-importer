@@ -270,7 +270,7 @@ class Static_Site_Importer_Site_Identity {
 	}
 
 	/** Extract explicit native branding evidence from the ordinary entrypoint document. */
-	public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '' ): array {
+	public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '', string $site_title = '' ): array {
 		$entrypoint = isset( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
 		$html       = '';
 		foreach ( $artifact['files'] ?? array() as $file ) {
@@ -326,6 +326,20 @@ class Static_Site_Importer_Site_Identity {
 				}
 			}
 		}
+		// Match the complete site name, which may itself contain separators.
+		if ( '' !== trim( $site_title ) && preg_match( '~<title\b[^>]*>(.*?)</title\s*>~is', $html, $title_match ) ) {
+			$title = trim( html_entity_decode( (string) preg_replace( '/<[^>]*>/', '', $title_match[1] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			foreach ( array( '-', '–', '—', '|', '·', '•' ) as $separator ) {
+				$prefix = trim( $site_title ) . ' ' . $separator . ' ';
+				if ( str_starts_with( $title, $prefix ) && '' !== trim( substr( $title, strlen( $prefix ) ) ) ) {
+					$evidence['title_separator'] = $separator;
+					if ( '' === $evidence['tagline'] ) {
+						$evidence['tagline'] = trim( substr( $title, strlen( $prefix ) ) );
+					}
+					break;
+				}
+			}
+		}
 		if ( preg_match_all( '~<link\\b([^>]+)>~i', $html, $links ) ) {
 			foreach ( $links[1] as $attributes ) {
 				$attrs = self::evidence_attributes( $attributes );
@@ -367,6 +381,34 @@ class Static_Site_Importer_Site_Identity {
 			$evidence['manifest_status'] = 'unresolved';
 		}
 		return $evidence;
+	}
+
+	/** Compose title presentation with the existing theme bootstrap writes. */
+	public static function compose_title_separator( array &$state ): void {
+		$separator = $state['args']['native_site_identity_evidence']['title_separator'] ?? '';
+		if ( ! in_array( $separator, array( '-', '—', '|', '·', '•' ), true ) ) {
+			return;
+		}
+		$path      = $state['theme_dir'] . '/functions.php';
+		$bootstrap = $state['composed_theme_writes'][ $path ] ?? Static_Site_Importer_Internal_Link_Runtime::interaction_bootstrap( $state['resolved'], array() );
+		$marker    = '/* Static Site Importer document title separator. */';
+		if ( ! str_contains( $bootstrap, $marker ) ) {
+			$bootstrap .= "\n{$marker}\nadd_filter( 'document_title_separator', static function () { return '{$separator}'; } );\n";
+		}
+		$state['composed_theme_writes'][ $path ]  = $bootstrap;
+		$state['internal_link_overlay']['status'] = 'materialized';
+		foreach ( $state['internal_link_overlay']['writes'] ?? array() as $index => $write ) {
+			if ( 'functions.php' === ( $write['target_path'] ?? '' ) ) {
+				$state['internal_link_overlay']['writes'][ $index ]['content'] = $bootstrap;
+				return;
+			}
+		}
+		$state['internal_link_overlay']['writes'][] = array(
+			'target_path' => 'functions.php',
+			'content'     => $bootstrap,
+			'encoding'    => 'utf8',
+			'source_path' => 'static-site-importer/title-separator',
+		);
 	}
 
 	/** Parse source declarations, including quoted and unquoted HTML attributes. */
