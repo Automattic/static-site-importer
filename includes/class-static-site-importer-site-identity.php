@@ -36,6 +36,9 @@ class Static_Site_Importer_Site_Identity {
 	 */
 	public const DEFAULT_NAME = 'Generated WordPress Website';
 
+	/** Separators shared by site-name and tagline derivation. */
+	private const TITLE_SEPARATORS = array( '-', '–', '—', '|', '·', '•' );
+
 	/**
 	 * Resolve a canonical site identity from an import context.
 	 *
@@ -269,6 +272,73 @@ class Static_Site_Importer_Site_Identity {
 		return '';
 	}
 
+	/** Resolve metadata first, then a unique majority edge segment, then the entry title. */
+	public static function site_title_from_website_artifact( array $artifact, ?object $payload_reader = null ): string {
+		$entrypoint = self::normalize_route_path( (string) ( $artifact['entrypoint'] ?? '' ) );
+		$title      = '';
+		$edges      = array();
+		$counts     = array( array(), array() );
+		$routes     = 0;
+		$pattern    = '/\s+(?:' . implode( '|', array_map( static fn( string $separator ): string => preg_quote( $separator, '/' ), self::TITLE_SEPARATORS ) ) . ')\s+/u';
+		foreach ( $artifact['files'] ?? array() as $file ) {
+			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
+				continue;
+			}
+			$html     = self::artifact_file_content( $file, $payload_reader );
+			$is_entry = self::normalize_route_path( (string) $file['path'] ) === $entrypoint;
+			if ( $is_entry ) {
+				if ( preg_match_all( '~<meta\b([^>]+)>~i', $html, $metas ) ) {
+					foreach ( $metas[1] as $meta ) {
+						$attrs = self::evidence_attributes( $meta );
+						if ( 'og:site_name' === strtolower( $attrs['property'] ?? $attrs['name'] ?? '' ) && '' !== trim( $attrs['content'] ?? '' ) ) {
+							return self::sanitize_name( $attrs['content'] );
+						}
+					}
+				}
+				if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
+					foreach ( $scripts as $script ) {
+						$attrs = self::evidence_attributes( $script[1] );
+						if ( 'application/ld+json' !== strtolower( trim( $attrs['type'] ?? '' ) ) ) {
+							continue;
+						}
+						$data = json_decode( $script[2], true );
+						foreach ( is_array( $data ) ? self::jsonld_nodes( $data ) : array() as $node ) {
+							$type = (array) ( $node['@type'] ?? array() );
+							if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) && is_string( $node['name'] ?? null ) && '' !== trim( $node['name'] ) ) {
+								return self::sanitize_name( $node['name'] );
+							}
+						}
+					}
+				}
+			}
+			if ( ! preg_match( '~<title\b[^>]*>(.*?)</title\s*>~is', $html, $match ) ) {
+				continue;
+			}
+			$document_title = self::sanitize_name( html_entity_decode( (string) preg_replace( '/<[^>]*>/', '', $match[1] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			$parts          = preg_split( $pattern, $document_title );
+			$route_edges    = is_array( $parts ) && count( $parts ) >= 2 ? array( trim( $parts[0] ), trim( $parts[ count( $parts ) - 1 ] ) ) : array();
+			if ( $is_entry ) {
+				$title = $document_title;
+				$edges = $route_edges;
+			}
+			if ( $route_edges ) {
+				++$routes;
+				foreach ( $route_edges as $edge => $segment ) {
+					$counts[ $edge ][ $segment ] = ( $counts[ $edge ][ $segment ] ?? 0 ) + 1;
+				}
+			}
+		}
+		$candidates = array();
+		foreach ( $counts as $edge_counts ) {
+			foreach ( $edge_counts as $segment => $count ) {
+				if ( '' !== (string) $segment && $count >= 2 && $count * 2 > $routes && in_array( (string) $segment, $edges, true ) ) {
+					$candidates[ $segment ] = (string) $segment;
+				}
+			}
+		}
+		return 1 === count( $candidates ) ? reset( $candidates ) : $title;
+	}
+
 	/** Extract explicit native branding evidence from the ordinary entrypoint document. */
 	public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '', string $site_title = '' ): array {
 		$entrypoint = isset( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
@@ -329,12 +399,14 @@ class Static_Site_Importer_Site_Identity {
 		// Match the complete site name, which may itself contain separators.
 		if ( '' !== trim( $site_title ) && preg_match( '~<title\b[^>]*>(.*?)</title\s*>~is', $html, $title_match ) ) {
 			$title = trim( html_entity_decode( (string) preg_replace( '/<[^>]*>/', '', $title_match[1] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
-			foreach ( array( '-', '–', '—', '|', '·', '•' ) as $separator ) {
+			foreach ( self::TITLE_SEPARATORS as $separator ) {
 				$prefix = trim( $site_title ) . ' ' . $separator . ' ';
-				if ( str_starts_with( $title, $prefix ) && '' !== trim( substr( $title, strlen( $prefix ) ) ) ) {
+				$suffix = ' ' . $separator . ' ' . trim( $site_title );
+				$rest   = str_starts_with( $title, $prefix ) ? trim( substr( $title, strlen( $prefix ) ) ) : ( str_ends_with( $title, $suffix ) ? trim( substr( $title, 0, -strlen( $suffix ) ) ) : '' );
+				if ( '' !== $rest ) {
 					$evidence['title_separator'] = $separator;
 					if ( '' === $evidence['tagline'] ) {
-						$evidence['tagline'] = trim( substr( $title, strlen( $prefix ) ) );
+						$evidence['tagline'] = $rest;
 					}
 					break;
 				}

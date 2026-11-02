@@ -109,7 +109,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$artifact,
 			self::payload_reader( $workspace ),
 			(string) ( $args['site_tagline'] ?? '' ),
-			(string) ( $args['site_title'] ?? Static_Site_Importer_Site_Identity::title_from_website_artifact( $artifact, self::payload_reader( $workspace ) ) )
+			(string) ( ! empty( $args['site_title'] ) ? $args['site_title'] : Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact, self::payload_reader( $workspace ) ) )
 		);
 		$artifact['block_namespace']           = $site_identity['block_namespace'];
 		unset( $args['_static_site_importer_payload_reader'] );
