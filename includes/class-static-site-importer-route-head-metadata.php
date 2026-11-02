@@ -12,6 +12,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+require_once __DIR__ . '/class-static-site-importer-jetpack-forms-runtime.php';
 if ( ! class_exists( WordPressSitePlan::class ) && is_readable( dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlan.php' ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlan.php';
 }
@@ -62,6 +63,7 @@ final class Static_Site_Importer_Route_Head_Metadata {
 		if ( ! function_exists( 'get_registered_meta_keys' ) ) {
 			return true;
 		}
+		self::prepare_jetpack_seo( $state['ordered_pages'] ?? array() );
 		$unrendered = array();
 		foreach ( $state['ordered_pages'] ?? array() as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -102,6 +104,34 @@ final class Static_Site_Importer_Route_Head_Metadata {
 			);
 		}
 		return true;
+	}
+
+	/**
+	 * Jetpack SEO Tools renders the route title and description, but registers
+	 * its fields only while the module is active, and the module is off by
+	 * default. When Jetpack is present and a route carries SEO metadata, turn
+	 * the module on through Jetpack's own lifecycle. Its fields register on
+	 * init, which has already run in this request, so register them now.
+	 *
+	 * @param array<int,array<string,mixed>> $pages
+	 */
+	private static function prepare_jetpack_seo( array $pages ): void {
+		if ( ! class_exists( 'Jetpack' ) ) {
+			return;
+		}
+		$metadata = false;
+		foreach ( $pages as $page ) {
+			if ( empty( $page['skip_materialization'] ) && ( '' !== self::description_from_page( $page ) || '' !== Static_Site_Importer_Route_Document_Metadata::title_from_page( $page ) ) ) {
+				$metadata = true;
+				break;
+			}
+		}
+		if ( ! $metadata || true !== Static_Site_Importer_Jetpack_Runtime::prepare_modules( array( 'seo-tools' ) ) ) {
+			return;
+		}
+		if ( ! isset( get_registered_meta_keys( 'post' )['advanced_seo_description'] ) && Static_Site_Importer_Jetpack_Forms_Runtime::runtime_static_method_exists( 'Jetpack_SEO_Posts', 'register_post_meta' ) ) {
+			Static_Site_Importer_Jetpack_Forms_Runtime::invoke_runtime_static_method( 'Jetpack_SEO_Posts', 'register_post_meta' );
+		}
 	}
 
 	/**
