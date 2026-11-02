@@ -32,9 +32,11 @@ test('outcome report detects independent regressions, chains and cycles', async 
     if (req.url === '/next') { res.writeHead(302, { Location: '/' }); res.end(); return; }
     if (url.pathname === '/assets/site.css') {
       res.setHeader('Content-Type', 'text/css');
-      res.end(`main { color: #123456; }${regression === 'css' ? ' #fixture-retired { background-image: url(https://cdn.source.example/texture.png); }' : ''}${regression === 'css-import' ? ' @import url(https://source.example/legacy.css);' : ''}`);
+      // An empty @import names no stylesheet; it is retained source text, not a fetch.
+      res.end(`@import url(""); @import '';main { color: #123456; }${regression === 'css' ? ' #fixture-retired { background-image: url(https://cdn.source.example/texture.png); }' : ''}${regression === 'css-import' ? ' @import url(https://source.example/legacy.css);' : ''}`);
       return;
     }
+    if (url.pathname.startsWith('/assets/')) { res.writeHead(404); res.end(); return; }
     if (url.pathname === '/about/' && regression === 'theme-route-about') { res.writeHead(500); res.end(); return; }
     if (url.pathname === '/' && regression === 'theme-route') { res.writeHead(500); res.end(); return; }
     res.setHeader('Content-Type', 'text/html');
