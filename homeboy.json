@@ -210,6 +210,7 @@
           "tests/smoke-form-marker-and-button-icon.php",
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-contract.php",
+          "tests/form-materializer-smoke.php",
           "tests/smoke-form-readable-substitution.php",
           "tests/smoke-form-button-parent.php",
           "tests/smoke-form-placeholder-colors.php",

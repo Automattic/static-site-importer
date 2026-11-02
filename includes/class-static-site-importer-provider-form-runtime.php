@@ -92,9 +92,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
 	}
 
-	/** Encode source label/value pairs in the editable field's persisted class attribute. */
+	/** Carry source choices in className, referencing durable non-autoloaded data for large lists. */
 	public static function choice_token( mixed $options ): string {
-		if ( ! is_array( $options ) || ! array_is_list( $options ) || count( $options ) < 1 || count( $options ) > 32 ) {
+		if ( ! is_array( $options ) || ! array_is_list( $options ) || count( $options ) < 1 || count( $options ) > 500 ) {
 			return '';
 		}
 		$values         = array();
@@ -117,8 +117,21 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( array() === $values ) {
 			return '';
 		}
-		$encoded = base64_encode( (string) wp_json_encode( $values ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes bounded choice data for a persisted CSS-class transport token, not obfuscation.
-		return strlen( $encoded ) <= 8192 ? 'ssi-choice-' . rtrim( strtr( $encoded, '+/', '-_' ), '=' ) : '';
+		$json = wp_json_encode( $values );
+		if ( ! is_string( $json ) || strlen( $json ) > 262144 ) {
+			return '';
+		}
+		$encoded = base64_encode( $json ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes bounded choice data for a persisted CSS-class transport token, not obfuscation.
+		if ( count( $options ) <= 32 && strlen( $encoded ) <= 8192 ) {
+			return 'ssi-choice-' . rtrim( strtr( $encoded, '+/', '-_' ), '=' );
+		}
+		$hash = hash( 'sha256', $json );
+		$key  = 'ssi_choice_' . $hash;
+		if ( get_option( $key ) !== $values ) {
+			update_option( $key, $values, false );
+		}
+		// Do not claim preservation if persistence failed.
+		return get_option( $key ) === $values ? 'ssi-choice-ref-' . $hash : '';
 	}
 
 	/** Apply the captured native option values and selected state to Jetpack's select. */
@@ -126,13 +139,25 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( strlen( $html ) > 262144 || ! preg_match( '/\bssi-choice-([A-Za-z0-9_-]{1,8192})\b/', $html, $matches ) ) {
 			return $html;
 		}
-		$json = base64_decode( strtr( $matches[1], '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the persisted choice-data transport token before validating its shape.
-		$data = is_string( $json ) ? json_decode( $json, true ) : null;
-		if ( ! is_array( $data ) && str_ends_with( $matches[1], '-wrap' ) ) {
-			$json = base64_decode( strtr( substr( $matches[1], 0, -5 ), '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the same token after removing Jetpack's appended wrapper suffix.
+		$token = $matches[1];
+		if ( preg_match( '/^ref-([a-f0-9]{64})(?:-wrap)?$/D', $token, $reference ) ) {
+			$data = get_option( 'ssi_choice_' . $reference[1] );
+			$json = wp_json_encode( $data );
+			if ( ! self::valid_choice_data( $data, 500 ) || ! is_string( $json ) || strlen( $json ) > 262144 || hash( 'sha256', $json ) !== $reference[1] ) {
+				return $html;
+			}
+		} else {
+			$json = base64_decode( strtr( $matches[1], '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the persisted choice-data transport token before validating its shape.
 			$data = is_string( $json ) ? json_decode( $json, true ) : null;
+			if ( ! is_array( $data ) && str_ends_with( $matches[1], '-wrap' ) ) {
+				$json = base64_decode( strtr( substr( $matches[1], 0, -5 ), '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the same token after removing Jetpack's appended wrapper suffix.
+				$data = is_string( $json ) ? json_decode( $json, true ) : null;
+			}
+			if ( ! self::valid_choice_data( $data, 32 ) ) {
+				return $html;
+			}
 		}
-		if ( ! is_array( $data ) || count( $data ) > 32 || ! str_contains( $html, '<select' ) ) {
+		if ( ! str_contains( $html, '<select' ) ) {
 			return $html;
 		}
 		$ordinal = 0;
@@ -151,6 +176,26 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return '<option' . $attrs . ' value="' . htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . ( $selected ? ' selected="selected"' : '' ) . '>' . $matches[2] . '</option>';
 		}, $html );
 		return $found && count( $data ) === $ordinal && is_string( $updated ) ? $updated : $html;
+	}
+
+	/** Validate both legacy inline and stored choice triples before projection. */
+	private static function valid_choice_data( mixed $data, int $limit ): bool {
+		if ( ! is_array( $data ) || ! array_is_list( $data ) || empty( $data ) || count( $data ) > $limit ) {
+			return false;
+		}
+		$labels   = array();
+		$selected = 0;
+		foreach ( $data as $option ) {
+			if ( ! is_array( $option ) || ! array_is_list( $option ) || count( $option ) !== 3 || ! is_string( $option[0] ) || ! is_string( $option[1] ) || ! is_bool( $option[2] ) || '' === trim( $option[0] ) || strlen( $option[0] ) > 200 || strlen( $option[1] ) > 200 || isset( $labels[ $option[0] ] ) ) {
+				return false;
+			}
+			$labels[ $option[0] ] = true;
+			$selected            += $option[2] ? 1 : 0;
+			if ( $selected > 1 ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
