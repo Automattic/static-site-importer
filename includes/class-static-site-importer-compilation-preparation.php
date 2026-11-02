@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 foreach ( array(
 	'Static_Site_Importer_Theme_Materialization_Strategy' => 'class-static-site-importer-theme-materialization-strategy.php',
 	'Static_Site_Importer_Theme_Screenshot'               => 'class-static-site-importer-theme-screenshot.php',
+	'Static_Site_Importer_Consent_Banner'                 => 'class-static-site-importer-consent-banner.php',
 	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
 	'Static_Site_Importer_Redirects_Manifest'             => 'class-static-site-importer-redirects-manifest.php',
 	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',
@@ -49,6 +50,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
 		}
 		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+		Static_Site_Importer_Consent_Banner::extract( $artifact, $args, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		$images = Static_Site_Importer_Image_Assets::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		if ( is_wp_error( $images ) ) {
 			return $images;

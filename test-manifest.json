@@ -8,6 +8,9 @@
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
+    { "path": "tests/consent-banner.test.mjs", "environment": "node" },
+    { "path": "tests/acceptance/consent-banner-browser.mjs", "environment": "operator-only", "reason": "Set SSI_CONSENT_ORIGIN to the disposable imported WordPress site; tests real Jetpack click and reload." },
+    { "path": "tests/acceptance/consent-banner-wordpress.php", "environment": "operator-only", "reason": "Disposable WordPress and real Jetpack import, footer, consent cookie and CMP acceptance." },
     { "path": "tests/smoke-admin-bar-top-chrome.php", "environment": "standalone-php" },
     { "path": "tests/smoke-payload-reference-errors.php", "environment": "standalone-php" },
     { "path": "tests/acceptance/route-ownership-wordpress.php", "environment": "operator-only", "command": ["bash", "tools/run-route-ownership-acceptance.sh"], "reason": "Disposable Docker WordPress public CLI import, logged-out routes and native-owner theme-switch persistence proof." },
