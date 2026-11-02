@@ -35,6 +35,29 @@ test( 'submit carriers preserve author inheritance and paint like link buttons (
 	}
 } );
 
+test( 'centred submit carrier keeps source font, box and paint (#2516)', async () => {
+	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-submit-carriers.php', '--center' ], { encoding: 'utf8' } ) );
+	const browser = await chromium.launch( { headless: true } );
+	try {
+		const page = await browser.newPage( { viewport: { width: 390, height: 844 } } );
+		const measure = () => page.locator( 'button' ).evaluate( ( node ) => {
+			const { x, width } = node.getBoundingClientRect();
+			const style = getComputedStyle( node );
+			return { x, width, font: style.fontFamily, background: style.backgroundColor, color: style.color, radius: style.borderRadius };
+		} );
+		await page.setContent( fixture.source );
+		const source = await measure();
+		await page.setContent( `<style>${ fixture.css }</style>${ fixture.html }` );
+		const imported = await measure();
+		for ( const key of [ 'x', 'width' ] ) {
+			assert.ok( Math.abs( imported[ key ] - source[ key ] ) <= 1, `${ key }: source=${ source[ key ] }, imported=${ imported[ key ] }` );
+		}
+		assert.deepEqual( { ...imported, x: 0, width: 0 }, { ...source, x: 0, width: 0 } );
+	} finally {
+		await browser.close();
+	}
+} );
+
 test( 'reduced quote form preserves submit colours, hover and palette restyles', async () => {
 	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/smoke-form-submit-colors.php', '--json' ], { encoding: 'utf8' } ) );
 	const source = readFileSync( new URL( './fixtures/quote-form.html', import.meta.url ), 'utf8' );
