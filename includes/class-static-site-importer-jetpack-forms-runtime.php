@@ -13,6 +13,8 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
 
+require_once __DIR__ . '/class-static-site-importer-jetpack-runtime.php';
+
 /**
  * Loads and reports Jetpack Forms runtime readiness.
  */
@@ -24,6 +26,7 @@ final class Static_Site_Importer_Jetpack_Forms_Runtime {
 	public static function register_runtime_bootstrap(): void {
 		if ( function_exists( 'add_action' ) ) {
 			add_action( 'jetpack_loaded', array( __CLASS__, 'bootstrap_jetpack_forms_runtime' ) );
+			add_action( 'jetpack_loaded', array( Static_Site_Importer_Jetpack_Runtime::class, 'bootstrap_blocks' ) );
 		}
 		if ( function_exists( 'add_filter' ) ) {
 			Static_Site_Importer_Provider_Form_Runtime_V1::register();
@@ -106,35 +109,12 @@ final class Static_Site_Importer_Jetpack_Forms_Runtime {
 
 	/** Activate and prepare Jetpack Forms through its canonical module lifecycle. */
 	public static function prepare_jetpack_forms_runtime() {
-		$lifecycle_apis         = array(
-			'Jetpack::is_module_active'         => self::runtime_static_method_exists( 'Jetpack', 'is_module_active' ),
-			'Jetpack::activate_default_modules' => self::runtime_static_method_exists( 'Jetpack', 'activate_default_modules' ),
-		);
-		$missing_lifecycle_apis = array_keys( array_filter( $lifecycle_apis, static fn ( bool $available ): bool => ! $available ) );
-		if ( ! empty( $missing_lifecycle_apis ) ) {
-			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_lifecycle_missing', $missing_lifecycle_apis );
+		$prepared = Static_Site_Importer_Jetpack_Runtime::prepare_modules( array( 'blocks', 'contact-form' ) );
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared;
 		}
-
-		$required_modules = array( 'blocks', 'contact-form' );
-		$inactive_modules = array_values( array_filter(
-			$required_modules,
-			static fn ( string $module ): bool => ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( $module ) )
-		) );
-		$availability     = self::jetpack_forms_availability_details();
-		if ( empty( $inactive_modules ) && ! empty( $availability['available'] ) ) {
+		if ( self::jetpack_forms_available() ) {
 			return true;
-		}
-
-		if ( ! empty( $inactive_modules ) ) {
-			// Jetpack uses this inverted range to activate only explicitly supplied defaults.
-			self::invoke_runtime_static_method( 'Jetpack', 'activate_default_modules', array( 999, 1, $inactive_modules, false, false ) );
-			$inactive_modules = array_values( array_filter(
-				$required_modules,
-				static fn ( string $module ): bool => ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( $module ) )
-			) );
-			if ( ! empty( $inactive_modules ) ) {
-				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', $inactive_modules );
-			}
 		}
 
 		$loader = 'Automattic\\Jetpack\\Forms\\Jetpack_Forms';

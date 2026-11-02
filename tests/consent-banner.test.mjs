@@ -12,6 +12,9 @@ const bundle = (await build({ stdin: { contents: readFileSync('tests/fixtures/co
 const saved = { exports: {} };
 new Function('require', 'module', 'exports', bundle)(require, saved, saved.exports);
 registerValidationBlockType(metadata.name, { ...metadata, save: saved.exports.default });
+test('consent intent plans Jetpack through the provider dependency lifecycle', () => {
+ assert.match(execFileSync('php', ['tests/fixtures/consent-banner/lifecycle.php'], { encoding: 'utf8' }), /Consent dependency planned/);
+});
 test('consent intent serializes against actual Jetpack save and core buttons', () => {
  const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php'], { encoding: 'utf8' });
  const result = validateMarkup(markup);

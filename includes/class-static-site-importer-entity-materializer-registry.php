@@ -44,6 +44,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function capabilities(): array {
 		return array(
+			'consent_banner'   => array(
+				'default_provider' => 'jetpack',
+				'option'           => '',
+				'filter'           => '',
+			),
 			'external_metrics' => array(
 				'default_provider' => 'external_source',
 				'option'           => '',
@@ -1597,7 +1602,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		require_once __DIR__ . '/class-static-site-importer-woo-product-grid-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php';
 		// A capability's first adapter is its default; collection adapters follow it.
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_Consent_Banner', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {

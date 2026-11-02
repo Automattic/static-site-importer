@@ -50,6 +50,8 @@
     "static_site_importer_font_materialization_producer_stylesheet_failed": {"finding_code": "font_face_unavailable", "unit": "asset", "owning_layer": "static-site-importer", "proof_smoke": "tests/smoke-font-face-unavailable.php"}
   },
   "sites": {
+    "static_site_importer_jetpack_lifecycle_missing": { "class": "operational", "owning_layer": "static-site-importer" },
+    "static_site_importer_jetpack_activation_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "existing_theme_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new ErrorException()": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace could not be created.')": { "class": "operational", "owning_layer": "static-site-importer" },

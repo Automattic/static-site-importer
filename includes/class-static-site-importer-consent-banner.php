@@ -44,13 +44,49 @@ class Static_Site_Importer_Consent_Banner {
 		$artifact['files'] = array_values( $artifact['files'] ?? array() );
 	}
 
+	/** Declare the same plugin dependency lifecycle used by native form adapters. */
+	public static function adapter(): array {
+		return array(
+			'id'                   => 'jetpack_cookie_consent',
+			'capability'           => 'consent_banner',
+			'rollback_contract_id' => 'static-site-importer/consent-option-journal/v1',
+			'intent_callback'      => array( self::class, 'has_intent' ),
+			'provider'             => 'jetpack',
+			'waiver_arg'           => 'allow_missing_jetpack',
+			'dependencies'         => array(
+				array(
+					'type'                  => 'wp_org_plugin',
+					'slug'                  => 'jetpack',
+					'plugin_file'           => 'jetpack/jetpack.php',
+					'availability_callback' => array( self::class, 'available' ),
+					'preparation_callback'  => array( self::class, 'prepare_runtime' ),
+					'provider_readiness'    => array( 'required_block_types' => array( 'jetpack/cookie-consent' ) ),
+				),
+			),
+		);
+	}
+
+	/** Missing optional runtime still degrades cleanly when provisioning is disabled. */
+	public static function has_intent( array $plan, array $args ): bool {
+		return ! empty( $args['consent_banner'] ) && ( ! empty( $args['materialize_dependencies'] ) || 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) );
+	}
+
+	public static function available(): bool {
+		return class_exists( 'WP_Block_Type_Registry' ) && WP_Block_Type_Registry::get_instance()->is_registered( 'jetpack/cookie-consent' );
+	}
+
+	/** Boot-time registration is completed on the lifecycle's fresh request. */
+	public static function prepare_runtime() {
+		return Static_Site_Importer_Jetpack_Runtime::prepare_modules( array( 'blocks' ) );
+	}
+
 	/** Materialize only the native runtime; the persistence journal owns rollback. */
 	public static function materialize( array &$state ): array {
 		$fact = $state['args']['consent_banner'] ?? null;
 		if ( ! is_array( $fact ) ) {
 			return array();
 		}
-		if ( ! WP_Block_Type_Registry::get_instance()->is_registered( 'jetpack/cookie-consent' ) ) {
+		if ( ! self::available() ) {
 			return array( 'findings' => array( self::finding( 'consent_banner_not_materialized', 'The jetpack/cookie-consent block runtime is unavailable.' ) ) );
 		}
 		Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'cookie_consent_template' );

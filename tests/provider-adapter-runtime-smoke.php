@@ -184,10 +184,10 @@ namespace {
 		$assert( 1 === Jetpack::$default_activations && 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'init completion does not replay lifecycle work' );
 	}
 	if ( 'activation-failed' === $case ) {
-		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_forms_activation_failed' === $result->get_error_code(), 'failed default activation is specific' );
+		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_activation_failed' === $result->get_error_code(), 'failed default activation is specific' );
 	}
 	if ( 'missing-lifecycle' === $case ) {
-		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_forms_lifecycle_missing' === $result->get_error_code(), 'missing lifecycle API is bounded' );
+		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_lifecycle_missing' === $result->get_error_code(), 'missing lifecycle API is bounded' );
 		$assert( array( 'Jetpack::activate_default_modules' ) === $result->get_error_data()['missing'], 'missing lifecycle API is identified' );
 	}
 	if ( 'missing-loader' === $case ) {
