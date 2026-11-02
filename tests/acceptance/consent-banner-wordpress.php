@@ -13,7 +13,7 @@ $artifact = array( 'entrypoint' => 'website/index.html', 'files' => array(
 	array( 'path' => 'website/about.html', 'content' => '<!doctype html><html><head><title>About</title></head><body><main><h1>About example</h1><p>Another route.</p></main></body></html>' ),
 	array( 'path' => 'website/consent-banner.json', 'content' => file_get_contents( $root . 'consent-banner.json' ) ),
 ) );
-$args = array( 'slug' => 'consent-example', 'name' => 'Consent Example', 'activate' => true, 'overwrite' => true, 'materialize_dependencies' => true );
+$args = array( 'slug' => 'consent-example', 'name' => 'Consent Example', 'activate' => true, 'overwrite' => true, 'materialize_dependencies' => false );
 $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 $assert( ! is_wp_error( $compiled ), 'Fixture compiles.' );
 $assert( isset( $compiled['args']['consent_banner']['accept_label'] ), 'Consent fact survives compilation as intent, not content.' );

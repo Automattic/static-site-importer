@@ -9,6 +9,7 @@
   },
   "tests": [
     { "path": "tests/consent-banner.test.mjs", "environment": "node" },
+    { "path": "tests/acceptance/consent-banner-lifecycle.php", "environment": "operator-only", "reason": "Separate plan, prepare and resume requests on disposable WordPress starting without Jetpack." },
     { "path": "tests/acceptance/consent-banner-browser.mjs", "environment": "operator-only", "reason": "Set SSI_CONSENT_ORIGIN to the disposable imported WordPress site; tests real Jetpack click and reload." },
     { "path": "tests/acceptance/consent-banner-wordpress.php", "environment": "operator-only", "reason": "Disposable WordPress and real Jetpack import, footer, consent cookie and CMP acceptance." },
     { "path": "tests/smoke-admin-bar-top-chrome.php", "environment": "standalone-php" },
