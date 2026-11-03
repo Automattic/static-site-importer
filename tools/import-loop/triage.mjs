@@ -56,7 +56,16 @@ function routePage(route, file) {
   return file;
 }
 
-const predicateExit = (predicate, page) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore' }).status;
+const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { encoding: 'utf8' }).trim();
+// Predicates read the finding they reproduce, and the core block styles a
+// WordPress front end loads under the output, from the environment.
+const blockLibraryCss = path.join(result.site || '', 'wp-includes', 'css', 'dist', 'block-library', 'style.css');
+const predicateEnv = (finding, occurrence) => ({
+  ...process.env,
+  PREDICATE_TARGET: JSON.stringify({ subject: finding.subject, width: occurrence.width || 1440 }),
+  ...(result.site && fs.existsSync(blockLibraryCss) ? { BLOCK_LIBRARY_CSS: blockLibraryCss } : {}),
+});
+const predicateExit = (predicate, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;
 
 function reduceAndFile(finding) {
   const predicate = path.join(here, 'predicates', `${finding.check}.mjs`);
@@ -67,11 +76,12 @@ function reduceAndFile(finding) {
   fs.mkdirSync(dir, { recursive: true });
   const occurrence = finding.occurrences.find((o) => o.route) || finding.occurrences[0];
   const page = routePage(occurrence.route || '/', path.join(dir, 'page.html'));
-  if (predicateExit(predicate, page) !== 0) return { status: 'untracked', reason: 'predicate does not reproduce on the captured page' };
+  const env = predicateEnv(finding, occurrence);
+  if (predicateExit(predicate, page, env) !== 0) return { status: 'untracked', reason: 'predicate does not reproduce on the captured page' };
   log(`reducing ${finding.signature} (${finding.check}) from ${fs.statSync(page).size} bytes`);
-  const run = spawnSync('node', [reducer, '--input', page, '--output', path.join(dir, 'out'), '--predicate', `node ${predicate} ${transformer} {candidate}`, '--stage', finding.stage, '--name', finding.signature, '--max-calls', '1500', '--timeout-ms', String(2 * 3600 * 1000)], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  const run = spawnSync('node', [reducer, '--input', page, '--output', path.join(dir, 'out'), '--predicate', `node ${predicate} ${transformer} {candidate}`, '--stage', finding.stage, '--name', finding.signature, '--max-calls', '1500', '--timeout-ms', String(2 * 3600 * 1000)], { encoding: 'utf8', maxBuffer: 64 << 20, env });
   const reduced = path.join(dir, 'out', 'source.html');
-  if (run.status !== 0 || !fs.existsSync(reduced) || predicateExit(predicate, reduced) !== 0) return { status: 'untracked', reason: `reduction failed: ${(run.stderr || '').slice(-300)}` };
+  if (run.status !== 0 || !fs.existsSync(reduced) || predicateExit(predicate, reduced, env) !== 0) return { status: 'untracked', reason: `reduction failed: ${(run.stderr || '').slice(-300)}` };
   const html = fs.readFileSync(reduced, 'utf8');
   const reduction = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'reduction.json'), 'utf8'));
   const body = [
@@ -90,13 +100,18 @@ function reduceAndFile(finding) {
     '',
     '## Reproduce',
     '',
-    `The predicate exits 0 while the defect reproduces (checked against \`blocks-engine\` trunk \`${execFileSync('git', ['-C', path.dirname(transformer), 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()}\`):`,
+    `The predicate exits 0 while the defect reproduces (checked against \`blocks-engine\` trunk \`${git(path.dirname(transformer), 'rev-parse', '--short', 'HEAD')}\`). Run it from a \`static-site-importer\` checkout at \`${git(here, 'rev-parse', '--short', 'HEAD')}\`, with the reduced page saved as \`reduced.html\`:`,
     '',
-    '```sh', `node ${finding.check}.mjs <blocks-engine>/php-transformer reduced.html`, '```',
+    '```sh',
+    [
+      `PREDICATE_TARGET='${env.PREDICATE_TARGET}'`,
+      ...(env.BLOCK_LIBRARY_CSS ? ['BLOCK_LIBRARY_CSS=<wordpress>/wp-includes/css/dist/block-library/style.css'] : []),
+      `node tools/import-loop/predicates/${finding.check}.mjs <blocks-engine>/php-transformer reduced.html`,
+    ].join(' \\\n  '),
+    '```',
     '',
-    `<details><summary>${finding.check}.mjs and transform.php</summary>`, '',
-    '```js', fs.readFileSync(predicate, 'utf8').trim(), '```', '',
-    '```php', fs.readFileSync(path.join(here, 'predicates', 'transform.php'), 'utf8').trim(), '```', '</details>',
+    `<details><summary>predicates/${finding.check}.mjs</summary>`, '',
+    '```js', fs.readFileSync(predicate, 'utf8').trim(), '```', '</details>',
     '',
     `Loop signature: \`${finding.signature}\``,
     '',

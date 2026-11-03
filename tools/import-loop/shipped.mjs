@@ -33,7 +33,9 @@ function shippedIn(fix) {
   const tag = latestTag(carrier);
   const lock = JSON.parse(Buffer.from(JSON.parse(gh('api', `repos/${carrier}/contents/composer.lock?ref=${tag}`)).content, 'base64').toString('utf8'));
   const pkg = lock.packages.find((p) => p.name === repo.lock_package);
-  const ref = pkg?.source?.reference || pkg?.dist?.reference;
+  // The package is published from a split repository, so its locked commit is
+  // not in the monorepo; the monorepo's release tag for that version is.
+  const ref = pkg && `${repo.release_tag_prefix}${pkg.version}`;
   return ref && contains(fix.github, ref, fix.sha) ? `${carrier}@${tag} (${repo.lock_package} ${pkg.version})` : null;
 }
 
