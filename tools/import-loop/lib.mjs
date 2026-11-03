@@ -39,5 +39,25 @@ export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
   return url;
 }
 
+// The acceptance cells of a tracked finding, checked on a pull request's head:
+// a worktree of `clone` at the head (dependencies installed under
+// `work`/heads), re-imported once per head. Returns [{route, width, exit}];
+// exit 1 on every cell means the defect is gone.
+const heads = new Map();
+export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
+  const dir = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}`;
+  const transformer = `${dir}/${root}`;
+  if (!heads.has(dir)) {
+    if (!fs.existsSync(dir)) {
+      execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', `pull/${pr.number}/head`]);
+      execFileSync('git', ['-C', clone, 'worktree', 'add', '-q', '--detach', dir, pr.headRefOid]);
+      execFileSync('composer', ['install', '--no-interaction', '--no-progress', '--quiet'], { cwd: transformer, stdio: ['ignore', 'ignore', 'inherit'] });
+    }
+    heads.set(dir, reimportSite(transformer, reimport, `${dir}-site`));
+  }
+  const predicate = new URL(`./predicates/${item.check}.mjs`, import.meta.url).pathname;
+  return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: predicateExit(predicate, transformer, cell.page, { ...predicateEnv(item.subject, cell, site), PREDICATE_SITE_URL: heads.get(dir) }) }));
+}
+
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
 export const predicateExit = (predicate, transformer, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;

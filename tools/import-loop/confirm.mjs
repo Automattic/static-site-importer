@@ -12,35 +12,20 @@
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}], confirm_path}
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, linkedPullRequests, predicateEnv, predicateExit, reimportSite } from './lib.mjs';
+import { args, cellsAtHead, linkedPullRequests } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
 const triage = JSON.parse(fs.readFileSync(args.triage, 'utf8'));
 const clones = { 'blocks-engine': args['blocks-engine'] };
-const run = (command, cwd) => execFileSync(command[0], command.slice(1), { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const log = (...parts) => console.error('[confirm]', ...parts);
-
-// A worktree of the clone at the pull request's head, with its dependencies.
-function checkout(repo, pr) {
-  const dir = path.join(args.work, 'heads', `${repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}`);
-  const root = path.join(dir, repos[repo].predicate_root);
-  if (!fs.existsSync(dir)) {
-    run(['git', '-C', clones[repo], 'fetch', '-q', 'origin', `pull/${pr.number}/head`]);
-    run(['git', '-C', clones[repo], 'worktree', 'add', '-q', '--detach', dir, pr.headRefOid]);
-    run(['composer', 'install', '--no-interaction', '--no-progress', '--quiet'], root);
-  }
-  return root;
-}
 
 // One pull request can fix several tracked findings: it is confirmed only
 // when every cell of every finding it fixes clears.
 const verdicts = new Map();
-const sites = new Map();
 for (const item of triage.tracked) {
   for (const pr of linkedPullRequests(item.issue_url)) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, failing: [], reasons: [] };
@@ -48,10 +33,7 @@ for (const item of triage.tracked) {
     const root = repos[item.repo]?.predicate_root;
     if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
-    const predicate = path.join(here, 'predicates', `${item.check}.mjs`);
-    const head = checkout(item.repo, pr);
-    sites.set(head, sites.get(head) || reimportSite(head, triage.reimport, `${path.dirname(head)}-site`));
-    const cells = item.cells.map((cell) => ({ signature: item.signature, route: cell.route, width: cell.width, exit: predicateExit(predicate, head, cell.page, { ...predicateEnv(item.subject, cell, triage.site), PREDICATE_SITE_URL: sites.get(head) }) }));
+    const cells = cellsAtHead(item, pr, { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site }).map((cell) => ({ signature: item.signature, ...cell }));
     log(pr.url, item.signature, cells.map((c) => `${c.route}@${c.width}=${c.exit}`).join(' '));
     verdict.failing.push(...cells.filter((c) => c.exit !== 1));
   }

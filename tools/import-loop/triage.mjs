@@ -11,7 +11,9 @@
 //      reduced with it, the reduced page is re-checked, and one issue is filed
 //      in the owning repository with the reduced page and the predicate.
 //   3. Otherwise the finding stays untracked: it needs a predicate first.
-// Tracked open issues without an open pull request become Cook items. Every
+// Tracked open issues become Cook items unless an open pull request's head
+// already clears every acceptance cell; a refuted pull request is re-cooked on
+// its branch with the cells it still fails. Every
 // tracked finding with a predicate lists its acceptance cells: the full
 // captured page of each route/width it was seen in, which confirm.mjs re-checks
 // on each fix's head.
@@ -22,7 +24,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { args, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -198,27 +200,33 @@ for (const item of tracked) {
   const repo = repos[item.repo];
   const pr = linkedPullRequests(item.issue_url)[0];
   item.open_pr = pr?.url || null;
+  const checkable = repo?.predicate_root && item.cells.length;
+  const refuted = pr && checkable ? cellsAtHead(item, pr, { clone: args['blocks-engine'], root: repo.predicate_root, work: args.work, reimport, site: result.site }).filter((cell) => cell.exit !== 1) : [];
+  if (refuted.length) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if (!pr && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  if ((!pr || refuted.length) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
+    const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
       '',
       `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.`,
+      ...(refuted.length ? [
+        '',
+        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) does not fix it: on a whole re-import of the capture with that head, the predicate still exits 0 on ${refuted.map((c) => `\`${c.route}@${c.width}\``).join(', ')}. Continue on its branch.`,
+      ] : []),
       '',
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
-      '- The issue\'s predicate exits non-zero on the reduced page with your change.',
-      ...(item.cells.length ? [
-        '- It also exits 1 on each full captured page below. The reduced page is one cell; a verify gate runs all of them before your change can be published.',
+      ...(checkable ? [
+        `- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that: from your worktree root, \`bash ${gate.gate_env.split('=')[1]}\` re-imports the capture through the Static Site Importer release with your transformer and runs the predicate on each cell (exit 1 per cell means fixed). Cook runs it before your change can be published.`,
+        `- To inspect the import, \`SSI_ZIP=${reimport.ssi_zip} BARE_WP=${BARE_WP} bash ${path.join(here, 'gates/reimport.sh')} php-transformer ${reimport.capture} <dir>\` serves it and prints its URL. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.`,
         '',
-        '```sh',
-        ...item.cells.map((cell) => `PREDICATE_TARGET='${predicateEnv(item.subject, cell, result.site).PREDICATE_TARGET}' WORDPRESS_PATH=${result.site} node ${predicatePath(item.check)} <blocks-engine>/php-transformer ${cell.page}`),
-        '```',
-      ] : []),
+        ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
+      ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...acceptanceGate(item, repo) });
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...gate });
   }
 }
 
