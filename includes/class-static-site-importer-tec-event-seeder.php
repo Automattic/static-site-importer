@@ -347,6 +347,8 @@ final class Static_Site_Importer_TEC_Event_Seeder {
 				'status'                     => 'committed',
 				'destination_post_id'        => $id,
 				'post_type'                  => 'tribe_events',
+				// TEC defers its block template only for a theme-origin single-event.
+				'theme_template_aliases'     => array( 'templates/single-event.html' => 'templates/page.html' ),
 				'featured_image_target_path' => is_array( $image ) ? $image['target_path'] : '',
 			);
 			if ( 'updated' === $status ) {

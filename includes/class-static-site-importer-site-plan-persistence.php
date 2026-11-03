@@ -352,6 +352,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
 		}
 
+		self::append_handoff_template_aliases( $state );
 		$short_write_attempt = 0;
 		// A prepared state from before this boundary existed described a
 		// generated theme, which owns its directory and may activate.
@@ -957,6 +958,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'reconciliation_identity' => $page['reconciliation_identity'],
 			);
 			self::complete_entity_bindings( $state, $source, $persisted_markup, array( 'post_id' => $destination ) );
+			foreach ( $claim['result']['theme_template_aliases'] ?? array() as $target => $template ) {
+				$state['handoff_template_aliases'][ $target ] = $template;
+			}
 			$page['skip_materialization']                          = true;
 			$page['provider_owned']                                = true;
 			$page['provider_featured_image_target_path']           = (string) ( $claim['result']['featured_image_target_path'] ?? '' );
@@ -972,6 +976,25 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			unset( $ordered );
 		}
 		return true;
+	}
+
+	/** Copy admitted provider template aliases after route-link rewriting, before journaled writes. */
+	public static function append_handoff_template_aliases( array &$state ): void {
+		$writes = $state['resolved']['writes'];
+		foreach ( $state['handoff_template_aliases'] ?? array() as $target => $template ) {
+			if ( ! is_string( $target ) || ! preg_match( '~^templates/[a-z0-9-]+\.html$~D', $target ) ) {
+				continue;
+			}
+			foreach ( $writes as $write ) {
+				if ( 'theme_template' !== ( $write['kind'] ?? '' ) || $template !== $write['target_path'] ) {
+					continue;
+				}
+				$write['target_path']             = $target;
+				$write['reconciliation_identity'] = hash( 'sha256', $write['source_path'] . "\n" . $target );
+				$state['resolved']['writes'][]    = $write;
+				break;
+			}
+		}
 	}
 
 	/**
