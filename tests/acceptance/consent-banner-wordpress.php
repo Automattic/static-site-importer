@@ -28,6 +28,13 @@ foreach ( $receipt['completed']['pages'] ?? array() as $id ) {
 }
 $css = file_get_contents( get_stylesheet_directory() . '/style.css' );
 $assert( str_contains( $css, Static_Site_Importer_Consent_Banner::stylesheet( $presentation_fact ) ), 'Generated theme delivers consent typography and edge offset.' );
+$assert( str_contains( $css, ' > p{flex:1 1 auto;margin:0px;}' ), 'Message flex and margin are delivered.' );
+$assert( str_contains( $css, '@media (max-width:767px)' ) && str_contains( $css, 'flex-direction:column;' ) && str_contains( $css, 'margin-left:auto;' ), 'Mobile layout right-aligns buttons.' );
+$assert( str_contains( $css, '@media (min-width:768px)' ) && str_contains( $css, 'flex-direction:row;align-items:center;' ), 'Desktop layout keeps buttons inline.' );
+$top = $presentation_fact;
+$top['position'] = 'top';
+$top_css = Static_Site_Importer_Consent_Banner::stylesheet( $top );
+$assert( str_contains( $top_css, '{top:0px;' ) && ! str_contains( $top_css, 'bottom:' ), 'Top-positioned edge offset uses top.' );
 $hostile = $presentation_fact;
 $hostile['presentation']['edge_offset'] = '0px;}body{display:none';
 $assert( ! str_contains( Static_Site_Importer_Consent_Banner::stylesheet( $hostile ), 'display:none' ), 'Hostile CSS is rejected.' );
@@ -40,6 +47,7 @@ if ( $available ) {
 	$assert( '12px' === $blocks[0]['attrs']['style']['spacing']['padding'], 'Native banner padding.' );
 	$button = $blocks[0]['innerBlocks'][0]['innerBlocks'][0]['attrs']['style'];
 	$assert( '5px' === $button['border']['radius'] && '8px 40px' === $button['spacing']['padding'] && '13.5px' === $button['typography']['fontSize'], 'Native button presentation.' );
+	$assert( '16.2px' === $button['typography']['lineHeight'], 'Button line-height uses native typography.' );
 	file_put_contents( '/tmp/consent-markup.html', $markup );
 	ob_start();
 	Automattic\Jetpack\Extensions\CookieConsent\render_cookie_consent_template();
