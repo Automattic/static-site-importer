@@ -378,22 +378,27 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( $selection['loading'], $bound['loading'] );
 	}
 
-	/** Distinct captured widths are native renditions of one attachment (#2566). */
-	public function test_distinct_source_widths_render_as_attachment_renditions(): void {
+	/**
+	 * Captured widths are native renditions of one attachment (#2566).
+	 *
+	 * @dataProvider source_width_families
+	 * @param array<int,int> $family Authored widths mapped to source pixel widths.
+	 */
+	public function test_distinct_source_widths_render_as_attachment_renditions( array $family ): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$uri       = get_theme_root_uri() . '/' . $this->slug() . '/media/';
-		$widths    = array( 96, 226, 300, 532, 816, 1252, 1920 );
+		$widths    = array_keys( $family );
 		$selection = array(
 			'src'     => $uri . 'photo-1920.png',
-			'srcset'  => implode( ', ', array_map( static fn( int $width ): string => $uri . 'photo-' . $width . '.png ' . $width . 'w', $widths ) ),
+			'srcset'  => implode( ', ', array_map( static fn( int $width ): string => $uri . 'photo-' . $family[ $width ] . '.png ' . $width . 'w', $widths ) ),
 			'sizes'   => 'auto, min(100vw, 1200px), 100vw',
 			'loading' => 'lazy',
 		);
 		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
 		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $selection['src'] . '" alt="Photo"/></figure><!-- /wp:image -->';
 		$state     = $this->state_with_page( $markup );
-		foreach ( $widths as $width ) {
-			$image = imagecreatetruecolor( $width, (int) ( $width / 2 ) );
+		foreach ( array_unique( $family ) as $width ) {
+			$image = imagecreatetruecolor( $width, (int) round( $width / 2 ) );
 			imagefilledrectangle( $image, 0, 0, 10, 10, $width );
 			imagepng( $image, $this->theme_dir . '/media/photo-' . $width . '.png' );
 			unset( $image );
@@ -420,8 +425,22 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 			$url  = trailingslashit( dirname( wp_get_attachment_url( $id ) ) ) . $file;
 			$this->assertStringContainsString( $url . ' ' . $width . 'w', $srcset );
 			$this->assertStringContainsString( $url . ' ' . $width . 'w', wp_get_attachment_image_srcset( $id, 'full' ) );
-			$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/photo-' . $width . '.png' ), hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $file ) );
+			$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/photo-' . $family[ $width ] . '.png' ), hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $file ) );
+			if ( 1920 === $family[ $width ] ) {
+				$this->assertSame( wp_get_original_image_url( $id ), $url, 'collapsed descriptors bind to the original upload' );
+			} else {
+				$this->assertSame( $width, $metadata['sizes'][ 'ssi-source-' . $width ]['width'] );
+				$this->assertSame( (int) round( $width * round( $family[ $width ] / 2 ) / $family[ $width ] ), $metadata['sizes'][ 'ssi-source-' . $width ]['height'] );
+			}
 		}
+	}
+
+	/** @return array<string,array{array<int,int>}> */
+	public static function source_width_families(): array {
+		return array(
+			'distinct' => array( array( 96 => 96, 226 => 226, 300 => 300, 532 => 532, 816 => 816, 1252 => 1252, 1920 => 1920 ) ),
+			'mixed with descriptor mismatch' => array( array( 96 => 1920, 226 => 1920, 532 => 523, 816 => 816, 1920 => 1920 ) ),
+		);
 	}
 
 	/** An owner's existing site icon is kept. */

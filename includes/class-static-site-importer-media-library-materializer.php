@@ -1281,8 +1281,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
-	 * Register a complete, distinct width family on its image, not as attachments.
-	 * Mixed, collapsed, density and art-directed families keep the legacy path.
+	 * Register distinct files in a width family on its image, not as attachments.
+	 * Collapsed, density and art-directed families keep the legacy path.
 	 *
 	 * @return array<string,string> Uploaded rendition URLs keyed by authored URL.
 	 */
@@ -1303,9 +1303,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( ! is_readable( $file ) ) {
 				return array();
 			}
-			$size = wp_getimagesize( $file );
-			$hash = hash_file( 'sha256', $file );
-			if ( ! $size || (int) $match[1] !== $size[0] || ! wp_image_matches_ratio( $metadata['width'], $metadata['height'], $size[0], $size[1] ) || false === $hash || isset( $hashes[ $hash ] ) || isset( $files[ $size[0] ] ) ) {
+			$size  = wp_getimagesize( $file );
+			$hash  = hash_file( 'sha256', $file );
+			$width = (int) $match[1];
+			if ( ! $size || ! wp_image_matches_ratio( $metadata['width'], $metadata['height'], $size[0], $size[1] ) || false === $hash || isset( $files[ $width ] ) ) {
 				return array();
 			}
 			$record = $state['staged_resource_records'][ $relative ] ?? null;
@@ -1315,16 +1316,16 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					return array();
 				}
 			}
-			$hashes[ $hash ]   = true;
-			$files[ $size[0] ] = array(
+			$hashes[ $hash ] = true;
+			$files[ $width ] = array(
 				'file'   => $file,
 				'url'    => $candidate['url'],
-				'height' => $size[1],
+				'height' => (int) round( $width * $size[1] / $size[0] ),
 				'mime'   => $size['mime'],
 				'hash'   => $hash,
 			);
 		}
-		if ( count( $files ) < 2 ) {
+		if ( count( $hashes ) < 2 ) {
 			return array();
 		}
 
@@ -1336,21 +1337,31 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$directory = dirname( $attached_file );
 		$base_url  = trailingslashit( dirname( $attached_url ) );
 		$urls      = array();
+		$uploaded  = array();
+		$original  = wp_get_original_image_path( $attachment_id );
+		if ( is_string( $original ) && is_readable( $original ) ) {
+			$uploaded[ hash_file( 'sha256', $original ) ] = basename( $original );
+		}
 		foreach ( $files as $width => $source ) {
 			$key      = 'ssi-source-' . $width;
 			$existing = $metadata['sizes'][ $key ] ?? null;
 			if ( is_array( $existing ) && is_readable( $directory . '/' . $existing['file'] ) && hash_file( 'sha256', $directory . '/' . $existing['file'] ) === $source['hash'] ) {
-				$urls[ $source['url'] ] = $base_url . $existing['file'];
+				$urls[ $source['url'] ]      = $base_url . $existing['file'];
+				$uploaded[ $source['hash'] ] = $existing['file'];
 				continue;
 			}
-			// The full-size source is already uploaded. Core includes it natively.
-			if ( hash_file( 'sha256', $attached_file ) === $source['hash'] ) {
+			// Core includes the full-size width natively; other descriptors need aliases.
+			if ( $width === (int) $metadata['width'] && hash_file( 'sha256', $attached_file ) === $source['hash'] ) {
 				$urls[ $source['url'] ] = $attached_url;
 				continue;
 			}
-			$name = wp_unique_filename( $directory, basename( $source['file'] ) );
-			if ( ! copy( $source['file'], $directory . '/' . $name ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Copy verified local rendition beside its owning attachment.
-				return array();
+			$name = $uploaded[ $source['hash'] ] ?? null;
+			if ( null === $name ) {
+				$name = wp_unique_filename( $directory, basename( $source['file'] ) );
+				if ( ! copy( $source['file'], $directory . '/' . $name ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Copy verified local rendition beside its owning attachment.
+					return array();
+				}
+				$uploaded[ $source['hash'] ] = $name;
 			}
 			$metadata['sizes'][ $key ] = array(
 				'file'      => $name,
