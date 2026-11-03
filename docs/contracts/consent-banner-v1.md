@@ -30,8 +30,9 @@ With registered `jetpack/cookie-consent`, activation writes valid serialized mar
 The v1 fact accepts an optional `presentation` object. Existing `span`, `edge_offset`, `padding`, font typography, and button presentation remain supported. `edge_offset` targets `top` when `position` is `top`, otherwise `bottom`.
 
 - `text_margin`: one to four typed lengths (for example `"0px"`), applied to the message paragraph.
+- `button.border_width`: a single typed length; `button.border_style`: `solid`, `dashed`, `dotted`, `double`, or `none`; `button.border_color`: a color accepted by the existing color validator. These serialize through `core/button`'s `style.border` with matching inline styles and border color class.
 - `button.line_height`: a single typed length, serialized through `core/button`'s `style.typography.lineHeight`.
-- `layout`: a list of entries with required `direction` (`row` or `column`), optional `align_items` (`center`, `flex-start`, `flex-end`, `stretch`), and optional `button_align` (`start`, `end`). Optional `min_width` and `max_width` are finite nonnegative pixel numbers, with minimum no greater than maximum. Bounds are inclusive media queries; an entry without bounds applies at all widths. In column layouts, `button_align` aligns the buttons at the requested horizontal end.
+- `layout`: a list of entries with required `direction` (`row` or `column`), optional `align_items` (`center`, `flex-start`, `flex-end`, `stretch`), and optional `button_align` (`start`, `end`). Optional `min_width` and `max_width` are finite nonnegative pixel numbers, with minimum no greater than maximum. Bounds are inclusive media queries; an entry without bounds applies at all widths. In column layouts, `button_align` aligns the buttons at the requested horizontal end. Optional per-entry `text_margin` accepts the same typed length shorthand as the top-level field and overrides that fallback inside the entry's media gate. Invalid per-entry margins reject that layout entry.
 
 For example: `"layout": [{"max_width":767,"direction":"column","button_align":"end"},{"min_width":768,"direction":"row","align_items":"center"}]`.
 

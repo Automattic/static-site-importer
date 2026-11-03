@@ -117,6 +117,9 @@ class Static_Site_Importer_Consent_Banner {
 		foreach ( $presentation['button'] ?? array() as $key => $value ) {
 			$mapping                                 = array(
 				'border_radius' => array( 'border', 'radius', 'border-radius' ),
+				'border_width'  => array( 'border', 'width', 'border-width' ),
+				'border_style'  => array( 'border', 'style', 'border-style' ),
+				'border_color'  => array( 'border', 'color', 'border-color' ),
 				'padding'       => array( 'spacing', 'padding', 'padding' ),
 				'font_size'     => array( 'typography', 'fontSize', 'font-size' ),
 				'font_family'   => array( 'typography', 'fontFamily', 'font-family' ),
@@ -127,7 +130,7 @@ class Static_Site_Importer_Consent_Banner {
 			$button_css                             .= $css_property . ':' . $value . ';';
 		}
 		$button_attrs = array( 'style' => $button_style );
-		$button_html  = '<div class="wp-block-button"><a class="wp-block-button__link' . self::color_classes( $button ) . ( isset( $button_style['typography']['fontSize'] ) ? ' has-custom-font-size' : '' ) . ' wp-element-button"' . self::style_attribute( $button, $button_css ) . '>' . esc_html( $fact['accept_label'] ) . '</a></div>';
+		$button_html  = '<div class="wp-block-button"><a class="wp-block-button__link' . self::color_classes( $button ) . ( isset( $button_style['border']['color'] ) ? ' has-border-color' : '' ) . ( isset( $button_style['typography']['fontSize'] ) ? ' has-custom-font-size' : '' ) . ' wp-element-button"' . self::style_attribute( $button, $button_css ) . '>' . esc_html( $fact['accept_label'] ) . '</a></div>';
 		$inner        = '<!-- wp:buttons -->' . "\n" . '<div class="wp-block-buttons"><!-- wp:button ' . wp_json_encode( $button_attrs ) . ' -->' . "\n" . $button_html . "\n" . '<!-- /wp:button --></div>' . "\n" . '<!-- /wp:buttons -->';
 		$attrs        = array( 'style' => array( 'color' => $banner ) );
 		$align        = 'wide';
@@ -185,7 +188,7 @@ class Static_Site_Importer_Consent_Banner {
 				$result[ $key ] = $value;
 			} elseif ( 'button' === $key && is_array( $value ) ) {
 				$result['button'] = array();
-				foreach ( array( 'border_radius', 'padding', 'font_size', 'font_family', 'line_height' ) as $property ) {
+				foreach ( array( 'border_radius', 'border_width', 'border_style', 'border_color', 'padding', 'font_size', 'font_family', 'line_height' ) as $property ) {
 					if ( self::presentation_value( $property, $value[ $property ] ?? null ) ) {
 						$result['button'][ $property ] = trim( $value[ $property ] );
 					}
@@ -209,6 +212,12 @@ class Static_Site_Importer_Consent_Banner {
 			return false;
 		}
 		$value = trim( $value );
+		if ( 'border_style' === $key ) {
+			return in_array( $value, array( 'solid', 'dashed', 'dotted', 'double', 'none' ), true );
+		}
+		if ( 'border_color' === $key ) {
+			return array() !== self::color_style( array( 'border' => $value ), 'border', 'unused' );
+		}
 		if ( 'font_family' === $key ) {
 			$family = '(?:[a-zA-Z][a-zA-Z0-9 -]*|"[a-zA-Z0-9 -]+"|\'[a-zA-Z0-9 -]+\')';
 			return 1 === preg_match( '/^' . $family . '(?:\\s*,\\s*' . $family . ')*$/D', $value );
@@ -239,7 +248,7 @@ class Static_Site_Importer_Consent_Banner {
 				return false;
 			}
 		}
-		return true;
+		return ! array_key_exists( 'text_margin', $entry ) || self::presentation_value( 'text_margin', $entry['text_margin'] );
 	}
 
 	/** Generated theme rules outrank Jetpack's two-class-specificity edge rule. */
@@ -276,6 +285,9 @@ class Static_Site_Importer_Consent_Banner {
 				}
 			}
 			$rules = $selector . '{flex-direction:' . $entry['direction'] . ';' . ( isset( $entry['align_items'] ) ? 'align-items:' . $entry['align_items'] . ';' : '' ) . '}';
+			if ( isset( $entry['text_margin'] ) ) {
+				$rules .= $selector . ' > p{margin:' . trim( $entry['text_margin'] ) . ';}';
+			}
 			if ( 'column' === $entry['direction'] && isset( $entry['button_align'] ) ) {
 				$end    = 'end' === $entry['button_align'];
 				$rules .= $selector . ' > .wp-block-buttons{align-self:flex-' . ( $end ? 'end' : 'start' ) . ';margin-left:' . ( $end ? 'auto' : '0' ) . ';margin-right:' . ( $end ? '0' : 'auto' ) . ';}';
