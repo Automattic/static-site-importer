@@ -23,7 +23,7 @@ const transformer = process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH
 // source order (Jetpack renders one field per control, then the submit).
 const SURFACES = {
 	source: {
-		form: 'main > form',
+		form: 'main form',
 		controls: 'form :is(input:not([type="hidden"]), select, textarea, button[type="submit"])',
 	},
 	front: {

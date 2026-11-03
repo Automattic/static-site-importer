@@ -290,10 +290,12 @@ class Static_Site_Importer_Form_Seeder {
 			'innerBlocks' => array( $root ),
 		);
 
-		// No wrapper/layout facts enter the overlay. Its presentation destinations
-		// still own label paint, input sizing and the textarea rows policy.
+		// No wrapper/layout facts enter the overlay except the form element's
+		// own item sizing: the provider container holds its old slot in the
+		// source parent's layout now. The presentation destinations still own
+		// label paint, input sizing and the textarea rows policy.
 		$presentation_form                       = $state->form;
-		$presentation_form['layout_graph']       = array( 'nodes' => array() );
+		$presentation_form['layout_graph']       = Static_Site_Importer_Form_Presentation::form_item_layout_graph( $state->form['layout_graph'] ?? null );
 		$presentation_form['presentation_graph'] = Static_Site_Importer_Form_Readable_Substitution::with_submit_item_placement( $state->form );
 		$state->presentation_descriptors         = array_intersect_key( $state->presentation_descriptors, $state->field_blocks );
 		$field_box_labels                        = array();

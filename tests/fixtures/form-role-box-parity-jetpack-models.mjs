@@ -466,11 +466,12 @@ export function editorBlockHtml( block, parent = null ) {
 // to both surfaces.
 const BUTTON_CSS = readFileSync( createRequire( import.meta.url ).resolve( '@wordpress/block-library/build-style/button/style.css' ), 'utf8' );
 
-/** The front end: block styles, then the theme's style.css, in a block theme's site wrapper. `layoutCss` as for editorDocument. */
+/** The front end: block styles, then the theme's style.css, in a block theme's site wrapper. `layoutCss` as for editorDocument. An optional `outerWrap` reproduces the source parent chain the imported page keeps around the provider form. */
 export function frontDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
 	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_FRONT_CSS, JETPACK_LAYOUT_CSS, JETPACK_FRONT_PHONE_CSS, JETPACK_COMBOBOX_CSS ].join( '\n' );
+	const inner = form.outerWrap ? form.outerWrap + form.frontHtml + '</div>' : form.frontHtml;
 	return `<!doctype html><html><head><style>${ providerCss }</style><style>${ form.css }</style></head>`
-		+ `<body><div class="wp-site-blocks"><div id="ssi-role-root">${ form.frontHtml }</div></div></body></html>`;
+		+ `<body><div class="wp-site-blocks"><div id="ssi-role-root">${ inner }</div></div></body></html>`;
 }
 
 /**
@@ -483,6 +484,7 @@ export function frontDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
 export function editorDocument( form, { layoutCss = CORE_LAYOUT_CSS } = {} ) {
 	const providerCss = [ BUTTON_CSS, layoutCss, JETPACK_EDITOR_CSS, JETPACK_LAYOUT_CSS, JETPACK_EDITOR_PHONE_CSS, JETPACK_COMBOBOX_CSS ].join( '\n' );
 	const blocks = form.blocks.map( ( block ) => editorBlockHtml( block ) ).join( '' );
+	const inner = form.outerWrap ? form.outerWrap + blocks + '</div>' : blocks;
 	return `<!doctype html><html><head><style>${ providerCss }</style><style>${ form.editorCss }</style></head>`
-		+ `<body class="editor-styles-wrapper block-editor-iframe__body"><div id="ssi-role-root" class="is-root-container is-layout-flow wp-block-post-content block-editor-block-list__layout">${ blocks }</div></body></html>`;
+		+ `<body class="editor-styles-wrapper block-editor-iframe__body"><div id="ssi-role-root" class="is-root-container is-layout-flow wp-block-post-content block-editor-block-list__layout">${ inner }</div></body></html>`;
 }

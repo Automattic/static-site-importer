@@ -332,6 +332,8 @@ function ssi_role_box_render_form( array $form ): string {
 		. $list
 		. "\t\t<input type='hidden' name='contact-form-id' value='1' />\n"
 		. "</form>\n</div>";
-	return $html;
+	// Contact_Form::parse(): jetpack_contact_form_html, the runtime's container
+	// scope stamp, in the runtime's registered priority order.
+	return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_scope( $html );
 }
 

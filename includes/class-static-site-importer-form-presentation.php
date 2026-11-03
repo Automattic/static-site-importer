@@ -250,6 +250,31 @@ final class Static_Site_Importer_Form_Presentation {
 	}
 
 	/**
+	 * The layout graph reduced to the form element's own node.
+	 *
+	 * The readable path keeps the source markup, so the source stylesheet
+	 * still owns every box fact it binds to the source form's classes. Only
+	 * the form element's own facts need the overlay: the provider wrappers
+	 * between the source parent and the source box hold its old slot in the
+	 * parent's flex or grid layout, and the outermost one must carry the
+	 * parent-referencing item sizing the parent reads.
+	 *
+	 * @param mixed $graph Producer computed layout graph.
+	 * @return array{nodes:array<int,array<string,mixed>>}
+	 * @internal
+	 */
+	public static function form_item_layout_graph( mixed $graph ): array {
+		$nodes = array();
+		foreach ( is_array( $graph['nodes'] ?? null ) ? $graph['nodes'] : array() as $node ) {
+			if ( is_array( $node ) && 'form' === ( $node['id'] ?? null ) ) {
+				$nodes[] = $node;
+				break;
+			}
+		}
+		return array( 'nodes' => $nodes );
+	}
+
+	/**
 	 * Whether a margin fact was captured through a sibling-combinator rule.
 	 *
 	 * A sibling-stacking utility (Tailwind's `space-y-*`) is authored as
