@@ -53,8 +53,15 @@ export const measure = ({ coverShare, exclusions, geometryOnly }) => {
     const label = el.getAttribute('aria-label') || el.querySelector?.('title')?.textContent || el.getAttribute('alt') || '';
     return label.trim() ? `svg:${label.trim().toLowerCase()}` : null;
   };
+  // An inline SVG is an image only when it draws something: an empty <svg>
+  // still lays out a box, but nothing in it paints.
+  const draws = (el) => {
+    if (el.tagName.toLowerCase() !== 'svg') return true;
+    const box = el.getBBox();
+    return box.width > 0 && box.height > 0;
+  };
   const media = [...document.querySelectorAll('img,svg,video'), ...[...document.body.querySelectorAll('*')].filter(background)]
-    .filter((el) => !el.parentElement?.closest('svg') && onTop(el) && !excluded(el))
+    .filter((el) => !el.parentElement?.closest('svg') && draws(el) && onTop(el) && !excluded(el))
     .map((el) => {
       const r = el.getBoundingClientRect();
       // Icons in a labelled group (a social bar) are one finding, not one per link.
