@@ -24,6 +24,11 @@ for (const item of triage.tracked) {
     if (refutation) { held.push({ pr: pr.url, reason: `defect still reproduces: ${refutation.cells.map((c) => `${c.route}@${c.width}`).join(', ')}` }); continue; }
     const checks = pr.statusCheckRollup || [];
     const red = checks.filter((c) => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion || c.state));
+    // GitHub computes mergeability lazily; UNKNOWN settles within seconds.
+    for (let attempt = 0; pr.mergeable === 'UNKNOWN' && attempt < 6; attempt++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+      pr.mergeable = JSON.parse(gh('pr', 'view', pr.url, '--json', 'mergeable')).mergeable;
+    }
     if (pr.isDraft) { held.push({ pr: pr.url, reason: 'draft' }); continue; }
     if (pr.mergeable !== 'MERGEABLE') { held.push({ pr: pr.url, reason: `mergeable=${pr.mergeable}` }); continue; }
     if (!checks.length || red.length) { held.push({ pr: pr.url, reason: checks.length ? `checks not green: ${red.map((c) => c.name || c.context).join(', ')}` : 'no checks reported' }); continue; }
