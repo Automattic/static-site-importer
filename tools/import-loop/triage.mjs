@@ -21,6 +21,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { chromium } from 'playwright';
 import { args, gh, linkedPullRequests, predicateEnv, predicateExit } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -147,7 +148,8 @@ function acceptanceGate(item, repo) {
     checked
       ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
       : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
-    ...(checked ? [`root="$PWD/${repo.predicate_root}"; failed=0`] : []),
+    // Gates run under a private HOME: pin the browsers this HOME installed.
+    ...(checked ? [`export PLAYWRIGHT_BROWSERS_PATH='${process.env.PLAYWRIGHT_BROWSERS_PATH || chromium.executablePath().replace(/(ms-playwright).*$/, '$1')}'`, `root="$PWD/${repo.predicate_root}"; failed=0`] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
       return `PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
