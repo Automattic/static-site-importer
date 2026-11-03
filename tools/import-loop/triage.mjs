@@ -184,7 +184,7 @@ function acceptanceGate(item, repo) {
     ...(checked ? [
       `root="$PWD/${repo.predicate_root}"; failed=0; site=$(mktemp -d)`,
       `trap 'kill $(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$site"' EXIT`,
-      `url=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$root" '${reimport.capture}' "$site") || exit 1; url=\${url##*$'\n'}`,
+      `url=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$root" '${reimport.capture}' "$site") || exit 1; url=$(tail -n1 <<<"$url")`,
     ] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
