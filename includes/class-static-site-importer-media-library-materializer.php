@@ -640,13 +640,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					return $result;
 				}
 			}
+			$documents = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
+			$families  = self::plan_srcset_families( $documents, $assets, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) );
+			// Owners must resolve before the ordinary asset sweep, regardless of
+			// filename order. Failed/non-width families fall back to attachments.
+			$by_target   = array_column( $assets, null, 'target_path' );
+			$assets      = array_replace( array_intersect_key( $by_target, $families ), $by_target );
 			$attachments = array();
 			$by_hash     = array();
 			$resolutions = array();
 			$error       = null;
 			foreach ( $assets as $asset ) {
-				$alt       = '';
-				$documents = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
+				if ( isset( $resolutions[ $asset['token'] ] ) ) {
+					continue;
+				}
+				$alt = '';
 				foreach ( $documents as $page ) {
 					$markup = (string) ( $page['resolved_block_markup'] ?? '' );
 					if ( preg_match_all( '/<img\\b[^>]*>/i', $markup, $tags ) ) {
@@ -682,6 +690,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					'id'  => $id,
 					'url' => wp_get_attachment_url( $id ),
 				);
+				foreach ( $families[ $asset['target_path'] ] ?? array() as $family ) {
+					$urls = self::register_srcset_renditions( $family['srcset'], $id, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ), $dir, $state );
+					foreach ( $family['tokens'] as $url => $token ) {
+						if ( isset( $urls[ $url ] ) && ! isset( $resolutions[ $token ] ) ) {
+							$resolutions[ $token ] = array(
+								'id'  => $id,
+								'url' => $urls[ $url ],
+							);
+						}
+					}
+				}
 			}
 			return $resolutions;
 		} finally {
@@ -697,6 +716,83 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Find width-family owners in the resolved plan, protecting independently
+	 * referenced files. Registration remains responsible for validating pixels,
+	 * capture records and descriptors before any candidate token is folded.
+	 *
+	 * @return array<string,array> Families keyed by their src target path.
+	 */
+	private static function plan_srcset_families( array $documents, array $assets, string $theme_uri ): array {
+		$by_url    = array();
+		$protected = array();
+		$images    = array();
+		foreach ( $assets as $asset ) {
+			$by_url[ $theme_uri . '/' . $asset['target_path'] ] = $asset;
+		}
+		foreach ( $documents as $document ) {
+			$markup = (string) ( $document['resolved_block_markup'] ?? '' );
+			// Responsive-media and other dynamic blocks serialize their HTML in
+			// attributes rather than an inner tag. Inspect those strings too.
+			preg_match_all( '/<!-- wp:[^\s]+\s+(\{.*?\})\s*\/?-->/s', $markup, $openers );
+			foreach ( $openers[1] as $json ) {
+				$attributes = json_decode( $json, true );
+				if ( is_array( $attributes ) ) {
+					// Image blocks keep their responsive selection as structured
+					// metadata, without an inner img carrying these attributes.
+					$selection = $attributes['metadata']['blocksEngineImageSelection'] ?? null;
+					if ( is_array( $selection ) && is_string( $selection['src'] ?? null ) ) {
+						$protected[ $selection['src'] ] = true;
+						if ( is_string( $selection['srcset'] ?? null ) && isset( $by_url[ $selection['src'] ] ) ) {
+							$images[] = $selection;
+						}
+					}
+					array_walk_recursive(
+						$attributes,
+						static function ( $value ) use ( &$markup ): void {
+							if ( is_string( $value ) ) {
+								$markup .= "\n" . $value;
+							}
+						}
+					);
+				}
+			}
+			preg_match_all( '/<[a-z][^>]*>/i', $markup, $tags );
+			foreach ( $tags[0] as $tag ) {
+				$attributes = array();
+				preg_match_all( '/\s(src|href|srcset)\s*=\s*([\'"])(.*?)\2/is', $tag, $matches, PREG_SET_ORDER );
+				foreach ( $matches as $match ) {
+					$attributes[ strtolower( $match[1] ) ] = html_entity_decode( $match[3], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+				}
+				foreach ( array( 'src', 'href' ) as $attribute ) {
+					if ( isset( $attributes[ $attribute ] ) ) {
+						$protected[ $attributes[ $attribute ] ] = true;
+					}
+				}
+				if ( preg_match( '/^<img\b/i', $tag ) && isset( $attributes['src'], $attributes['srcset'], $by_url[ $attributes['src'] ] ) ) {
+					$images[] = $attributes;
+				}
+			}
+		}
+		$families = array();
+		foreach ( $images as $image ) {
+			$tokens = array();
+			foreach ( \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::parse( $image['srcset'] ) as $candidate ) {
+				$url = $candidate['url'];
+				if ( isset( $by_url[ $url ] ) && ! isset( $protected[ $url ] ) ) {
+					$tokens[ $url ] = $by_url[ $url ]['token'];
+				}
+			}
+			if ( ! empty( $tokens ) ) {
+				$families[ $by_url[ $image['src'] ]['target_path'] ][] = array(
+					'srcset' => $image['srcset'],
+					'tokens' => $tokens,
+				);
+			}
+		}
+		return $families;
 	}
 
 	/**
