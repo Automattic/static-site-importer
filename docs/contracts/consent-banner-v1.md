@@ -25,6 +25,18 @@ When dependency materialization is enabled, consent intent declares Jetpack thro
 
 With registered `jetpack/cookie-consent`, activation writes valid serialized markup to `cookie_consent_template`, never to page content. `completed.consent_banner` reports the option owner and status. The option joins the existing transaction journal: rollback deletes a newly created option or restores its previous value. Without the registered block, no option is written and one `consent_banner_not_materialized` finding names the missing runtime. Jetpack owns footer rendering on all routes, expiry, stored consent and WordAds CMP suppression; no replacement banner runtime is shipped.
 
+## Optional presentation
+
+The v1 fact accepts an optional `presentation` object. Existing `span`, `edge_offset`, `padding`, font typography, and button presentation remain supported. `edge_offset` targets `top` when `position` is `top`, otherwise `bottom`.
+
+- `text_margin`: one to four typed lengths (for example `"0px"`), applied to the message paragraph.
+- `button.line_height`: a single typed length, serialized through `core/button`'s `style.typography.lineHeight`.
+- `layout`: a list of entries with required `direction` (`row` or `column`), optional `align_items` (`center`, `flex-start`, `flex-end`, `stretch`), and optional `button_align` (`start`, `end`). Optional `min_width` and `max_width` are finite nonnegative pixel numbers, with minimum no greater than maximum. Bounds are inclusive media queries; an entry without bounds applies at all widths. In column layouts, `button_align` aligns the buttons at the requested horizontal end.
+
+For example: `"layout": [{"max_width":767,"direction":"column","button_align":"end"},{"min_width":768,"direction":"row","align_items":"center"}]`.
+
+Typed lengths accept zero or nonnegative numeric values with supported CSS length units, never arbitrary declarations or functions. Invalid fields or layout entries are ignored. When valid text margin or layout is provided, the paragraph flexes and the banner does not wrap. Generated rules are scoped to `.ssi-consent-banner`; without these new fields, existing output is unchanged.
+
 ## Verification
 
 `tests/fixtures/consent-banner/` is a neutral two-route import intent. The WordPress acceptance imports through the installed Composer compiler and normal persistence, exercises Jetpack's actual footer, cookie/CMP suppression, and rollback; run it with `wp eval-file tests/acceptance/consent-banner-wordpress.php` in a disposable WordPress site with the importer active. Run once with Jetpack's Blocks module active and once without Jetpack (with the option initially absent). `consent-banner-browser.mjs` checks both routes, real accept click and reload; set `SSI_CONSENT_ORIGIN` to that site.

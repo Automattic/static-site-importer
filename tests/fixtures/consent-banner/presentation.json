@@ -21,10 +21,16 @@
     "font_family": "Calibri, sans-serif",
     "font_size": "15px",
     "line_height": "18px",
+    "text_margin": "0px",
+    "layout": [
+      { "max_width": 767, "direction": "column", "button_align": "end" },
+      { "min_width": 768, "direction": "row", "align_items": "center" }
+    ],
     "button": {
       "border_radius": "5px",
       "padding": "8px 40px",
-      "font_size": "13.5px"
+      "font_size": "13.5px",
+      "line_height": "16.2px"
     }
   }
 }

@@ -26,8 +26,18 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.match(markup, /"spacing":\{"padding":"12px"\}/);
  assert.match(markup, /"border":\{"radius":"5px"\}/);
  assert.match(markup, /"spacing":\{"padding":"8px 40px"\}/);
- assert.match(markup, /"typography":\{"fontSize":"13.5px"\}/);
- assert.equal(run('css'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
+ assert.match(markup, /"typography":\{"fontSize":"13.5px","lineHeight":"16.2px"\}/);
+ assert.match(markup, /line-height:16\.2px/);
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ const css = run('css');
+ assert.ok(css.includes(`${selector}{bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
+ assert.ok(css.includes(`${selector} > p{flex:1 1 auto;margin:0px;}`));
+ assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > .wp-block-buttons{align-self:flex-end;margin-left:auto;margin-right:0;}}`));
+ assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:row;align-items:center;}}`));
+ assert.ok(run('top').includes(`${selector}{top:0px;`));
+ assert.doesNotMatch(run('top'), /bottom:/);
+ assert.doesNotMatch(run('hostile'), /flex-direction|flex-wrap|margin:|line-height:/);
+ assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
  assert.doesNotMatch(run('hostile'), /display:none|body\{/);
 });
 test('consent intent serializes against actual Jetpack save and core buttons', () => {
