@@ -25,6 +25,9 @@
     },
     "slug": {
       "required": true
+    },
+    "wp_cli": {
+      "default": "studio wp"
     }
   },
   "env": {
@@ -112,7 +115,9 @@
           "--prev",
           "{{inputs.prev}}",
           "--prev-merged",
-          "{{inputs.prev_merged}}"
+          "{{inputs.prev_merged}}",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
         ]
       }
     },
@@ -165,7 +170,9 @@
           "--blocks-engine",
           "{{inputs.blocks_engine}}",
           "--work",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm"
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
         ]
       }
     },
@@ -261,7 +268,9 @@
         "--input",
         "prev={{steps.triage.output/signatures}}",
         "--input",
-        "prev_merged={{steps.merge.output/merged_count}}"
+        "prev_merged={{steps.merge.output/merged_count}}",
+        "--input",
+        "wp_cli={{inputs.wp_cli}}"
       ]
     }
   ]

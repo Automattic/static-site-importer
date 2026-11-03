@@ -101,7 +101,7 @@ function reduceAndFile(finding) {
     '```sh',
     [
       `PREDICATE_TARGET='${env.PREDICATE_TARGET}'`,
-      `WORDPRESS_PATH=<wordpress with static-site-importer active> WP_CLI='${env.WP_CLI}'`,
+      `WORDPRESS_PATH=<wordpress with static-site-importer active> WP_CLI='studio wp'`,
       `node tools/import-loop/predicates/${finding.check}.mjs <blocks-engine>/php-transformer reduced.html`,
     ].join(' \\\n  '),
     '```',

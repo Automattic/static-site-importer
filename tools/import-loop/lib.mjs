@@ -21,7 +21,9 @@ export const predicateEnv = (subject, cell, site) => ({
   ...process.env,
   PREDICATE_TARGET: JSON.stringify({ subject, width: cell.width || 1440, evidence: cell.evidence }),
   WORDPRESS_PATH: site,
-  WP_CLI: process.env.WP_CLI || 'studio wp',
+  // Gates run under a private HOME, where `studio wp` cannot find its sites:
+  // the loop passes a WP-CLI that reads the site from its path alone.
+  WP_CLI: args['wp-cli'] || process.env.WP_CLI || 'studio wp',
 });
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
