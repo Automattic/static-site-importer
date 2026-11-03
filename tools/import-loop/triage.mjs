@@ -140,16 +140,24 @@ for (const finding of blockers) {
 // predicates run this repository's code, the defect is gone from every
 // acceptance cell. The gate runs from the root of Cook's worktree; its
 // machine-local path reaches Cook as gate environment, not in the command.
+// One bare WordPress per runs directory serves every pass's contracts.
+const BARE_WP = args['bare-wp'] || path.join(path.dirname(path.resolve(args.work)), 'bare-wp');
+
 function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
   const checked = repo.predicate_root && item.cells.length;
+  // Contracts CI runs that the repository's verify command does not.
+  const contracts = repo.contracts ? path.join(here, repo.contracts) : null;
+  if (contracts) execFileSync('bash', [path.join(here, 'gates/bare-wp.sh'), BARE_WP], { stdio: ['ignore', 'ignore', 'inherit'] });
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
+    // Gates run under a private HOME: pin the browsers this HOME installed.
+    `export PLAYWRIGHT_BROWSERS_PATH='${process.env.PLAYWRIGHT_BROWSERS_PATH || chromium.executablePath().replace(/(ms-playwright).*$/, '$1')}'`,
+    ...(contracts ? [`BARE_WP='${BARE_WP}' bash '${contracts}' || exit 1`] : []),
     checked
       ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
       : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
-    // Gates run under a private HOME: pin the browsers this HOME installed.
-    ...(checked ? [`export PLAYWRIGHT_BROWSERS_PATH='${process.env.PLAYWRIGHT_BROWSERS_PATH || chromium.executablePath().replace(/(ms-playwright).*$/, '$1')}'`, `root="$PWD/${repo.predicate_root}"; failed=0`] : []),
+    ...(checked ? [`root="$PWD/${repo.predicate_root}"; failed=0`] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
       return `PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
