@@ -378,6 +378,52 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( $selection['loading'], $bound['loading'] );
 	}
 
+	/** Distinct captured widths are native renditions of one attachment (#2566). */
+	public function test_distinct_source_widths_render_as_attachment_renditions(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$uri       = get_theme_root_uri() . '/' . $this->slug() . '/media/';
+		$widths    = array( 96, 226, 300, 532, 816, 1252, 1920 );
+		$selection = array(
+			'src'     => $uri . 'photo-1920.png',
+			'srcset'  => implode( ', ', array_map( static fn( int $width ): string => $uri . 'photo-' . $width . '.png ' . $width . 'w', $widths ) ),
+			'sizes'   => 'auto, min(100vw, 1200px), 100vw',
+			'loading' => 'lazy',
+		);
+		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
+		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $selection['src'] . '" alt="Photo"/></figure><!-- /wp:image -->';
+		$state     = $this->state_with_page( $markup );
+		foreach ( $widths as $width ) {
+			$image = imagecreatetruecolor( $width, (int) ( $width / 2 ) );
+			imagefilledrectangle( $image, 0, 0, 10, 10, $width );
+			imagepng( $image, $this->theme_dir . '/media/photo-' . $width . '.png' );
+			unset( $image );
+		}
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertIsArray( $report );
+		$this->assertSame( 1, $report['attachment_count'] );
+		$this->assertCount( 1, $state['applied']['attachments'] );
+		$content  = get_post_field( 'post_content', $state['source_ids']['website/index.html'] );
+		$block    = parse_blocks( $content )[0];
+		$id       = $block['attrs']['id'];
+		$metadata = wp_get_attachment_metadata( $id );
+		$this->assertStringContainsString( 'sizes="' . $selection['sizes'] . '"', $block['innerHTML'] );
+		$rendered = wp_filter_content_tags( do_blocks( $content ), 'the_content' );
+		$tags     = new WP_HTML_Tag_Processor( $rendered );
+		$this->assertTrue( $tags->next_tag( 'IMG' ) );
+		$this->assertSame( $selection['sizes'], $tags->get_attribute( 'sizes' ) );
+		$this->assertSame( 'lazy', $tags->get_attribute( 'loading' ) );
+		$srcset = (string) $tags->get_attribute( 'srcset' );
+		$this->assertNotEmpty( $srcset );
+		foreach ( $widths as $width ) {
+			$file = 1920 === $width ? basename( get_attached_file( $id ) ) : $metadata['sizes'][ 'ssi-source-' . $width ]['file'];
+			$url  = trailingslashit( dirname( wp_get_attachment_url( $id ) ) ) . $file;
+			$this->assertStringContainsString( $url . ' ' . $width . 'w', $srcset );
+			$this->assertStringContainsString( $url . ' ' . $width . 'w', wp_get_attachment_image_srcset( $id, 'full' ) );
+			$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/photo-' . $width . '.png' ), hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $file ) );
+		}
+	}
+
 	/** An owner's existing site icon is kept. */
 	public function test_existing_site_icon_is_kept(): void {
 		update_option( 'site_icon', 999999 );

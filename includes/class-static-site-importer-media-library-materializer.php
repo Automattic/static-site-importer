@@ -432,7 +432,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		if ( $authored ) {
 			$candidate_ids = array();
-			$srcset        = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $candidate_ids );
+			$srcset        = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $candidate_ids, $attachment_id );
 			if ( null !== $error ) {
 				return $block_match[0];
 			}
@@ -452,6 +452,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					'srcset' => $srcset,
 				)
 			);
+		}
+
+		if ( $authored ) {
+			foreach ( array( 'sizes', 'loading' ) as $attribute ) {
+				if ( is_string( $selection[ $attribute ] ?? null ) ) {
+					$tags->set_attribute( $attribute, $selection[ $attribute ] );
+				}
+			}
 		}
 
 		$attrs['id'] = $attachment_id;
@@ -1240,16 +1248,23 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $attachments
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
-	 * @param int[]|null $candidate_ids Optional resolved candidate IDs, including 0 for unbound URLs.
+	 * @param int[]|null                                                                    $candidate_ids Optional resolved candidate IDs, including 0 for unbound URLs.
 	 * @param-out ($candidate_ids is null ? null : int[]) $candidate_ids
 	 */
-	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, ?array &$candidate_ids = null ): string {
+	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, ?array &$candidate_ids = null, int $attachment_id = 0 ): string {
+		$renditions = $attachment_id > 0 ? self::register_srcset_renditions( $srcset, $attachment_id, $theme_uri, $theme_dir, $state ) : array();
 		// Candidate commas belong to the shared producer parser, not the URL
 		// scanner used for arbitrary markup. Descriptorless candidates end in
 		// commas while URL-internal commas remain part of the asset identity.
 		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite(
 			html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
-			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error, &$candidate_ids ): string {
+			static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error, &$candidate_ids, $renditions, $attachment_id ): string {
+				if ( isset( $renditions[ $url ] ) ) {
+					if ( null !== $candidate_ids ) {
+						$candidate_ids[] = $attachment_id;
+					}
+					return $renditions[ $url ];
+				}
 				$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
 				if ( null !== $candidate_ids ) {
 					$candidate_ids[] = $id;
@@ -1263,6 +1278,92 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				return is_string( $canonical ) && '' !== $canonical ? $canonical : $url;
 			}
 		);
+	}
+
+	/**
+	 * Register a complete, distinct width family on its image, not as attachments.
+	 * Mixed, collapsed, density and art-directed families keep the legacy path.
+	 *
+	 * @return array<string,string> Uploaded rendition URLs keyed by authored URL.
+	 */
+	private static function register_srcset_renditions( string $srcset, int $attachment_id, string $theme_uri, string $theme_dir, array $state ): array {
+		$metadata = wp_get_attachment_metadata( $attachment_id );
+		if ( empty( $metadata['width'] ) || empty( $metadata['height'] ) ) {
+			return array();
+		}
+		$candidates = \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::parse( html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+		$files      = array();
+		$hashes     = array();
+		foreach ( $candidates as $candidate ) {
+			$relative = self::theme_relative_raster( $candidate['url'], $theme_uri );
+			if ( null === $relative || ! preg_match( '/^([1-9][0-9]*)w$/', $candidate['descriptor'], $match ) ) {
+				return array();
+			}
+			$file = $theme_dir . '/' . $relative;
+			if ( ! is_readable( $file ) ) {
+				return array();
+			}
+			$size = wp_getimagesize( $file );
+			$hash = hash_file( 'sha256', $file );
+			if ( ! $size || (int) $match[1] !== $size[0] || ! wp_image_matches_ratio( $metadata['width'], $metadata['height'], $size[0], $size[1] ) || false === $hash || isset( $hashes[ $hash ] ) || isset( $files[ $size[0] ] ) ) {
+				return array();
+			}
+			$record = $state['staged_resource_records'][ $relative ] ?? null;
+			if ( is_array( $record ) ) {
+				require_once __DIR__ . '/class-static-site-importer-image-assets.php';
+				if ( ! Static_Site_Importer_Image_Assets::verify( $file, $record ) ) {
+					return array();
+				}
+			}
+			$hashes[ $hash ]   = true;
+			$files[ $size[0] ] = array(
+				'file'   => $file,
+				'url'    => $candidate['url'],
+				'height' => $size[1],
+				'mime'   => $size['mime'],
+				'hash'   => $hash,
+			);
+		}
+		if ( count( $files ) < 2 ) {
+			return array();
+		}
+
+		$attached_file = get_attached_file( $attachment_id );
+		$attached_url  = wp_get_attachment_url( $attachment_id );
+		if ( ! is_string( $attached_file ) || ! is_string( $attached_url ) || ! is_readable( $attached_file ) ) {
+			return array();
+		}
+		$directory = dirname( $attached_file );
+		$base_url  = trailingslashit( dirname( $attached_url ) );
+		$urls      = array();
+		foreach ( $files as $width => $source ) {
+			$key      = 'ssi-source-' . $width;
+			$existing = $metadata['sizes'][ $key ] ?? null;
+			if ( is_array( $existing ) && is_readable( $directory . '/' . $existing['file'] ) && hash_file( 'sha256', $directory . '/' . $existing['file'] ) === $source['hash'] ) {
+				$urls[ $source['url'] ] = $base_url . $existing['file'];
+				continue;
+			}
+			// The full-size source is already uploaded. Core includes it natively.
+			if ( hash_file( 'sha256', $attached_file ) === $source['hash'] ) {
+				$urls[ $source['url'] ] = $attached_url;
+				continue;
+			}
+			$name = wp_unique_filename( $directory, basename( $source['file'] ) );
+			if ( ! copy( $source['file'], $directory . '/' . $name ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Copy verified local rendition beside its owning attachment.
+				return array();
+			}
+			$metadata['sizes'][ $key ] = array(
+				'file'      => $name,
+				'width'     => $width,
+				'height'    => $source['height'],
+				'mime-type' => $source['mime'],
+				'filesize'  => filesize( $source['file'] ),
+			);
+			$urls[ $source['url'] ]    = $base_url . $name;
+			// Persist immediately so rollback via core owns every copied file.
+			wp_update_attachment_metadata( $attachment_id, $metadata );
+		}
+		return $urls;
 	}
 
 	/**
