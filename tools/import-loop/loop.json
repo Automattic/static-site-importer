@@ -144,7 +144,8 @@
         "backend": "pi",
         "model": "roadie/cook-heavy",
         "acknowledge-model-override": true,
-        "gate-env": "{{item.gate_env}}"
+        "gate-env": "{{item.gate_env}}",
+        "provider-evidence": "{{item.provider_evidence}}"
       }
     },
     {

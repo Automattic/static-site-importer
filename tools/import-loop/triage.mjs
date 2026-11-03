@@ -192,7 +192,9 @@ function acceptanceGate(item, repo) {
     }),
     checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
-  return { verify: `(${repo.verify}) && bash "$ACCEPT_GATE"`, gate_env: `ACCEPT_GATE=${gate}` };
+  // Prompts stay free of machine-local paths: the agent receives the gate as
+  // declared provider evidence, the verify command through gate environment.
+  return { verify: `(${repo.verify}) && bash "$ACCEPT_GATE"`, gate_env: `ACCEPT_GATE=${gate}`, provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }) };
 }
 
 const cook_items = [];
@@ -219,8 +221,8 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        `- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that: from your worktree root, \`bash ${gate.gate_env.split('=')[1]}\` re-imports the capture through the Static Site Importer release with your transformer and runs the predicate on each cell (exit 1 per cell means fixed). Cook runs it before your change can be published.`,
-        `- To inspect the import, \`SSI_ZIP=${reimport.ssi_zip} BARE_WP=${BARE_WP} bash ${path.join(here, 'gates/reimport.sh')} php-transformer ${reimport.capture} <dir>\` serves it and prints its URL. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.`,
+        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate`: run it with bash from your worktree root. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed).',
+        '- Its `reimport.sh` line also runs on its own and prints the imported site\'s URL, for inspecting the import. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
