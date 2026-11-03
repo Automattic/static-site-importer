@@ -383,24 +383,32 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	 *
 	 * @dataProvider source_width_families
 	 * @param array<int,int> $family Authored widths mapped to source pixel widths.
+	 * @param bool           $webp Use the real capture's WebP filenames and dimensions.
 	 */
-	public function test_distinct_source_widths_render_as_attachment_renditions( array $family ): void {
+	public function test_distinct_source_widths_render_as_attachment_renditions( array $family, bool $webp = false ): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$uri       = get_theme_root_uri() . '/' . $this->slug() . '/media/';
 		$widths    = array_keys( $family );
+		$names     = $webp ? array( 1920 => 'dg0a5086-high.webp', 532 => 'dg0a5086-high-db8b14642384.webp', 1252 => 'dg0a5086-high-91fcb7c720cc.webp' ) : array();
+		$filename  = static fn( int $width ): string => $names[ $width ] ?? 'photo-' . $width . '.png';
 		$selection = array(
-			'src'     => $uri . 'photo-1920.png',
-			'srcset'  => implode( ', ', array_map( static fn( int $width ): string => $uri . 'photo-' . $family[ $width ] . '.png ' . $width . 'w', $widths ) ),
+			'src'     => $uri . $filename( 1920 ),
+			'srcset'  => implode( ', ', array_map( static fn( int $width ): string => $uri . $filename( $family[ $width ] ) . ' ' . $width . 'w', $widths ) ),
 			'sizes'   => 'auto, min(100vw, 1200px), 100vw',
 			'loading' => 'lazy',
 		);
 		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
-		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $selection['src'] . '" alt="Photo"/></figure><!-- /wp:image -->';
+		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $selection['src'] . '"' . ( $webp ? ' srcset="' . $selection['srcset'] . '"' : '' ) . ' alt="Photo"/></figure><!-- /wp:image -->';
 		$state     = $this->state_with_page( $markup );
 		foreach ( array_unique( $family ) as $width ) {
-			$image = imagecreatetruecolor( $width, (int) round( $width / 2 ) );
+			$height = $webp ? array( 1920 => 1788, 532 => 495, 1252 => 1166 )[ $width ] : (int) round( $width / 2 );
+			$image = imagecreatetruecolor( $width, $height );
 			imagefilledrectangle( $image, 0, 0, 10, 10, $width );
-			imagepng( $image, $this->theme_dir . '/media/photo-' . $width . '.png' );
+			if ( $webp ) {
+				imagewebp( $image, $this->theme_dir . '/media/' . $filename( $width ) );
+			} else {
+				imagepng( $image, $this->theme_dir . '/media/' . $filename( $width ) );
+			}
 			unset( $image );
 		}
 
@@ -412,6 +420,10 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$block    = parse_blocks( $content )[0];
 		$id       = $block['attrs']['id'];
 		$metadata = wp_get_attachment_metadata( $id );
+		if ( $webp ) {
+			$this->assertArrayHasKey( 'ssi-source-532', $metadata['sizes'] );
+			$this->assertArrayHasKey( 'ssi-source-1252', $metadata['sizes'] );
+		}
 		$this->assertStringContainsString( 'sizes="' . $selection['sizes'] . '"', $block['innerHTML'] );
 		$rendered = wp_filter_content_tags( do_blocks( $content ), 'the_content' );
 		$tags     = new WP_HTML_Tag_Processor( $rendered );
@@ -425,22 +437,77 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 			$url  = trailingslashit( dirname( wp_get_attachment_url( $id ) ) ) . $file;
 			$this->assertStringContainsString( $url . ' ' . $width . 'w', $srcset );
 			$this->assertStringContainsString( $url . ' ' . $width . 'w', wp_get_attachment_image_srcset( $id, 'full' ) );
-			$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/photo-' . $family[ $width ] . '.png' ), hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $file ) );
+			$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/' . $filename( $family[ $width ] ) ), hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $file ) );
 			if ( 1920 === $family[ $width ] ) {
 				$this->assertSame( wp_get_original_image_url( $id ), $url, 'collapsed descriptors bind to the original upload' );
 			} else {
 				$this->assertSame( $width, $metadata['sizes'][ 'ssi-source-' . $width ]['width'] );
-				$this->assertSame( (int) round( $width * round( $family[ $width ] / 2 ) / $family[ $width ] ), $metadata['sizes'][ 'ssi-source-' . $width ]['height'] );
+				$this->assertSame( $webp ? array( 532 => 495, 1252 => 1166 )[ $width ] : (int) round( $width * round( $family[ $width ] / 2 ) / $family[ $width ] ), $metadata['sizes'][ 'ssi-source-' . $width ]['height'] );
 			}
 		}
 	}
 
-	/** @return array<string,array{array<int,int>}> */
+	/** @return array<string,array{array<int,int>,bool?}> */
 	public static function source_width_families(): array {
 		return array(
+			'real mixed WebP family' => array( array( 96 => 1920, 147 => 1920, 226 => 1920, 347 => 1920, 532 => 532, 816 => 1920, 1252 => 1252, 1920 => 1920 ), true ),
 			'distinct' => array( array( 96 => 96, 226 => 226, 300 => 300, 532 => 532, 816 => 816, 1252 => 1252, 1920 => 1920 ) ),
 			'mixed with descriptor mismatch' => array( array( 96 => 1920, 226 => 1920, 532 => 523, 816 => 816, 1920 => 1920 ) ),
 		);
+	}
+
+	/** Generated companion hooks distinguish authored auto from core's addition. */
+	public function test_companion_preserves_only_authored_auto_through_the_content(): void {
+		$method = new ReflectionMethod( Static_Site_Importer_Companion_Plugin::class, 'main_plugin_file' );
+		$source = $method->invoke( null, 'Image test', array(), 'ssi-image-test', 'sizes', 'Forms', 'Links', 'Metrics', 'Grid' );
+		$start  = strpos( $source, '/** Remember source-authored auto sizes' );
+		$end    = strpos( $source, '/** Register and enqueue declared editor-only scripts.' );
+		// Execute the generated image hooks without loading unrelated companion runtimes.
+		$original_filters = $GLOBALS['wp_filter']['render_block_core/image'] ?? null;
+		$original_filters = null !== $original_filters ? clone $original_filters : null;
+		eval( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::IMAGE_SELECTION_RENDERER ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Actual generated theme selection renderer.
+		eval( substr( $source, $start, $end - $start ) ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Trusted generated companion PHP under test.
+		$core_sizes = array();
+		$observe    = static function ( string $image ) use ( &$core_sizes ): string {
+			$tag = new WP_HTML_Tag_Processor( $image );
+			if ( $tag->next_tag( 'IMG' ) ) {
+				$core_sizes[] = $tag->get_attribute( 'sizes' );
+			}
+			return $image;
+		};
+		add_filter( 'wp_content_img_tag', $observe, 9 );
+		try {
+			$photo     = get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png';
+			$selection = array( 'src' => $photo, 'srcset' => $photo . ' 1408w', 'sizes' => 'auto, min(100vw, 1200px), 100vw', 'loading' => 'lazy' );
+			$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
+			$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $photo . '" alt=""/></figure><!-- /wp:image -->';
+			$state     = $this->state_with_page( $markup );
+			$image     = imagecreatetruecolor( 1408, 768 );
+			imagepng( $image, $this->theme_dir . '/media/photo.png' );
+			unset( $image );
+			$this->assertIsArray( Static_Site_Importer_Media_Library_Materializer::materialize( $state ) );
+			$content = get_post_field( 'post_content', $state['source_ids']['website/index.html'] );
+			$tags    = new WP_HTML_Tag_Processor( apply_filters( 'the_content', $content ) );
+			$this->assertTrue( $tags->next_tag( 'IMG' ) );
+			$this->assertSame( $selection['sizes'], $tags->get_attribute( 'sizes' ) );
+			$this->assertSame( 'lazy', $tags->get_attribute( 'loading' ) );
+
+			// Re-render the same attachment without authored auto, avoiding stale registry state.
+			$block = parse_blocks( $content )[0];
+			$block['attrs']['metadata']['blocksEngineImageSelection']['sizes'] = 'min(100vw, 1200px), 100vw';
+			$tags = new WP_HTML_Tag_Processor( apply_filters( 'the_content', serialize_block( $block ) ) );
+			$this->assertTrue( $tags->next_tag( 'IMG' ) );
+			$this->assertSame( 'min(100vw, 1200px), 100vw', $tags->get_attribute( 'sizes' ) );
+			$this->assertSame( array( $selection['sizes'], $selection['sizes'] ), $core_sizes, 'core supplies auto in both cases before the companion filter' );
+		} finally {
+			remove_filter( 'wp_content_img_tag', $observe, 9 );
+			if ( null === $original_filters ) {
+				unset( $GLOBALS['wp_filter']['render_block_core/image'] );
+			} else {
+				$GLOBALS['wp_filter']['render_block_core/image'] = $original_filters;
+			}
+			remove_filter( 'wp_content_img_tag', 'ssi_image_test_sizes_preserve_materialized_image_sizes', 10 );
+		}
 	}
 
 	/** An owner's existing site icon is kept. */

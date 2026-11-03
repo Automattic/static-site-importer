@@ -444,6 +444,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					$srcset = $attachment_srcset;
 				}
 			}
+			// Inline candidates belong to the same family. Bind them before the
+			// generic markup pass can import the theme files as new attachments.
+			if ( null !== $tags->get_attribute( 'srcset' ) ) {
+				$tags->set_attribute( 'srcset', $srcset );
+			}
 			// The selection stays keyed to the image it describes, now bound.
 			$attrs['metadata']['blocksEngineImageSelection'] = array_merge(
 				$selection,
@@ -1282,7 +1287,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 
 	/**
 	 * Register distinct files in a width family on its image, not as attachments.
-	 * Collapsed, density and art-directed families keep the legacy path.
+	 * Fully collapsed, density and art-directed families keep the legacy path.
 	 *
 	 * @return array<string,string> Uploaded rendition URLs keyed by authored URL.
 	 */
