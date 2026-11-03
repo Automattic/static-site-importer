@@ -16,6 +16,42 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	/** How a field-box label arranges its caption and control. */
 	private const FIELD_BOX_ARRANGEMENT_FACTS = array( 'display', 'flex_direction', 'gap', 'align_items', 'justify_content' );
 
+	/**
+	 * The box and flex-item facts of a control box's source frames that the
+	 * control they framed states on itself once the frames are gone. The
+	 * frames' own arrangement facts are how they laid their one child out, not
+	 * a box the provider control renders, and the frames' paint and inherited
+	 * custom properties follow their classes (with_control_box_classes()).
+	 */
+	private const CONTROL_BOX_ITEM_FACTS = array(
+		'width'               => true,
+		'min_width'           => true,
+		'max_width'           => true,
+		'height'              => true,
+		'min_height'          => true,
+		'max_height'          => true,
+		'box_sizing'          => true,
+		'flex'                => true,
+		'flex_grow'           => true,
+		'flex_shrink'         => true,
+		'flex_basis'          => true,
+		'align_self'          => true,
+		'justify_self'        => true,
+		'order'               => true,
+		'grid_column'         => true,
+		'grid_row'            => true,
+		'grid_area'           => true,
+		'margin'              => true,
+		'margin_top'          => true,
+		'margin_right'        => true,
+		'margin_bottom'       => true,
+		'margin_left'         => true,
+		'margin_block_start'  => true,
+		'margin_block_end'    => true,
+		'margin_inline_start' => true,
+		'margin_inline_end'   => true,
+	);
+
 	/** Older or partial producer trees must retain the projection path. */
 	public static function supports( array $form ): bool {
 		$tree = $form['readable_blocks'] ?? array();
@@ -371,9 +407,170 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			}
 			return Static_Site_Importer_Form_Field_Markup::parsed_block( $field );
 		}
+		if ( isset( $block['form_control_box'] ) && is_int( $block['form_control_box'] ) ) {
+			return self::control_box_field( $block, $state, $parent_name );
+		}
 		if ( self::is_provider_field_label( $block, $state ) ) {
 			return null;
 		}
+		return self::group_field( $block, $state );
+	}
+
+	/**
+	 * A shell marked `form_control_box` is the exclusive wrappers between the
+	 * caption level and one control (the producer's control-box shell). The
+	 * substituted provider field takes the whole shell's place, inside the
+	 * field box: the provider field renders the caption too, so the frame's
+	 * own arrangement would take the caption and control together where the
+	 * source frame held only the control. The frame's box applies to the
+	 * provider control instead: its classes ride the control element the
+	 * provider renders (the source stylesheet keeps painting the control they
+	 * framed, its inherited custom properties included), and its box and
+	 * flex-item facts are restated on the control through the presentation
+	 * graph (with_control_box_frames()).
+	 *
+	 * @param array<string,mixed>                  $block Readable block marked as a control box.
+	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
+	 * @param string                               $parent_name The block the shell stands in.
+	 * @return array<string,mixed>|null
+	 */
+	private static function control_box_field( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name ): ?array {
+		$index = (int) $block['form_control_box'];
+		$inner = is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array();
+		if ( 1 !== count( $inner ) || ( $inner[0]['form_control_index'] ?? null ) !== $index ) {
+			// The marker promises one control the shell holds alone; anything
+			// else keeps the shell, and the generic substitution walks it.
+			return self::group_field( $block, $state );
+		}
+		$frame = self::control_box_frame( $block, $index, $state );
+		if ( isset( $state->field_blocks[ $index ] ) ) {
+			$state->field_blocks[ $index ] = self::with_control_box_classes( $state->field_blocks[ $index ], $frame['classes'] );
+		}
+		$field = self::substitute( $inner[0], $state, $parent_name );
+		if ( null === $field ) {
+			// The shell held only a suppressed control: it was that control's
+			// box, which renders with it or not at all.
+			return null;
+		}
+		$state->control_box_frames[ $index ] = $frame['facts'];
+		return $field;
+	}
+
+	/**
+	 * The classes and the box facts of a control box's source frames.
+	 *
+	 * The shell's wrappers carry the source classes; the class-owned rules
+	 * that painted the frames (their custom properties and the paint the
+	 * control inherited through them) must match the provider control once
+	 * the frames are gone. The frames' own box and item facts live in the
+	 * layout graph under the control's wrapper ancestors, innermost first, so
+	 * the frame nearest the control owns a fact.
+	 *
+	 * @param array<string,mixed>                  $shell Readable block marked as a control box.
+	 * @param int                                  $index The marked control index.
+	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
+	 * @return array{classes:array<int,string>,facts:array<string,string>}
+	 */
+	private static function control_box_frame( array $shell, int $index, Static_Site_Importer_Form_Plan_State $state ): array {
+		$wrappers = is_array( $shell['attrs']['wrappers'] ?? null ) ? $shell['attrs']['wrappers'] : array();
+		$classes  = array();
+		foreach ( $wrappers as $wrapper ) {
+			foreach ( Static_Site_Importer_Form_Presentation::class_tokens( is_array( $wrapper ) ? ( $wrapper['attributes'] ?? null ) : null ) as $class ) {
+				if ( count( $classes ) < 16 && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class ) ) {
+					$classes[ $class ] = true;
+				}
+			}
+		}
+		$nodes  = array_column( is_array( $state->form['control_topology']['nodes'] ?? null ) ? $state->form['control_topology']['nodes'] : array(), null, 'id' );
+		$parent = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) )['parent'] ?? null;
+		$layout = array_column( is_array( $state->form['layout_graph']['nodes'] ?? null ) ? $state->form['layout_graph']['nodes'] : array(), null, 'id' );
+		// A marked shell without a wrapper chain still frames the control with
+		// its own element: the control's direct parent.
+		$facts = array();
+		$depth = 0 < count( $wrappers ) ? count( $wrappers ) : 1;
+		while ( 0 < $depth-- && is_string( $parent ) && isset( $nodes[ $parent ], $layout[ $parent ] ) && 'wrapper' === ( $nodes[ $parent ]['kind'] ?? '' ) ) {
+			foreach ( array_intersect_key( is_array( $layout[ $parent ]['layout'] ?? null ) ? $layout[ $parent ]['layout'] : array(), self::CONTROL_BOX_ITEM_FACTS ) as $fact => $value ) {
+				if ( is_string( $value ) && '' !== trim( $value ) ) {
+					$facts[ $fact ] = trim( $value );
+				}
+			}
+			$parent = $nodes[ $parent ]['parent'] ?? null;
+		}
+		return array(
+			'classes' => array_keys( $classes ),
+			'facts'   => $facts,
+		);
+	}
+
+	/**
+	 * A control box's source classes ride the provider control element, so
+	 * the source stylesheet's rules for the frames it dropped match the
+	 * control again. Jetpack suffixes the classes it copies onto the field
+	 * wrapper, so only the control element itself matches them.
+	 *
+	 * @param array<string,mixed> $field_block Provider field block.
+	 * @param array<int,string>   $classes      Source class tokens.
+	 * @return array<string,mixed>
+	 */
+	public static function with_control_box_classes( array $field_block, array $classes ): array {
+		if ( array() === $classes ) {
+			return $field_block;
+		}
+		foreach ( $field_block['innerBlocks'] ?? array() as $key => $inner ) {
+			if ( ! is_array( $inner ) ) {
+				continue;
+			}
+			$name       = (string) ( $inner['name'] ?? '' );
+			$is_control = in_array( $name, array( 'jetpack/input', 'jetpack/phone-input' ), true )
+				|| ( 'jetpack/option' === $name && ! empty( $inner['attrs']['isStandalone'] ) );
+			if ( $is_control ) {
+				$tokens = preg_split( '/\s+/', trim( (string) ( $inner['attrs']['className'] ?? '' ) ) );
+				$merged = array_unique( array_merge( false === $tokens ? array() : array_values( array_filter( $tokens ) ), $classes ) );
+				// The frame's classes join the tokens the control already carries.
+				$inner['attrs']['className']        = trim( implode( ' ', $merged ) );
+				$field_block['innerBlocks'][ $key ] = $inner;
+				continue;
+			}
+			if ( ! empty( $inner['innerBlocks'] ) ) {
+				$field_block['innerBlocks'][ $key ] = self::with_control_box_classes( $inner, $classes );
+			}
+		}
+		return $field_block;
+	}
+
+	/**
+	 * The box of each control's control-box frame, restated on the control.
+	 *
+	 * The frame is the box the source showed: its sizing and flex-item facts
+	 * own the provider control, replacing the control's own percentage sizing
+	 * that resolved against the frame in the source. The field wrapper's
+	 * auto-width floor yields where the frame states a width: the overlay
+	 * keeps an explicit source declaration over its provider-default resets.
+	 *
+	 * @param array<string,mixed>             $graph  Presentation graph.
+	 * @param array<int,array<string,string>> $frames Box facts by control index.
+	 * @return array<string,mixed>
+	 */
+	public static function with_control_box_frames( array $graph, array $frames ): array {
+		foreach ( $frames as $index => $facts ) {
+			foreach ( $graph['controls'] ?? array() as $key => $control ) {
+				if ( ( $control['index'] ?? null ) === $index && is_array( $control['control']['styles'] ?? null ) ) {
+					$graph['controls'][ $key ]['control']['styles'] = array_merge( $control['control']['styles'], $facts );
+				}
+			}
+		}
+		return $graph;
+	}
+
+	/**
+	 * The preserved wrapper fragments of a shell that is no control box, with
+	 * only their child slots changed.
+	 *
+	 * @param array<string,mixed>                  $block Readable shell block.
+	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
+	 * @return array<string,mixed>|null
+	 */
+	private static function group_field( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
 		$children = array();
 		$slots    = array();
 		$index    = 0;

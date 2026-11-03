@@ -322,6 +322,10 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
 			}
 		}
+		// A control box frame's box belongs to the provider control, not around
+		// the provider field (control_box_field()); its facts rest on the
+		// control row before the field-box label trims the graph.
+		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_control_box_frames( $presentation_form['presentation_graph'], $state->control_box_frames );
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout_rows( Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( $presentation_form['presentation_graph'], $field_box_labels ), array_intersect_key( $checkbox_layouts, $state->field_blocks ) );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );
 		// Substituted choice groups paint their options and lay out their option list.
