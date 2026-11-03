@@ -20,7 +20,16 @@ if ( count( $artifact['files'] ) !== 1 || ! isset( $args['consent_banner'] ) ) {
 	fwrite( STDERR, 'Consent evidence must be extracted before compile.' );
 	exit( 1 );
 }
-if ( 'css' === ( $argv[1] ?? '' ) ) {
+if ( 'legacy-markup' === ( $argv[1] ?? '' ) ) {
+	$fact = $args['consent_banner'];
+	foreach ( array( 'border_width', 'border_style', 'border_color' ) as $key ) {
+		unset( $fact['presentation']['button'][ $key ] );
+	}
+	foreach ( $fact['presentation']['layout'] as &$entry ) {
+		unset( $entry['text_margin'] );
+	}
+	echo Static_Site_Importer_Consent_Banner::markup( $fact );
+} elseif ( 'css' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
 } elseif ( 'top' === ( $argv[1] ?? '' ) ) {
 	$fact = $args['consent_banner'];
@@ -41,6 +50,9 @@ if ( 'css' === ( $argv[1] ?? '' ) ) {
 		array( 'direction' => 'row', 'max_width' => -1 ),
 		array( 'direction' => 'row', 'align_items' => 'center;display:none' ),
 		array( 'direction' => 'column', 'button_align' => 'end;display:none' ),
+		array( 'direction' => 'row', 'text_margin' => '0px;}body{display:none' ),
+		array( 'direction' => 'row', 'text_margin' => '1px 2px 3px 4px 5px' ),
+		array( 'direction' => 'row', 'text_margin' => 15 ),
 	);
 	foreach ( $fact['presentation']['button'] as &$value ) {
 		$value = '0px;}body{display:none';
