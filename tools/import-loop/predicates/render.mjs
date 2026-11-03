@@ -9,6 +9,10 @@
 //
 // WORDPRESS_PATH names a WordPress install with the importer active; WP_CLI is
 // the command that runs WP-CLI against it (default `wp`, e.g. `studio wp`).
+//
+// With PREDICATE_SITE_URL set, the output is the route of a site the whole
+// import materialized (gates/reimport.sh): site-wide planning, shared template
+// parts and route styles included, which a single-page render cannot show.
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -43,4 +47,10 @@ echo do_blocks( preg_replace_callback( '#(<!-- /?wp:)custom/([a-z0-9-]+)#', stat
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// Load the imported output of `candidate` into a Playwright page.
+export async function loadOutput(page, transformer, candidate, route = '/') {
+  if (process.env.PREDICATE_SITE_URL) await page.goto(new URL(route, process.env.PREDICATE_SITE_URL).href, { waitUntil: 'load' });
+  else await page.setContent(renderOutput(transformer, candidate), { waitUntil: 'load' });
 }

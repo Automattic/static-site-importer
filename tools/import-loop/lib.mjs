@@ -1,6 +1,7 @@
 // Shared by the loop steps: arguments, GitHub, and predicate runs.
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 
 export const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 
@@ -19,12 +20,24 @@ export function linkedPullRequests(issueUrl) {
 // that renders transformer output, from the environment.
 export const predicateEnv = (subject, cell, site) => ({
   ...process.env,
-  PREDICATE_TARGET: JSON.stringify({ subject, width: cell.width || 1440, evidence: cell.evidence }),
+  PREDICATE_TARGET: JSON.stringify({ subject, route: cell.route || '/', width: cell.width || 1440, evidence: cell.evidence }),
   WORDPRESS_PATH: site,
   // Gates run under a private HOME, where `studio wp` cannot find its sites:
   // the loop passes a WP-CLI that reads the site from its path alone.
   WP_CLI: args['wp-cli'] || process.env.WP_CLI || 'studio wp',
 });
+
+// Materialize `capture` through the release importer with the transformer at
+// `transformer` (gates/reimport.sh) and serve it; predicates given its URL as
+// PREDICATE_SITE_URL check the route the whole import produced. The server
+// stops when this process exits.
+export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
+  const gate = new URL('./gates/reimport.sh', import.meta.url).pathname;
+  const url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp }, stdio: ['ignore', 'pipe', 'inherit'] }).trim().split('\n').pop();
+  const pid = Number(fs.readFileSync(`${dir}/.server.pid`, 'utf8'));
+  process.on('exit', () => { try { process.kill(pid); } catch {} });
+  return url;
+}
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
 export const predicateExit = (predicate, transformer, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;

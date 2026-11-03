@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Provision a bare SQLite WordPress at $1 for repository contracts that need
-# WordPress loaded. Idempotent: an existing install is kept.
+# WordPress loaded (latest, as Studio installs; WP_VERSION overrides).
+# Idempotent: an existing install is kept.
 # Usage: bare-wp.sh <dir>
 set -euo pipefail
 dir=$1
@@ -8,7 +9,7 @@ dir=$1
 mkdir -p "$dir"
 curl -fsSL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o "$dir/wp-cli.phar"
 wp="php $dir/wp-cli.phar"
-$wp core download --path="$dir" --version=7.0.4 --quiet
+$wp core download --path="$dir" --version="${WP_VERSION:-latest}" --quiet
 curl -fsSL https://downloads.wordpress.org/plugin/sqlite-database-integration.latest-stable.zip -o "$dir/sqlite.zip"
 unzip -q "$dir/sqlite.zip" -d "$dir/wp-content/plugins" && rm "$dir/sqlite.zip"
 plugin="$dir/wp-content/plugins/sqlite-database-integration"

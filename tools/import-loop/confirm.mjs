@@ -2,8 +2,9 @@
 // Loop step, before the merge approval: re-check every open fix on its head.
 //
 // A tracked finding lists acceptance cells, one per route/width it was seen
-// in, each on the full captured page. A fix is confirmed when its finding's
-// predicate exits 1 (the defect is gone) on every cell, and refuted when any
+// in, each on the full captured page. Each head re-imports the capture as
+// triage did. A fix is confirmed when its finding's predicate exits 1 (the
+// defect is gone) on every cell of that import, and refuted when any
 // cell still exits 0. Fixes in a repository whose code the predicates do not
 // run (`predicate_root` in repos.json) are unconfirmed: the next pass's
 // import is their check.
@@ -14,7 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, linkedPullRequests, predicateEnv, predicateExit } from './lib.mjs';
+import { args, linkedPullRequests, predicateEnv, predicateExit, reimportSite } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
@@ -39,6 +40,7 @@ function checkout(repo, pr) {
 // One pull request can fix several tracked findings: it is confirmed only
 // when every cell of every finding it fixes clears.
 const verdicts = new Map();
+const sites = new Map();
 for (const item of triage.tracked) {
   for (const pr of linkedPullRequests(item.issue_url)) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, failing: [], reasons: [] };
@@ -48,7 +50,8 @@ for (const item of triage.tracked) {
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
     const predicate = path.join(here, 'predicates', `${item.check}.mjs`);
     const head = checkout(item.repo, pr);
-    const cells = item.cells.map((cell) => ({ signature: item.signature, route: cell.route, width: cell.width, exit: predicateExit(predicate, head, cell.page, predicateEnv(item.subject, cell, triage.site)) }));
+    sites.set(head, sites.get(head) || reimportSite(head, triage.reimport, `${path.dirname(head)}-site`));
+    const cells = item.cells.map((cell) => ({ signature: item.signature, route: cell.route, width: cell.width, exit: predicateExit(predicate, head, cell.page, { ...predicateEnv(item.subject, cell, triage.site), PREDICATE_SITE_URL: sites.get(head) }) }));
     log(pr.url, item.signature, cells.map((c) => `${c.route}@${c.width}=${c.exit}`).join(' '));
     verdict.failing.push(...cells.filter((c) => c.exit !== 1));
   }
