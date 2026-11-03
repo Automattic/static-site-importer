@@ -38,7 +38,7 @@ export const measure = ({ coverShare, exclusions, geometryOnly }) => {
   });
   const fileKey = (url) => {
     if (!url || url.startsWith('data:')) return null;
-    const name = decodeURIComponent(new URL(url, location.href).pathname.split('/').pop() || '').toLowerCase().replace(/\.[a-z0-9]+$/, '').replace(/-(?:\d+x\d+|scaled)$/, '');
+    const name = decodeURIComponent(new URL(url, location.protocol.startsWith('http') ? location.href : 'http://page.invalid/').pathname.split('/').pop() || '').toLowerCase().replace(/\.[a-z0-9]+$/, '').replace(/-(?:\d+x\d+|scaled)$/, '');
     return name && `img:${name.replace(/[^a-z0-9]/g, '')}`;
   };
   // A CSS-painted image: the url() of its background, if any.

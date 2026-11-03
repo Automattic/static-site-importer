@@ -9,6 +9,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fitViewport, measure } from '../measure.mjs';
 
+// Any failure is an error (2), never a verdict.
+process.on('uncaughtException', () => process.exit(2));
+process.on('unhandledRejection', () => process.exit(2));
+
 const [transformer, candidate] = process.argv.slice(2);
 const { subject, width = 1440 } = JSON.parse(process.env.PREDICATE_TARGET || '{}');
 if (!subject) process.exit(2);
