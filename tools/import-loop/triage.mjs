@@ -57,13 +57,13 @@ function routePage(route, file) {
 }
 
 const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { encoding: 'utf8' }).trim();
-// Predicates read the finding they reproduce, and the core block styles a
-// WordPress front end loads under the output, from the environment.
-const blockLibraryCss = path.join(result.site || '', 'wp-includes', 'css', 'dist', 'block-library', 'style.css');
+// Predicates read the finding they reproduce, and the imported site that
+// renders their output, from the environment.
 const predicateEnv = (finding, occurrence) => ({
   ...process.env,
   PREDICATE_TARGET: JSON.stringify({ subject: finding.subject, width: occurrence.width || 1440 }),
-  ...(result.site && fs.existsSync(blockLibraryCss) ? { BLOCK_LIBRARY_CSS: blockLibraryCss } : {}),
+  WORDPRESS_PATH: result.site,
+  WP_CLI: process.env.WP_CLI || 'studio wp',
 });
 const predicateExit = (predicate, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;
 
@@ -105,7 +105,7 @@ function reduceAndFile(finding) {
     '```sh',
     [
       `PREDICATE_TARGET='${env.PREDICATE_TARGET}'`,
-      ...(env.BLOCK_LIBRARY_CSS ? ['BLOCK_LIBRARY_CSS=<wordpress>/wp-includes/css/dist/block-library/style.css'] : []),
+      `WORDPRESS_PATH=<wordpress with static-site-importer active> WP_CLI='${env.WP_CLI}'`,
       `node tools/import-loop/predicates/${finding.check}.mjs <blocks-engine>/php-transformer reduced.html`,
     ].join(' \\\n  '),
     '```',
