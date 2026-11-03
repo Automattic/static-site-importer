@@ -29,6 +29,7 @@ With registered `jetpack/cookie-consent`, activation writes valid serialized mar
 
 The v1 fact accepts an optional `presentation` object. Existing `span`, `edge_offset`, `padding`, font typography, and button presentation remain supported. `edge_offset` targets `top` when `position` is `top`, otherwise `bottom`.
 
+- `gap`: one or two typed lengths, row then column (for example `"0px"` or `"4px 8px"`), emitted as `gap` on the banner. A single value applies to both axes; omission preserves existing output.
 - `text_margin`: one to four typed lengths (for example `"0px"`), applied to the message paragraph.
 - `button.border_width`: a single typed length; `button.border_style`: `solid`, `dashed`, `dotted`, `double`, or `none`; `button.border_color`: a color accepted by the existing color validator. These serialize through `core/button`'s `style.border` with matching inline styles and border color class.
 - `button.line_height`: a single typed length, serialized through `core/button`'s `style.typography.lineHeight`.

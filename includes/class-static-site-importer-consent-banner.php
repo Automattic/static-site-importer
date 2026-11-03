@@ -200,7 +200,7 @@ class Static_Site_Importer_Consent_Banner {
 						$result['layout'][] = $entry;
 					}
 				}
-			} elseif ( in_array( $key, array( 'edge_offset', 'padding', 'font_family', 'font_size', 'line_height', 'text_margin' ), true ) && self::presentation_value( $key, $value ) ) {
+			} elseif ( in_array( $key, array( 'edge_offset', 'padding', 'gap', 'font_family', 'font_size', 'line_height', 'text_margin' ), true ) && self::presentation_value( $key, $value ) ) {
 				$result[ $key ] = trim( $value );
 			}
 		}
@@ -223,7 +223,7 @@ class Static_Site_Importer_Consent_Banner {
 			return 1 === preg_match( '/^' . $family . '(?:\\s*,\\s*' . $family . ')*$/D', $value );
 		}
 		$length = '(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|em|rem|%|vh|vw|vmin|vmax|pt|pc|in|cm|mm))';
-		$count  = in_array( $key, array( 'padding', 'border_radius', 'text_margin' ), true ) ? '{0,3}' : '{0}';
+		$count  = 'gap' === $key ? '{0,1}' : ( in_array( $key, array( 'padding', 'border_radius', 'text_margin' ), true ) ? '{0,3}' : '{0}' );
 		return 1 === preg_match( '/^' . $length . '(?:\\s+' . $length . ')' . $count . '$/D', $value );
 	}
 
@@ -260,6 +260,7 @@ class Static_Site_Importer_Consent_Banner {
 			'font_family' => 'font-family',
 			'font_size'   => 'font-size',
 			'line_height' => 'line-height',
+			'gap'         => 'gap',
 		) as $key => $property ) {
 			if ( isset( $presentation[ $key ] ) ) {
 				$css .= $property . ':' . $presentation[ $key ] . ';';
