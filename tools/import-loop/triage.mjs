@@ -135,6 +135,25 @@ for (const finding of blockers) {
   (record.status === 'tracked' ? tracked : untracked).push(record);
 }
 
+// Cook promotes only when the repository's own checks pass and, where the
+// predicates run this repository's code, the defect is gone from every
+// acceptance cell. The gate runs from the root of Cook's worktree.
+function acceptanceGate(item, repo) {
+  if (!repo.predicate_root || !item.cells.length) return repo.verify;
+  const gate = path.join(args.work, `${item.signature}.accept.sh`);
+  fs.writeFileSync(gate, [
+    '#!/usr/bin/env bash',
+    `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`,
+    `root="$PWD/${repo.predicate_root}"; failed=0`,
+    ...item.cells.map((cell) => {
+      const env = predicateEnv(item.subject, cell, result.site);
+      return `PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
+    }),
+    'exit $failed',
+  ].join('\n') + '\n');
+  return `(${repo.verify}) && bash '${gate}'`;
+}
+
 const cook_items = [];
 for (const item of tracked) {
   const repo = repos[item.repo];
@@ -152,7 +171,7 @@ for (const item of tracked) {
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       '- The issue\'s predicate exits non-zero on the reduced page with your change.',
       ...(item.cells.length ? [
-        '- It also exits non-zero on each full captured page below. The reduced page is one cell; the loop confirms the fix on all of them before merging.',
+        '- It also exits 1 on each full captured page below. The reduced page is one cell; a verify gate runs all of them before your change can be published.',
         '',
         '```sh',
         ...item.cells.map((cell) => `PREDICATE_TARGET='${predicateEnv(item.subject, cell, result.site).PREDICATE_TARGET}' WORDPRESS_PATH=${result.site} node ${predicatePath(item.check)} <blocks-engine>/php-transformer ${cell.page}`),
@@ -160,7 +179,7 @@ for (const item of tracked) {
       ] : []),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, verify: repo.verify });
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, verify: acceptanceGate(item, repo) });
   }
 }
 
