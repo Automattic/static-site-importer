@@ -61,7 +61,7 @@ const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { 
 // renders their output, from the environment.
 const predicateEnv = (finding, occurrence) => ({
   ...process.env,
-  PREDICATE_TARGET: JSON.stringify({ subject: finding.subject, width: occurrence.width || 1440 }),
+  PREDICATE_TARGET: JSON.stringify({ subject: finding.subject, width: occurrence.width || 1440, evidence: occurrence.evidence }),
   WORDPRESS_PATH: result.site,
   WP_CLI: process.env.WP_CLI || 'studio wp',
 });
@@ -144,7 +144,8 @@ for (const item of tracked) {
   const github = repo?.github || new URL(item.issue_url).pathname.split('/').slice(1, 3).join('/');
   const pr = openPullRequest(github, item.number);
   item.open_pr = pr?.url || null;
-  if (!pr && repo) {
+  // One issue can hold several signatures (one root cause, several subjects): cook it once.
+  if (!pr && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
