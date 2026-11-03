@@ -29,6 +29,10 @@ if ( 'legacy-markup' === ( $argv[1] ?? '' ) ) {
 		unset( $entry['text_margin'] );
 	}
 	echo Static_Site_Importer_Consent_Banner::markup( $fact );
+} elseif ( 'gap' === ( $argv[1] ?? '' ) ) {
+	$fact = $args['consent_banner'];
+	$fact['presentation'] = array( 'gap' => json_decode( $argv[2], true ) );
+	echo Static_Site_Importer_Consent_Banner::markup( $fact ) . Static_Site_Importer_Consent_Banner::stylesheet( $fact );
 } elseif ( 'css' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
 } elseif ( 'top' === ( $argv[1] ?? '' ) ) {

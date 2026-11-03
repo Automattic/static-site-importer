@@ -44,6 +44,22 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.doesNotMatch(run('hostile'), /display:none|body\{|has-border-color|border-width:|border-style:|border-color:/);
  assert.ok(css.indexOf(' > p{flex:1 1 auto;margin:0px;}') < css.indexOf('@media'));
 });
+test('presentation gap accepts one or two typed lengths in row-column order', () => {
+ const run = gap => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'gap', JSON.stringify(gap)], { encoding: 'utf8' });
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ for (const gap of ['0px', '4px 1rem', ' 0px 2px ', '0']) {
+  const output = run(gap);
+  assert.ok(output.endsWith(`\n${selector}{gap:${gap.trim()};}\n`));
+  const markup = output.slice(0, output.indexOf(`\n${selector}`));
+  assert.match(markup, /"className":"ssi-consent-banner"/);
+  const result = validateMarkup(markup);
+  assert.equal(result.ok, true, JSON.stringify(result.failures));
+ }
+ for (const gap of ['1px 2px 3px', 'normal', '-1px', '10', 'calc(1px + 2px)', '0px;}body{display:none', '', 0, null, ['0px']]) {
+  const output = run(gap);
+  assert.doesNotMatch(output, /gap:|ssi-consent-banner|display:none/);
+ }
+});
 test('consent intent serializes against actual Jetpack save and core buttons', () => {
  const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php'], { encoding: 'utf8' });
  const result = validateMarkup(markup);
