@@ -40,8 +40,8 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 		return $documents;
 	}
 
-	/** Verify canonical identities and the actual persisted document before route mutation. */
-	public static function validate( array $pages, array $results ): array {
+	/** Verify canonical identities, then optionally prove the persisted document before route mutation. */
+	public static function validate( array $pages, array $results, bool $prove_content = true ): array {
 		$claims      = array();
 		$diagnostics = array();
 		$by_source   = array();
@@ -70,10 +70,11 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 			}
 			$post   = $id > 0 ? get_post( $id ) : null;
 			$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
-			// A template destination is written and proven by the importer; a
-			// content destination must already persist the exact document.
+			// Identity admission precedes the importer's final document write.
+			// Content proof then requires the exact persisted markup; template
+			// destinations are written and proven separately by the importer.
 			$valid = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type && '' !== $markup
-				&& ( 'template' === ( $result['document_destination'] ?? '' ) || hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) ) );
+				&& ( ! $prove_content || 'template' === ( $result['document_destination'] ?? '' ) || hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) ) );
 			if ( ! $valid || isset( $claims[ $source ] ) ) {
 				$diagnostics[] = array(
 					'reason_code' => 'whole_page_claim_unproven',
