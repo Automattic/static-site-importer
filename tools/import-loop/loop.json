@@ -2,64 +2,266 @@
   "schema": "homeboy/workflow/v1",
   "id": "import-findings-loop",
   "inputs": {
-    "url": { "required": true },
-    "iteration": { "default": "1" },
-    "prev": { "default": "" },
-    "prev_merged": { "default": "0" },
-    "loop_dir": { "required": true },
-    "runs_dir": { "required": true },
-    "blocks_engine": { "required": true },
-    "slug": { "required": true }
+    "url": {
+      "required": true
+    },
+    "iteration": {
+      "default": "1"
+    },
+    "prev": {
+      "default": ""
+    },
+    "prev_merged": {
+      "default": "0"
+    },
+    "loop_dir": {
+      "required": true
+    },
+    "runs_dir": {
+      "required": true
+    },
+    "blocks_engine": {
+      "required": true
+    },
+    "slug": {
+      "required": true
+    }
   },
-  "env": { "public": ["PATH", "HOME"] },
-  "budget": { "max_step_runs": 40, "deadline": "36h" },
+  "env": {
+    "public": [
+      "PATH",
+      "HOME"
+    ]
+  },
+  "budget": {
+    "max_step_runs": 40,
+    "deadline": "36h"
+  },
   "steps": [
-    { "id": "import", "timeout": "60m", "retry": { "max": 1, "on": ["failed", "timed_out"], "backoff": "5m" },
-      "exec": { "program": "bash", "cwd": "{{inputs.loop_dir}}",
-                "args": ["import.sh", "{{inputs.url}}", "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}"] } },
-
-    { "id": "evaluate", "needs": ["import"], "timeout": "45m",
-      "exec": { "program": "node", "cwd": "{{inputs.loop_dir}}",
-                "args": ["evaluate.mjs", "--url", "{{inputs.url}}", "--wp-url", "{{steps.import.output/site_url}}",
-                         "--site", "{{steps.import.output/site}}", "--source", "{{steps.import.output/source}}",
-                         "--out", "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval"] } },
-
-    { "id": "triage", "needs": ["evaluate"], "timeout": "6h",
-      "when": { "step": "evaluate", "output": "/blocker_count", "gt": 0 },
-      "exec": { "program": "node", "cwd": "{{inputs.loop_dir}}",
-                "args": ["triage.mjs", "--findings", "{{steps.evaluate.output/findings_path}}",
-                         "--source", "{{steps.import.output/source}}",
-                         "--work", "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage",
-                         "--blocks-engine", "{{inputs.blocks_engine}}", "--iteration", "{{inputs.iteration}}", "--prev", "{{inputs.prev}}", "--prev-merged", "{{inputs.prev_merged}}"] } },
-
-    { "id": "cook", "needs": ["triage"], "timeout": "4h",
-      "when": { "step": "triage", "output": "/cook_count", "gt": 0 },
-      "foreach": "{{steps.triage.output/cook_items}}", "max_parallel": 3, "join": "any",
-      "cook": { "repo": "{{item.repo}}", "task-url": "{{item.issue_url}}", "prompt": "{{item.prompt}}",
-                "verify": "{{item.verify}}", "placement": "local", "backend": "pi",
-                "model": "roadie/cook-heavy", "acknowledge-model-override": true } },
-
-    { "id": "approve_merge", "needs": ["triage", "cook"], "always": true,
-      "when": { "step": "triage", "output": "/continue", "exists": true },
-      "approval": { "prompt": "Review the open fix PRs for this pass (triage output: tracked[].open_pr and the cook step). Approving merges every non-draft, mergeable, all-green PR that fixes a tracked issue." } },
-
-    { "id": "merge", "needs": ["approve_merge"], "timeout": "15m",
-      "exec": { "program": "node", "cwd": "{{inputs.loop_dir}}",
-                "args": ["merge.mjs", "--triage", "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json"] } },
-
-    { "id": "shipped", "needs": ["merge"], "timeout": "24h",
-      "when": { "step": "merge", "output": "/merged_count", "gt": 0 },
-      "exec": { "program": "node", "cwd": "{{inputs.loop_dir}}",
-                "args": ["shipped.mjs", "--merged", "{{steps.merge.output/merged}}"] } },
-
-    { "id": "again", "needs": ["shipped"],
-      "when": { "all": [ { "step": "merge", "output": "/merged_count", "gt": 0 },
-                         { "step": "triage", "output": "/next_iteration", "lt": 13 } ] },
-      "homeboy": ["workflow", "run", "{{inputs.loop_dir}}/loop.json",
-                  "--input", "url={{inputs.url}}", "--input", "slug={{inputs.slug}}",
-                  "--input", "loop_dir={{inputs.loop_dir}}", "--input", "runs_dir={{inputs.runs_dir}}", "--input", "blocks_engine={{inputs.blocks_engine}}",
-                  "--input", "iteration={{steps.triage.output/next_iteration}}",
-                  "--input", "prev={{steps.triage.output/signatures}}",
-                  "--input", "prev_merged={{steps.merge.output/merged_count}}"] }
+    {
+      "id": "import",
+      "timeout": "60m",
+      "retry": {
+        "max": 1,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "5m"
+      },
+      "exec": {
+        "program": "bash",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "import.sh",
+          "{{inputs.url}}",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "needs": [
+        "import"
+      ],
+      "timeout": "45m",
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "evaluate.mjs",
+          "--url",
+          "{{inputs.url}}",
+          "--wp-url",
+          "{{steps.import.output/site_url}}",
+          "--site",
+          "{{steps.import.output/site}}",
+          "--source",
+          "{{steps.import.output/source}}",
+          "--out",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval"
+        ]
+      }
+    },
+    {
+      "id": "triage",
+      "needs": [
+        "evaluate"
+      ],
+      "timeout": "6h",
+      "when": {
+        "step": "evaluate",
+        "output": "/blocker_count",
+        "gt": 0
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "triage.mjs",
+          "--findings",
+          "{{steps.evaluate.output/findings_path}}",
+          "--source",
+          "{{steps.import.output/source}}",
+          "--work",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage",
+          "--blocks-engine",
+          "{{inputs.blocks_engine}}",
+          "--iteration",
+          "{{inputs.iteration}}",
+          "--prev",
+          "{{inputs.prev}}",
+          "--prev-merged",
+          "{{inputs.prev_merged}}"
+        ]
+      }
+    },
+    {
+      "id": "cook",
+      "needs": [
+        "triage"
+      ],
+      "timeout": "4h",
+      "when": {
+        "step": "triage",
+        "output": "/cook_count",
+        "gt": 0
+      },
+      "foreach": "{{steps.triage.output/cook_items}}",
+      "max_parallel": 3,
+      "join": "any",
+      "cook": {
+        "repo": "{{item.repo}}",
+        "task-url": "{{item.issue_url}}",
+        "prompt": "{{item.prompt}}",
+        "verify": "{{item.verify}}",
+        "placement": "local",
+        "backend": "pi",
+        "model": "roadie/cook-heavy",
+        "acknowledge-model-override": true
+      }
+    },
+    {
+      "id": "confirm",
+      "needs": [
+        "triage",
+        "cook"
+      ],
+      "always": true,
+      "timeout": "2h",
+      "when": {
+        "step": "triage",
+        "output": "/continue",
+        "exists": true
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "confirm.mjs",
+          "--triage",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json",
+          "--blocks-engine",
+          "{{inputs.blocks_engine}}",
+          "--work",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm"
+        ]
+      }
+    },
+    {
+      "id": "approve_merge",
+      "needs": [
+        "confirm"
+      ],
+      "always": true,
+      "when": {
+        "step": "triage",
+        "output": "/continue",
+        "exists": true
+      },
+      "approval": {
+        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges the green, non-draft, mergeable PRs that were not refuted, at the head confirm checked."
+      }
+    },
+    {
+      "id": "merge",
+      "needs": [
+        "approve_merge"
+      ],
+      "timeout": "15m",
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "merge.mjs",
+          "--triage",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json",
+          "--confirm",
+          "{{steps.confirm.output/confirm_path}}"
+        ]
+      }
+    },
+    {
+      "id": "shipped",
+      "needs": [
+        "merge"
+      ],
+      "timeout": "24h",
+      "when": {
+        "step": "merge",
+        "output": "/merged_count",
+        "gt": 0
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "shipped.mjs",
+          "--merged",
+          "{{steps.merge.output/merged}}"
+        ]
+      }
+    },
+    {
+      "id": "again",
+      "needs": [
+        "shipped"
+      ],
+      "when": {
+        "all": [
+          {
+            "step": "merge",
+            "output": "/merged_count",
+            "gt": 0
+          },
+          {
+            "step": "triage",
+            "output": "/next_iteration",
+            "lt": 13
+          }
+        ]
+      },
+      "homeboy": [
+        "workflow",
+        "run",
+        "{{inputs.loop_dir}}/loop.json",
+        "--input",
+        "url={{inputs.url}}",
+        "--input",
+        "slug={{inputs.slug}}",
+        "--input",
+        "loop_dir={{inputs.loop_dir}}",
+        "--input",
+        "runs_dir={{inputs.runs_dir}}",
+        "--input",
+        "blocks_engine={{inputs.blocks_engine}}",
+        "--input",
+        "iteration={{steps.triage.output/next_iteration}}",
+        "--input",
+        "prev={{steps.triage.output/signatures}}",
+        "--input",
+        "prev_merged={{steps.merge.output/merged_count}}"
+      ]
+    }
   ]
 }

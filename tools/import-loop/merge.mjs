@@ -1,25 +1,26 @@
 #!/usr/bin/env node
 // Loop step, after the merge approval: merge every open pull request that
-// fixes a tracked issue and whose checks are green.
+// fixes a tracked issue, is green, and that confirm.mjs did not refute.
 //
-// Usage: node merge.mjs --triage <triage.json>
+// Usage: node merge.mjs --triage <triage.json> --confirm <confirm.json>
 // Output: {merged:[{repo, pr, sha}], merged_count, held:[{pr, reason}]}
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import { args, gh, linkedPullRequests } from './lib.mjs';
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 const triage = JSON.parse(fs.readFileSync(args.triage, 'utf8'));
-const gh = (...argv) => execFileSync('gh', argv, { encoding: 'utf8', maxBuffer: 64 << 20 });
+const confirm = JSON.parse(fs.readFileSync(args.confirm, 'utf8'));
 
 const merged = [];
 const held = [];
 for (const item of triage.tracked) {
-  const [, owner, name, , number] = new URL(item.issue_url).pathname.split('/');
-  const github = `${owner}/${name}`;
-  const prs = JSON.parse(gh('pr', 'list', '-R', github, '--state', 'open', '--json', 'number,url,body,headRefName,isDraft,mergeable,statusCheckRollup', '-L', '100'))
-    .filter((pr) => (pr.body || '').includes(item.issue_url) || new RegExp(`#${number}\\b`).test(pr.body || '') || pr.headRefName.includes(`issue-${number}-`));
-  for (const pr of prs) {
+  for (const pr of linkedPullRequests(item.issue_url)) {
+    if (merged.some((m) => m.pr === pr.url) || held.some((h) => h.pr === pr.url)) continue;
+    // Merge exactly the head the approver saw confirmed.
+    const checked = [...confirm.confirmed, ...confirm.refuted, ...confirm.unconfirmed].find((c) => c.pr === pr.url);
+    if (!checked || checked.head !== pr.headRefOid) { held.push({ pr: pr.url, reason: checked ? `head moved since confirm: ${checked.head.slice(0, 8)} -> ${pr.headRefOid.slice(0, 8)}` : 'not checked by confirm' }); continue; }
+    const refutation = confirm.refuted.find((r) => r.pr === pr.url);
+    if (refutation) { held.push({ pr: pr.url, reason: `defect still reproduces: ${refutation.cells.map((c) => `${c.route}@${c.width}`).join(', ')}` }); continue; }
     const checks = pr.statusCheckRollup || [];
     const red = checks.filter((c) => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion || c.state));
     if (pr.isDraft) { held.push({ pr: pr.url, reason: 'draft' }); continue; }
@@ -27,7 +28,7 @@ for (const item of triage.tracked) {
     if (!checks.length || red.length) { held.push({ pr: pr.url, reason: checks.length ? `checks not green: ${red.map((c) => c.name || c.context).join(', ')}` : 'no checks reported' }); continue; }
     gh('pr', 'merge', pr.url, '--squash', '--delete-branch');
     const sha = JSON.parse(gh('pr', 'view', pr.url, '--json', 'mergeCommit')).mergeCommit?.oid;
-    merged.push({ repo: item.repo, github, pr: pr.url, sha });
+    merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha });
     console.error(`[merge] merged ${pr.url} ${sha}`);
   }
 }

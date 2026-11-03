@@ -11,16 +11,19 @@
 //      reduced with it, the reduced page is re-checked, and one issue is filed
 //      in the owning repository with the reduced page and the predicate.
 //   3. Otherwise the finding stays untracked: it needs a predicate first.
-// Tracked open issues without an open pull request become Cook items.
+// Tracked open issues without an open pull request become Cook items. Every
+// tracked finding with a predicate lists its acceptance cells: the full
+// captured page of each route/width it was seen in, which confirm.mjs re-checks
+// on each fix's head.
 // The pass continues the chain only when it can make progress: something is
 // tracked, and the blocker set changed or the previous pass merged a fix.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { args, gh, linkedPullRequests, predicateEnv, predicateExit } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
-const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
 const result = JSON.parse(fs.readFileSync(args.findings, 'utf8'));
@@ -34,7 +37,6 @@ fs.mkdirSync(args.work, { recursive: true });
 execFileSync('git', ['-C', path.dirname(transformer), 'fetch', '-q', 'origin', 'trunk']);
 execFileSync('git', ['-C', path.dirname(transformer), 'checkout', '-q', '--detach', 'FETCH_HEAD']);
 
-const gh = (...argv) => execFileSync('gh', argv, { encoding: 'utf8', maxBuffer: 64 << 20 });
 const log = (...parts) => console.error('[triage]', ...parts);
 
 function existingIssue(finding) {
@@ -42,46 +44,40 @@ function existingIssue(finding) {
   return hits.find((h) => h.state === 'open') || hits[0] || null;
 }
 
-function openPullRequest(github, number) {
-  const prs = JSON.parse(gh('pr', 'list', '-R', github, '--state', 'open', '--json', 'number,url,body,headRefName', '-L', '100'));
-  const issueUrl = `https://github.com/${github}/issues/${number}`;
-  return prs.find((pr) => (pr.body || '').includes(issueUrl) || new RegExp(`#${number}\\b`).test(pr.body || '') || pr.headRefName.includes(`issue-${number}-`)) || null;
+// One standalone HTML file per captured route, stylesheets inlined.
+const pages = new Map();
+function routePage(route) {
+  if (!pages.has(route)) {
+    const website = path.join(args.source, new URL(result.url).hostname, 'website');
+    const file = path.join(args.work, 'pages', `${route.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'home'}.html`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    execFileSync('node', [path.join(here, 'inline.mjs'), path.join(website, route.replace(/^\//, ''), 'index.html'), file], { stdio: 'ignore' });
+    pages.set(route, file);
+  }
+  return pages.get(route);
 }
-
-// One standalone HTML file for a captured route, stylesheets inlined.
-function routePage(route, file) {
-  const website = path.join(args.source, new URL(result.url).hostname, 'website');
-  const input = path.join(website, route.replace(/^\//, ''), 'index.html');
-  execFileSync('node', [path.join(here, 'inline.mjs'), input, file], { stdio: 'ignore' });
-  return file;
-}
+const predicatePath = (check) => path.join(here, 'predicates', `${check}.mjs`);
+// The recorded route/width cells a fix must clear, on the full captured page.
+const acceptanceCells = (finding) => fs.existsSync(predicatePath(finding.check))
+  ? finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: routePage(o.route) }))
+  : [];
 
 const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { encoding: 'utf8' }).trim();
-// Predicates read the finding they reproduce, and the imported site that
-// renders their output, from the environment.
-const predicateEnv = (finding, occurrence) => ({
-  ...process.env,
-  PREDICATE_TARGET: JSON.stringify({ subject: finding.subject, width: occurrence.width || 1440, evidence: occurrence.evidence }),
-  WORDPRESS_PATH: result.site,
-  WP_CLI: process.env.WP_CLI || 'studio wp',
-});
-const predicateExit = (predicate, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;
-
 function reduceAndFile(finding) {
-  const predicate = path.join(here, 'predicates', `${finding.check}.mjs`);
+  const predicate = predicatePath(finding.check);
   if (!fs.existsSync(predicate)) return { status: 'untracked', reason: `no predicate for ${finding.check}` };
   const repo = repos[finding.owner_repo];
   if (!repo) return { status: 'untracked', reason: `no repository config for ${finding.owner_repo}` };
   const dir = path.join(args.work, finding.signature);
   fs.mkdirSync(dir, { recursive: true });
   const occurrence = finding.occurrences.find((o) => o.route) || finding.occurrences[0];
-  const page = routePage(occurrence.route || '/', path.join(dir, 'page.html'));
-  const env = predicateEnv(finding, occurrence);
-  if (predicateExit(predicate, page, env) !== 0) return { status: 'untracked', reason: 'predicate does not reproduce on the captured page' };
+  const page = routePage(occurrence.route || '/');
+  const env = predicateEnv(finding.subject, occurrence, result.site);
+  if (predicateExit(predicate, transformer, page, env) !== 0) return { status: 'untracked', reason: 'predicate does not reproduce on the captured page' };
   log(`reducing ${finding.signature} (${finding.check}) from ${fs.statSync(page).size} bytes`);
   const run = spawnSync('node', [reducer, '--input', page, '--output', path.join(dir, 'out'), '--predicate', `node ${predicate} ${transformer} {candidate}`, '--stage', finding.stage, '--name', finding.signature, '--max-calls', '1500', '--timeout-ms', String(2 * 3600 * 1000)], { encoding: 'utf8', maxBuffer: 64 << 20, env });
   const reduced = path.join(dir, 'out', 'source.html');
-  if (run.status !== 0 || !fs.existsSync(reduced) || predicateExit(predicate, reduced, env) !== 0) return { status: 'untracked', reason: `reduction failed: ${(run.stderr || '').slice(-300)}` };
+  if (run.status !== 0 || !fs.existsSync(reduced) || predicateExit(predicate, transformer, reduced, env) !== 0) return { status: 'untracked', reason: `reduction failed: ${(run.stderr || '').slice(-300)}` };
   const html = fs.readFileSync(reduced, 'utf8');
   const reduction = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'reduction.json'), 'utf8'));
   const body = [
@@ -135,14 +131,14 @@ for (const finding of blockers) {
   else if (issue) entry = { status: 'untracked', reason: `fix did not hold: ${issue.url} is closed and the finding still reproduces` };
   else entry = reduceAndFile(finding);
   const record = { signature: finding.signature, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
+  if (record.status === 'tracked') record.cells = acceptanceCells(finding);
   (record.status === 'tracked' ? tracked : untracked).push(record);
 }
 
 const cook_items = [];
 for (const item of tracked) {
   const repo = repos[item.repo];
-  const github = repo?.github || new URL(item.issue_url).pathname.split('/').slice(1, 3).join('/');
-  const pr = openPullRequest(github, item.number);
+  const pr = linkedPullRequests(item.issue_url)[0];
   item.open_pr = pr?.url || null;
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
   if (!pr && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
@@ -155,6 +151,13 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       '- The issue\'s predicate exits non-zero on the reduced page with your change.',
+      ...(item.cells.length ? [
+        '- It also exits non-zero on each full captured page below. The reduced page is one cell; the loop confirms the fix on all of them before merging.',
+        '',
+        '```sh',
+        ...item.cells.map((cell) => `PREDICATE_TARGET='${predicateEnv(item.subject, cell, result.site).PREDICATE_TARGET}' WORDPRESS_PATH=${result.site} node ${predicatePath(item.check)} <blocks-engine>/php-transformer ${cell.page}`),
+        '```',
+      ] : []),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, verify: repo.verify });
@@ -165,6 +168,7 @@ const signatures = blockers.map((f) => f.signature).sort().join(',');
 const stalled = Number(args.iteration) > 1 && signatures === (args.prev || '') && Number(args['prev-merged'] || 0) === 0;
 const output = {
   iteration: Number(args.iteration),
+  site: result.site,
   blocker_count: blockers.length,
   signatures,
   tracked,

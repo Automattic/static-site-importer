@@ -4,7 +4,8 @@
     "verify": "cd php-transformer && composer test:unit",
     "shipped_via": "static-site-importer",
     "lock_package": "automattic/blocks-engine-php-transformer",
-    "release_tag_prefix": "php-transformer-"
+    "release_tag_prefix": "php-transformer-",
+    "predicate_root": "php-transformer"
   },
   "static-site-importer": {
     "github": "Automattic/static-site-importer",
