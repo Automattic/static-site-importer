@@ -863,7 +863,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private static function apply_whole_page_handoffs( array &$state ) {
 		// Admit identities and unique destinations before writing any provider post.
 		$results              = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
-		$validated            = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results, false );
+		$validated            = Static_Site_Importer_Whole_Page_Handoff::admit( $state['ordered_pages'], $results );
 		$state['diagnostics'] = array_merge( $state['diagnostics'], $validated['diagnostics'] );
 		if ( ! empty( $validated['diagnostics'] ) && ! empty( $results ) ) {
 			return new WP_Error( 'whole_page_claim_unproven', 'The provider did not prove canonical source-page ownership.' );
