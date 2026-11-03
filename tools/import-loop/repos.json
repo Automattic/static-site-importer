@@ -1,0 +1,16 @@
+{
+  "blocks-engine": {
+    "github": "Automattic/blocks-engine",
+    "verify": "cd php-transformer && composer test:unit",
+    "shipped_via": "static-site-importer",
+    "lock_package": "automattic/blocks-engine-php-transformer"
+  },
+  "static-site-importer": {
+    "github": "Automattic/static-site-importer",
+    "verify": "npm ci && npm test"
+  },
+  "data-liberation-agent": {
+    "github": "Automattic/data-liberation-agent",
+    "verify": "npm ci && npm test"
+  }
+}
