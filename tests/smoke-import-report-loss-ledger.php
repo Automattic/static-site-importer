@@ -317,6 +317,19 @@ $font_row = array(
 	'url'         => 'https://fonts.example.test/inter.woff2',
 	'message'     => 'The font face for Inter was unavailable (producer_font_fetch_failed) and was dropped; the theme uses its fallback font.',
 );
+// An image the Media Library refused, as the receipt records it.
+$media_row = array(
+	'code'        => 'media_library_asset_unavailable',
+	'type'        => 'media_library_asset_unavailable',
+	'severity'    => 'warning',
+	'stage'       => 'media_library',
+	'reason'      => 'media_library_upload_failed',
+	'reason_code' => 'media_library_upload_failed',
+	'resolution'  => 'theme_file',
+	'source_path' => 'website/images/banner.webp',
+	'target_path' => 'assets/website/images/banner.webp',
+	'message'     => 'The image website/images/banner.webp could not be added to the Media Library (media_library_upload_failed); it is served from the theme instead.',
+);
 // Source findings, as intake reads them from `source-findings.json`: each row names its own class, unit and layer.
 $source_finding = static fn( string $code, string $loss_class, string $unit, string $route, string $path = '' ): array => array(
 	'code'         => $code,
@@ -384,6 +397,7 @@ $expected = array(
 	'static_site_importer_archive_entry_skipped'     => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/clip.mp4' ),
 	'static_site_importer_url_route_omitted'         => array( 'omitted_unit', 'route', 'static-site-importer', 'https://example.com/gone/' ),
 	'font_face_unavailable'                          => array( 'omitted_unit', 'asset', 'static-site-importer', 'https://fonts.example.test/inter.woff2' ),
+	'media_library_asset_unavailable'                => array( 'degraded_unit', 'asset', 'static-site-importer', 'website/images/banner.webp' ),
 	'omitted_artifact_files'                         => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
 	'omitted_artifact_file'                          => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
 );
@@ -393,7 +407,7 @@ $registry = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss_codes();
 $assert( array_keys( $expected ) == array_keys( $registry ), 'registry-covers-ledger-codes', implode( ',', array_diff( array_keys( $expected ), array_keys( $registry ) ) ) ); // phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- Order-insensitive key set comparison.
 
 // Classification by code beats the contract lane and the heuristic.
-foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, array( $font_row ), array_map( array( Static_Site_Importer_Diagnostic_Loss_Classes::class, 'reown_compiler_file_drop' ), $compiler_drop_rows ) ) as $row ) {
+foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, array( $font_row, $media_row ), array_map( array( Static_Site_Importer_Diagnostic_Loss_Classes::class, 'reown_compiler_file_drop' ), $compiler_drop_rows ) ) as $row ) {
 	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $row );
 	$assert(
 		$expected[ $row['code'] ][0] === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_CODE === $provenance['source'],
@@ -440,6 +454,7 @@ $receipt = array(
 			'files'       => array(),
 			'diagnostics' => array( $font_row ),
 		),
+		'media_library_findings' => array( $media_row ),
 	),
 	'existing_matches' => array( 'pages' => array() ),
 	'extensions'       => array(),
@@ -525,11 +540,11 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 33 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 34 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
-		'degraded_unit'                => 12,
+		'degraded_unit'                => 13,
 		'omitted_unit'                 => 20,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,

@@ -139,6 +139,8 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 					'routes' => array(),
 				),
 				'image_assets'                 => self::image_assets( $state ),
+				// Images the Media Library refused, kept at their theme destination.
+				'media_library_findings'       => array_values( $state['media_library_unavailable'] ?? array() ),
 				'runtime_declarations'         => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization'         => $state['applied']['font_materialization'] ?? array(
 					'status'      => 'not_requested',

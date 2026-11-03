@@ -527,6 +527,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
+		// Already refused and reported while resolving plan assets.
+		if ( isset( $state['media_library_unavailable'][ $relative ] ) ) {
+			return 0;
+		}
 		$file   = $theme_dir . '/' . $relative;
 		$record = $state['staged_resource_records'][ $relative ] ?? null;
 		if ( is_array( $record ) ) {
@@ -629,6 +633,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					}
 				}
 				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error );
+				// One image the Media Library refuses degrades alone: it keeps its
+				// verified theme destination and is reported. Integrity faults
+				// (bytes that do not match their capture record) still fail.
+				if ( $error && in_array( $error->get_error_code(), array( 'media_library_upload_failed', 'media_library_attachment_failed' ), true ) ) {
+					$state['media_library_unavailable'][ $asset['target_path'] ] = self::asset_unavailable( $asset, $error->get_error_code() );
+					$error = null;
+					continue;
+				}
 				if ( $error ) {
 					return $error;
 				}
@@ -659,6 +671,28 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				}
 			}
 		}
+	}
+
+	/**
+	 * A `media_library_asset_unavailable` finding: an image kept at its theme
+	 * destination because the Media Library would not hold it.
+	 *
+	 * @param array<string,mixed> $asset Plan asset.
+	 * @return array<string,mixed>
+	 */
+	private static function asset_unavailable( array $asset, string $reason ): array {
+		return array(
+			'code'        => 'media_library_asset_unavailable',
+			'type'        => 'media_library_asset_unavailable',
+			'severity'    => 'warning',
+			'stage'       => 'media_library',
+			'reason'      => $reason,
+			'reason_code' => $reason,
+			'resolution'  => 'theme_file',
+			'source_path' => (string) ( $asset['source_path'] ?? '' ),
+			'target_path' => (string) ( $asset['target_path'] ?? '' ),
+			'message'     => sprintf( 'The image %1$s could not be added to the Media Library (%2$s); it is served from the theme instead.', (string) ( $asset['source_path'] ?? '' ), $reason ),
+		);
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
