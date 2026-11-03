@@ -432,7 +432,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		// carries it in metadata because core/image saves no srcset or sizes.
 		$src       = (string) $tags->get_attribute( 'src' );
 		$selection = $attrs['metadata']['blocksEngineImageSelection'] ?? null;
-		$authored  = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && ( $selection['src'] ?? null ) === $src;
+		$inferred  = null === $selection;
+		if ( null === $selection && null === $tags->get_attribute( 'srcset' ) && null !== self::theme_relative_raster( $src, $theme_uri ) ) {
+			$selection = array( 'src' => $src );
+		}
+		$authored = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && ( $selection['src'] ?? null ) === $src;
+		if ( is_array( $selection ) && ( $selection['src'] ?? null ) === $src && empty( $selection['srcset'] ) ) {
+			$relative = self::theme_relative_raster( $src, $theme_uri );
+			if ( null !== $relative ) {
+				$state['src_only_images'][ $relative ] = true;
+			}
+		}
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
 		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
@@ -442,6 +452,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$url = $attachment_id > 0 ? ( $authored ? wp_get_original_image_url( $attachment_id ) : wp_get_attachment_url( $attachment_id ) ) : false;
 		if ( ! is_string( $url ) || '' === $url ) {
 			return $block_match[0];
+		}
+		if ( ! $inferred && is_array( $selection ) && ( $selection['src'] ?? null ) === $src && ! $authored ) {
+			$attrs['metadata']['blocksEngineImageSelection']['src'] = $url;
 		}
 		if ( $authored ) {
 			$candidate_ids = array();
@@ -642,6 +655,33 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$documents = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
 			$families  = self::plan_srcset_families( $documents, $assets, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) );
+			// Selection must be known before core creates any scaled original or
+			// intermediate files. A non-empty authored family always wins when
+			// an asset is shared by responsive and src-only blocks.
+			$selections = array();
+			foreach ( $documents as $document ) {
+				$markup = (string) ( $document['resolved_block_markup'] ?? '' );
+				$tags   = class_exists( 'WP_HTML_Tag_Processor' ) ? new WP_HTML_Tag_Processor( $markup ) : null;
+				while ( null !== $tags && $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
+					$relative = self::theme_relative_raster( (string) $tags->get_attribute( 'src' ), rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) );
+					if ( null !== $relative ) {
+						$selections[ $relative ] = ( $selections[ $relative ] ?? true ) && ! $tags->get_attribute( 'srcset' );
+					}
+				}
+				preg_match_all( '/<!-- wp:image\s+(\{.*?\})\s+-->/s', $markup, $openers );
+				foreach ( $openers[1] as $json ) {
+					$attributes = json_decode( $json, true );
+					$selection  = $attributes['metadata']['blocksEngineImageSelection'] ?? null;
+					if ( ! is_array( $selection ) || ! is_string( $selection['src'] ?? null ) ) {
+						continue;
+					}
+					$relative = self::theme_relative_raster( $selection['src'], rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) );
+					if ( null !== $relative ) {
+						$selections[ $relative ] = ( $selections[ $relative ] ?? true ) && empty( $selection['srcset'] );
+					}
+				}
+			}
+			$state['src_only_images'] = array_filter( $selections );
 			// Owners must resolve before the ordinary asset sweep, regardless of
 			// filename order. Failed/non-width families fall back to attachments.
 			$by_target   = array_column( $assets, null, 'target_path' );
@@ -923,6 +963,25 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					'file'     => _wp_relative_upload_path( $upload['file'] ),
 					'filesize' => strlen( $bytes ),
 					'sizes'    => array(),
+				)
+			);
+		} elseif ( ! empty( $state['src_only_images'][ $relative ] ) ) {
+			// This source selected one exact file, not a responsive family.
+			// Own its native metadata here rather than filtering scaling and
+			// frontend srcset separately: core has no renditions to substitute.
+			$dimensions = wp_getimagesize( $upload['file'] );
+			if ( false === $dimensions ) {
+				return (int) $attachment_id;
+			}
+			wp_update_attachment_metadata(
+				$attachment_id,
+				array(
+					'width'      => (int) $dimensions[0],
+					'height'     => (int) $dimensions[1],
+					'file'       => _wp_relative_upload_path( $upload['file'] ),
+					'filesize'   => strlen( $bytes ),
+					'sizes'      => array(),
+					'image_meta' => wp_read_image_metadata( $upload['file'] ),
 				)
 			);
 		} elseif ( function_exists( 'wp_generate_attachment_metadata' ) ) {

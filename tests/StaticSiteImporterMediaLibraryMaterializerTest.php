@@ -64,6 +64,44 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $report['attachment_count'] );
 	}
 
+	/** Src-only portraits keep original bytes while authored families remain responsive. */
+	public function test_src_only_portrait_preserves_original_without_invented_srcset(): void {
+		$uri    = get_theme_root_uri() . '/' . $this->slug();
+		$markup = '';
+		foreach ( array( 'portrait', 'responsive' ) as $name ) {
+			$src       = $uri . '/media/' . $name . '.png';
+			$selection = array( 'src' => $src );
+			if ( 'responsive' === $name ) {
+				$selection['srcset'] = $src . ' 1920w, ' . $uri . '/media/small.png 640w';
+			}
+			$attrs   = 'responsive' === $name ? array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) ) : array();
+			$markup .= '<!-- wp:image ' . ( empty( $attrs ) ? '{}' : serialize_block_attributes( $attrs ) ) . ' --><figure class="wp-block-image"><img src="' . $src . '" alt=""/></figure><!-- /wp:image -->';
+		}
+		$state = $this->state_with_page( $markup );
+		foreach ( array( 'portrait' => array( 1920, 2880 ), 'responsive' => array( 1920, 2880 ), 'small' => array( 640, 960 ) ) as $name => $dimensions ) {
+			$image = imagecreatetruecolor( $dimensions[0], $dimensions[1] );
+			imagepng( $image, $this->theme_dir . '/media/' . $name . '.png' );
+		}
+		// Different bytes prevent legacy content-hash deduplication.
+		file_put_contents( $this->theme_dir . '/media/responsive.png', 'responsive', FILE_APPEND ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture.
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertIsArray( $report );
+		$blocks = array_values( array_filter( parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) ), static fn( array $block ): bool => 'core/image' === $block['blockName'] ) );
+		$id     = $blocks[0]['attrs']['id'];
+		$this->assertGreaterThan( 0, $id );
+		$this->assertSame( 'attachment', get_post_type( $id ) );
+		$this->assertStringNotContainsString( '-scaled', basename( get_attached_file( $id ) ) );
+		$this->assertSame( wp_get_original_image_path( $id ), get_attached_file( $id ) );
+		$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/portrait.png' ), hash_file( 'sha256', get_attached_file( $id ) ) );
+		$this->assertSame( 2880, wp_get_attachment_metadata( $id )['height'] );
+		$this->assertStringContainsString( wp_get_attachment_url( $id ), $blocks[0]['innerHTML'] );
+		$html = apply_filters( 'the_content', serialize_block( $blocks[0] ) );
+		$this->assertStringContainsString( wp_get_attachment_url( $id ), $html );
+		$this->assertStringNotContainsString( 'srcset=', $html );
+		$this->assertStringNotContainsString( 'sizes=', $html );
+		$this->assertStringContainsString( 'srcset=', apply_filters( 'the_content', serialize_block( $blocks[1] ) ) );
+	}
+
 	/** A Blocks Engine featured-image handoff becomes the post thumbnail. */
 	public function test_featured_image_metadata_asset_becomes_post_thumbnail(): void {
 		$state = $this->state_with_page( '<!-- wp:paragraph --><p>Post</p><!-- /wp:paragraph -->' );
