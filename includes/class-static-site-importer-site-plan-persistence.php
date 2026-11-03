@@ -861,8 +861,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */
 	private static function apply_whole_page_handoffs( array &$state ) {
+		// Admit identities and unique destinations before writing any provider post.
 		$results              = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
-		$validated            = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results );
+		$validated            = Static_Site_Importer_Whole_Page_Handoff::admit( $state['ordered_pages'], $results );
 		$state['diagnostics'] = array_merge( $state['diagnostics'], $validated['diagnostics'] );
 		if ( ! empty( $validated['diagnostics'] ) && ! empty( $results ) ) {
 			return new WP_Error( 'whole_page_claim_unproven', 'The provider did not prove canonical source-page ownership.' );
@@ -913,6 +914,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			foreach ( array_unique( $aliases ) as $alias ) {
 				if ( '' !== $alias && ! self::add_post_meta_value( $destination, $route_key, $alias ) ) {
 					return new WP_Error( 'whole_page_destination_route_metadata_failed' );
+				}
+			}
+			if ( 'template' !== ( $claim['result']['document_destination'] ?? '' ) ) {
+				// The importer owns the final document after Media Library resolution.
+				// Provider seeding establishes the destination, not a second snapshot.
+				$saved = wp_update_post(
+					array(
+						'ID'           => $destination,
+						'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' ) ),
+					),
+					true
+				);
+				if ( is_wp_error( $saved ) ) {
+					return $saved;
+				}
+				$proof = Static_Site_Importer_Whole_Page_Handoff::validate( array( $page ), array( $claim['result'] ) );
+				if ( ! empty( $proof['diagnostics'] ) ) {
+					return new WP_Error( 'whole_page_claim_unproven', 'The final provider document did not persist unchanged.' );
 				}
 			}
 			$persisted_markup = 'template' === ( $claim['result']['document_destination'] ?? '' ) ? self::write_whole_page_template( $state, $destination, $source, $page ) : get_post_field( 'post_content', $destination );

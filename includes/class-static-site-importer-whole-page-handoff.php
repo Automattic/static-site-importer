@@ -42,6 +42,23 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 
 	/** Verify canonical identities and the actual persisted document before route mutation. */
 	public static function validate( array $pages, array $results ): array {
+		$validated = self::admit( $pages, $results );
+		foreach ( $validated['claims'] as $source => $claim ) {
+			$markup = (string) ( $claim['page']['materialized_block_markup'] ?? $claim['page']['resolved_block_markup'] ?? '' );
+			// Template destinations are written and proven separately by the importer.
+			if ( 'template' !== ( $claim['result']['document_destination'] ?? '' ) && ! hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) get_post( $claim['post_id'] )->post_content ) ) ) {
+				unset( $validated['claims'][ $source ] );
+				$validated['diagnostics'][] = array(
+					'reason_code' => 'whole_page_claim_unproven',
+					'source_path' => $source,
+				);
+			}
+		}
+		return $validated;
+	}
+
+	/** Admit canonical identities and unique destinations before any document write. */
+	public static function admit( array $pages, array $results ): array {
 		$claims      = array();
 		$diagnostics = array();
 		$by_source   = array();
@@ -70,10 +87,7 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 			}
 			$post   = $id > 0 ? get_post( $id ) : null;
 			$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
-			// A template destination is written and proven by the importer; a
-			// content destination must already persist the exact document.
-			$valid = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type && '' !== $markup
-				&& ( 'template' === ( $result['document_destination'] ?? '' ) || hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) ) );
+			$valid  = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type && '' !== $markup;
 			if ( ! $valid || isset( $claims[ $source ] ) ) {
 				$diagnostics[] = array(
 					'reason_code' => 'whole_page_claim_unproven',
