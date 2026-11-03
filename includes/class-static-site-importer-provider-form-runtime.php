@@ -88,8 +88,35 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		self::$registered = true;
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_choice_values' ), 30 );
+		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_form_container_scope' ) );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
+	}
+
+	/**
+	 * Stamp the form scope onto Jetpack's container wrapper.
+	 *
+	 * Jetpack renders the container div outside the saved block wrapper and
+	 * keeps the block's CSS classes off it (they would confuse layout
+	 * support). That container now holds the source form's slot in its
+	 * parent's layout, so it carries the scope class and the provider overlay
+	 * can size it like the source form. The scope class is inert without the
+	 * overlay's container rule, and a rendered form without one carries no
+	 * scope, so forms the importer did not seed stay untouched.
+	 *
+	 * @param string $html Jetpack's rendered contact form HTML.
+	 * @return string
+	 */
+	public static function project_form_container_scope( string $html ): string {
+		if ( ! preg_match( '/\bssi-form-[a-f0-9]{12}\b/', $html, $match ) ) {
+			return $html;
+		}
+		return (string) ( preg_replace(
+			'/(\bclass=[\'"])jetpack-contact-form-container(?![a-zA-Z0-9_-])/',
+			'$1jetpack-contact-form-container ' . $match[0],
+			$html,
+			1
+		) ?? $html );
 	}
 
 	/** Carry source choices in className, referencing durable non-autoloaded data for large lists. */

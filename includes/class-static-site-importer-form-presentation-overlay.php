@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles readable form field presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,front_end_form_dom:bool,form_box_initials:array<string,string>,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,front_end_form_dom:bool,form_box_initials:array<string,string>,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_item:array{suffix:string,strategy:string}}
  * A compile pass accumulates one surface's declared surface, scope, targets,
  * presentation targets, rules, chrome, operations, losses and context CSS.
  *
@@ -73,6 +73,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 					'strategy'     => 'provider_front_end_form_passthrough',
 				),
 			),
+			'form_item'                => array(
+				'suffix'   => '.jetpack-contact-form-container',
+				'strategy' => 'provider_form_item_sizing',
+			),
 		),
 		self::SURFACE_EDITOR    => array(
 			'prefix'                   => '.editor-styles-wrapper ',
@@ -109,6 +113,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				'properties' => array( 'display', 'flex-direction', 'flex-wrap', 'gap', 'row-gap', 'column-gap', 'align-items', 'align-content', 'justify-content', 'grid-template-columns', 'grid-template-rows' ),
 			),
 			'container_passthrough'    => array(),
+			'form_item'                => array(
+				'suffix'   => '',
+				'strategy' => 'provider_form_item_sizing',
+			),
 		),
 	);
 
@@ -199,6 +207,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			return self::failed_compile( $validated['error'] ?? 'provider layout target map could not be normalized.' );
 		}
 		$pass = self::open_pass( $declared, $validated_map );
+		self::compile_form_item_facts( $pass, $graph );
 		self::compile_control_containers( $pass, $presentation_graph );
 		$base_presented = self::compile_controls( $pass, $presentation_graph );
 		self::compile_variant_resets( $pass, $presentation_graph, $base_presented );
@@ -266,6 +275,96 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			// per context artifact the overlay carries (front end and editor).
 			'losses'               => array_merge( $context_losses, $context_losses ),
 			'context_css'          => $context_css,
+		);
+	}
+
+	/**
+	 * Give the provider wrapper the source parent positions the form's own
+	 * item and sizing facts.
+	 *
+	 * The readable path keeps the source markup, so the source box still
+	 * receives every fact the source stylesheet binds to its classes. But the
+	 * provider wrappers between the source parent and that box now hold the
+	 * box's old slot in the parent's flex or grid layout: the outermost
+	 * wrapper is the item, and it carries none of the source form's sizing,
+	 * so a centered or stretched parent shrinks it and a `width:100%` source
+	 * box resolves against the shrunken box. The outermost wrapper therefore
+	 * takes the source form element's own item and sizing facts; the wrappers
+	 * inside it fill it. The provider's own form css forces the source box
+	 * against the wrapper (`width:100%`), so the box no longer carries a
+	 * usable width of its own on these surfaces and the wrapper must take
+	 * even fixed lengths. The form's vertical margins stay on the box, which
+	 * still receives them from the source stylesheet; restating a length
+	 * margin here would double it. The horizontal margins follow only when
+	 * they are `auto`, which centers the wrapper exactly like the source box
+	 * while the box's own auto margins, inside a wrapper already sized to it,
+	 * have no free space left to consume.
+	 *
+	 * @param array               $pass  Compile pass.
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_form_item_facts( array &$pass, array $graph ): void {
+		$node = null;
+		foreach ( is_array( $graph['nodes'] ?? null ) ? $graph['nodes'] : array() as $candidate ) {
+			if ( is_array( $candidate ) && 'form' === ( $candidate['id'] ?? null ) && is_array( $candidate['layout'] ?? null ) ) {
+				$node = $candidate;
+				break;
+			}
+		}
+		if ( null === $node ) {
+			return;
+		}
+		$declared     = $pass['declared'];
+		$map          = self::form_item_fact_map();
+		$declarations = array();
+		foreach ( array_intersect_key( $node['layout'], $map ) as $fact => $value ) {
+			// Length margins would arrive twice, once here and once through the
+			// box's own copy of the source stylesheet; only the free-space kind
+			// can be restated safely, and it only consumes free space once.
+			if ( str_starts_with( (string) $fact, 'margin_' ) && 'auto' !== $value ) {
+				continue;
+			}
+			if ( ! self::safe_value( (string) $fact, $value ) ) {
+				continue;
+			}
+			$declarations[] = $map[ $fact ] . ':' . $value;
+		}
+		if ( array() === $declarations ) {
+			return;
+		}
+		$target               = $pass['scope'] . $declared['form_item']['suffix'];
+		$pass['rules'][]      = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $target ) ) . '{' . implode( ';', $declarations ) . '}';
+		$pass['operations'][] = array(
+			'dimension'   => 'layout',
+			'strategy'    => $declared['form_item']['strategy'],
+			'target_hash' => hash( 'sha256', $target ),
+		);
+	}
+
+	/**
+	 * The source form element's own flex/grid-item and sizing facts the
+	 * provider wrapper standing at its position must carry, mapped to their
+	 * css properties.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function form_item_fact_map(): array {
+		return array(
+			'width'        => 'width',
+			'max_width'    => 'max-width',
+			'margin_left'  => 'margin-left',
+			'margin_right' => 'margin-right',
+			'flex'         => 'flex',
+			'flex_grow'    => 'flex-grow',
+			'flex_shrink'  => 'flex-shrink',
+			'flex_basis'   => 'flex-basis',
+			'order'        => 'order',
+			'align_self'   => 'align-self',
+			'justify_self' => 'justify-self',
+			'column'       => 'grid-column',
+			'row'          => 'grid-row',
+			'area'         => 'grid-area',
 		);
 	}
 

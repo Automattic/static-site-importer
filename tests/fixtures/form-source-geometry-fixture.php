@@ -119,11 +119,36 @@ namespace {
 				. '<label class="consent"><input type="checkbox" name="ok"><span>I agree to the <a href="/privacy/">privacy policy</a>.</span></label>'
 				. '<button style="align-self:flex-end" type="submit">Send</button></form>',
 		),
+		// A centered flex column parent: the provider container holds the form
+		// box's old slot now, so it must carry the form's own parent-referencing
+		// item sizing or a `width:100%` card collapses to its content width.
+		'centered_card'    => array(
+			$tailwind . '.column{display:flex;flex-direction:column;align-items:center;width:648px}'
+				. '.card{width:100%;padding:24px;border:1px solid #444;background:#fff}.field{width:288px;height:40px}',
+			'<form class="card">'
+				. '<div><label for="n" class="block mb-2 text-sm">Name</label><input id="n" name="n" class="field"></div>'
+				. '<div><label for="e" class="block mb-2 text-sm">Email</label><input id="e" name="e" type="email" class="field"></div>'
+				. '<div><button type="submit" class="btn">Send</button></div></form>',
+			'<div class="column">',
+		),
+		// A form narrower than its parent keeps that width through its own box
+		// facts (width with auto margins), with or without the provider
+		// wrappers between it and the parent.
+		'inset_card'       => array(
+			$tailwind . '.wrap{width:648px}.inset{width:400px;margin:0 auto;padding:24px;border:1px solid #444;background:#fff}.field{width:288px;height:40px}',
+			'<form class="inset">'
+				. '<div><label for="n" class="block mb-2 text-sm">Name</label><input id="n" name="n" class="field"></div>'
+				. '<div><label for="e" class="block mb-2 text-sm">Email</label><input id="e" name="e" type="email" class="field"></div>'
+				. '<div><button type="submit" class="btn">Send</button></div></form>',
+			'<div class="wrap">',
+		),
 	);
 
 	$forms = array();
 	foreach ( $cases as $name => list( $css, $form_html ) ) {
-		$source   = '<style>' . $base . $css . '</style><main>' . $form_html . '</main>';
+		$wrap     = (string) ( $cases[ $name ][2] ?? '' );
+		$close    = '' === $wrap ? '' : '</div>';
+		$source   = '<style>' . $base . $css . '</style><main>' . $wrap . $form_html . $close . '</main>';
 		$compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $source ) ) )->toArray();
 		$fallback = $compiled['fallbacks'][0] ?? array();
 		$valid    = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $fallback ) ) );
@@ -143,6 +168,7 @@ namespace {
 			'sourceHtml' => $source,
 			'blocks'     => $blocks,
 			'frontHtml'  => ssi_role_box_render_form( $blocks[0] ),
+			'outerWrap'  => $wrap,
 			'css'        => $writes['/theme/style.css'],
 			'editorCss'  => $writes['/theme/assets/css/editor-style.css'],
 		);
