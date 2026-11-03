@@ -6,14 +6,17 @@
     "lock_package": "automattic/blocks-engine-php-transformer",
     "release_tag_prefix": "php-transformer-",
     "predicate_root": "php-transformer",
-    "contracts": "gates/blocks-engine-contracts.sh"
+    "contracts": "gates/blocks-engine-contracts.sh",
+    "stage": "materialization"
   },
   "static-site-importer": {
     "github": "Automattic/static-site-importer",
-    "verify": "npm ci && npm test"
+    "verify": "npm ci && npm test",
+    "stage": "import"
   },
   "data-liberation-agent": {
     "github": "Automattic/data-liberation-agent",
-    "verify": "npm ci && npx tsc --noEmit && npm test"
+    "verify": "npm ci && npx tsc --noEmit && npm test",
+    "stage": "capture"
   }
 }

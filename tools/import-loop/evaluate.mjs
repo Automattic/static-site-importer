@@ -12,8 +12,9 @@
 // findings are blockers; theme metrics are advisory and never block acceptance.
 //
 // Each route is rendered three ways: the live source, the kept capture, and the
-// import. A defect the capture already shows belongs to the capture stage (Data
-// Liberation); one that only the import shows belongs to materialization.
+// import. A defect the capture already shows belongs to the capture stage; one
+// that only the import shows belongs to materialization. repos.json names the
+// repository that owns each stage.
 
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -24,6 +25,8 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, inde
 for (const required of ['url', 'wp-url', 'site', 'source', 'out']) if (!args[required]) throw new Error(`evaluate_argument_missing: --${required}`);
 import { chromium } from 'playwright';
 import { fitViewport, measure } from './measure.mjs';
+
+const stageOwners = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(new URL('./repos.json', import.meta.url), 'utf8'))).map(([id, repo]) => [repo.stage, id]));
 
 const WIDTHS = [390, 768, 1440];
 const THRESHOLDS = { visible_text_ratio: 0.7, restyle_coverage: 0.5, css_ratio: 2, cover_share: 0.5, aspect_change: 0.2 };
@@ -102,7 +105,7 @@ const captureUrl = new URL(`http://127.0.0.1:${server.address().port}/`);
 // Defects of a candidate render against the source render, keyed by check and subject.
 function compare(source, candidate) {
   const defects = [];
-  if (candidate.covering && !source.covering) defects.push({ check: 'covering_element', owner: 'blocks-engine', subject: `${candidate.covering.tag}:${candidate.covering.text}`, evidence: candidate.covering });
+  if (candidate.covering && !source.covering) defects.push({ check: 'covering_element', owner: stageOwners.materialization, subject: `${candidate.covering.tag}:${candidate.covering.text}`, evidence: candidate.covering });
   const ratio = source.visibleText ? candidate.visibleText / source.visibleText : 1;
   if (ratio < THRESHOLDS.visible_text_ratio) defects.push({ check: 'visible_text_lost', owner: 'static-site-importer', subject: 'visible_text', evidence: { ratio: Number(ratio.toFixed(2)), source: source.visibleText, candidate: candidate.visibleText } });
   const rendered = new Map();
@@ -114,10 +117,10 @@ function compare(source, candidate) {
       const subject = m.group || m.key;
       missing.set(subject, [...(missing.get(subject) || []), { key: m.key, source: [m.w, m.h] }]);
     } else if (Math.min(m.w, m.h, match.w, match.h) >= 8 && Math.abs((match.w / match.h) / (m.w / m.h) - 1) > THRESHOLDS.aspect_change) {
-      defects.push({ check: 'image_distorted', owner: 'blocks-engine', subject: m.key, evidence: { source: [m.w, m.h], candidate: [match.w, match.h], style: match.style } });
+      defects.push({ check: 'image_distorted', owner: stageOwners.materialization, subject: m.key, evidence: { source: [m.w, m.h], candidate: [match.w, match.h], style: match.style } });
     }
   }
-  for (const [subject, items] of missing) defects.push({ check: 'image_missing', owner: 'blocks-engine', subject, evidence: { missing: items } });
+  for (const [subject, items] of missing) defects.push({ check: 'image_missing', owner: stageOwners.materialization, subject, evidence: { missing: items } });
   return defects;
 }
 
@@ -148,17 +151,17 @@ for (const route of routes) {
     }
     pairs.push(pair);
     const { source, capture, wp } = pair;
-    if (wp.error) { report({ stage: 'materialization', check: 'route_unreachable', owner_repo: 'static-site-importer', subject: 'route', evidence: wp.error, route, width }); continue; }
+    if (wp.error) { report({ stage: 'materialization', check: 'route_unreachable', owner_repo: stageOwners.import, subject: 'route', evidence: wp.error, route, width }); continue; }
     if (source.error) continue;
     // A subject the capture already gets wrong, in any way, is a capture defect.
     const captured = capture.error ? new Map() : new Map(compare(source, capture).map((d) => [d.subject, d]));
     for (const defect of compare(source, wp)) {
       const upstream = captured.get(defect.subject);
-      if (upstream) report({ stage: 'capture', check: defect.check, owner_repo: 'data-liberation-agent', subject: defect.subject, evidence: { capture: { check: upstream.check, ...upstream.evidence }, wp: defect.evidence }, route, width });
+      if (upstream) report({ stage: 'capture', check: defect.check, owner_repo: stageOwners.capture, subject: defect.subject, evidence: { capture: { check: upstream.check, ...upstream.evidence }, wp: defect.evidence }, route, width });
       else report({ stage: 'materialization', check: defect.check, owner_repo: defect.owner, subject: defect.subject, evidence: defect.evidence, route, width });
     }
     if (width === 1440 && source.title && wp.title && !wp.title.includes(source.title.split(/\s[|–-]\s/).pop())) {
-      report({ stage: 'theme', check: 'site_title_not_imported', owner_repo: 'static-site-importer', subject: 'document_title', evidence: { source: source.title, wp: wp.title }, route, width });
+      report({ stage: 'theme', check: 'site_title_not_imported', owner_repo: stageOwners.import, subject: 'document_title', evidence: { source: source.title, wp: wp.title }, route, width });
     }
   }
 }
@@ -176,12 +179,12 @@ const reportFile = (function find(dir) {
   return null;
 })(reportRoot);
 if (!reportFile) {
-  report({ stage: 'import', check: 'import_report_missing', owner_repo: 'static-site-importer', subject: 'import-report.json', evidence: reportRoot });
+  report({ stage: 'import', check: 'import_report_missing', owner_repo: stageOwners.import, subject: 'import-report.json', evidence: reportRoot });
 } else {
   const importReport = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
   const metrics = importReport.design_system?.metrics || {};
   const quality = importReport.quality || {};
-  if (quality.status && quality.status !== 'pass' && quality.status !== 'passed') report({ stage: 'editability', check: 'quality_status', owner_repo: 'static-site-importer', subject: quality.status, evidence: quality.status });
+  if (quality.status && quality.status !== 'pass' && quality.status !== 'passed') report({ stage: 'editability', check: 'quality_status', owner_repo: stageOwners.import, subject: quality.status, evidence: quality.status });
   for (const key of ['raw_html_companion_block_count', 'invalid_block_count']) if (quality[key] > 0) report({ stage: 'editability', check: key, owner_repo: 'blocks-engine', subject: key, evidence: quality[key] });
   if (metrics.restyle_coverage < THRESHOLDS.restyle_coverage) report({ stage: 'theme', check: 'restyle_coverage_low', owner_repo: 'blocks-engine', subject: 'restyle_coverage', evidence: { restyle_coverage: metrics.restyle_coverage, refused_value_count: metrics.refused_value_count, threshold: THRESHOLDS.restyle_coverage } });
   if (metrics.generated_to_source_css_ratio > THRESHOLDS.css_ratio) report({ stage: 'theme', check: 'theme_css_bloat', owner_repo: 'blocks-engine', subject: 'generated_to_source_css_ratio', evidence: { ratio: metrics.generated_to_source_css_ratio, theme_css_bytes: metrics.theme_css_bytes, unique_source_css_bytes: metrics.unique_source_css_bytes, threshold: THRESHOLDS.css_ratio } });
