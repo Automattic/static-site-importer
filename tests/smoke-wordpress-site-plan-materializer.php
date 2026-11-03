@@ -140,8 +140,8 @@ function wp_delete_file( string $path ): bool {
 		$GLOBALS['ssi_plan_rollback_events'][] = 'file:' . basename( $path );
 	}
 	return ! ( $GLOBALS['ssi_plan_rollback_fail_file'] ?? false ) && unlink( $path ); }
-function wp_parse_url( string $url ) {
-	return parse_url( $url ); }
+function wp_parse_url( string $url, int $component = -1 ) {
+	return parse_url( $url, $component ); }
 function wp_safe_remote_get( string $url, array $args ) {
 	$GLOBALS['ssi_plan_font_requests'][] = array(
 		'url'  => $url,
@@ -4658,5 +4658,42 @@ if ( ! is_wp_error( $invalid_compiled ) ) {
 }
 
 require __DIR__ . '/fixtures/assert-form-template-surfaces.php';
+
+// Load media APIs only here so earlier non-media smoke contracts stay isolated.
+require __DIR__ . '/fixtures/plan-media-wordpress.php';
+$media_files = array();
+$media_candidates = array();
+foreach ( array( 1920, 532, 816, 1252 ) as $width ) {
+	$image = imagecreatetruecolor( $width, $width / 2 );
+	ob_start();
+	imagepng( $image );
+	$media_files[ 'media/photo-' . $width . '.png' ] = ob_get_clean();
+	imagedestroy( $image );
+	$media_candidates[] = '/media/photo-' . $width . '.png ' . $width . 'w';
+}
+$media_srcset = implode( ', ', $media_candidates );
+foreach ( array( 'family' => '', 'independent-src' => '<img src="/media/photo-532.png">', 'independent-href' => '<a href="/media/photo-532.png">Original</a>' ) as $case => $extra ) {
+	$media_artifact = array( 'entrypoint' => 'index.html', 'files' => array_merge( $media_files, array( 'index.html' => '<main><img src="/media/photo-1920.png" srcset="' . $media_srcset . '" sizes="100vw" alt="Photo">' . $extra . '</main>' ) ) );
+	$media_result = ( new ArtifactCompiler() )->compile( $media_artifact )->toArray();
+	$media_plan = $media_result['source_reports']['wordpress_site_plan'];
+	$before_media = array_keys( $GLOBALS['ssi_media_files'] ?? array() );
+	$media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $media_plan, array( 'slug' => 'srcset-' . $case ) );
+	$assert( 'completed' === $media_receipt['status'], 'public srcset plan materializes: ' . wp_json_encode( $media_receipt['errors'] ?? array() ) );
+	$new_media = array_values( array_diff( array_keys( $GLOBALS['ssi_media_files'] ?? array() ), $before_media ) );
+	$assert( ( 'family' === $case ? 1 : 2 ) === count( $new_media ), 'srcset-only files fold, independent src/href references retain attachments: ' . $case );
+	$id = $new_media[0];
+	$metadata = wp_get_attachment_metadata( $id );
+	$markup = wp_json_encode( $media_receipt['plan']['pages'] ?? array(), JSON_UNESCAPED_SLASHES );
+	foreach ( array( 532, 816, 1252 ) as $width ) {
+		$size = $metadata['sizes'][ 'ssi-source-' . $width ] ?? array();
+		$assert( $width === ( $size['width'] ?? null ) && (float) ( $width / 2 ) === (float) ( $size['height'] ?? 0 ), 'source width registered on owner' );
+		$url = 'https://example.test/uploads/' . ( $size['file'] ?? '' );
+		if ( 532 !== $width || 'family' === $case ) {
+			$assert( str_contains( $markup, $url . ' ' . $width . 'w' ), 'plan candidate token binds to uploaded rendition URL' );
+		}
+		$assert( hash( 'sha256', $media_files[ 'media/photo-' . $width . '.png' ] ) === hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $size['file'] ), 'registered rendition preserves captured bytes' );
+	}
+	$assert( str_contains( $markup, wp_get_attachment_url( $id ) . ' 1920w' ), 'src candidate binds to owner URL' );
+}
 
 echo "WordPress site plan materializer smoke passed.\n";
