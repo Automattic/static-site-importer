@@ -163,16 +163,29 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				return $error;
 			}
 			if ( '' !== $featured_path ) {
-				// Plan-owned media already has an attachment; explicit provider
-				// paths still take precedence and resolve from the theme.
-				$token    = (string) ( $featured_image['asset_token'] ?? '' );
-				$featured = empty( $page['provider_featured_image_target_path'] ) ? (int) ( $state['resolved']['resolution']['attachment_resolutions'][ $token ]['id'] ?? 0 ) : 0;
+				// Both featured-image handoffs reuse plan attachments before
+				// falling back to a real theme file. Provider claims take precedence.
+				$token = (string) ( $featured_image['asset_token'] ?? '' );
+				if ( ! empty( $page['provider_featured_image_target_path'] ) ) {
+					$token = '';
+					foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+						if ( ( $asset['target_path'] ?? '' ) === $featured_path ) {
+							$token = (string) ( $asset['token'] ?? '' );
+							break;
+						}
+					}
+				}
+				$featured = (int) ( $state['resolved']['resolution']['attachment_resolutions'][ $token ]['id'] ?? 0 );
 				if ( $featured <= 0 ) {
 					$relative = self::theme_relative_asset( $theme_uri . '/' . $featured_path, $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
 					$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
 				}
 				if ( null !== $error || $featured <= 0 ) {
 					if ( null === $social_tag ) {
+						$state['diagnostics'][] = array(
+							'reason_code' => $error instanceof WP_Error ? $error->get_error_code() : 'provider_featured_image_unresolved',
+							'source_path' => $source_path,
+						);
 						return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
 					}
 					// Source social metadata is optional, unlike an explicit featured-image handoff.
