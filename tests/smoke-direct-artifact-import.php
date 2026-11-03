@@ -340,6 +340,39 @@ $drive_apply = static function ( array $request, ?callable $invoke = null ): arr
 	}
 	throw new RuntimeException( 'The direct apply fixture exceeded its continuation bound.' );
 };
+// Declared capture reports use their intake budget all the way through public import.
+$report_root = $test_root . '/report-capture';
+mkdir( $report_root . '/website', 0777, true );
+file_put_contents( $report_root . '/website/index.html', '<main><h1>Report capture</h1></main>' );
+file_put_contents( $report_root . '/interaction-states.json', '{"states":[],"padding":"' . str_repeat( 'x', 11 * 1024 * 1024 ) . '"}' );
+file_put_contents( $report_root . '/capture-receipt.json', wp_json_encode( array(
+	'schema' => 'blocks-engine-capture/capture-receipt/v1',
+	'websiteRoot' => 'website',
+	'reports' => array( 'interaction-states.json' ),
+) ) );
+$report_request_path = $test_root . '/report-request.json';
+file_put_contents( $report_request_path, wp_json_encode( array(
+	'operation' => 'apply',
+	'slug' => 'report-budget-regression',
+	'source' => array( 'type' => 'files', 'ref' => 'request-bundle:report-capture' ),
+) ) );
+$report_request = static_site_importer_cli_import_input( array(), array( 'request' => $report_request_path ) );
+$report_result = $drive_apply( $report_request );
+$assert( ! empty( $report_result['success'] ) && empty( $report_result['continuation'] ), 'declared 11 MiB interaction-states.json must import through the public request-bundle path: ' . wp_json_encode( $report_result ) );
+echo "PASS: declared 11 MiB interaction-states.json imports\n";
+// Keep the exact bytes and remove only the receipt declaration.
+file_put_contents( $report_root . '/capture-receipt.json', wp_json_encode( array(
+	'schema' => 'blocks-engine-capture/capture-receipt/v1',
+	'websiteRoot' => 'website',
+	'reports' => array(),
+) ) );
+copy( $report_root . '/interaction-states.json', $report_root . '/website/interaction-states.json' );
+$undeclared_result = static_site_importer_cli_import_input( array(), array( 'request' => $report_request_path ) );
+$assert( is_wp_error( $undeclared_result ) && 'static_site_importer_cli_request_bundle_file_too_large' === $undeclared_result->get_error_code(), 'undeclared textual payload of the same size must still be refused: ' . wp_json_encode( $undeclared_result ) );
+echo "PASS: undeclared 11 MiB textual payload is refused\n";
+$GLOBALS['ssi_direct_mutations'] = 0;
+$GLOBALS['ssi_direct_compiled_results'] = array();
+
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge(
 	$policy,
 	array(

@@ -147,6 +147,8 @@ final class Static_Site_Importer_Content_Policy {
 		$entrypoint = is_scalar( $artifact['entrypoint'] ?? null ) ? (string) $artifact['entrypoint'] : '';
 		$admitted   = array();
 		$findings   = array();
+		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
+		$reports = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactNormalizer::declaredReports( $artifact );
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
@@ -163,7 +165,7 @@ final class Static_Site_Importer_Content_Policy {
 					)
 				);
 			}
-			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload );
+			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, isset( $reports[ $path ] ) );
 			if ( $reason instanceof WP_Error ) {
 				return $reason;
 			}
@@ -242,9 +244,10 @@ final class Static_Site_Importer_Content_Policy {
 	 * @param string              $path                Artifact path.
 	 * @param object|null         $payload_reader      Canonical source payload reader.
 	 * @param callable|null       $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
+	 * @param bool                $declared_report     Whether the artifact declares this path as a capture report.
 	 * @return string|WP_Error
 	 */
-	private static function exclusion_reason( array $file, string $path, ?object $payload_reader, ?callable $retain_text_payload ) {
+	private static function exclusion_reason( array $file, string $path, ?object $payload_reader, ?callable $retain_text_payload, bool $declared_report ) {
 		if ( ! self::is_static_path( $path ) ) {
 			return 'non_static_extension';
 		}
@@ -258,7 +261,7 @@ final class Static_Site_Importer_Content_Policy {
 		if ( ! self::is_textual_path( $path ) ) {
 			return '';
 		}
-		$content = self::file_bytes( $file, $payload_reader );
+		$content = self::file_bytes( $file, $payload_reader, $declared_report );
 		if ( $content instanceof WP_Error ) {
 			return $content;
 		}
@@ -424,16 +427,17 @@ final class Static_Site_Importer_Content_Policy {
 	 *
 	 * @param array<string,mixed> $file           Artifact file.
 	 * @param object|null         $payload_reader Canonical source payload reader.
+	 * @param bool                $declared_report Whether the artifact declares this path as a capture report.
 	 * @return string|null|WP_Error Bytes, null when the file carries none, or the verification error.
 	 */
-	public static function file_bytes( array $file, ?object $payload_reader ) {
+	public static function file_bytes( array $file, ?object $payload_reader, bool $declared_report = false ) {
 		if ( ! array_key_exists( 'payload_reference', $file ) && ! ( is_array( $file['payload'] ?? null ) && array_key_exists( 'reference', $file['payload'] ) ) ) {
 			return self::file_content( $file );
 		}
 		require_once __DIR__ . '/class-static-site-importer-site-plan-persistence.php';
 		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
 		$reference = Static_Site_Importer_Site_Plan_Persistence::payload_reference( $file );
-		$maximum   = Static_Site_Importer_Compiler_Limits::resolve()['max_file_bytes'];
+		$maximum   = Static_Site_Importer_Compiler_Limits::resolve()[ $declared_report ? 'max_report_file_bytes' : 'max_file_bytes' ];
 		if ( self::is_redirects_manifest_path( (string) $file['path'] ) ) {
 			$maximum = self::REDIRECTS_MANIFEST_MAX_BYTES;
 		}
