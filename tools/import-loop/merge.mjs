@@ -2,8 +2,9 @@
 // Loop step, after the merge approval: merge every open pull request that
 // fixes a tracked issue, is green, and that confirm.mjs did not refute.
 //
-// Usage: node merge.mjs --triage <triage.json> --confirm <confirm.json>
+// Usage: node merge.mjs --triage <triage.json> --confirm <confirm.json> [--dry-run 1]
 // Output: {merged:[{repo, pr, sha}], merged_count, held:[{pr, reason}]}
+// With --dry-run, `merged` lists what approval would merge (sha is the head).
 
 import fs from 'node:fs';
 import { args, gh, linkedPullRequests } from './lib.mjs';
@@ -26,7 +27,8 @@ for (const item of triage.tracked) {
     if (pr.isDraft) { held.push({ pr: pr.url, reason: 'draft' }); continue; }
     if (pr.mergeable !== 'MERGEABLE') { held.push({ pr: pr.url, reason: `mergeable=${pr.mergeable}` }); continue; }
     if (!checks.length || red.length) { held.push({ pr: pr.url, reason: checks.length ? `checks not green: ${red.map((c) => c.name || c.context).join(', ')}` : 'no checks reported' }); continue; }
-    gh('pr', 'merge', pr.url, '--squash', '--delete-branch');
+    if (args['dry-run']) { merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha: pr.headRefOid }); continue; }
+    gh('pr', 'merge', pr.url, '--squash', '--delete-branch', '--match-head-commit', pr.headRefOid);
     const sha = JSON.parse(gh('pr', 'view', pr.url, '--json', 'mergeCommit')).mergeCommit?.oid;
     merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha });
     console.error(`[merge] merged ${pr.url} ${sha}`);
