@@ -137,21 +137,24 @@ for (const finding of blockers) {
 
 // Cook promotes only when the repository's own checks pass and, where the
 // predicates run this repository's code, the defect is gone from every
-// acceptance cell. The gate runs from the root of Cook's worktree.
+// acceptance cell. The gate runs from the root of Cook's worktree; its
+// machine-local path reaches Cook as gate environment, not in the command.
 function acceptanceGate(item, repo) {
-  if (!repo.predicate_root || !item.cells.length) return repo.verify;
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
+  const checked = repo.predicate_root && item.cells.length;
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
-    `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`,
-    `root="$PWD/${repo.predicate_root}"; failed=0`,
-    ...item.cells.map((cell) => {
+    checked
+      ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
+      : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
+    ...(checked ? [`root="$PWD/${repo.predicate_root}"; failed=0`] : []),
+    ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
       return `PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
     }),
-    'exit $failed',
+    checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
-  return `(${repo.verify}) && bash '${gate}'`;
+  return { verify: `(${repo.verify}) && bash "$ACCEPT_GATE"`, gate_env: `ACCEPT_GATE=${gate}` };
 }
 
 const cook_items = [];
@@ -179,7 +182,7 @@ for (const item of tracked) {
       ] : []),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, verify: acceptanceGate(item, repo) });
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...acceptanceGate(item, repo) });
   }
 }
 

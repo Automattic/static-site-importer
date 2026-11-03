@@ -138,7 +138,8 @@
         "placement": "local",
         "backend": "pi",
         "model": "roadie/cook-heavy",
-        "acknowledge-model-override": true
+        "acknowledge-model-override": true,
+        "gate-env": "{{item.gate_env}}"
       }
     },
     {
