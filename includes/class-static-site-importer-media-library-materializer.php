@@ -628,7 +628,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				}
 			}
 			$documents = array_merge( $state['resolved']['pages'], $state['resolved']['templates'], $state['resolved']['template_parts'], $state['resolved']['synced_patterns'] ?? array() );
-			$families  = self::plan_srcset_families( $documents, $assets, $state['theme']['uri'] );
+			$families  = self::plan_srcset_families( $documents, $assets, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) );
 			// Owners must resolve before the ordinary asset sweep, regardless of
 			// filename order. Failed/non-width families fall back to attachments.
 			$by_target   = array_column( $assets, null, 'target_path' );
@@ -678,7 +678,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					'url' => wp_get_attachment_url( $id ),
 				);
 				foreach ( $families[ $asset['target_path'] ] ?? array() as $family ) {
-					$urls = self::register_srcset_renditions( $family['srcset'], $id, $state['theme']['uri'], $dir, $state );
+					$urls = self::register_srcset_renditions( $family['srcset'], $id, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ), $dir, $state );
 					foreach ( $family['tokens'] as $url => $token ) {
 						if ( isset( $urls[ $url ] ) && ! isset( $resolutions[ $token ] ) ) {
 							$resolutions[ $token ] = array(
@@ -727,6 +727,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			foreach ( $openers[1] as $json ) {
 				$attributes = json_decode( $json, true );
 				if ( is_array( $attributes ) ) {
+					// Image blocks keep their responsive selection as structured
+					// metadata, without an inner img carrying these attributes.
+					$selection = $attributes['metadata']['blocksEngineImageSelection'] ?? null;
+					if ( is_array( $selection ) && is_string( $selection['src'] ?? null ) ) {
+						$protected[ $selection['src'] ] = true;
+						if ( is_string( $selection['srcset'] ?? null ) && isset( $by_url[ $selection['src'] ] ) ) {
+							$images[] = $selection;
+						}
+					}
 					array_walk_recursive(
 						$attributes,
 						static function ( $value ) use ( &$markup ): void {

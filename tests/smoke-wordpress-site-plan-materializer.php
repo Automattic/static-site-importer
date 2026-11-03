@@ -4663,37 +4663,64 @@ require __DIR__ . '/fixtures/assert-form-template-surfaces.php';
 require __DIR__ . '/fixtures/plan-media-wordpress.php';
 $media_files = array();
 $media_candidates = array();
-foreach ( array( 1920, 532, 816, 1252 ) as $width ) {
+foreach ( array( 1920, 532, 1252, 800 ) as $width ) {
 	$image = imagecreatetruecolor( $width, $width / 2 );
 	ob_start();
 	imagepng( $image );
 	$media_files[ 'media/photo-' . $width . '.png' ] = ob_get_clean();
 	imagedestroy( $image );
-	$media_candidates[] = '/media/photo-' . $width . '.png ' . $width . 'w';
+	if ( 800 !== $width ) {
+		$media_candidates[] = '/media/photo-' . $width . '.png ' . $width . 'w';
+	}
 }
 $media_srcset = implode( ', ', $media_candidates );
-foreach ( array( 'family' => '', 'independent-src' => '<img src="/media/photo-532.png">', 'independent-href' => '<a href="/media/photo-532.png">Original</a>' ) as $case => $extra ) {
-	$media_artifact = array( 'entrypoint' => 'index.html', 'files' => array_merge( $media_files, array( 'index.html' => '<main><img src="/media/photo-1920.png" srcset="' . $media_srcset . '" sizes="100vw" alt="Photo">' . $extra . '</main>' ) ) );
+foreach ( array( 'family' => '', 'outside-srcset' => '', 'img-tag' => '', 'independent-src' => '<img src="/media/photo-532.png">', 'independent-href' => '<a href="/media/photo-532.png">Original</a>' ) as $case => $extra ) {
+	$media_src = '/media/photo-' . ( 'outside-srcset' === $case ? 800 : 1920 ) . '.png';
+	$media_artifact = array( 'entrypoint' => 'index.html', 'files' => array_merge( $media_files, array( 'index.html' => '<main><img src="' . $media_src . '" srcset="' . $media_srcset . '" sizes="100vw" alt="Photo">' . $extra . '</main>' ) ) );
 	$media_result = ( new ArtifactCompiler() )->compile( $media_artifact )->toArray();
 	$media_plan = $media_result['source_reports']['wordpress_site_plan'];
+	// Real resolved plans carry the selection in the image opener, not an img tag.
+	$media_selection = array( 'src' => $media_src, 'srcset' => $media_srcset, 'sizes' => 'auto, 100vw', 'loading' => 'lazy' );
+	$media_markup = 'img-tag' === $case
+		? '<!-- wp:image --><figure class="wp-block-image"><img src="' . $media_src . '" srcset="' . $media_srcset . '"></figure><!-- /wp:image -->'
+		: '<!-- wp:image ' . wp_json_encode( array( 'metadata' => array( 'blocksEngineImageSelection' => $media_selection ) ), JSON_UNESCAPED_SLASHES ) . ' --><!-- /wp:image -->';
+	$media_markup .= '' !== $extra ? '<!-- wp:paragraph --><p>' . $extra . '</p><!-- /wp:paragraph -->' : '';
+	foreach ( $media_plan['assets'] as $asset ) {
+		$media_markup = str_replace( '/' . $asset['source_path'], '{{wordpress-site-plan:asset:' . $asset['token'] . '}}', $media_markup );
+	}
+	$media_plan['pages'][0]['canonical_block_markup'] = $media_markup;
+	$media_plan['pages'][0]['content_hash'] = hash( 'sha256', $media_markup );
+	// Keep the producer-owned bootstrap consistent with the fixture's image metadata.
+	$media_bootstrap = ( new ReflectionMethod( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::class, 'bootstrap' ) )->invoke( null, $media_plan['assets'], array(), $media_plan['template_parts'], $media_plan['reference_tokens'], $media_plan['templates'], $media_plan['pages'], $media_plan['menus'], 'wordpress' === ( $media_plan['theme']['runtime_emoji'] ?? null ) );
+	foreach ( $media_plan['writes'] as &$media_write ) {
+		if ( 'functions.php' === $media_write['target_path'] ) {
+			$media_write['payload']['data'] = $media_bootstrap;
+			$media_write['payload_hash'] = hash( 'sha256', $media_bootstrap );
+			if ( isset( $media_write['canonical_payload'] ) ) {
+				$media_write['canonical_payload'] = $media_bootstrap;
+			}
+		}
+	}
+	unset( $media_write );
+	$media_plan['plan_identity'] = WordPressSitePlan::planIdentity( $media_plan );
 	$before_media = array_keys( $GLOBALS['ssi_media_files'] ?? array() );
 	$media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $media_plan, array( 'slug' => 'srcset-' . $case ) );
-	$assert( 'completed' === $media_receipt['status'], 'public srcset plan materializes: ' . wp_json_encode( $media_receipt['errors'] ?? array() ) );
+	$assert( 'completed' === $media_receipt['status'], 'public srcset plan materializes (' . $case . '): ' . wp_json_encode( $media_receipt['errors'] ?? array() ) );
 	$new_media = array_values( array_diff( array_keys( $GLOBALS['ssi_media_files'] ?? array() ), $before_media ) );
-	$assert( ( 'family' === $case ? 1 : 2 ) === count( $new_media ), 'srcset-only files fold, independent src/href references retain attachments: ' . $case );
+	$assert( ( in_array( $case, array( 'independent-src', 'independent-href' ), true ) ? 2 : 1 ) === count( $new_media ), 'srcset-only files fold, independent src/href references retain attachments: ' . $case );
 	$id = $new_media[0];
 	$metadata = wp_get_attachment_metadata( $id );
 	$markup = wp_json_encode( $media_receipt['plan']['pages'] ?? array(), JSON_UNESCAPED_SLASHES );
-	foreach ( array( 532, 816, 1252 ) as $width ) {
+	foreach ( 'outside-srcset' === $case ? array( 532, 1252, 1920 ) : array( 532, 1252 ) as $width ) {
 		$size = $metadata['sizes'][ 'ssi-source-' . $width ] ?? array();
 		$assert( $width === ( $size['width'] ?? null ) && (float) ( $width / 2 ) === (float) ( $size['height'] ?? 0 ), 'source width registered on owner' );
 		$url = 'https://example.test/uploads/' . ( $size['file'] ?? '' );
-		if ( 532 !== $width || 'family' === $case ) {
+		if ( 532 !== $width || ! in_array( $case, array( 'independent-src', 'independent-href' ), true ) ) {
 			$assert( str_contains( $markup, $url . ' ' . $width . 'w' ), 'plan candidate token binds to uploaded rendition URL' );
 		}
 		$assert( hash( 'sha256', $media_files[ 'media/photo-' . $width . '.png' ] ) === hash_file( 'sha256', dirname( get_attached_file( $id ) ) . '/' . $size['file'] ), 'registered rendition preserves captured bytes' );
 	}
-	$assert( str_contains( $markup, wp_get_attachment_url( $id ) . ' 1920w' ), 'src candidate binds to owner URL' );
+	$assert( str_contains( $markup, wp_get_attachment_url( $id ) ), 'src binds to owner URL even outside srcset' );
 }
 
 echo "WordPress site plan materializer smoke passed.\n";
