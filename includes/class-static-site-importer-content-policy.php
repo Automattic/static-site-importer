@@ -148,7 +148,8 @@ final class Static_Site_Importer_Content_Policy {
 		$admitted   = array();
 		$findings   = array();
 		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
-		$reports = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactNormalizer::declaredReports( $artifact );
+		require_once __DIR__ . '/cli.php';
+		$reports = static_site_importer_cli_request_bundle_declared_reports( is_array( $artifact['reports'] ?? null ) ? $artifact['reports'] : array() );
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
@@ -165,7 +166,7 @@ final class Static_Site_Importer_Content_Policy {
 					)
 				);
 			}
-			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, isset( $reports[ $path ] ) );
+			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, static_site_importer_cli_request_bundle_is_declared_report( $path, $reports ) );
 			if ( $reason instanceof WP_Error ) {
 				return $reason;
 			}
@@ -437,7 +438,10 @@ final class Static_Site_Importer_Content_Policy {
 		require_once __DIR__ . '/class-static-site-importer-site-plan-persistence.php';
 		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
 		$reference = Static_Site_Importer_Site_Plan_Persistence::payload_reference( $file );
-		$maximum   = Static_Site_Importer_Compiler_Limits::resolve()[ $declared_report ? 'max_report_file_bytes' : 'max_file_bytes' ];
+		require_once __DIR__ . '/cli.php';
+		$maximum = $declared_report
+			? static_site_importer_cli_request_bundle_limits()['max_report_file_bytes']
+			: Static_Site_Importer_Compiler_Limits::resolve()['max_file_bytes'];
 		if ( self::is_redirects_manifest_path( (string) $file['path'] ) ) {
 			$maximum = self::REDIRECTS_MANIFEST_MAX_BYTES;
 		}
