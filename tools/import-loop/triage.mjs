@@ -59,9 +59,14 @@ function routePage(route) {
 }
 const predicatePath = (check) => path.join(here, 'predicates', `${check}.mjs`);
 // The recorded route/width cells a fix must clear, on the full captured page.
-const acceptanceCells = (finding) => fs.existsSync(predicatePath(finding.check))
-  ? finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: routePage(o.route) }))
-  : [];
+// Where the predicate runs the owning repository's code, a cell counts only if
+// it reproduces at trunk: a cell trunk already clears cannot tell a fix apart.
+function acceptanceCells(finding) {
+  if (!fs.existsSync(predicatePath(finding.check))) return [];
+  const cells = finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: routePage(o.route) }));
+  if (!repos[finding.owner_repo]?.predicate_root) return cells;
+  return cells.filter((cell) => predicateExit(predicatePath(finding.check), transformer, cell.page, predicateEnv(finding.subject, cell, result.site)) === 0);
+}
 
 const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { encoding: 'utf8' }).trim();
 function reduceAndFile(finding) {
@@ -132,7 +137,14 @@ for (const finding of blockers) {
   else if (issue) entry = { status: 'untracked', reason: `fix did not hold: ${issue.url} is closed and the finding still reproduces` };
   else entry = reduceAndFile(finding);
   const record = { signature: finding.signature, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
-  if (record.status === 'tracked') record.cells = acceptanceCells(finding);
+  if (record.status === 'tracked') {
+    record.cells = acceptanceCells(finding);
+    // The import shows the defect but the predicate cannot: a fix gated on it
+    // would pass vacuously, so the finding waits for a faithful predicate.
+    if (!record.cells.length && fs.existsSync(predicatePath(finding.check)) && repos[finding.owner_repo]?.predicate_root) {
+      Object.assign(record, { status: 'untracked', reason: `predicate gap: the import shows ${finding.check} but the predicate does not reproduce it at trunk on any cell` });
+    }
+  }
   (record.status === 'tracked' ? tracked : untracked).push(record);
 }
 
