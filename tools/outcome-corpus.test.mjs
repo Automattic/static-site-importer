@@ -17,9 +17,10 @@ import { execFileSync } from 'node:child_process';
 test('capture contracts bind real outcome probes without producer knowledge', async () => {
   const root = path.resolve('tests/fixtures/outcome-capture');
   const html = fs.readFileSync(path.join(root, 'website/index.html'), 'utf8');
+  let served = html;
   const server = http.createServer((request, response) => {
     if (request.url === '/old') { response.writeHead(301, { location: '/' }); response.end(); }
-    else { response.setHeader('Content-Type', 'text/html'); response.end(html); }
+    else { response.setHeader('Content-Type', 'text/html'); response.end(served); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch();
@@ -73,7 +74,11 @@ test('capture contracts bind real outcome probes without producer knowledge', as
       assert.deepEqual(prefixed.aliases.find(alias => alias.path === '/site/'), { path: '/site/', destination: '/' });
       cleanup.pages[0].reports[0].truncated = true;
       fs.writeFileSync(cleanupFile, JSON.stringify(cleanup));
-      const incomplete = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html: html.replace('<main>', '<div>').replace('</main>', '</div>') } } });
+      // A device document wrapper scopes the whole document, so it never bounds content.
+      fs.writeFileSync(receiptFile, JSON.stringify({ ...receipt, document_scope_classes: ['device-document'] }));
+      served = html.replace('<main>', '<div class="device-document">').replace('</main>', '</div>');
+      const incomplete = await deriveOutcomeBindings({ ...args, fixture: copy, documents: { '/': { html: served } } });
+      served = html;
       assert.equal(incomplete.telemetryMarkers, undefined);
       assert.equal(incomplete.documents['/'].sourceContent, undefined);
       // A site scoped to a path on a shared host owns only that path there.
