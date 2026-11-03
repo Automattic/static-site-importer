@@ -12,6 +12,6 @@
   },
   "data-liberation-agent": {
     "github": "Automattic/data-liberation-agent",
-    "verify": "npm ci && npm test"
+    "verify": "npm ci && npx tsc --noEmit && npm test"
   }
 }
