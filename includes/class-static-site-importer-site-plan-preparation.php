@@ -260,9 +260,27 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				}
 				$resolved = Static_Site_Importer_Generated_Runtime_Package::with_writes( $resolved, $package );
 			}
-			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
-			$resolved                                   = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
-			$resolved                                   = self::with_admin_bar_top_chrome( $resolved );
+			$resolved = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
+			$resolved = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
+			$resolved = self::with_admin_bar_top_chrome( $resolved );
+
+			$consent_css = Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] ?? array() );
+			if ( '' !== $consent_css ) {
+				foreach ( $resolved['writes'] as &$write ) {
+					if ( in_array( $write['target_path'] ?? '', array( 'style.css', 'assets/css/editor-style.css' ), true ) ) {
+						$data = (string) ( $write['payload']['data'] ?? '' );
+						if ( 'base64' === ( $write['payload']['encoding'] ?? '' ) ) {
+							$data = (string) base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Declared stylesheet payload.
+						}
+						$write['payload']      = array(
+							'encoding' => 'utf8',
+							'data'     => $data . $consent_css,
+						);
+						$write['payload_hash'] = hash( 'sha256', $data . $consent_css );
+					}
+				}
+				unset( $write );
+			}
 			$state['base_resolved']                     = $resolved;
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;

@@ -15,6 +15,21 @@ registerValidationBlockType(metadata.name, { ...metadata, save: saved.exports.de
 test('consent intent plans Jetpack through the provider dependency lifecycle', () => {
  assert.match(execFileSync('php', ['tests/fixtures/consent-banner/lifecycle.php'], { encoding: 'utf8' }), /Consent dependency planned/);
 });
+test('presentation carries neutral geometry and typography without accepting source CSS', () => {
+ const run = mode => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', mode], { encoding: 'utf8' });
+ const markup = run('presentation');
+ const result = validateMarkup(markup);
+ assert.equal(result.ok, true, JSON.stringify(result.failures));
+ assert.equal(markup, readFileSync('tests/fixtures/consent-banner/jetpack/presentation.html', 'utf8'));
+ assert.match(markup, /"align":"full"/);
+ assert.match(markup, /"className":"ssi-consent-banner"/);
+ assert.match(markup, /"spacing":\{"padding":"12px"\}/);
+ assert.match(markup, /"border":\{"radius":"5px"\}/);
+ assert.match(markup, /"spacing":\{"padding":"8px 40px"\}/);
+ assert.match(markup, /"typography":\{"fontSize":"13.5px"\}/);
+ assert.equal(run('css'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
+ assert.doesNotMatch(run('hostile'), /display:none|body\{/);
+});
 test('consent intent serializes against actual Jetpack save and core buttons', () => {
  const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php'], { encoding: 'utf8' });
  const result = validateMarkup(markup);

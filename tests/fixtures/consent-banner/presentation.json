@@ -1,0 +1,30 @@
+{
+  "schema": "static-site-importer/consent-banner/v1",
+  "text": "This example uses cookies for analytics & preferences.",
+  "accept_label": "Accept cookies",
+  "policy_link": {
+    "label": "Privacy policy",
+    "href": "https://example.test/privacy/"
+  },
+  "position": "bottom",
+  "colors": {
+    "background": "#222222",
+    "text": "#ffffff",
+    "button_background": "#999999",
+    "button_text": "#ffffff"
+  },
+  "source_selector": ".example-consent",
+  "presentation": {
+    "span": "full",
+    "edge_offset": "0px",
+    "padding": "12px",
+    "font_family": "Calibri, sans-serif",
+    "font_size": "15px",
+    "line_height": "18px",
+    "button": {
+      "border_radius": "5px",
+      "padding": "8px 40px",
+      "font_size": "13.5px"
+    }
+  }
+}

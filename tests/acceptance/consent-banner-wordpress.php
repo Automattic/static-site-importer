@@ -13,6 +13,8 @@ $artifact = array( 'entrypoint' => 'website/index.html', 'files' => array(
 	array( 'path' => 'website/about.html', 'content' => '<!doctype html><html><head><title>About</title></head><body><main><h1>About example</h1><p>Another route.</p></main></body></html>' ),
 	array( 'path' => 'website/consent-banner.json', 'content' => file_get_contents( $root . 'consent-banner.json' ) ),
 ) );
+$presentation_fact = json_decode( file_get_contents( $root . 'presentation.json' ), true );
+$artifact['files'][2]['content'] = wp_json_encode( $presentation_fact );
 $args = array( 'slug' => 'consent-example', 'name' => 'Consent Example', 'activate' => true, 'overwrite' => true, 'materialize_dependencies' => false );
 $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 $assert( ! is_wp_error( $compiled ), 'Fixture compiles.' );
@@ -24,10 +26,20 @@ $assert( 'completed' === ( $receipt['status'] ?? '' ), 'Import completes.' );
 foreach ( $receipt['completed']['pages'] ?? array() as $id ) {
 	$assert( ! str_contains( get_post_field( 'post_content', $id ), 'cookie-consent' ), 'No consent markup in page content.' );
 }
+$css = file_get_contents( get_stylesheet_directory() . '/style.css' );
+$assert( str_contains( $css, Static_Site_Importer_Consent_Banner::stylesheet( $presentation_fact ) ), 'Generated theme delivers consent typography and edge offset.' );
+$hostile = $presentation_fact;
+$hostile['presentation']['edge_offset'] = '0px;}body{display:none';
+$assert( ! str_contains( Static_Site_Importer_Consent_Banner::stylesheet( $hostile ), 'display:none' ), 'Hostile CSS is rejected.' );
 $available = WP_Block_Type_Registry::get_instance()->is_registered( 'jetpack/cookie-consent' );
 if ( $available ) {
 	$markup = get_option( 'cookie_consent_template' );
 	$assert( is_string( $markup ) && str_contains( $markup, 'Accept cookies' ), 'Site-wide option written.' );
+	$blocks = parse_blocks( $markup );
+	$assert( 'full' === $blocks[0]['attrs']['align'] && 'ssi-consent-banner' === $blocks[0]['attrs']['className'], 'Full span and scoped class are saved as attributes.' );
+	$assert( '12px' === $blocks[0]['attrs']['style']['spacing']['padding'], 'Native banner padding.' );
+	$button = $blocks[0]['innerBlocks'][0]['innerBlocks'][0]['attrs']['style'];
+	$assert( '5px' === $button['border']['radius'] && '8px 40px' === $button['spacing']['padding'] && '13.5px' === $button['typography']['fontSize'], 'Native button presentation.' );
 	file_put_contents( '/tmp/consent-markup.html', $markup );
 	ob_start();
 	Automattic\Jetpack\Extensions\CookieConsent\render_cookie_consent_template();

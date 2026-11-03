@@ -111,11 +111,38 @@ class Static_Site_Importer_Consent_Banner {
 		$colors       = is_array( $fact['colors'] ?? null ) ? $fact['colors'] : array();
 		$banner       = self::color_style( $colors, 'text', 'background' );
 		$button       = self::color_style( $colors, 'button_text', 'button_background' );
-		$button_attrs = array( 'style' => array( 'color' => $button ) );
-		$button_html  = '<div class="wp-block-button"><a class="wp-block-button__link' . self::color_classes( $button ) . ' wp-element-button"' . self::style_attribute( $button ) . '>' . esc_html( $fact['accept_label'] ) . '</a></div>';
+		$presentation = self::presentation( $fact );
+		$button_style = array( 'color' => $button );
+		$button_css   = '';
+		foreach ( $presentation['button'] ?? array() as $key => $value ) {
+			$mapping                                 = array(
+				'border_radius' => array( 'border', 'radius', 'border-radius' ),
+				'padding'       => array( 'spacing', 'padding', 'padding' ),
+				'font_size'     => array( 'typography', 'fontSize', 'font-size' ),
+				'font_family'   => array( 'typography', 'fontFamily', 'font-family' ),
+			);
+			list( $group, $property, $css_property ) = $mapping[ $key ];
+			$button_style[ $group ][ $property ]     = $value;
+			$button_css                             .= $css_property . ':' . $value . ';';
+		}
+		$button_attrs = array( 'style' => $button_style );
+		$button_html  = '<div class="wp-block-button"><a class="wp-block-button__link' . self::color_classes( $button ) . ( isset( $button_style['typography']['fontSize'] ) ? ' has-custom-font-size' : '' ) . ' wp-element-button"' . self::style_attribute( $button, $button_css ) . '>' . esc_html( $fact['accept_label'] ) . '</a></div>';
 		$inner        = '<!-- wp:buttons -->' . "\n" . '<div class="wp-block-buttons"><!-- wp:button ' . wp_json_encode( $button_attrs ) . ' -->' . "\n" . $button_html . "\n" . '<!-- /wp:button --></div>' . "\n" . '<!-- /wp:buttons -->';
 		$attrs        = array( 'style' => array( 'color' => $banner ) );
-		return '<!-- wp:jetpack/cookie-consent ' . wp_json_encode( $attrs ) . ' -->' . "\n" . '<div class="wp-block-jetpack-cookie-consent alignwide' . self::color_classes( $banner ) . '"' . self::style_attribute( $banner ) . ' role="dialog" aria-modal="true"><p>' . $text . '</p>' . $inner . '<span>365</span></div>' . "\n" . '<!-- /wp:jetpack/cookie-consent -->';
+		$align        = 'wide';
+		$banner_css   = '';
+		$custom_class = '';
+		if ( array() !== $presentation ) {
+			$align              = 'full' === ( $presentation['span'] ?? '' ) ? 'full' : 'wide';
+			$attrs['align']     = $align;
+			$attrs['className'] = 'ssi-consent-banner';
+			$custom_class       = ' ssi-consent-banner';
+			if ( isset( $presentation['padding'] ) ) {
+				$attrs['style']['spacing']['padding'] = $presentation['padding'];
+				$banner_css                           = 'padding:' . $presentation['padding'] . ';';
+			}
+		}
+		return '<!-- wp:jetpack/cookie-consent ' . wp_json_encode( $attrs ) . ' -->' . "\n" . '<div class="wp-block-jetpack-cookie-consent align' . $align . self::color_classes( $banner ) . $custom_class . '"' . self::style_attribute( $banner, $banner_css ) . ' role="dialog" aria-modal="true"><p>' . $text . '</p>' . $inner . '<span>365</span></div>' . "\n" . '<!-- /wp:jetpack/cookie-consent -->';
 	}
 
 	/** Accept CSS colors only, never arbitrary source styles. */
@@ -137,12 +164,67 @@ class Static_Site_Importer_Consent_Banner {
 		return ( isset( $colors['text'] ) ? ' has-text-color' : '' ) . ( isset( $colors['background'] ) ? ' has-background' : '' );
 	}
 
-	private static function style_attribute( array $colors ): string {
-		$css = '';
+	private static function style_attribute( array $colors, string $extra = '' ): string {
+		$css = $extra;
 		foreach ( $colors as $key => $value ) {
 			$css .= ( 'text' === $key ? 'color' : 'background-color' ) . ':' . $value . ';';
 		}
 		return '' === $css ? '' : ' style="' . esc_attr( rtrim( $css, ';' ) ) . '"';
+	}
+
+	/** Admit only typed presentation values, never source declarations or functions. */
+	private static function presentation( array $fact ): array {
+		$input  = $fact['presentation'] ?? null;
+		$result = array();
+		if ( ! is_array( $input ) ) {
+			return $result;
+		}
+		foreach ( $input as $key => $value ) {
+			if ( 'span' === $key && in_array( $value, array( 'full', 'inset' ), true ) ) {
+				$result[ $key ] = $value;
+			} elseif ( 'button' === $key && is_array( $value ) ) {
+				$result['button'] = array();
+				foreach ( array( 'border_radius', 'padding', 'font_size', 'font_family' ) as $property ) {
+					if ( self::presentation_value( $property, $value[ $property ] ?? null ) ) {
+						$result['button'][ $property ] = trim( $value[ $property ] );
+					}
+				}
+			} elseif ( in_array( $key, array( 'edge_offset', 'padding', 'font_family', 'font_size', 'line_height' ), true ) && self::presentation_value( $key, $value ) ) {
+				$result[ $key ] = trim( $value );
+			}
+		}
+		return $result;
+	}
+
+	private static function presentation_value( string $key, $value ): bool {
+		if ( ! is_string( $value ) ) {
+			return false;
+		}
+		$value = trim( $value );
+		if ( 'font_family' === $key ) {
+			$family = '(?:[a-zA-Z][a-zA-Z0-9 -]*|"[a-zA-Z0-9 -]+"|\'[a-zA-Z0-9 -]+\')';
+			return 1 === preg_match( '/^' . $family . '(?:\\s*,\\s*' . $family . ')*$/D', $value );
+		}
+		$length = '(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|em|rem|%|vh|vw|vmin|vmax|pt|pc|in|cm|mm))';
+		$count  = in_array( $key, array( 'padding', 'border_radius' ), true ) ? '{0,3}' : '{0}';
+		return 1 === preg_match( '/^' . $length . '(?:\\s+' . $length . ')' . $count . '$/D', $value );
+	}
+
+	/** Generated theme rules outrank Jetpack's two-class-specificity edge rule. */
+	public static function stylesheet( array $fact ): string {
+		$presentation = self::presentation( $fact );
+		$css          = '';
+		foreach ( array(
+			'edge_offset' => 'bottom',
+			'font_family' => 'font-family',
+			'font_size'   => 'font-size',
+			'line_height' => 'line-height',
+		) as $key => $property ) {
+			if ( isset( $presentation[ $key ] ) ) {
+				$css .= $property . ':' . $presentation[ $key ] . ';';
+			}
+		}
+		return '' === $css ? '' : "\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role=\"document\"]){" . $css . "}\n";
 	}
 
 	private static function finding( string $code, string $message ): array {
