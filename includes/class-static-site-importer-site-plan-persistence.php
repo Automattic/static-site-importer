@@ -144,7 +144,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
 				return self::failed_receipt( $media_state, 'media_library_resolution_failed' );
 			}
-			$state['applied']['attachments'] = $media_state['applied']['attachments'] ?? array();
+			$state['applied']['attachments']    = $media_state['applied']['attachments'] ?? array();
+			$state['media_library_unavailable'] = $media_state['media_library_unavailable'] ?? array();
 		}
 		require_once __DIR__ . '/class-static-site-importer-media-library-materializer.php';
 		// Theme-owned capture records (fonts) are verified against the exact

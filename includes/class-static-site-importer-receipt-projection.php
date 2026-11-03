@@ -102,10 +102,11 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['source_metadata']['intake_findings'], 'is_array' ) )
 			);
 		}
-		// Font materialization reports a face it could not localize as a finding.
-		foreach ( is_array( $receipt['completed']['font_materialization']['diagnostics'] ?? null ) ? $receipt['completed']['font_materialization']['diagnostics'] : array() as $font_diagnostic ) {
-			if ( is_array( $font_diagnostic ) && array() !== Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $font_diagnostic ) ) {
-				$diagnostics[] = $font_diagnostic;
+		// Font and media materialization report an asset they could not localize
+		// as a finding.
+		foreach ( array_merge( is_array( $receipt['completed']['font_materialization']['diagnostics'] ?? null ) ? $receipt['completed']['font_materialization']['diagnostics'] : array(), is_array( $receipt['completed']['media_library_findings'] ?? null ) ? $receipt['completed']['media_library_findings'] : array() ) as $asset_diagnostic ) {
+			if ( is_array( $asset_diagnostic ) && array() !== Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $asset_diagnostic ) ) {
+				$diagnostics[] = $asset_diagnostic;
 			}
 		}
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {

@@ -239,6 +239,13 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'asset',
 			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
 		),
+		// An image the Media Library would not hold is served from its theme
+		// destination instead.
+		'media_library_asset_unavailable'                => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'asset',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
 		// Source files the compiler dropped at a declared file-count or byte
 		// limit, re-owned by {@see reown_compiler_file_drop()}.
 		self::OMITTED_ARTIFACT_FILES_TYPE                => array(
