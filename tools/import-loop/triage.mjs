@@ -24,7 +24,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -182,14 +182,21 @@ function acceptanceGate(item, repo) {
       ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
       : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
     ...(checked ? [
-      `root="$PWD/${repo.predicate_root}"; failed=0; site=$(mktemp -d)`,
-      `trap 'kill $(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$site"' EXIT`,
+      `root="$PWD/${repo.predicate_root}"; failed=0; site=$(mktemp -d); base=$(mktemp -d)`,
+      `trap 'for d in "$site" "$base/site"; do kill $(cat "$d/.server.pid" 2>/dev/null) 2>/dev/null; done; rm -rf "$site" "$base"' EXIT`,
       `url=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$root" '${reimport.capture}' "$site") || exit 1; url=$(tail -n1 <<<"$url")`,
     ] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
       return `PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
     }),
+    // Scope: nothing outside the finding's elements may change against the
+    // import of this change's merge base with trunk.
+    ...(checked ? [
+      `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
+      `burl=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$base/${repo.predicate_root}" '${reimport.capture}' "$base/site") || exit 1; burl=$(tail -n1 <<<"$burl")`,
+      `node '${path.join(here, 'gates/collateral.mjs')}' "$burl" "$url" '${scopeKeys(item).replace(/'/g, "'\\''")}' '${result.routes.join(',')}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
+    ] : []),
     checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
   // Prompts stay free of machine-local paths: the agent receives the gate as
@@ -203,10 +210,12 @@ for (const item of tracked) {
   const pr = linkedPullRequests(item.issue_url)[0];
   item.open_pr = pr?.url || null;
   const checkable = repo?.predicate_root && item.cells.length;
-  const refuted = pr && checkable ? cellsAtHead(item, pr, { clone: args['blocks-engine'], root: repo.predicate_root, work: args.work, reimport, site: result.site }).filter((cell) => cell.exit !== 1) : [];
-  if (refuted.length) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted };
+  const at = { clone: args['blocks-engine'], root: repo?.predicate_root, work: args.work, reimport, site: result.site, routes: result.routes };
+  const refuted = pr && checkable ? cellsAtHead(item, pr, at).filter((cell) => cell.exit !== 1) : [];
+  const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : { exit: 0 };
+  if (refuted.length || collateral.exit) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit ? { collateral: collateral.report } : {}) };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if ((!pr || refuted.length) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
@@ -217,11 +226,17 @@ for (const item of tracked) {
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) does not fix it: on a whole re-import of the capture with that head, the predicate still exits 0 on ${refuted.map((c) => `\`${c.route}@${c.width}\``).join(', ')}. Continue on its branch.`,
       ] : []),
+      ...(collateral.exit ? [
+        '',
+        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) clears the defect but restyles elements outside it on the whole import. Continue on its branch and confine the change to the defect:`,
+        ...collateral.report.map((line) => `    ${line.slice(0, 400)}`),
+      ] : []),
       '',
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
         '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate`: run it with bash from your worktree root. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed).',
+        `- Nothing outside the finding's elements (\`${scopeKeys(item)}\`) changes style on any route or width: the gate re-imports this change's merge base with trunk the same way and compares every element's computed style (\`collateral.mjs\`).`,
         '- Its `reimport.sh` line also runs on its own and prints the imported site\'s URL, for inspecting the import. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
@@ -238,6 +253,7 @@ const output = {
   iteration: Number(args.iteration),
   site: result.site,
   reimport,
+  routes: result.routes,
   blocker_count: blockers.length,
   signatures,
   tracked,

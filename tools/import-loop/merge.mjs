@@ -21,7 +21,7 @@ for (const item of triage.tracked) {
     const checked = [...confirm.confirmed, ...confirm.refuted, ...confirm.unconfirmed].find((c) => c.pr === pr.url);
     if (!checked || checked.head !== pr.headRefOid) { held.push({ pr: pr.url, reason: checked ? `head moved since confirm: ${checked.head.slice(0, 8)} -> ${pr.headRefOid.slice(0, 8)}` : 'not checked by confirm' }); continue; }
     const refutation = confirm.refuted.find((r) => r.pr === pr.url);
-    if (refutation) { held.push({ pr: pr.url, reason: `defect still reproduces: ${refutation.cells.map((c) => `${c.route}@${c.width}`).join(', ')}` }); continue; }
+    if (refutation) { held.push({ pr: pr.url, reason: refutation.cells.map((c) => (c.collateral ? `restyles outside ${c.signature}` : `defect reproduces at ${c.route}@${c.width}`)).join(', ') }); continue; }
     const checks = pr.statusCheckRollup || [];
     const red = checks.filter((c) => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion || c.state));
     // GitHub computes mergeability lazily; UNKNOWN settles within seconds.

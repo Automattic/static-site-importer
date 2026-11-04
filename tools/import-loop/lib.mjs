@@ -59,5 +59,30 @@ export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
   return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: predicateExit(predicate, transformer, cell.page, { ...predicateEnv(item.subject, cell, site), PREDICATE_SITE_URL: heads.get(dir) }) }));
 }
 
+// The elements a fix of `item` may restyle (gates/collateral.mjs): its subject
+// and the media keys its evidence names, as one comma list.
+export const scopeKeys = (item) => [...new Set([item.subject, ...(item.cells || []).flatMap((cell) => [cell.evidence?.key, ...(cell.evidence?.missing || []).map((m) => m.key)])].filter(Boolean))].join(',');
+
+// Restyles outside `item`'s scope on a pull request's head: its whole import
+// against the import of its merge base with trunk, on every route.
+// Returns {exit, report}; exit 0 means none.
+export function collateralAtHead(item, pr, { clone, root, work, reimport, routes }) {
+  const head = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}`;
+  if (!heads.has(head)) throw new Error('collateral_requires_cellsAtHead_first');
+  execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', 'trunk']);
+  const sha = execFileSync('git', ['-C', clone, 'merge-base', pr.headRefOid, 'FETCH_HEAD'], { encoding: 'utf8' }).trim();
+  const base = `${work}/bases/${item.repo}-${sha.slice(0, 8)}`;
+  if (!heads.has(base)) {
+    if (!fs.existsSync(base)) {
+      fs.mkdirSync(base, { recursive: true });
+      execFileSync('bash', ['-c', 'git -C "$1" archive "$2" "$3" | tar -x -C "$4"', '_', clone, sha, root, base]);
+    }
+    heads.set(base, reimportSite(`${base}/${root}`, reimport, `${base}-site`));
+  }
+  const gate = new URL('./gates/collateral.mjs', import.meta.url).pathname;
+  const run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(',')], { encoding: 'utf8' });
+  return { exit: run.status, report: (run.stderr || '').trim().split('\n').slice(-6) };
+}
+
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
 export const predicateExit = (predicate, transformer, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;

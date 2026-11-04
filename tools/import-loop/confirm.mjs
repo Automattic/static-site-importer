@@ -4,8 +4,10 @@
 // A tracked finding lists acceptance cells, one per route/width it was seen
 // in, each on the full captured page. Each head re-imports the capture as
 // triage did. A fix is confirmed when its finding's predicate exits 1 (the
-// defect is gone) on every cell of that import, and refuted when any
-// cell still exits 0. Fixes in a repository whose code the predicates do not
+// defect is gone) on every cell of that import and nothing outside the
+// finding's elements changes style against its merge base's import
+// (gates/collateral.mjs); it is refuted when any cell still exits 0 or it
+// restyles anything else. Fixes in a repository whose code the predicates do not
 // run (`predicate_root` in repos.json) are unconfirmed: the next pass's
 // import is their check.
 //
@@ -14,7 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, linkedPullRequests } from './lib.mjs';
+import { args, cellsAtHead, collateralAtHead, linkedPullRequests } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
@@ -33,9 +35,13 @@ for (const item of triage.tracked) {
     const root = repos[item.repo]?.predicate_root;
     if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
-    const cells = cellsAtHead(item, pr, { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site }).map((cell) => ({ signature: item.signature, ...cell }));
+    const at = { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes };
+    const cells = cellsAtHead(item, pr, at).map((cell) => ({ signature: item.signature, ...cell }));
     log(pr.url, item.signature, cells.map((c) => `${c.route}@${c.width}=${c.exit}`).join(' '));
     verdict.failing.push(...cells.filter((c) => c.exit !== 1));
+    const collateral = collateralAtHead(item, pr, at);
+    log(pr.url, item.signature, `collateral=${collateral.exit}`);
+    if (collateral.exit) verdict.failing.push({ signature: item.signature, collateral: collateral.report });
   }
 }
 const entries = [...verdicts];
