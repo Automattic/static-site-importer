@@ -50,7 +50,7 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $skipped                  = array();
 	public array $unsupported_capabilities = array();
 	public array $control_attribute_losses = array();
-	/** @var array<int,array<string,string>> Box facts each substituted control's control-box shell stated, restated on the provider control. */
+	/** @var array<int,array{facts:array<string,string>,wrap:bool}> Box facts each substituted control's control-box shell stated, and whether the runtime renders them on a real box around the control (facts land on the control itself when it does not). */
 	public array $control_box_frames = array();
 
 	// Field-contract surfaces: every control decides, and nothing decides silently.

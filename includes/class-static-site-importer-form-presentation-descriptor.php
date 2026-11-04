@@ -32,6 +32,16 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		return self::presentation_node_class( $scope, $index, 'control-' . $role ) . '-destination-' . $role;
 	}
 
+	/**
+	 * The class the control box's own element carries: the element the runtime
+	 * builds around a wrapped control, which the frame's box facts address.
+	 *
+	 * @internal
+	 */
+	public static function control_box_destination_class( string $scope, int $index ): string {
+		return self::presentation_destination_class( $scope, $index, 'box' );
+	}
+
 	/** @return array<int,array<string,bool>> */
 	public static function presentation_roles( array $graph ): array {
 		$roles = array();

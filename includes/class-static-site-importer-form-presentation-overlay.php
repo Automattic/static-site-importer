@@ -161,7 +161,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				'destinations' => array(),
 			);
 			foreach ( $destinations as $destination ) {
-				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'checked', 'properties', 'aliases', 'resets', 'priority' ) ) || ( isset( $destination['checked'] ) && ( ! is_string( $destination['checked'] ) || ! self::safe_selector( $destination['checked'], $map['scope'] ) ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'checked', 'properties', 'aliases', 'resets', 'priority' ) ) || ( isset( $destination['checked'] ) && ( ! is_string( $destination['checked'] ) || ! self::safe_selector( $destination['checked'], $map['scope'] ) ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'control_box', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
 				}
 				$clean['destinations'][] = array_filter( array(
@@ -466,7 +466,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
 				continue;
 			}
-			foreach ( array( 'control', 'label', 'required_marker' ) as $role ) {
+			foreach ( array( 'control', 'control_box', 'label', 'required_marker' ) as $role ) {
 				if ( ! isset( $control[ $role ]['styles'] ) || ! is_array( $control[ $role ]['styles'] ) ) {
 					continue;
 				}

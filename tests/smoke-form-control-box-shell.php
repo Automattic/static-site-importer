@@ -1,11 +1,12 @@
 <?php
-/** A control-box shell presents its source frame on the provider control. */
+/** A control-box shell renders as a real box around the provider control. */
 // phpcs:ignoreFile -- Standalone CLI regression.
 require_once __DIR__ . '/fixtures/core-html-api.php';
 $wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
 require_once __DIR__ . '/fixtures/core-block-parser.php';
 ssi_test_require_core_block_parser( $wp_root );
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
+require_once __DIR__ . '/fixtures/form-jetpack-render.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 
@@ -62,17 +63,39 @@ $checks      = array(
 $input        = $field['innerBlocks'][1] ?? array();
 $classes      = preg_split( '/\s+/', trim( (string) ( $input['attrs']['className'] ?? '' ) ) ) ?: array();
 $control_hook = $token_of( $input, '/^ssi-node-[a-f0-9]{12}$/D' );
-$checks['control carries the frame classes'] = in_array( 'framer-io8vii', $classes, true ) && in_array( 'framer-form-input-wrapper', $classes, true ) && '' !== $control_hook;
+$box_hook     = $token_of( $input, '/^ssi-node-[a-f0-9]{12}-destination-box$/D' );
+$markers      = preg_grep( '/^ssi-source-box--/', $classes );
+$checks['control carries the frame classes as markers'] = array( 'ssi-source-box--framer-form-input-wrapper', 'ssi-source-box--framer-io8vii' ) === array_values( $markers )
+	&& '' !== $box_hook && '' !== $control_hook && ! in_array( 'framer-io8vii', $classes, true );
 $declarations = $rule( (string) ( $overlay['css'] ?? '' ), $control_hook );
-$checks['control takes the frame size']       = str_contains( $declarations, 'height:40px' ) && ! str_contains( $declarations, 'height:100%' );
-$checks['control keeps its own paint']        = str_contains( $declarations, 'background:#fff' ) && str_contains( $declarations, 'border-radius:8px' );
-$checks['frame width beats the stretch reset'] = str_contains( $declarations, 'width:100%' ) && ! str_contains( $declarations, 'width:auto' );
+$checks['control keeps its own paint and sizing'] = str_contains( $declarations, 'background:#fff' ) && str_contains( $declarations, 'border-radius:8px' ) && str_contains( $declarations, 'height:100%' );
+$box_declarations = $rule( (string) ( $overlay['css'] ?? '' ), $box_hook );
+$checks['box takes the frame size']            = str_contains( $box_declarations, 'height:40px' ) && str_contains( $box_declarations, 'flex:0 0 auto' );
+$checks['frame width beats the stretch reset'] = str_contains( $box_declarations, 'width:100%' ) && ! str_contains( $box_declarations, 'width:auto' );
 $checks['editor control takes the frame size'] = str_contains( $rule( (string) ( $overlay['editor_css'] ?? '' ), $control_hook ), 'height:40px' );
 $field_hook  = $token_of( $field, '/^ssi-node-[a-f0-9]{12}$/D' );
 $wrap        = $rule( (string) ( $overlay['css'] ?? '' ), $field_hook . '-wrap' );
 $checks['caption keeps the field box arrangement'] = str_contains( $wrap, 'flex-direction:column' ) && str_contains( $wrap, 'gap:10px' );
 $checks['overlay is admitted']                     = null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
 $checks['no gate losses']                          = 'mapped' === $row['status'] && empty( $row['mapping_decision']['losses'] );
+
+// The provider's own render moves the markers onto a real box around the
+// control: the frame's classes name it, so its ::after underline paints and
+// its padding applies, while the caption stays outside the box.
+$rendered  = ssi_role_box_render_form( ssi_role_box_parse_blocks( $row['block_markup'] )[0] ?? array() );
+$box_open  = '<div class="' . $box_hook . ' framer-form-input-wrapper framer-io8vii">';
+$at        = strpos( $rendered, $box_open );
+$checks['rendered frame wraps the control'] = '' !== $box_hook && false !== $at;
+if ( false !== $at ) {
+	$box_html   = (string) substr( $rendered, $at, (int) strpos( $rendered, '</div>', $at ) - $at );
+	$at_input   = strpos( $box_html, '<input' );
+	$input_html = false === $at_input ? '' : (string) substr( $box_html, $at_input );
+	$checks['rendered control sits inside the box'] = false !== $at_input && str_contains( $input_html, $control_hook )
+		&& ! str_contains( $input_html, 'framer-io8vii' ) && ! str_contains( $input_html, 'ssi-source-box--' );
+	$checks['rendered caption sits outside the box'] = ! str_contains( $box_html, '<label' )
+		&& false !== strpos( (string) substr( $rendered, 0, $at ), 'grunion-field-label' );
+}
+$checks['rendered shell keeps no marker copies'] = '' !== $box_hook && ! str_contains( $rendered, 'ssi-source-box--' ) && ! str_contains( $rendered, $box_hook . '-wrap' );
 
 // A finding without the marker keeps the generic walk: the provider field
 // sits inside the control's own shell, which carries the frame.

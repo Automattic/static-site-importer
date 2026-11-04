@@ -351,6 +351,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		// input ($is_plain_tel). It has no shell, carrier, or prefix box for those
 		// hooks to style.
 		$html                      = self::project_help_classes( $html );
+		$html                      = self::with_control_box( $html );
 		$choice_label              = array();
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
@@ -441,6 +442,114 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$wrapped        = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
 		return self::with_textarea_rows( self::project_choice_label( $wrapped, $choice_label ), $textarea_rows );
+	}
+
+	/**
+	 * Render a control box's frame as a real box around the provider control.
+	 *
+	 * A control box's source classes travel on the provider control as
+	 * `ssi-source-box--` markers beside the box's own hook. The rendered input
+	 * or textarea is a replaced element: it paints no pseudo-element and takes
+	 * no padding, so the frame's paint cannot state itself there. This pass
+	 * moves the markers and the hook onto a new element around the control;
+	 * the frame's classes name it, so the source stylesheet paints the box
+	 * whatever it draws. Jetpack's shell repeats every control class with its
+	 * `-wrap` suffix, so the suffixed marker copies are dropped. A field whose
+	 * rendered control carries the markers but is no bare input or textarea
+	 * keeps its markers converted in place, which leaves the frame classes
+	 * where the control itself is.
+	 *
+	 * @param string $html Provider field HTML.
+	 * @return string
+	 */
+	private static function with_control_box( string $html ): string {
+		if ( ! str_contains( $html, 'ssi-source-box--' ) || strlen( $html ) > 262144 ) {
+			return $html;
+		}
+		// The shell's suffixed copies of the box classes and the box hook name no rule.
+		$stripped = preg_replace_callback(
+			'/\bclass=("|\')(.*?)\1/s',
+			static function ( array $matches ): string {
+				$tokens = preg_split( '/\s+/', trim( $matches[2] ) );
+				$keep   = array();
+				foreach ( false === $tokens ? array() : $tokens as $token ) {
+					if ( preg_match( '/^(?:ssi-source-box--[A-Za-z_][A-Za-z0-9_-]{0,79}|ssi-node-[a-f0-9]{12}-destination-box)-wrap$/D', $token ) ) {
+						continue;
+					}
+					$keep[] = $token;
+				}
+				return 'class=' . $matches[1] . implode( ' ', $keep ) . $matches[1];
+			},
+			$html
+		);
+		if ( ! is_string( $stripped ) ) {
+			return $html;
+		}
+		$html    = $stripped;
+		$classes = array();
+		$hook    = '';
+		$wrapped = preg_replace_callback(
+			'/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>/is',
+			static function ( array $matches ) use ( &$classes, &$hook ): string {
+				$element = $matches[0];
+				if ( ! str_contains( $element, 'ssi-source-box--' ) || preg_match( '/\btype\s*=\s*("|\')(?:checkbox|radio|hidden|file|submit|button|image|reset)\1/i', $element ) ) {
+					return $element;
+				}
+				$control = preg_replace_callback(
+					'/\bclass=("|\')(.*?)\1/s',
+					static function ( array $attr ) use ( &$classes, &$hook ): string {
+						$tokens = preg_split( '/\s+/', trim( $attr[2] ) );
+						$keep   = array();
+						foreach ( false === $tokens ? array() : $tokens as $token ) {
+							if ( preg_match( '/^ssi-source-box--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $token, $marker ) ) {
+								$classes[ $marker[1] ] = true;
+								continue;
+							}
+							if ( 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-box$/D', $token ) ) {
+								$hook = $token;
+								continue;
+							}
+							$keep[] = $token;
+						}
+						return 'class=' . $attr[1] . implode( ' ', $keep ) . $attr[1];
+					},
+					$element
+				);
+				if ( ! is_string( $control ) || array() === $classes ) {
+					return $element;
+				}
+				// The box is the frame: its hook names the overlay's rule, and the
+				// frame's classes keep the source stylesheet painting it.
+				$box = '' !== $hook ? array( $hook ) : array();
+				return '<div class="' . implode( ' ', array_merge( $box, array_keys( $classes ) ) ) . '">' . $control . '</div>';
+			},
+			$html
+		);
+		if ( ! is_string( $wrapped ) ) {
+			return $html;
+		}
+		if ( ! str_contains( $wrapped, 'ssi-source-box--' ) ) {
+			return $wrapped;
+		}
+		// No bare control carried the markers: keep the frame classes where the
+		// control is rather than dropping them.
+		$converted = preg_replace_callback(
+			'/\bclass=("|\')(.*?)\1/s',
+			static function ( array $matches ): string {
+				$tokens = preg_split( '/\s+/', trim( $matches[2] ) );
+				$keep   = array();
+				foreach ( false === $tokens ? array() : $tokens as $token ) {
+					if ( preg_match( '/^ssi-source-box--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $token, $marker ) ) {
+						$keep[] = $marker[1];
+						continue;
+					}
+					$keep[] = $token;
+				}
+				return 'class=' . $matches[1] . implode( ' ', $keep ) . $matches[1];
+			},
+			$wrapped
+		);
+		return is_string( $converted ) ? $converted : $html;
 	}
 
 	/** Carry the captured wrapping choice caption onto the native choice box. */
