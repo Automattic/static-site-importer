@@ -320,25 +320,44 @@ class Static_Site_Importer_Dependency_Manager {
 
 	/** @return array<string,mixed> */
 	private static function materialize_dependency( array $dependency, bool $overwrite ): array {
+		$before = self::post_id_snapshot();
 		if ( 'wp_org_plugin' === ( $dependency['type'] ?? '' ) ) {
-			return Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+			$report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 				(string) ( $dependency['slug'] ?? '' ),
 				(string) ( $dependency['plugin_file'] ?? '' ),
 				$dependency['availability_callback'] ?? null,
 				$dependency['preparation_callback'] ?? null
 			);
-		}
-		if ( 'companion_plugin' === ( $dependency['type'] ?? '' ) ) {
+		} elseif ( 'companion_plugin' === ( $dependency['type'] ?? '' ) ) {
 			$payload = is_array( $dependency['payload'] ?? null ) ? $dependency['payload'] : array();
-			return Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, $dependency['availability_callback'] ?? null, $overwrite );
+			$report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, $dependency['availability_callback'] ?? null, $overwrite );
+		} else {
+			$report = array(
+				'status' => 'failed',
+				'error'  => array(
+					'code'    => 'static_site_importer_dependency_type_unsupported',
+					'message' => 'SSI cannot materialize an unsupported dependency type.',
+				),
+			);
 		}
-		return array(
-			'status' => 'failed',
-			'error'  => array(
-				'code'    => 'static_site_importer_dependency_type_unsupported',
-				'message' => 'SSI cannot materialize an unsupported dependency type.',
-			),
-		);
+		// Install or activation may create native content at one of the source's
+		// own routes (a commerce dependency seeds its own checkout page). The run
+		// owns exactly the posts this materialization created, so the resumed
+		// runtime's preflight can adopt them without an overwrite decision.
+		$created = array_values( array_diff( self::post_id_snapshot(), $before ) );
+		if ( array() !== $created ) {
+			$report['dependency_created_post_ids'] = $created;
+		}
+		return $report;
+	}
+
+	/** @return array<int,int> Post IDs present right now, across statuses. */
+	private static function post_id_snapshot(): array {
+		global $wpdb;
+		if ( ! isset( $wpdb ) ) {
+			return array();
+		}
+		return array_map( 'intval', (array) $wpdb->get_col( "SELECT ID FROM {$wpdb->posts}" ) );
 	}
 
 	private static function dependency_available( array $dependency ): bool {

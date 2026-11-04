@@ -111,6 +111,7 @@ class Static_Site_Importer_Theme_Generator {
 				'runtime_lifecycle_request_id'    => $prepared_invocation,
 				'runtime_lifecycle_invocation_id' => $current_invocation,
 				'runtime_lifecycle_checkpoint'    => (string) $request_args['runtime_lifecycle_checkpoint'],
+				'dependency_created_post_ids'     => is_array( $checkpoint['dependency_created_post_ids'] ?? null ) ? array_map( 'intval', $checkpoint['dependency_created_post_ids'] ) : array(),
 			);
 		} else {
 			$compiled_import = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
@@ -188,6 +189,15 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $dependencies ) ) {
 				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
 				return $dependencies;
+			}
+			// Dependency install or activation may have created native content at
+			// one of the source's own routes. Persist the run-owned page record so
+			// the resumed runtime's preflight adopts exactly those pages instead of
+			// rejecting them as pre-existing conflicts.
+			$recorded = Static_Site_Importer_Lifecycle_Compile_Checkpoint::record_dependency_created_posts( $handle, $dependencies, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
+			if ( is_wp_error( $recorded ) ) {
+				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
+				return $recorded;
 			}
 			if ( $plan_checkpoint ) {
 				$checkpoint['workspace']->cleanup( 'success' );

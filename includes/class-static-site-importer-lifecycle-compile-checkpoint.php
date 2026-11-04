@@ -11,11 +11,13 @@ if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
 }
 
 final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
-	private const SCHEMA                       = 'static-site-importer/lifecycle-compile-checkpoint/v1';
-	private const DIRECT_ARTIFACT_REFERENCE    = 'static-site-importer/direct-artifact-lifecycle-reference/v1';
-	private const TTL                          = 21600;
-	private const CLEANUP_HOOK                 = 'static_site_importer_purge_lifecycle_compile_checkpoints';
-	private static ?string $runtime_generation = null;
+	private const SCHEMA                          = 'static-site-importer/lifecycle-compile-checkpoint/v1';
+	private const DIRECT_ARTIFACT_REFERENCE       = 'static-site-importer/direct-artifact-lifecycle-reference/v1';
+	private const DEPENDENCY_CREATED_POSTS        = 'dependency-created-posts.json';
+	private const DEPENDENCY_CREATED_POSTS_SCHEMA = 'static-site-importer/dependency-created-posts/v1';
+	private const TTL                             = 21600;
+	private const CLEANUP_HOOK                    = 'static_site_importer_purge_lifecycle_compile_checkpoints';
+	private static ?string $runtime_generation    = null;
 
 	public static function create( array $artifact, array $request_args, array $materialization, string $owner, string $root = '' ) {
 		$root = self::root( $root );
@@ -94,8 +96,9 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 		}
 		if ( self::valid_direct_artifact_reference( $record['reference'] ?? null, $request_args ) ) {
 			return array(
-				'workspace'        => $workspace,
-				'reference_backed' => true,
+				'workspace'                   => $workspace,
+				'reference_backed'            => true,
+				'dependency_created_post_ids' => self::dependency_created_post_ids( $workspace ),
 			);
 		}
 		$json = wp_json_encode( $record['payload'] ?? null );
@@ -103,9 +106,62 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_invalid', 'The lifecycle compile checkpoint is invalid.' );
 		}
 		return array(
-			'workspace' => $workspace,
-			'payload'   => $record['payload'],
+			'workspace'                   => $workspace,
+			'payload'                     => $record['payload'],
+			'dependency_created_post_ids' => self::dependency_created_post_ids( $workspace ),
 		);
+	}
+
+	/** @return array<int,int> Post IDs dependency materialization created for this run, when recorded. */
+	private static function dependency_created_post_ids( Static_Site_Importer_Artifact_Run_Workspace $workspace ): array {
+		$raw    = $workspace->read_raw( self::DEPENDENCY_CREATED_POSTS );
+		$record = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $record ) || self::DEPENDENCY_CREATED_POSTS_SCHEMA !== ( $record['schema'] ?? '' ) || ! is_array( $record['post_ids'] ?? null ) ) {
+			return array();
+		}
+		return array_values( array_filter( array_map( 'intval', $record['post_ids'] ), static fn ( int $id ): bool => $id > 0 ) );
+	}
+
+	/**
+	 * Record the posts this run's dependency materialization created.
+	 *
+	 * Dependency install or activation may create native content at one of the
+	 * source's own routes (a commerce dependency seeds its own checkout page).
+	 * The record crosses the fresh-runtime boundary inside the run-owned
+	 * checkpoint workspace so the resumed preflight can adopt exactly those
+	 * pages while every pre-existing page still conflicts.
+	 *
+	 * @param string              $handle  Checkpoint handle from create().
+	 * @param array<string,mixed> $reports Dependency materialization reports keyed by declaration id.
+	 * @param string              $root    Optional checkpoint root override.
+	 * @return true|WP_Error
+	 */
+	public static function record_dependency_created_posts( string $handle, array $reports, string $root = '' ) {
+		$post_ids = array();
+		foreach ( $reports as $report ) {
+			foreach ( is_array( $report ) ? $report : array() as $plugin_report ) {
+				foreach ( (array) ( is_array( $plugin_report ) ? ( $plugin_report['dependency_created_post_ids'] ?? array() ) : array() ) as $id ) {
+					if ( (int) $id > 0 ) {
+						$post_ids[ (int) $id ] = (int) $id;
+					}
+				}
+			}
+		}
+		if ( array() === $post_ids ) {
+			return true;
+		}
+		$workspace = self::workspace( $handle, $root );
+		if ( is_wp_error( $workspace ) ) {
+			return $workspace;
+		}
+		$stored = $workspace->publish_json(
+			self::DEPENDENCY_CREATED_POSTS,
+			array(
+				'schema'   => self::DEPENDENCY_CREATED_POSTS_SCHEMA,
+				'post_ids' => array_values( $post_ids ),
+			)
+		);
+		return is_wp_error( $stored ) ? $stored : true;
 	}
 
 	/** Atomically reserve a loaded checkpoint for one terminal materialization attempt. */

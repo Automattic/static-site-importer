@@ -676,13 +676,19 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
 				continue;
 			}
-			$conflict = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
-			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+			$conflict             = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
+			$default_content_seed = $conflict && Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict );
+			// A required dependency's install or activation may have created this
+			// page earlier in the same run (a commerce dependency seeds its own
+			// checkout page). The run owns that content, so admit it without an
+			// overwrite decision; anything that predates the run still conflicts.
+			$dependency_created = $conflict && ! $default_content_seed && self::post_created_by_dependency_materialization( $conflict, $state['args'] );
+			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! $default_content_seed && ! $dependency_created ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'post_conflict' );
 			}
 			if ( $conflict ) {
-				$page = self::plan_existing_page( $state, $page, $conflict, Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ? 'default_content_seed_match' : 'canonical_route_match' );
+				$page = self::plan_existing_page( $state, $page, $conflict, $default_content_seed ? 'default_content_seed_match' : ( $dependency_created ? 'dependency_created_match' : 'canonical_route_match' ) );
 			}
 		}
 		unset( $page );
@@ -1548,6 +1554,12 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			return false; }
 		$provenance = json_decode( (string) get_post_meta( $post->ID, '_static_site_importer_provenance', true ), true );
 		return is_array( $provenance ) && ( $provenance['import_run_id'] ?? '' ) === $import_run_id;
+	}
+
+	/** Whether this run's dependency materialization created the post. */
+	private static function post_created_by_dependency_materialization( WP_Post $post, array $args ): bool {
+		$created = is_array( $args['dependency_created_post_ids'] ?? null ) ? $args['dependency_created_post_ids'] : array();
+		return in_array( (int) $post->ID, array_map( 'intval', $created ), true );
 	}
 
 	/** @param array<int,array<string,mixed>> $pages */
