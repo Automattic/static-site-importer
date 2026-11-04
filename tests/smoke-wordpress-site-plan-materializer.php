@@ -702,6 +702,57 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 			$assert( $section_term > 0 && array( $section_term ) === ( $GLOBALS['ssi_plan_term_memberships'][ $section_post ]['category'] ?? array() ), 'Each section post belongs to its proven category.' );
 		}
 	}
+	// Re-import with Core's default-category placeholder and destination-owned terms.
+	{
+		$saved_default = get_option( 'default_category' );
+		$default_id = (int) wp_insert_term( 'Site default', 'category' )['term_id'];
+		$owner_id = (int) wp_insert_term( 'Destination category', 'category' )['term_id'];
+		update_option( 'default_category', $default_id );
+		$membership_state = array( 'plan' => array( 'taxonomy_entities' => $section_entities ), 'ordered_pages' => array(), 'source_ids' => $section_receipt['completed']['pages'], 'rollback' => array() );
+		$before_memberships = array();
+		foreach ( $section_entities as $entity ) {
+			foreach ( $entity['membership_source_paths'] as $path ) {
+				$id = (int) $membership_state['source_ids'][ $path ];
+				$membership_state['ordered_pages'][] = array( 'source_path' => $path );
+				$before_memberships[ $id ] = array( $default_id );
+				if ( 'journal/post-1.html' === $path ) {
+					$before_memberships[ $id ][] = $owner_id;
+				}
+				wp_set_object_terms( $id, $before_memberships[ $id ], 'category' );
+			}
+		}
+		foreach ( array( 'unproven', 'explicit-default' ) as $path ) {
+			$id = wp_insert_post( array( 'post_type' => 'post' ), true );
+			$membership_state['source_ids'][ $path ] = $id;
+			$membership_state['ordered_pages'][] = array( 'source_path' => $path );
+			wp_set_object_terms( $id, array( $default_id ), 'category' );
+		}
+		$membership_state['plan']['taxonomy_entities'][] = array( 'kind' => 'taxonomy_term', 'taxonomy' => 'category', 'slug' => 'site-default', 'name' => 'Site default', 'evidence' => array( 'membership' => true, 'name' => true ), 'membership_source_paths' => array( 'explicit-default', 'podcast/post-2.html' ) );
+		$membership_method = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'materialize_taxonomy_entities' );
+		$membership_result = $membership_method->invokeArgs( null, array( &$membership_state ) );
+		$assert( ! is_wp_error( $membership_result ), 'Default-category membership re-import succeeds.' );
+		foreach ( $section_entities as $entity ) {
+			foreach ( $entity['membership_source_paths'] as $path ) {
+				$id = (int) $membership_state['source_ids'][ $path ];
+				$expected = array( (int) term_exists( $entity['slug'], 'category' )['term_id'] );
+				if ( 'journal/post-1.html' === $path ) $expected[] = $owner_id;
+				if ( 'podcast/post-2.html' === $path ) $expected[] = $default_id;
+				$actual = wp_get_object_terms( $id, 'category' );
+				sort( $expected );
+				sort( $actual );
+				$assert( $expected === $actual, 'Section categories replace only an unassigned default, preserving destination-owned categories and explicitly assigned defaults.' );
+				$assert( $before_memberships[ $id ] === $membership_state['rollback']['term_memberships'][ $id . ':category' ]['term_ids'], 'Rollback journals the full original category set, including the default.' );
+			}
+		}
+		foreach ( array( 'unproven', 'explicit-default' ) as $path ) {
+			$id = (int) $membership_state['source_ids'][ $path ];
+			$assert( array( $default_id ) === wp_get_object_terms( $id, 'category' ), 'Posts without another proven category keep the default.' );
+			wp_delete_post( $id, true );
+		}
+		update_option( 'default_category', $saved_default );
+		wp_delete_term( $default_id, 'category' );
+		wp_delete_term( $owner_id, 'category' );
+	}
 	$section_content = (string) get_post_field( 'post_content', (int) ( $section_receipt['completed']['pages']['index.html'] ?? 0 ) );
 	$assert( str_contains( $section_content, '"category":[' . term_exists( 'journal', 'category' )['term_id'] . ']' ) && ! str_contains( $section_content, '{{wordpress-site-plan:term:' ), 'Section Query Loop persists a bare integer term ID.' );
 	Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $section_receipt, 'section_terms_smoke' );
