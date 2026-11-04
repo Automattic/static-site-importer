@@ -33,7 +33,10 @@ for (const item of triage.tracked) {
     if (pr.mergeable !== 'MERGEABLE') { held.push({ pr: pr.url, reason: `mergeable=${pr.mergeable}` }); continue; }
     if (!checks.length || red.length) { held.push({ pr: pr.url, reason: checks.length ? `checks not green: ${red.map((c) => c.name || c.context).join(', ')}` : 'no checks reported' }); continue; }
     if (args['dry-run']) { merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha: pr.headRefOid }); continue; }
-    gh('pr', 'merge', pr.url, '--squash', '--delete-branch', '--match-head-commit', pr.headRefOid);
+    gh('pr', 'merge', pr.url, '--squash', '--match-head-commit', pr.headRefOid);
+    // Delete only the remote head: gh's --delete-branch also edits the local
+    // checkout, which fails after the merge when the loop runs detached.
+    gh('api', '-X', 'DELETE', `repos/${pr.github}/git/refs/heads/${pr.headRefName}`);
     const sha = JSON.parse(gh('pr', 'view', pr.url, '--json', 'mergeCommit')).mergeCommit?.oid;
     merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha });
     console.error(`[merge] merged ${pr.url} ${sha}`);
