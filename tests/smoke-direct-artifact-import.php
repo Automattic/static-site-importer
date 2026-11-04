@@ -422,7 +422,7 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 $GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
 unset( $_SERVER['argv'][0] );
-// The pinned transformer predates StepTimer; simulate the additive metrics contract.
+// Use deterministic compose timings alongside the real receipt timing observations.
 $compose_step_timings = array(
 	array( 'step' => 'reduce_pages', 'ms' => 12.5, 'calls' => 3 ),
 	array( 'step' => 'build_plan', 'ms' => 2.25, 'calls' => 1 ),
@@ -446,7 +446,19 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][
 $composed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'] );
 $timed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
-$assert( $compose_step_timings === ( $timed_run['payload']['step_timings']['compose'] ?? null ) && ! isset( $timed_run['payload']['step_timings']['compile_pages'] ), 'run.json must retain ordered compose step timings without inventing unavailable compile timings' );
+$expected_compile_timings = array();
+foreach ( $timed_run['payload']['page_ids'] as $page_id ) {
+	$receipt_file = $timed_run['payload']['refs']['receipts'][ $page_id ]['file'];
+	$receipt_raw = (string) $frozen_workspace->read_raw( $receipt_file );
+	$assert( ! str_contains( $receipt_raw, 'step_timings' ), 'receipt checkpoints and identities must exclude step timings' );
+	foreach ( json_decode( (string) $frozen_workspace->read_raw( $receipt_file . '.timings' ), true ) as $timing ) {
+		$name = $timing['step'];
+		$expected_compile_timings[ $name ] ??= array( 'step' => $name, 'ms' => 0, 'calls' => 0 );
+		$expected_compile_timings[ $name ]['ms'] += $timing['ms'];
+		$expected_compile_timings[ $name ]['calls'] += $timing['calls'];
+	}
+}
+$assert( ! empty( $expected_compile_timings ) && array_values( $expected_compile_timings ) === ( $timed_run['payload']['step_timings']['compile'] ?? null ) && $compose_step_timings === ( $timed_run['payload']['step_timings']['compose'] ?? null ), 'run.json must retain ordered compile totals from each adopted page once across resumes alongside compose timings' );
 $timed_checkpoint = json_decode( (string) $frozen_workspace->read_raw( 'composed-result.json' ), true );
 $assert( ! str_contains( (string) wp_json_encode( $timed_checkpoint ), 'step_timings' ), 'compose step timings must never enter the published checkpoint or its digest' );
 $run_hash = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'hash' );
@@ -484,7 +496,7 @@ $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 ==
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
 $assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && null === $frozen_workspace->read_raw( 'artifact.json' ) && null === $frozen_workspace->read_raw( 'shared-plan.json' ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a completed run prunes resume-only checkpoints and keeps its terminal response' );
 $completed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
-$assert( $compose_step_timings === ( $completed_run['payload']['step_timings']['compose'] ?? null ), 'compose step timings must survive resume and terminal checkpoint pruning' );
+$assert( $timed_run['payload']['step_timings'] === ( $completed_run['payload']['step_timings'] ?? null ), 'compile and compose step timings must survive resume and terminal checkpoint pruning' );
 $replayed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ( $replayed['artifact_run']['receipt_identities'] ?? null ) === ( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 1 === $GLOBALS['ssi_direct_mutations'], 'a pruned completed run still replays its terminal response without mutation' );
 $composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
@@ -657,6 +669,10 @@ $assert( 'static_site_importer_direct_artifact_worker_failed' === ( $fanout_fail
 $fanout_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) ( $fanout_failure_data['import_id'] ?? '' ), 'plan' ) );
 $fanout_work = $fanout_recovered['artifact_run']['work'] ?? array();
 $assert( ! empty( $fanout_recovered['success'] ) && empty( $fanout_recovered['continuation'] ) && array( 1, 1, 1 ) === ( $fanout_work['page_compile_counts'] ?? null ) && 3 === ( $fanout_work['pages_compiled'] ?? 0 ), 'resume must adopt the page published before an interrupted shard and compile every page exactly once' );
+$fanout_run_path = $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' . $fanout_failure_data['import_id'] . '/run.json';
+$fanout_run = json_decode( (string) file_get_contents( $fanout_run_path ), true );
+$fanout_timings = $fanout_run['payload']['step_timings']['compile'] ?? array();
+$assert( array_column( array_values( $expected_compile_timings ), 'step' ) === array_column( $fanout_timings, 'step' ) && array_column( array_values( $expected_compile_timings ), 'calls' ) === array_column( $fanout_timings, 'calls' ), 'worker receipt adoption and interrupted-shard resume must report each page timing once in first-seen order' );
 remove_filter( 'static_site_importer_direct_artifact_compiler', $interrupt_worker );
 
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 1 ) ) );
