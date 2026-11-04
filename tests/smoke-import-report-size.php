@@ -236,11 +236,14 @@ $assert( strlen( $more_pages_json ) > strlen( $json ), 'report-size-grows-with-p
 // Exercise the same immutable response publication path used by abilities/CLI.
 $response_fixture = static function ( int $bytes ) use ( $fixture_receipt, $persisted_report, $small_css ): array {
 	$receipt = $fixture_receipt( 3, $small_css );
-	$receipt['plan']['quality']['fallbacks'] = array( array( 'type' => 'html_form_fallback', 'evidence' => 'fallback-evidence-sentinel' . str_repeat( 'f', $bytes ) ) );
-	$entity = array( 'id' => 'form.contact', 'evidence' => 'runtime-evidence-sentinel' . str_repeat( 'r', 1024 ) );
+	$evidence = array( 'nodes' => array( 'fallback-evidence-sentinel' . str_repeat( 'f', $bytes ) ) );
+	$receipt['plan']['quality']['fallbacks'] = array( array( 'type' => 'html_form_fallback', 'layout_graph' => $evidence, 'report_only' => true ) );
+	$entity = array( 'id' => 'form.contact', 'layout_graph' => $evidence, 'evidence' => 'runtime-evidence-sentinel' . str_repeat( 'r', 1024 ), 'bindings' => array( array( 'source_path' => 'contact.html' ) ) );
 	$receipt['plan']['runtime_entity_records'] = array( array( 'content_hash' => hash( 'sha256', json_encode( $entity ) ), 'entity' => $entity ) );
-	$receipt['plan']['runtime_entity_resolution'] = array( array( 'entities' => array( $entity ) ) );
-	$receipt['runtime_lifecycle']['entities']['form.contact']['manifest']['forms'] = array( $entity );
+	$resolved_entity = $entity;
+	$resolved_entity['bindings'][0]['resolved_target'] = 'page:42';
+	$receipt['plan']['runtime_entity_resolution'] = array( array( 'entities' => array( $resolved_entity ) ) );
+	$receipt['runtime_lifecycle']['entities']['form.contact']['manifest']['entities'] = $receipt['plan']['runtime_entity_records'];
 	$report = $persisted_report( $receipt )['report'];
 	$report['import_run_id'] = 'size-' . $bytes . '-' . bin2hex( random_bytes( 5 ) );
 	$result = Static_Site_Importer_Canonical_Import_Service::bound_success_result( array(
@@ -265,17 +268,57 @@ $response_fixture = static function ( int $bytes ) use ( $fixture_receipt, $pers
 	$resolved = method_exists( Static_Site_Importer_Canonical_Import_Service::class, 'resolve_response_evidence' )
 		? Static_Site_Importer_Canonical_Import_Service::resolve_response_evidence( $loaded['result_details']['quality']['fallbacks_ref'] ?? array(), $loaded )
 		: array();
-	return array( 'bytes' => $total, 'copies' => $copies, 'artifacts' => $artifacts, 'resolved' => $resolved, 'runtime_copies' => $runtime_copies );
+	$expanded = Static_Site_Importer_Canonical_Import_Service::resolve_response_evidence( $loaded['wordpress_site_plan'], $loaded );
+	return array( 'bytes' => $total, 'copies' => $copies, 'artifacts' => $artifacts, 'resolved' => $resolved, 'runtime_copies' => $runtime_copies, 'expanded' => $expanded, 'entity' => $entity, 'resolved_entity' => $resolved_entity );
 };
 $response_small = $response_fixture( 1024 );
 $response_large = $response_fixture( 101024 );
 $assert( ! empty( $response_small['artifacts'] ), 'response-artifacts-published' );
 $assert( 'html_form_fallback' === ( $response_small['resolved'][0]['type'] ?? '' ), 'fallback-reference-resolves-to-canonical-evidence' );
 $assert( 1 === $response_small['runtime_copies'], 'runtime-manifest-persisted-once' );
+$assert( $response_small['entity'] == $response_small['expanded']['runtime_entity_records'][0]['entity'], 'source-entity-round-trips' );
+$assert( $response_small['resolved_entity'] == $response_small['expanded']['runtime_entity_resolution'][0]['entities'][0], 'resolved-entity-round-trips-with-distinct-bindings' );
 $assert( 1 === $response_small['copies'] && 1 === $response_large['copies'], 'fallback-list-persisted-once' );
 $growth = $response_large['bytes'] - $response_small['bytes'];
 $assert( $growth >= 100000 && $growth < 102048, 'artifact-growth-is-distinct-evidence-only', (string) $growth );
 echo sprintf( "Reduced response fixture: %d bytes; +100KB distinct evidence: %d bytes\n", $response_small['bytes'], $response_large['bytes'] );
+
+// A composed checkpoint already owns the executable plan. Publication must
+// advertise that artifact (and its pointer), not persist another plan copy.
+$checkpoint_root = Static_Site_Importer_Direct_Artifact_Import::root() . '/plan-size-' . bin2hex( random_bytes( 5 ) );
+wp_mkdir_p( $checkpoint_root );
+$checkpoint_plan = $response_small['expanded'];
+$checkpoint_plan['writes'][0]['size_test'] = 'canonical-plan-payload-sentinel';
+$checkpoint_path = $checkpoint_root . '/composed-result.json';
+file_put_contents( $checkpoint_path, wp_json_encode( array( 'payload' => array( 'result' => array( 'wordpress_site_plan' => $checkpoint_plan ) ) ) ) );
+$descriptor = array( 'path' => $checkpoint_path, 'sha256' => hash_file( 'sha256', $checkpoint_path ), 'bytes' => filesize( $checkpoint_path ), 'json_pointer' => '/payload/result/wordpress_site_plan', 'plan_identity' => $checkpoint_plan['plan_identity'] ?? array() );
+$checkpoint_receipt = $fixture_receipt( 3, $small_css );
+$checkpoint_receipt['plan'] = $checkpoint_plan;
+$checkpoint_report = $persisted_report( $checkpoint_receipt )['report'];
+$checkpoint_report['import_run_id'] = 'checkpoint-size-' . bin2hex( random_bytes( 5 ) );
+$checkpoint_response = Static_Site_Importer_Canonical_Import_Service::bound_success_result( array( 'import_report' => $checkpoint_report, 'materialization_receipt' => $checkpoint_receipt ), array(), $descriptor );
+$checkpoint_artifacts = $checkpoint_response['response_artifacts']['artifacts'];
+$assert( $descriptor === ( $checkpoint_artifacts['wordpress_site_plan'] ?? null ), 'response-reuses-checkpoint-identity-and-pointer' );
+$assert( $checkpoint_plan === Static_Site_Importer_Canonical_Import_Service::load_response_artifact( $checkpoint_artifacts['wordpress_site_plan'] ), 'checkpoint-plan-consumer-follows-pointer' );
+$invalid_descriptor = $descriptor;
+$invalid_descriptor['sha256'] = str_repeat( '0', 64 );
+$assert( array() === Static_Site_Importer_Canonical_Import_Service::load_response_artifact( $invalid_descriptor ), 'checkpoint-consumer-rejects-invalid-digest' );
+$plan_copies = substr_count( (string) file_get_contents( $checkpoint_path ), 'canonical-plan-payload-sentinel' );
+$checkpoint_fallback_copies = 0;
+$checkpoint_entity_copies = 0;
+foreach ( $checkpoint_artifacts as $name => $artifact ) {
+	if ( 'wordpress_site_plan' !== $name ) {
+		$content = (string) file_get_contents( $artifact['path'] );
+		$checkpoint_fallback_copies += substr_count( $content, 'fallback-evidence-sentinel' );
+		$checkpoint_entity_copies += substr_count( $content, 'runtime-evidence-sentinel' );
+	}
+	if ( 'wordpress_site_plan' !== $name ) {
+		$plan_copies += substr_count( (string) file_get_contents( $artifact['path'] ), 'canonical-plan-payload-sentinel' );
+		$assert( ! file_exists( dirname( $artifact['path'] ) . '/wordpress-site-plan.json' ), 'no-response-plan-copy-' . $name );
+	}
+}
+$assert( 1 === $plan_copies, 'plan-persisted-once-across-workspace' );
+$assert( 0 === $checkpoint_fallback_copies && 0 === $checkpoint_entity_copies, 'response-does-not-copy-checkpoint-fallback-or-entity-evidence' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

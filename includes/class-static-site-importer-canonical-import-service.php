@@ -411,11 +411,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 		if ( 'dependencies_prepared' === ( $result['status'] ?? '' ) ) {
-			$saved = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application( $runtime, array(
-				'args_hash'  => $args_hash,
-				'checkpoint' => $result['runtime_lifecycle_checkpoint'],
-				'request_id' => $result['fresh_runtime']['request_id'],
-			) );
+			$saved = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application(
+				$runtime,
+				array(
+					'args_hash'  => $args_hash,
+					'checkpoint' => $result['runtime_lifecycle_checkpoint'],
+					'request_id' => $result['fresh_runtime']['request_id'],
+				)
+			);
 			return is_wp_error( $saved ) ? self::error( (string) $saved->get_error_code(), $saved->get_error_message() ) : array(
 				'success'             => true,
 				'continuation'        => true,
@@ -423,10 +426,13 @@ class Static_Site_Importer_Canonical_Import_Service {
 			);
 		}
 		$response = self::success( $result, $input );
-		$saved    = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application( $runtime, array(
-			'args_hash' => $args_hash,
-			'response'  => $response,
-		) );
+		$saved    = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application(
+			$runtime,
+			array(
+				'args_hash' => $args_hash,
+				'response'  => $response,
+			)
+		);
 		return is_wp_error( $saved ) ? self::error( (string) $saved->get_error_code(), $saved->get_error_message() ) : $response;
 	}
 
@@ -592,18 +598,39 @@ class Static_Site_Importer_Canonical_Import_Service {
 		return static_site_importer_staged_archive_payload_reader( $archive );
 	}
 
+	/** Load a trusted response descriptor, checking content identity before following its pointer. */
+	public static function load_response_artifact( array $descriptor ): array {
+		$path = $descriptor['path'] ?? null;
+		if ( ! is_string( $path ) || ! is_file( $path ) || hash_file( 'sha256', $path ) !== ( $descriptor['sha256'] ?? null ) ) {
+			return array();
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verified local importer-owned artifact, not a remote URL.
+		$value   = json_decode( (string) file_get_contents( $path ), true );
+		$pointer = $descriptor['json_pointer'] ?? '';
+		if ( is_string( $pointer ) && '' !== $pointer ) {
+			foreach ( explode( '/', ltrim( $pointer, '/' ) ) as $segment ) {
+				$key = str_replace( array( '~1', '~0' ), array( '/', '~' ), $segment );
+				if ( ! is_array( $value ) || ! array_key_exists( $key, $value ) ) {
+					return array();
+				}
+				$value = $value[ $key ];
+			}
+		}
+		return is_array( $value ) ? $value : array();
+	}
+
 	/** Resolve retained evidence using already loaded response artifacts (no arbitrary file reads). */
 	public static function resolve_response_evidence( array $value, array $artifacts ): array {
 		if ( isset( $value['artifact'], $value['path'] ) && is_string( $value['artifact'] ) && is_string( $value['path'] ) && isset( $artifacts[ $value['artifact'] ] ) ) {
 			$resolved = $artifacts[ $value['artifact'] ];
-			foreach ( explode( '/', ltrim( $value['path'], '/' ) ) as $segment ) {
+			foreach ( '' === $value['path'] ? array() : explode( '/', ltrim( $value['path'], '/' ) ) as $segment ) {
 				$key = str_replace( array( '~1', '~0' ), array( '/', '~' ), $segment );
 				if ( ! is_array( $resolved ) || ! array_key_exists( $key, $resolved ) ) {
 					return $value;
 				}
 				$resolved = $resolved[ $key ];
 			}
-			return is_array( $resolved ) ? $resolved : $value;
+			return is_array( $resolved ) ? self::resolve_response_evidence( array_replace( $resolved, is_array( $value['overrides'] ?? null ) ? $value['overrides'] : array() ), $artifacts ) : $value;
 		}
 		foreach ( $value as $key => $item ) {
 			if ( ! is_array( $item ) ) {
@@ -626,15 +653,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( ! is_array( $item ) ) {
 				continue;
 			}
-			$is_runtime = $runtime || in_array( $key, array( 'runtime_entity_records', 'runtime_entity_resolution', 'manifest' ), true );
+			$is_runtime = $runtime || in_array( $key, array( 'runtime_entity_records', 'runtime_entity_resolution', 'runtime_declarations', 'manifest' ), true );
 			if ( $is_runtime && 'entity' === $key ) {
-				$hash             = hash( 'sha256', (string) wp_json_encode( $item ) );
-				$records[ $hash ] = $item;
-				$item             = array(
-					'artifact' => 'runtime_evidence',
-					'path'     => '/records/' . $hash,
-					'sha256'   => $hash,
-				);
+				self::reference_runtime_entity( $item, $records );
 			} elseif ( $is_runtime && in_array( $key, array( 'entities', 'forms', 'products', 'comments' ), true ) && array() !== $item ) {
 				// Store individual entities so equal manifests in different envelopes
 				// share bytes while distinct resolution results remain distinct.
@@ -642,17 +663,98 @@ class Static_Site_Importer_Canonical_Import_Service {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$hash             = hash( 'sha256', (string) wp_json_encode( $entity ) );
-					$records[ $hash ] = $entity;
-					$entity           = array(
-						'artifact' => 'runtime_evidence',
-						'path'     => '/records/' . $hash,
-						'sha256'   => $hash,
-					);
+					// A manifest can wrap records in entities. Factor those children
+					// before storing the envelope, never capture an expanded copy.
+					self::reference_runtime_entity( $entity, $records );
 				}
 				unset( $entity );
 			} else {
 				self::reference_runtime_evidence( $item, $records, $is_runtime );
+			}
+		}
+		unset( $item );
+	}
+
+	/** Keep binding resolution outside the shared entity body. */
+	private static function reference_runtime_entity( array &$entity, array &$records ): void {
+		if ( isset( $entity['artifact'] ) || array( 'content_hash' ) === array_keys( $entity ) ) {
+			return;
+		}
+		if ( isset( $entity['entity'] ) ) {
+			self::reference_runtime_evidence( $entity, $records, true );
+			return;
+		}
+		self::reference_runtime_evidence( $entity, $records, true );
+		$overrides = array();
+		if ( isset( $entity['bindings'] ) ) {
+			$overrides['bindings'] = $entity['bindings'];
+			unset( $entity['bindings'] );
+		}
+		// Compiler records are sorted; resolved views need not preserve key order.
+		ksort( $entity );
+		$hash = hash( 'sha256', (string) wp_json_encode( $entity ) );
+		if ( ! isset( $records[ $hash ] ) ) {
+			$records[ $hash ] = $entity;
+		}
+		$entity = isset( $records[ $hash ]['artifact'] ) ? $records[ $hash ] : array(
+			'artifact' => 'runtime_evidence',
+			'path'     => '/records/' . $hash,
+			'sha256'   => $hash,
+		);
+		if ( array() !== $overrides ) {
+			$entity['overrides'] = $overrides;
+		}
+	}
+
+	/** Index compiler-owned entity content so response evidence can reuse it too. */
+	private static function index_checkpoint_entities( array $value, string $pointer, array &$records, array $fields, bool $runtime = false ): void {
+		foreach ( $value as $key => $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$path       = $pointer . '/' . str_replace( array( '~', '/' ), array( '~0', '~1' ), (string) $key );
+			$is_runtime = $runtime || in_array( $key, array( 'runtime_entity_records', 'runtime_entity_resolution', 'runtime_declarations' ), true );
+			if ( $is_runtime && 'entity' === $key ) {
+				$body = $item;
+				unset( $body['bindings'] );
+				self::reference_shared_fallback_fields( $body, $fields );
+				ksort( $body );
+				$hash             = hash( 'sha256', (string) wp_json_encode( $body ) );
+				$records[ $hash ] = array(
+					'artifact' => 'wordpress_site_plan',
+					'path'     => $path,
+				);
+			} elseif ( $is_runtime && 'entities' === $key ) {
+				foreach ( $item as $index => $entity ) {
+					if ( ! is_array( $entity ) || ! isset( $entity['bindings'] ) ) {
+						continue;
+					}
+					unset( $entity['bindings'] );
+					self::reference_shared_fallback_fields( $entity, $fields );
+					ksort( $entity );
+					$hash             = hash( 'sha256', (string) wp_json_encode( $entity ) );
+					$records[ $hash ] = array(
+						'artifact' => 'wordpress_site_plan',
+						'path'     => $path . '/' . $index,
+					);
+				}
+			} else {
+				self::index_checkpoint_entities( $item, $path, $records, $fields, $is_runtime );
+			}
+		}
+	}
+
+	/** Reference equal form evidence fields without conflating reporting metadata. */
+	private static function reference_shared_fallback_fields( array &$value, array $fields ): void {
+		foreach ( $value as &$item ) {
+			if ( ! is_array( $item ) || isset( $item['artifact'] ) ) {
+				continue;
+			}
+			$hash = hash( 'sha256', (string) wp_json_encode( $item ) );
+			if ( isset( $fields[ $hash ] ) ) {
+				$item = $fields[ $hash ];
+			} else {
+				self::reference_shared_fallback_fields( $item, $fields );
 			}
 		}
 		unset( $item );
@@ -690,7 +792,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 	}
 
 	/** Persist unbounded success payloads and replace them with durable references. */
-	public static function bound_success_result( array $result, array $additional_payloads = array() ): array {
+	public static function bound_success_result( array $result, array $additional_payloads = array(), array $plan_artifact = array() ): array {
 		$details  = $result;
 		$payloads = array_filter(
 			array(
@@ -739,7 +841,18 @@ class Static_Site_Importer_Canonical_Import_Service {
 					'plan_identity' => $receipt['plan_identity'] ?? array(),
 				);
 			}
-			$payloads['wordpress_site_plan'] = $plan;
+			if ( empty( $plan_artifact ) ) {
+				$payloads['wordpress_site_plan'] = $plan;
+			} else {
+				// The checkpoint is the compiler plan, not the resolved execution
+				// view. Preserve runtime bindings and resolution metadata separately.
+				$payloads['materialization_receipt']['plan_resolution'] = array_intersect_key( $plan, array_flip( array( 'runtime_entity_resolution', 'resolution' ) ) );
+				$payloads['materialization_receipt']['plan_ref']        = array(
+					'artifact'      => 'wordpress_site_plan',
+					'path'          => '',
+					'plan_identity' => $receipt['plan_identity'] ?? array(),
+				);
+			}
 			unset( $payloads['materialization_receipt']['plan'] );
 		}
 		if ( isset( $payloads['import_report']['materialization_receipt'] ) ) {
@@ -759,10 +872,63 @@ class Static_Site_Importer_Canonical_Import_Service {
 		// lifecycle receipts. Address each entity by content, retaining different
 		// resolved bindings rather than conflating them with source declarations.
 		$runtime_evidence = array();
+		$checkpoint_plan  = empty( $plan_artifact ) ? array() : self::load_response_artifact( $plan_artifact );
+		// Producer fallback rows contain the same form evidence as runtime
+		// entities, with reporting-only fields added. Keep those fields here and
+		// reference equal evidence fields from the entity rather than copy them.
+		$fallback_fields     = array();
+		$canonical_fallbacks = $checkpoint_plan['quality']['fallbacks'] ?? ( $payloads['import_report']['quality']['fallbacks'] ?? array() );
+		foreach ( $canonical_fallbacks as $index => $fallback ) {
+			foreach ( $fallback as $key => $field ) {
+				if ( is_array( $field ) && array() !== $field ) {
+					$fallback_fields[ hash( 'sha256', (string) wp_json_encode( $field ) ) ] = array(
+						'artifact' => empty( $checkpoint_plan ) ? 'import_report' : 'wordpress_site_plan',
+						'path'     => '/quality/fallbacks/' . $index . '/' . str_replace( array( '~', '/' ), array( '~0', '~1' ), (string) $key ),
+					);
+				}
+			}
+		}
+		if ( ! empty( $checkpoint_plan ) ) {
+			self::index_checkpoint_entities( $checkpoint_plan, '', $runtime_evidence, $fallback_fields );
+			foreach ( $payloads['import_report']['quality']['fallbacks'] ?? array() as $index => $fallback ) {
+				$identity = $fallback['fallback_identity'] ?? null;
+				foreach ( $canonical_fallbacks as $canonical_index => $canonical ) {
+					if ( $fallback !== $canonical && ( ! is_string( $identity ) || ( $canonical['fallback_identity'] ?? null ) !== $identity ) ) {
+						continue;
+					}
+					$overrides = array();
+					foreach ( $fallback as $key => $field ) {
+						if ( ! array_key_exists( $key, $canonical ) || $canonical[ $key ] !== $field ) {
+							$overrides[ $key ] = $field;
+						}
+					}
+					$payloads['import_report']['quality']['fallbacks'][ $index ] = array(
+						'artifact'  => 'wordpress_site_plan',
+						'path'      => '/quality/fallbacks/' . $canonical_index,
+						'overrides' => $overrides,
+					);
+					break;
+				}
+			}
+		}
+		foreach ( $payloads as $name => &$payload ) {
+			if ( 'import_report' === $name ) {
+				$fallbacks = $payload['quality']['fallbacks'] ?? null;
+				unset( $payload['quality']['fallbacks'] );
+				self::reference_shared_fallback_fields( $payload, $fallback_fields );
+				if ( null !== $fallbacks ) {
+					$payload['quality']['fallbacks'] = $fallbacks;
+				}
+			} else {
+				self::reference_shared_fallback_fields( $payload, $fallback_fields );
+			}
+		}
+		unset( $payload );
 		foreach ( $payloads as &$payload ) {
 			self::reference_runtime_evidence( $payload, $runtime_evidence );
 		}
 		unset( $payload );
+		$runtime_evidence = array_filter( $runtime_evidence, static fn ( array $record ): bool => ! isset( $record['artifact'] ) );
 		if ( array() !== $runtime_evidence ) {
 			$payloads['runtime_evidence'] = array(
 				'schema'  => 'static-site-importer/runtime-evidence/v1',
@@ -831,7 +997,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$artifacts = array(
 			'schema'    => 'static-site-importer/import-response-artifacts/v1',
 			'status'    => 'failed',
-			'artifacts' => array(),
+			'artifacts' => empty( $plan_artifact ) ? array() : array( 'wordpress_site_plan' => $plan_artifact ),
 			'errors'    => array(),
 		);
 		// Share the retained-run root so the existing daily expiry sweep owns these

@@ -995,8 +995,19 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					if ( is_wp_error( $materialized ) ) {
 						return self::fail( $workspace, $run, 'materialize', $materialized );
 					}
-					$materialized = Static_Site_Importer_Canonical_Import_Service::bound_success_result( $materialized );
-					$ref          = self::publish_checkpoint( $workspace, $run, 'materialization', 'materialization-result.json', array( 'result' => $materialized ) );
+					$plan_path = $workspace->path( 'composed-result.json' );
+					if ( is_wp_error( $plan_path ) ) {
+						return self::fail( $workspace, $run, 'plan_evidence', $plan_path );
+					}
+					$plan_artifact = array(
+						'path'          => $plan_path,
+						'sha256'        => hash_file( 'sha256', $plan_path ),
+						'bytes'         => filesize( $plan_path ),
+						'json_pointer'  => '/payload/result/wordpress_site_plan',
+						'plan_identity' => $materialized['materialization_receipt']['plan_identity'] ?? array(),
+					);
+					$materialized  = Static_Site_Importer_Canonical_Import_Service::bound_success_result( $materialized, array(), isset( $materialized['materialization_receipt']['plan'] ) ? $plan_artifact : array() );
+					$ref           = self::publish_checkpoint( $workspace, $run, 'materialization', 'materialization-result.json', array( 'result' => $materialized ) );
 					if ( is_wp_error( $ref ) ) {
 						return self::fail( $workspace, $run, 'materialize', $ref );
 					}
@@ -1053,7 +1064,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			// checkpoints (source artifact, plans, receipts, the composed site)
 			// exist to resume work and would otherwise stay on disk until expiry.
 			// A returned plan still references retained payloads by identity.
-			$workspace->prune_except( self::terminal_retention( 'plan' === $run['binding']['operation'] ) );
+			$retained = self::terminal_retention( 'plan' === $run['binding']['operation'] );
+			if ( isset( $response['result']['response_artifacts']['artifacts']['wordpress_site_plan']['json_pointer'] ) ) {
+				$retained[] = 'composed-result.json';
+			}
+			$workspace->prune_except( $retained );
 			return $response;
 		} catch ( Throwable $error ) {
 			return self::fail( $workspace, $run, (string) ( $run['progress']['phase'] ?? $run['phase'] ?? 'runtime' ), $error );
