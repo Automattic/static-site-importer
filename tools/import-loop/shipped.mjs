@@ -43,7 +43,10 @@ const pending = new Map(merged.map((m) => [m.pr, m]));
 const shipped = [];
 while (pending.size) {
   for (const [pr, fix] of pending) {
-    const release = shippedIn(fix);
+    // A failed lookup (network, rate limit) is "not shipped yet": the step's
+    // timeout, not one transient error, bounds the wait.
+    let release = null;
+    try { release = shippedIn(fix); } catch (error) { console.error(`[shipped] ${pr}: lookup failed, retrying: ${String(error.stderr || error.message).trim()}`); }
     if (release) { shipped.push({ pr, release }); pending.delete(pr); console.error(`[shipped] ${pr} in ${release}`); }
   }
   if (pending.size) { console.error(`[shipped] waiting on ${[...pending.keys()].join(', ')}`); await new Promise((r) => setTimeout(r, poll)); }
