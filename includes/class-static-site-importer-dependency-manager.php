@@ -320,25 +320,64 @@ class Static_Site_Importer_Dependency_Manager {
 
 	/** @return array<string,mixed> */
 	private static function materialize_dependency( array $dependency, bool $overwrite ): array {
+		$before = self::post_id_snapshot();
 		if ( 'wp_org_plugin' === ( $dependency['type'] ?? '' ) ) {
-			return Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+			$report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 				(string) ( $dependency['slug'] ?? '' ),
 				(string) ( $dependency['plugin_file'] ?? '' ),
 				$dependency['availability_callback'] ?? null,
 				$dependency['preparation_callback'] ?? null
 			);
-		}
-		if ( 'companion_plugin' === ( $dependency['type'] ?? '' ) ) {
+		} elseif ( 'companion_plugin' === ( $dependency['type'] ?? '' ) ) {
 			$payload = is_array( $dependency['payload'] ?? null ) ? $dependency['payload'] : array();
-			return Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, $dependency['availability_callback'] ?? null, $overwrite );
+			$report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, $dependency['availability_callback'] ?? null, $overwrite );
+		} else {
+			$report = array(
+				'status' => 'failed',
+				'error'  => array(
+					'code'    => 'static_site_importer_dependency_type_unsupported',
+					'message' => 'SSI cannot materialize an unsupported dependency type.',
+				),
+			);
 		}
-		return array(
-			'status' => 'failed',
-			'error'  => array(
-				'code'    => 'static_site_importer_dependency_type_unsupported',
-				'message' => 'SSI cannot materialize an unsupported dependency type.',
-			),
-		);
+		// Install or activation may create native content at one of the source's
+		// own routes (a commerce dependency seeds its own checkout page). The run
+		// owns exactly the posts this materialization created, so the resumed
+		// runtime's preflight can adopt them without an overwrite decision.
+		$report['dependency_created_post_ids'] = array_values( array_diff( self::post_id_snapshot(), $before ) );
+		return $report;
+	}
+
+	/**
+	 * Posts this dependency materialization created, flattened across adapter
+	 * reports. The record crosses the continuation boundary through the
+	 * lifecycle checkpoint so preflight can admit the run's own pages.
+	 *
+	 * @param array<string,mixed> $reports Materialization reports keyed by declaration id.
+	 * @return array<int,int>
+	 */
+	public static function dependency_created_post_ids( $reports ): array {
+		$ids = array();
+		foreach ( is_array( $reports ) ? $reports : array() as $report ) {
+			foreach ( is_array( $report ) ? $report : array() as $plugin_report ) {
+				if ( is_array( $plugin_report ) && is_array( $plugin_report['dependency_created_post_ids'] ?? null ) ) {
+					foreach ( $plugin_report['dependency_created_post_ids'] as $id ) {
+						$id         = (int) $id;
+						$ids[ $id ] = true;
+					}
+				}
+			}
+		}
+		unset( $ids[0] );
+		return array_map( 'intval', array_keys( $ids ) );
+	}
+
+	/** @return array<int,int> Post IDs present right now, across statuses. */
+	private static function post_id_snapshot(): array {
+		if ( ! function_exists( 'get_posts' ) ) {
+			return array();
+		}
+		return array_map( 'intval', (array) get_posts( array( 'post_type' => 'any', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ) ) );
 	}
 
 	private static function dependency_available( array $dependency ): bool {
