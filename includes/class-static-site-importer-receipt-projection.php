@@ -136,9 +136,9 @@ class Static_Site_Importer_Receipt_Projection {
 				'import_run_id'                    => $import_run_id,
 				'plan_identity'                    => $receipt['plan_identity'] ?? array(),
 				'blocks_engine'                    => array(
-					'transformer'         => $transformer_provenance,
-					'wordpress_site_plan' => self::report_plan( $plan ),
-					'gutenberg_gaps'      => $gutenberg_gaps,
+					'transformer'    => $transformer_provenance,
+					'plan_summary'   => self::report_plan( $plan ),
+					'gutenberg_gaps' => $gutenberg_gaps,
 				),
 				'quality'                          => $quality,
 				'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
@@ -386,49 +386,25 @@ class Static_Site_Importer_Receipt_Projection {
 		return $manifest;
 	}
 
-	/**
-	 * Plan copy for the persisted report.
-	 *
-	 * The report's embedded plan is evidence, not an executable input: it keeps
-	 * target paths, byte counts and hashes while dropping inline payload content
-	 * (write payloads, asset bytes, visual-repair CSS and page block markup).
-	 * The materialized theme and WordPress already own those bytes. This is the
-	 * same rule report_receipt() applies to the receipt copy.
-	 *
-	 * @param array<string,mixed> $plan Canonical WordPress site plan.
-	 * @return array<string,mixed>
-	 */
+	/** Compact compiler evidence; the executable plan is a separate artifact. */
 	private static function report_plan( array $plan ): array {
-		foreach ( is_array( $plan['writes'] ?? null ) ? $plan['writes'] : array() as $index => $write ) {
-			if ( ! is_array( $write ) ) {
-				continue;
-			}
-			unset( $plan['writes'][ $index ]['canonical_payload'] );
-			if ( is_array( $write['payload'] ?? null ) ) {
-				unset( $plan['writes'][ $index ]['payload']['data'] );
-			}
-		}
-		foreach ( is_array( $plan['assets'] ?? null ) ? $plan['assets'] : array() as $index => $asset ) {
-			if ( ! is_array( $asset ) ) {
-				continue;
-			}
-			unset( $plan['assets'][ $index ]['content'], $plan['assets'][ $index ]['content_base64'] );
-		}
-		if ( is_array( $plan['visual_repair'] ?? null ) ) {
-			unset( $plan['visual_repair']['css'], $plan['visual_repair']['compat_css'] );
-		}
-		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $index => $page ) {
-			if ( ! is_array( $page ) ) {
-				continue;
-			}
-			foreach ( array_keys( $page ) as $field ) {
-				if ( is_string( $field ) && str_ends_with( $field, '_block_markup' ) ) {
-					unset( $plan['pages'][ $index ][ $field ] );
-				}
-			}
-		}
-
-		return $plan;
+		$quality = is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array();
+		unset( $quality['fallbacks'] );
+		$assets = array_map(
+			static function ( array $asset ): array {
+				unset( $asset['content'], $asset['content_base64'], $asset['payload'] );
+				return $asset;
+			},
+			$plan['assets'] ?? array()
+		);
+		return array(
+			'schema'        => $plan['schema'] ?? '',
+			'plan_identity' => $plan['plan_identity'] ?? array(),
+			'page_count'    => count( $plan['pages'] ?? array() ),
+			'asset_count'   => count( $assets ),
+			'assets'        => $assets,
+			'quality'       => $quality,
+		);
 	}
 
 	/**
@@ -437,9 +413,9 @@ class Static_Site_Importer_Receipt_Projection {
 	 * A deferred receipt carries its live rollback journal under `transaction`.
 	 * That handle only works in memory (consumers require an object), and its
 	 * state repeats the whole site plan several times, so it stays out of reports.
-	 * The report carries the canonical plan once, under blocks_engine; its
-	 * receipt references that plan by identity and each materialized page by
-	 * content hash instead of embedding copies.
+	 * The response artifacts carry the canonical plan; the report keeps its
+	 * identity and compact compiler summary. Each materialized page is identified
+	 * by content hash rather than embedding another markup copy.
 	 *
 	 * @param array<array-key,mixed> $receipt Materialization receipt.
 	 * @return array<array-key,mixed>

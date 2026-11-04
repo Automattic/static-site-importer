@@ -252,7 +252,7 @@ $multi_page_artifact = $unsafe_layout_artifact;
 $multi_page_artifact['files']['website/second.html'] = $unsafe_layout_artifact['files']['website/index.html'];
 $assert( array( 'website/index.html', 'website/second.html' ) === array_column( Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $multi_page_plan, $multi_page_artifact ), 'source_path' ), 'unsafe-class-is-reported-on-each-page-without-duplicates' );
 
-$unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'wordpress_site_plan' => $unsafe_layout_plan ) ) );
+$unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'plan_summary' => $unsafe_layout_plan ) ) );
 $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $unsafe_report, array( 'fail_on_quality' => true ) );
 $unsafe_summary = $unsafe_report['compact_summary'];
 $assert( false === $unsafe_quality['pass'] && true === $unsafe_quality['fail_import'] && 1 === $unsafe_quality['unsafe_layout_constraint_count'] && in_array( 'unsafe_layout_constraint', $unsafe_quality['failure_reasons'], true ), 'strict-quality-rejects-unsafe-layout-constraint' );

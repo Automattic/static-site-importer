@@ -201,8 +201,8 @@ final class Static_Site_Importer_Quality_Gates {
 		$metrics  = isset( $supplied['metrics'] ) && is_array( $supplied['metrics'] ) ? $supplied['metrics'] : array();
 		$quality  = array_merge( self::quality_defaults(), $metrics, $supplied );
 
-		$plan_quality = isset( $report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $report['blocks_engine']['wordpress_site_plan']['quality'] )
-			? $report['blocks_engine']['wordpress_site_plan']['quality']
+		$plan_quality = isset( $report['blocks_engine']['plan_summary']['quality'] ) && is_array( $report['blocks_engine']['plan_summary']['quality'] )
+			? $report['blocks_engine']['plan_summary']['quality']
 			: array();
 		$plan_metrics = isset( $plan_quality['metrics'] ) && is_array( $plan_quality['metrics'] ) ? $plan_quality['metrics'] : $plan_quality;
 		if ( isset( $plan_metrics['fallback_count'] ) && is_numeric( $plan_metrics['fallback_count'] ) ) {

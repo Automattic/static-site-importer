@@ -169,7 +169,7 @@ test('editor presentation intake compares provider-resolved expected and observe
     },
     import_report: {
       blocks_engine: {
-        wordpress_site_plan: {
+        plan_summary: {
           assets: [
             { kind: 'css', content_hash: globalIdentity, scopes: [{ kind: 'global' }] },
             { kind: 'css', content_hash: frontPageIdentity, scopes: [{ kind: 'page', front_page: true }] },
@@ -219,7 +219,7 @@ test('editor presentation intake does not reconstruct expected identities from b
     editor_open: { summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', canvasDocumentType: 'iframe', iframeCount: 1, generatedPresentationIdentities: [], expectedGeneratedPresentationIdentities: [identity], expectedGeneratedPresentationIdentitiesComplete: true } } },
     import_report: { artifact_ref: 'import-report.json' },
   }, {
-    wordpress_site_plan: { assets: [{ kind: 'css', payload_sha256: identity }] },
+    plan_summary: { assets: [{ kind: 'css', payload_sha256: identity }] },
   }), {
     schema: 'static-site-importer/editor-presentation-evidence/v3',
     provider_schema: 'wp-codebox/editor-presentation/v1',
@@ -246,7 +246,7 @@ test('bounded site-plan fallback retains scopes and cannot certify truncated pre
     scopes: [{ kind: 'page', ...(index === 0 ? { route_path: 'about' } : index === 1 ? { front_page: true } : { kind: 'global' }) }],
   }));
   const evidence = collectMatrixEvidence({
-    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets } } },
+    import_report: { blocks_engine: { plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2', assets } } },
   });
   const observed = evidence.wordpress_site_plan.assets.map((asset) => asset.payload_sha256);
   const presentation = collectEditorPresentation({
@@ -271,7 +271,7 @@ test('declared site-plan asset counts make partial fallback presentation evidenc
     scopes: [{ kind: 'global' }],
   }));
   const evidence = collectMatrixEvidence({
-    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 51, assets } } },
+    import_report: { blocks_engine: { plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 51, assets } } },
   });
   const presentation = collectEditorPresentation({
     summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: assets.map((asset) => asset.payload_sha256) } },
@@ -288,7 +288,7 @@ test('matrix evidence requires and summarizes the canonical materialization rece
     import_report: {
       blocks_engine: {
         transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] },
+        plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] },
       },
     },
     materialization_receipt: {
@@ -303,7 +303,7 @@ test('matrix evidence requires and summarizes the canonical materialization rece
 });
 
 test('matrix evidence fails closed when the materialization receipt is absent', () => {
-  const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
+  const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
   assert.equal(evidence.readiness, 'runtime_evidence_incomplete');
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
@@ -314,7 +314,7 @@ test('matrix evidence accepts v2 and v3 site plan schemas', () => {
       import_report: {
         blocks_engine: {
           transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
-          wordpress_site_plan: { schema, assets: [] },
+          plan_summary: { schema, assets: [] },
         },
       },
       materialization_receipt: {
@@ -335,7 +335,7 @@ test('matrix evidence fails closed on an unknown site plan schema', () => {
     import_report: {
       blocks_engine: {
         transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v9', assets: [] },
+        plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v9', assets: [] },
       },
     },
     materialization_receipt: {
@@ -362,7 +362,7 @@ test('fixture matrix reports a v3 site plan import as verified runtime evidence'
       import_report: {
         blocks_engine: {
           transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
-          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v3' },
+          plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v3' },
         },
         materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
       },
@@ -392,7 +392,7 @@ test('matrix evidence consumes the bounded fixture diagnostic contract', () => {
     fixture_diagnostics: {
       blocks_engine: {
         transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 1, assets: [{ target_path: 'assets/app.js', payload_sha256: 'sha256' }] },
+        plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 1, assets: [{ target_path: 'assets/app.js', payload_sha256: 'sha256' }] },
       },
       materialization_receipt: {
         schema: 'static-site-importer/materialization-receipt/v1',
@@ -1672,7 +1672,7 @@ test('fixture matrix captures installed transformer provenance and bounded mater
             reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
             source_fingerprint: 'sha256:source123',
           },
-          wordpress_site_plan: {
+          plan_summary: {
             schema: 'blocks-engine/wordpress-site-plan/v2',
             assets: [{
               path: 'assets/site.css',
@@ -2204,7 +2204,7 @@ test('fixture lineage retains the development transformer override identity', ()
     import_report: {
       blocks_engine: {
         transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-main', reference: 'a'.repeat(40) },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+        plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2' },
       },
       materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
     },
@@ -2221,7 +2221,7 @@ test('fixture lineage only claims a transformer candidate declared by the effect
     import_report: {
       blocks_engine: {
         transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-main', reference },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+        plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2' },
       },
       materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
     },
@@ -2352,7 +2352,7 @@ function verifiedMatrixEvidence() {
     readiness: 'verified',
     missing: [],
     transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
-    wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+    plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2' },
     materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
     lineage: { artifact: { schema: 'blocks-engine/wordpress-site-plan/v2' } },
   };
@@ -2363,7 +2363,7 @@ function verifiedImportReport() {
     materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
     blocks_engine: {
       transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
-      wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2' },
     },
   };
 }
@@ -2380,7 +2380,7 @@ test('fixture matrix rejects placeholder transformer provenance', () => {
       import_report: {
         blocks_engine: {
           transformer: { package: 'unknown', version: 'dev-unknown', reference: '0000000000000000000000000000000000000000' },
-          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+          plan_summary: { schema: 'blocks-engine/wordpress-site-plan/v2' },
         },
       },
     },
@@ -9808,11 +9808,11 @@ test('solved-candidate registry rejects legacy stylesheet-only presentation evid
       observed_identities: [identity],
     },
     editor_interaction: completeEditorInteraction,
-    import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: identity, scopes: [{ kind: 'global' }] }] } } },
+    import_report: { blocks_engine: { plan_summary: { asset_count: 1, assets: [{ kind: 'css', content_hash: identity, scopes: [{ kind: 'global' }] }] } } },
   };
   const complete = buildGutenbergIncompatibilityRegistry({ fixtures: [fixture], findings: [] }).fixture_decisions[0];
   const ambiguous = buildGutenbergIncompatibilityRegistry({
-    fixtures: [{ ...fixture, import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 2, assets: fixture.import_report.blocks_engine.wordpress_site_plan.assets } } } }], findings: [],
+    fixtures: [{ ...fixture, import_report: { blocks_engine: { plan_summary: { asset_count: 2, assets: fixture.import_report.blocks_engine.plan_summary.assets } } } }], findings: [],
   }).fixture_decisions[0];
 
   assert.equal(complete.acceptance_status, 'evidence_gap');
