@@ -194,13 +194,10 @@ class Static_Site_Importer_Theme_Generator {
 			// one of the source's own routes. Persist the run-owned page record so
 			// the resumed runtime's preflight adopts exactly those pages instead of
 			// rejecting them as pre-existing conflicts.
-			$created_posts = Static_Site_Importer_Dependency_Manager::dependency_created_post_ids( $dependencies );
-			if ( array() !== $created_posts ) {
-				$recorded = Static_Site_Importer_Lifecycle_Compile_Checkpoint::record_dependency_created_posts( $handle, $created_posts, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
-				if ( is_wp_error( $recorded ) ) {
-					Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
-					return $recorded;
-				}
+			$recorded = Static_Site_Importer_Lifecycle_Compile_Checkpoint::record_dependency_created_posts( $handle, $dependencies, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
+			if ( is_wp_error( $recorded ) ) {
+				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
+				return $recorded;
 			}
 			if ( $plan_checkpoint ) {
 				$checkpoint['workspace']->cleanup( 'success' );

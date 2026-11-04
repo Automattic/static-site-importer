@@ -676,13 +676,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
 				continue;
 			}
-			$conflict            = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
+			$conflict             = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
 			$default_content_seed = $conflict && Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict );
 			// A required dependency's install or activation may have created this
 			// page earlier in the same run (a commerce dependency seeds its own
 			// checkout page). The run owns that content, so admit it without an
 			// overwrite decision; anything that predates the run still conflicts.
-			$dependency_created  = $conflict && ! $default_content_seed && self::post_created_by_dependency_materialization( $conflict, $state['args'] );
+			$dependency_created = $conflict && ! $default_content_seed && self::post_created_by_dependency_materialization( $conflict, $state['args'] );
 			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! $default_content_seed && ! $dependency_created ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'post_conflict' );

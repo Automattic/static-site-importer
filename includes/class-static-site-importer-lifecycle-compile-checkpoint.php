@@ -11,13 +11,13 @@ if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
 }
 
 final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
-	private const SCHEMA                       = 'static-site-importer/lifecycle-compile-checkpoint/v1';
-	private const DIRECT_ARTIFACT_REFERENCE    = 'static-site-importer/direct-artifact-lifecycle-reference/v1';
-	private const DEPENDENCY_CREATED_POSTS     = 'dependency-created-posts.json';
+	private const SCHEMA                          = 'static-site-importer/lifecycle-compile-checkpoint/v1';
+	private const DIRECT_ARTIFACT_REFERENCE       = 'static-site-importer/direct-artifact-lifecycle-reference/v1';
+	private const DEPENDENCY_CREATED_POSTS        = 'dependency-created-posts.json';
 	private const DEPENDENCY_CREATED_POSTS_SCHEMA = 'static-site-importer/dependency-created-posts/v1';
-	private const TTL                          = 21600;
-	private const CLEANUP_HOOK                 = 'static_site_importer_purge_lifecycle_compile_checkpoints';
-	private static ?string $runtime_generation = null;
+	private const TTL                             = 21600;
+	private const CLEANUP_HOOK                    = 'static_site_importer_purge_lifecycle_compile_checkpoints';
+	private static ?string $runtime_generation    = null;
 
 	public static function create( array $artifact, array $request_args, array $materialization, string $owner, string $root = '' ) {
 		$root = self::root( $root );
@@ -131,12 +131,25 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	 * checkpoint workspace so the resumed preflight can adopt exactly those
 	 * pages while every pre-existing page still conflicts.
 	 *
-	 * @param string         $handle  Checkpoint handle from create().
-	 * @param array<int,int> $post_ids Post IDs the materialization created.
-	 * @param string         $root    Optional checkpoint root override.
+	 * @param string              $handle  Checkpoint handle from create().
+	 * @param array<string,mixed> $reports Dependency materialization reports keyed by declaration id.
+	 * @param string              $root    Optional checkpoint root override.
 	 * @return true|WP_Error
 	 */
-	public static function record_dependency_created_posts( string $handle, array $post_ids, string $root = '' ) {
+	public static function record_dependency_created_posts( string $handle, array $reports, string $root = '' ) {
+		$post_ids = array();
+		foreach ( $reports as $report ) {
+			foreach ( is_array( $report ) ? $report : array() as $plugin_report ) {
+				foreach ( (array) ( is_array( $plugin_report ) ? ( $plugin_report['dependency_created_post_ids'] ?? array() ) : array() ) as $id ) {
+					if ( (int) $id > 0 ) {
+						$post_ids[ (int) $id ] = (int) $id;
+					}
+				}
+			}
+		}
+		if ( array() === $post_ids ) {
+			return true;
+		}
 		$workspace = self::workspace( $handle, $root );
 		if ( is_wp_error( $workspace ) ) {
 			return $workspace;
@@ -145,7 +158,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			self::DEPENDENCY_CREATED_POSTS,
 			array(
 				'schema'   => self::DEPENDENCY_CREATED_POSTS_SCHEMA,
-				'post_ids' => array_values( array_filter( array_map( 'intval', $post_ids ), static fn ( int $id ): bool => $id > 0 ) ),
+				'post_ids' => array_values( $post_ids ),
 			)
 		);
 		return is_wp_error( $stored ) ? $stored : true;

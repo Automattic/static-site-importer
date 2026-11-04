@@ -344,40 +344,20 @@ class Static_Site_Importer_Dependency_Manager {
 		// own routes (a commerce dependency seeds its own checkout page). The run
 		// owns exactly the posts this materialization created, so the resumed
 		// runtime's preflight can adopt them without an overwrite decision.
-		$report['dependency_created_post_ids'] = array_values( array_diff( self::post_id_snapshot(), $before ) );
-		return $report;
-	}
-
-	/**
-	 * Posts this dependency materialization created, flattened across adapter
-	 * reports. The record crosses the continuation boundary through the
-	 * lifecycle checkpoint so preflight can admit the run's own pages.
-	 *
-	 * @param array<string,mixed> $reports Materialization reports keyed by declaration id.
-	 * @return array<int,int>
-	 */
-	public static function dependency_created_post_ids( $reports ): array {
-		$ids = array();
-		foreach ( is_array( $reports ) ? $reports : array() as $report ) {
-			foreach ( is_array( $report ) ? $report : array() as $plugin_report ) {
-				if ( is_array( $plugin_report ) && is_array( $plugin_report['dependency_created_post_ids'] ?? null ) ) {
-					foreach ( $plugin_report['dependency_created_post_ids'] as $id ) {
-						$id         = (int) $id;
-						$ids[ $id ] = true;
-					}
-				}
-			}
+		$created = array_values( array_diff( self::post_id_snapshot(), $before ) );
+		if ( array() !== $created ) {
+			$report['dependency_created_post_ids'] = $created;
 		}
-		unset( $ids[0] );
-		return array_map( 'intval', array_keys( $ids ) );
+		return $report;
 	}
 
 	/** @return array<int,int> Post IDs present right now, across statuses. */
 	private static function post_id_snapshot(): array {
-		if ( ! function_exists( 'get_posts' ) ) {
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
 			return array();
 		}
-		return array_map( 'intval', (array) get_posts( array( 'post_type' => 'any', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ) ) );
+		return array_map( 'intval', (array) $wpdb->get_col( "SELECT ID FROM {$wpdb->posts}" ) );
 	}
 
 	private static function dependency_available( array $dependency ): bool {

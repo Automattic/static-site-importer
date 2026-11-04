@@ -116,6 +116,14 @@ class WP_Post {
 	}
 }
 
+// The materialization snapshot reads every post ID from the posts table.
+$GLOBALS['wpdb'] = new class() {
+	public string $posts = 'wp_posts';
+	public function get_col( string $query ): array {
+		return array_map( static fn ( array $row ): int => (int) $row['ID'], array_values( $GLOBALS['ssi_store']['pages'] ) );
+	}
+};
+
 /**
  * @return array<int,int|WP_Post>
  */
