@@ -422,12 +422,15 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * substituted provider field takes the whole shell's place, inside the
 	 * field box: the provider field renders the caption too, so the frame's
 	 * own arrangement would take the caption and control together where the
-	 * source frame held only the control. The frame's box applies to the
-	 * provider control instead: its classes ride the control element the
-	 * provider renders (the source stylesheet keeps painting the control they
-	 * framed, its inherited custom properties included), and its box and
-	 * flex-item facts are restated on the control through the presentation
-	 * graph (with_control_box_frames()).
+	 * source frame held only the control. The frame renders as a real box
+	 * around the provider control again: an `<input>` or `<textarea>` paints
+	 * no pseudo-element and takes no padding, so the frame's classes travel
+	 * as transport markers beside the box's own hook (with_control_box_classes()),
+	 * and the render-time runtime builds that box from them. Where the provider
+	 * renders no wrappable control markup (a dropdown's wrapper, a choice's
+	 * box), the classes stay on the element that carries the control. The
+	 * frame's box and flex-item facts rest on the box's own presentation
+	 * destination, or on the control itself there (with_control_box_frames()).
 	 *
 	 * @param array<string,mixed>                  $block Readable block marked as a control box.
 	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
@@ -443,8 +446,14 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			return self::group_field( $block, $state );
 		}
 		$frame = self::control_box_frame( $block, $index, $state );
+		$wraps = isset( $state->field_blocks[ $index ] ) && self::control_box_wraps_control( $state->field_blocks[ $index ] );
 		if ( isset( $state->field_blocks[ $index ] ) ) {
-			$state->field_blocks[ $index ] = self::with_control_box_classes( $state->field_blocks[ $index ], $frame['classes'] );
+			$state->field_blocks[ $index ] = self::with_control_box_classes(
+				$state->field_blocks[ $index ],
+				$frame['classes'],
+				$wraps,
+				$wraps ? Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $state->scope, $index ) : ''
+			);
 		}
 		$field = self::substitute( $inner[0], $state, $parent_name );
 		if ( null === $field ) {
@@ -452,8 +461,39 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			// box, which renders with it or not at all.
 			return null;
 		}
-		$state->control_box_frames[ $index ] = $frame['facts'];
+		$state->control_box_frames[ $index ] = array(
+			'facts' => $frame['facts'],
+			'wrap'  => $wraps,
+		);
 		return $field;
+	}
+
+	/**
+	 * Whether the provider field renders the one control a control box frames
+	 * as a bare input or textarea, which the runtime can wrap in the frame's
+	 * box. A dropdown renders inside its own wrapper div, a country-selector
+	 * telephone inside its own shell, and a standalone choice inside its own
+	 * box, so each already carries its frame on a real element.
+	 *
+	 * @param array<string,mixed> $field_block Provider field block.
+	 */
+	private static function control_box_wraps_control( array $field_block ): bool {
+		foreach ( $field_block['innerBlocks'] ?? array() as $inner ) {
+			if ( ! is_array( $inner ) ) {
+				continue;
+			}
+			$name = (string) ( $inner['name'] ?? '' );
+			if ( 'jetpack/input' === $name ) {
+				return 'dropdown' !== strtolower( trim( (string) ( $inner['attrs']['type'] ?? '' ) ) );
+			}
+			if ( 'jetpack/phone-input' === $name ) {
+				return empty( $inner['attrs']['showCountrySelector'] );
+			}
+			if ( 'jetpack/option' === $name && ! empty( $inner['attrs']['isStandalone'] ) ) {
+				return false;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -503,17 +543,23 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/**
-	 * A control box's source classes ride the provider control element, so
-	 * the source stylesheet's rules for the frames it dropped match the
-	 * control again. Jetpack suffixes the classes it copies onto the field
-	 * wrapper, so only the control element itself matches them.
+	 * A control box's source classes join the provider control element. When
+	 * the runtime renders the frame as a real box around the control, the
+	 * classes travel as `ssi-source-box--` transport markers beside the box's
+	 * own hook: the runtime builds the box from them, and the control keeps
+	 * only its own classes (Jetpack suffixes the copies it puts on the field
+	 * wrapper, so a source rule never matched the wrapper anyway). Without a
+	 * wrappable control, the classes ride the element that carries the
+	 * control, which the source stylesheet's rules match directly.
 	 *
 	 * @param array<string,mixed> $field_block Provider field block.
 	 * @param array<int,string>   $classes      Source class tokens.
+	 * @param bool                $wraps        Whether the runtime wraps the rendered control in the box.
+	 * @param string              $box_class    The box's presentation hook, when it wraps.
 	 * @return array<string,mixed>
 	 */
-	public static function with_control_box_classes( array $field_block, array $classes ): array {
-		if ( array() === $classes ) {
+	public static function with_control_box_classes( array $field_block, array $classes, bool $wraps = false, string $box_class = '' ): array {
+		if ( array() === $classes && '' === $box_class ) {
 			return $field_block;
 		}
 		foreach ( $field_block['innerBlocks'] ?? array() as $key => $inner ) {
@@ -525,34 +571,106 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				|| ( 'jetpack/option' === $name && ! empty( $inner['attrs']['isStandalone'] ) );
 			if ( $is_control ) {
 				$tokens = preg_split( '/\s+/', trim( (string) ( $inner['attrs']['className'] ?? '' ) ) );
-				$merged = array_unique( array_merge( false === $tokens ? array() : array_values( array_filter( $tokens ) ), $classes ) );
+				$tokens = false === $tokens ? array() : array_values( array_filter( $tokens ) );
+				if ( $wraps ) {
+					if ( '' !== $box_class ) {
+						$tokens[] = $box_class;
+					}
+					foreach ( $classes as $class ) {
+						$tokens[] = 'ssi-source-box--' . $class;
+					}
+				} else {
+					$tokens = array_merge( $tokens, $classes );
+				}
 				// The frame's classes join the tokens the control already carries.
-				$inner['attrs']['className']        = trim( implode( ' ', $merged ) );
+				$inner['attrs']['className']        = trim( implode( ' ', array_unique( $tokens ) ) );
 				$field_block['innerBlocks'][ $key ] = $inner;
 				continue;
 			}
 			if ( ! empty( $inner['innerBlocks'] ) ) {
-				$field_block['innerBlocks'][ $key ] = self::with_control_box_classes( $inner, $classes );
+				$field_block['innerBlocks'][ $key ] = self::with_control_box_classes( $inner, $classes, $wraps, $box_class );
 			}
 		}
 		return $field_block;
 	}
 
 	/**
-	 * The box of each control's control-box frame, restated on the control.
+	 * Give each wrapped control box a destination of its own: the element the
+	 * runtime builds around the rendered control. The frame's box and flex-item
+	 * facts state there, so the box keeps the source frame's place and size,
+	 * while the control keeps its own captured facts. The editor renders no box
+	 * around the control, so its copy of the destination stands in at the
+	 * control itself, exactly where the facts restated when the box was flat.
+	 *
+	 * @param array<int,array<string,mixed>>                         $descriptors Presentation descriptors by control index.
+	 * @param string                                                 $scope       Provider form scope.
+	 * @param array<int,array{facts:array<string,string>,wrap:bool}> $frames      Recorded control-box frames.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function with_control_box_destinations( array $descriptors, string $scope, array $frames ): array {
+		foreach ( $frames as $index => $frame ) {
+			$facts         = $frame['facts'];
+			$control_class = isset( $descriptors[ $index ]['control_class'] ) && is_string( $descriptors[ $index ]['control_class'] ) ? trim( $descriptors[ $index ]['control_class'] ) : '';
+			if ( empty( $frame['wrap'] ) || array() === $facts || '' === $control_class || ! is_array( $descriptors[ $index ]['destinations'] ?? null ) ) {
+				continue;
+			}
+			$class                                     = Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $scope, $index );
+			$descriptors[ $index ]['destinations'][]   = array(
+				'part'       => 'control_box',
+				'role'       => 'control_box',
+				'class'      => $class,
+				'selector'   => '.' . $scope . ' .' . $class,
+				'properties' => array_keys( array_intersect_key( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_map(), self::CONTROL_BOX_ITEM_FACTS ) ),
+				'resets'     => array(),
+				'editor'     => array( 'selector' => '{scope} .' . $control_class ),
+			);
+			$descriptors[ $index ]['has_presentation'] = true;
+		}
+		return $descriptors;
+	}
+
+	/**
+	 * The box of each control's control-box frame, on the box the provider
+	 * renders around the control, or on the control itself where it renders
+	 * none.
 	 *
 	 * The frame is the box the source showed: its sizing and flex-item facts
-	 * own the provider control, replacing the control's own percentage sizing
-	 * that resolved against the frame in the source. The field wrapper's
-	 * auto-width floor yields where the frame states a width: the overlay
-	 * keeps an explicit source declaration over its provider-default resets.
+	 * own the rendered box, and the control's own percentage sizing resolves
+	 * against the box again, as it did against the frame in the source. The
+	 * field wrapper's auto-width floor yields where the frame states a width:
+	 * the overlay keeps an explicit source declaration over its
+	 * provider-default resets. A control the provider wraps in no box keeps
+	 * the facts on the control itself, replacing the control's own sizing
+	 * exactly as before the box existed.
 	 *
-	 * @param array<string,mixed>             $graph  Presentation graph.
-	 * @param array<int,array<string,string>> $frames Box facts by control index.
+	 * @param array<string,mixed>                                    $graph  Presentation graph.
+	 * @param array<int,array{facts:array<string,string>,wrap:bool}> $frames Box facts by control index.
 	 * @return array<string,mixed>
 	 */
 	public static function with_control_box_frames( array $graph, array $frames ): array {
-		foreach ( $frames as $index => $facts ) {
+		foreach ( $frames as $index => $frame ) {
+			$facts = $frame['facts'];
+			if ( array() === $facts ) {
+				continue;
+			}
+			if ( ! empty( $frame['wrap'] ) ) {
+				$row = null;
+				foreach ( $graph['controls'] ?? array() as $key => $control ) {
+					if ( ( $control['index'] ?? null ) === $index ) {
+						$row = $key;
+						break;
+					}
+				}
+				if ( null === $row ) {
+					$graph['controls'][] = array(
+						'index'       => $index,
+						'control_box' => array( 'styles' => $facts ),
+					);
+				} else {
+					$graph['controls'][ $row ]['control_box'] = array( 'styles' => $facts );
+				}
+				continue;
+			}
 			foreach ( $graph['controls'] ?? array() as $key => $control ) {
 				if ( ( $control['index'] ?? null ) === $index && is_array( $control['control']['styles'] ?? null ) ) {
 					$graph['controls'][ $key ]['control']['styles'] = array_merge( $control['control']['styles'], $facts );

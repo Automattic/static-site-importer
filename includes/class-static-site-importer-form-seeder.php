@@ -322,9 +322,12 @@ class Static_Site_Importer_Form_Seeder {
 				$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Readable_Substitution::with_caption_after_control( $state->presentation_descriptors[ $control_index ], $state->scope, $control_index, isset( $field_box_labels[ $control_index ] ) );
 			}
 		}
-		// A control box frame's box belongs to the provider control, not around
-		// the provider field (control_box_field()); its facts rest on the
-		// control row before the field-box label trims the graph.
+		// A control box frame's box renders around the provider control now
+		// (control_box_field()): a wrapped field gives the frame a destination
+		// of its own, and its facts rest on that box's row before the field-box
+		// label trims the graph. A field the provider wraps in no box keeps the
+		// facts on the control row, as when the box was flat.
+		$state->presentation_descriptors                     = Static_Site_Importer_Form_Readable_Substitution::with_control_box_destinations( $state->presentation_descriptors, $state->scope, $state->control_box_frames );
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_control_box_frames( $presentation_form['presentation_graph'], $state->control_box_frames );
 		$presentation_form['presentation_graph']             = Static_Site_Importer_Form_Readable_Substitution::with_checkbox_layout_rows( Static_Site_Importer_Form_Readable_Substitution::field_box_presentation( $presentation_form['presentation_graph'], $field_box_labels ), array_intersect_key( $checkbox_layouts, $state->field_blocks ) );
 		$presentation_form['presentation_graph']['controls'] = array_values( array_filter( $presentation_form['presentation_graph']['controls'] ?? array(), static fn( array $control ): bool => isset( $state->field_blocks[ $control['index'] ] ) ) );

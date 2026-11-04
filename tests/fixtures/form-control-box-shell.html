@@ -6,7 +6,9 @@ main{max-width:920px;margin:40px auto}
 input,select,textarea{box-sizing:border-box}
 .card{max-width:648px;padding:20px}
 .framer-s3i8tk{width:100%;height:64px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto;font-size:14px}
-.framer-io8vii{width:100%;height:40px;flex:0 0 auto;display:flex;align-items:center;--framer-input-bg:#fff;--framer-input-border:1px solid #999}
+.framer-form-input-wrapper{--framer-input-padding:12px;position:relative}
+.framer-form-input-wrapper::after{content:"";position:absolute;inset:0;border-bottom:1px solid #ddd}
+.framer-io8vii{width:100%;height:40px;flex:0 0 auto;display:flex;align-items:center;padding:var(--framer-input-padding);--framer-input-bg:#fff;--framer-input-border:1px solid #999}
 .framer-input{width:100%;height:100%;background:var(--framer-input-bg);border:var(--framer-input-border);border-radius:8px}
 </style></head><body><main>
 <form action="/contact" method="post" style="display:flex;flex-direction:column;gap:18px">
