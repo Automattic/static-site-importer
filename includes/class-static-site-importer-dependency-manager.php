@@ -354,7 +354,7 @@ class Static_Site_Importer_Dependency_Manager {
 	/** @return array<int,int> Post IDs present right now, across statuses. */
 	private static function post_id_snapshot(): array {
 		global $wpdb;
-		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+		if ( ! isset( $wpdb ) ) {
 			return array();
 		}
 		return array_map( 'intval', (array) $wpdb->get_col( "SELECT ID FROM {$wpdb->posts}" ) );
