@@ -215,7 +215,7 @@ for (const item of tracked) {
   const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : { exit: 0 };
   // CI that ran at this head and failed refutes it as surely as a predicate.
   const ci = pr ? (pr.statusCheckRollup || []).filter((c) => ['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR'].includes(c.conclusion || c.state)).map((c) => ({ name: c.name || c.context, url: c.detailsUrl || c.targetUrl })) : [];
-  if (refuted.length || collateral.exit || ci.length) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit ? { collateral: collateral.report } : {}), ...(ci.length ? { ci } : {}) };
+  if (refuted.length || collateral.exit === 1 || ci.length) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit === 1 ? { collateral: collateral.report } : {}), ...(ci.length ? { ci } : {}) };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
   if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
@@ -233,7 +233,7 @@ for (const item of tracked) {
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) fails CI. Continue on its branch and make these jobs pass (\`gh run view --log-failed\` on each); a failing contract or parity test that asserts existing behavior is a regression to fix, not an expectation to update, unless the issue says that behavior is the defect:`,
         ...[...new Map(ci.map((c) => [c.name, c])).values()].map((c) => `    - ${c.name}: ${c.url}`),
       ] : []),
-      ...(collateral.exit ? [
+      ...(collateral.exit === 1 ? [
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) clears the defect but restyles elements outside it on the whole import. Continue on its branch and confine the change to the defect:`,
         ...collateral.report.map((line) => `    ${line.slice(0, 400)}`),

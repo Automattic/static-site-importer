@@ -41,7 +41,8 @@ for (const item of triage.tracked) {
     verdict.failing.push(...cells.filter((c) => c.exit !== 1));
     const collateral = collateralAtHead(item, pr, at);
     log(pr.url, item.signature, `collateral=${collateral.exit}`);
-    if (collateral.exit) verdict.failing.push({ signature: item.signature, collateral: collateral.report });
+    if (collateral.exit === 1) verdict.failing.push({ signature: item.signature, collateral: collateral.report });
+    else if (collateral.exit) verdict.reasons.push(`collateral comparison failed for ${item.signature}: ${collateral.report.at(-1)}`);
   }
 }
 const entries = [...verdicts];

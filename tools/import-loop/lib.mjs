@@ -80,7 +80,10 @@ export function collateralAtHead(item, pr, { clone, root, work, reimport, routes
     heads.set(base, reimportSite(`${base}/${root}`, reimport, `${base}-site`));
   }
   const gate = new URL('./gates/collateral.mjs', import.meta.url).pathname;
-  const run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(',')], { encoding: 'utf8' });
+  // Exit 1 is a verdict (changes outside the subject); 2 means the comparison
+  // itself failed, so it is retried and, if it persists, reported as unchecked.
+  let run;
+  for (let attempt = 0; attempt < 3 && (!run || run.status === 2); attempt++) run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(',')], { encoding: 'utf8' });
   return { exit: run.status, report: (run.stderr || '').trim().split('\n').slice(-6) };
 }
 

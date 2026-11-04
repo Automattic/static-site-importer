@@ -93,7 +93,9 @@ for (const route of routeList.split(',')) {
     const sides = [];
     for (const base of [baseUrl, candidateUrl]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.goto(new URL(route, base).href, { waitUntil: 'networkidle' });
+      // Imported pages may keep requests open; settle on load plus a bounded idle wait.
+      await page.goto(new URL(route, base).href, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       sides.push(await page.evaluate(snapshot, { properties: PROPERTIES }));
     }
     const [before, after] = sides;
