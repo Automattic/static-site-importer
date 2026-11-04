@@ -837,7 +837,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$desired_ids = array_values( array_unique( array_map( 'intval', $desired[ $taxonomy ] ?? array() ) ) );
 				$new_owned   = array_values( array_unique( array_merge( array_intersect( $desired_ids, $old_owned ), array_diff( $desired_ids, $current ) ) ) );
 				$preserved   = array_values( array_diff( $current, $old_owned ) );
-				$next        = array_values( array_unique( array_merge( $preserved, $desired_ids ) ) );
+				// The default is a placeholder unless the producer explicitly assigns it.
+				$default_category = (int) get_option( 'default_category' );
+				if ( 'category' === $taxonomy && array() !== $desired_ids && ! in_array( $default_category, $desired_ids, true ) ) {
+					$preserved = array_values( array_diff( $preserved, array( $default_category ) ) );
+				}
+				$next = array_values( array_unique( array_merge( $preserved, $desired_ids ) ) );
 				if ( $next !== $current ) {
 					$key = $post_id . ':' . $taxonomy;
 					$state['rollback']['term_memberships'][ $key ] ??= array(
