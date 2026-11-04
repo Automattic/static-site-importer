@@ -693,6 +693,10 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$slots    = array();
 		$index    = 0;
 		$legend   = self::legend_block( $block );
+		// A captured listbox panel follows the trigger that opens it. A provider
+		// field that consumes the trigger renders its own popup, so the captured
+		// panel leaves with the trigger.
+		$consumed_trigger = false;
 		foreach ( $block['innerContent'] ?? array() as $part ) {
 			if ( null !== $part ) {
 				$slots[] = $part;
@@ -705,7 +709,13 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				}
 				continue;
 			}
-			$child = self::substitute( $block['innerBlocks'][ $index++ ], $state, (string) ( $block['blockName'] ?? '' ) );
+			$source = $block['innerBlocks'][ $index++ ];
+			if ( $consumed_trigger && self::is_captured_listbox_panel( $source ) ) {
+				$consumed_trigger = false;
+				continue;
+			}
+			$child            = self::substitute( $source, $state, (string) ( $block['blockName'] ?? '' ) );
+			$consumed_trigger = null === $child && self::holds_consumed_listbox_trigger( $source, $state );
 			if ( null !== $child ) {
 				$children[] = $child;
 				$slots[]    = null;
@@ -719,6 +729,40 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * Whether a readable subtree that rendered nothing held a listbox trigger
+	 * a provider field consumed as part of itself (a phone field's country
+	 * selector, suppressed as its provider auxiliary button).
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function holds_consumed_listbox_trigger( array $block, Static_Site_Importer_Form_Plan_State $state ): bool {
+		foreach ( self::control_indices( $block ) as $index ) {
+			$control = $state->controls[ $index ] ?? null;
+			if ( is_array( $control )
+				&& 'provider_auxiliary_button' === ( $state->field_contract[ $index ]['reason_code'] ?? null )
+				&& 'listbox' === strtolower( trim( (string) ( $control['aria_haspopup'] ?? $control['aria-haspopup'] ?? '' ) ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a readable block is a captured listbox panel: its outermost
+	 * element carries the capture's listbox panel binding.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function is_captured_listbox_panel( array $block ): bool {
+		$opening = $block['innerContent'][0] ?? null;
+		if ( ! is_string( $opening ) || '' === $opening ) {
+			return false;
+		}
+		$tag = new WP_HTML_Tag_Processor( $opening );
+		return $tag->next_tag() && null !== $tag->get_attribute( 'data-blocks-engine-capture-listbox-panel' );
 	}
 
 	/**
