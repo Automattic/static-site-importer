@@ -81,6 +81,3 @@ function wp_getimagesize( string $file ) {
 function wp_image_matches_ratio( int $w, int $h, int $other_w, int $other_h ): bool {
 	return abs( $w / $h - $other_w / $other_h ) < 0.01;
 }
-
-function remove_filter( ...$args ): void {
-}
