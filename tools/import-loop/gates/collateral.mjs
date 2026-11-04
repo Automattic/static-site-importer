@@ -13,7 +13,8 @@
 // keys have no style scope and skip the style comparison.
 //
 // Images are checked whatever the scope: every rendered image outside the
-// subject keeps its rendered size (2px tolerance) and stays rendered. A fix
+// subject is still rendered at its size (2px tolerance), matched by size
+// because imports may rename or reorder images. A fix
 // that changes how media is emitted (a carrier block lowered to core/image,
 // a new wrapper) must not resize, crop, or drop the images it touches.
 //
@@ -98,13 +99,14 @@ for (const route of routeList.split(',')) {
     const [before, after] = sides;
     const roots = [...scopes(before), ...scopes(after)];
     const previous = new Map(before.map((el) => [el.path, el]));
-    // Images pair by file name and occurrence, since a fix may move them in the tree.
-    const images = (els) => { const seen = new Map(); return new Map(els.filter((el) => el.box && el.img && !keys.some(([k, n]) => k === 'img' && n === el.img)).map((el) => { const n = (seen.get(el.img) || 0) + 1; seen.set(el.img, n); return [`${el.img}#${n}`, el]; })); };
-    const afterImages = images(after);
-    for (const [id, was] of images(before)) {
-      const now = afterImages.get(id);
-      const box = now?.box || [0, 0];
-      if (Math.abs(box[0] - was.box[0]) > 2 || Math.abs(box[1] - was.box[1]) > 2) changes.push({ route, width, image: id, box: [was.box, now ? box : 'missing'] });
+    // Imports may rename or reorder images, so compare the multiset of
+    // visible image sizes: each one before must still be rendered after.
+    const visible = (els) => els.filter((el) => el.box && el.box[0] > 0 && el.box[1] > 0 && !keys.some(([k, n]) => k === 'img' && n === el.img));
+    const pool = visible(after).map((el) => el.box);
+    for (const was of visible(before)) {
+      const at = pool.findIndex((box) => Math.abs(box[0] - was.box[0]) <= 2 && Math.abs(box[1] - was.box[1]) <= 2);
+      if (at >= 0) pool.splice(at, 1);
+      else changes.push({ route, width, image: was.img || was.path, box: was.box, after: 'no visible image of this size' });
     }
     if (!keys.length) continue;
     for (const el of after) {
