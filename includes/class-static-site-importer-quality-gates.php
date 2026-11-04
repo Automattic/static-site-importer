@@ -339,15 +339,25 @@ final class Static_Site_Importer_Quality_Gates {
 		return false;
 	}
 
-	/** Identify a cart view finding a shop provider's cart replaces whole. */
-	public static function is_cart_view_fallback_diagnostic( array $diagnostic ): bool {
+	/**
+	 * The replaced-region kind of a script-owned commerce view finding (cart,
+	 * checkout) that a shop provider's own block replaces whole, or '' for any
+	 * other finding. The kinds match
+	 * Static_Site_Importer_Entity_Materializer_Registry::fallback_region().
+	 */
+	public static function commerce_view_fallback_region( array $diagnostic ): string {
+		$regions = array(
+			'html_cart_view_fallback'     => 'cart-view',
+			'html_checkout_view_fallback' => 'checkout-view',
+		);
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
-			if ( 'html_cart_view_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
-				return true;
+			$region = $regions[ (string) ( $diagnostic[ $key ] ?? '' ) ] ?? '';
+			if ( '' !== $region ) {
+				return $region;
 			}
 		}
 
-		return false;
+		return '';
 	}
 
 	/**
@@ -393,8 +403,9 @@ final class Static_Site_Importer_Quality_Gates {
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when undeliverable.
 	 */
 	private static function page_region_fallback_identity( array $diagnostic ): array {
+		$region = self::commerce_view_fallback_region( $diagnostic );
 		return Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity(
-			self::is_cart_view_fallback_diagnostic( $diagnostic ) ? 'cart-view' : 'product-grid',
+			'' === $region ? 'product-grid' : $region,
 			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) ),
 			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'container_selector' ) )
 		);
@@ -621,12 +632,12 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
 			foreach ( $bindings as $binding ) {
-				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'order_lookup', 'commerce_add_to_cart_form' ), true ) ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'commerce_checkout', 'order_lookup', 'commerce_add_to_cart_form' ), true ) ) {
 					continue;
 				}
-				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart' ), true ) ) {
+				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'commerce_checkout' ), true ) ) {
 					// A canonical grid receipt, the receipt of the store listing that
-					// adopted the grid, or a cart receipt joins its finding
+					// adopted the grid, or a cart or checkout receipt joins its finding
 					// page-and-selector-scoped.
 					list( $grid_identity, $grid_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( Static_Site_Importer_Entity_Materializer_Registry::fallback_region( (string) $binding['role'] ), (string) ( $binding['source_path'] ?? '' ), (string) ( $binding['selector'] ?? '' ) );
 					if ( '' === $grid_identity ) {
@@ -791,7 +802,7 @@ final class Static_Site_Importer_Quality_Gates {
 		// or unresolved — reports a resolution row, exactly like forms.
 		$resolved_grid_receipts = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! ( self::is_product_grid_fallback_diagnostic( $diagnostic ) || self::is_cart_view_fallback_diagnostic( $diagnostic ) ) ) {
+			if ( ! is_array( $diagnostic ) || ! ( self::is_product_grid_fallback_diagnostic( $diagnostic ) || '' !== self::commerce_view_fallback_region( $diagnostic ) ) ) {
 				continue;
 			}
 			list( $identity, $fallback_hash ) = self::page_region_fallback_identity( $diagnostic );
