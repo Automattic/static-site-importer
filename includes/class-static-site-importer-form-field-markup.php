@@ -373,6 +373,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$label_attrs['requiredIndicator'] = $attrs['requiredIndicator'];
 			}
 			$label_attrs = array_merge( $label_attrs, self::required_marker_attrs( $control, $label, ! empty( $attrs['required'] ) ) );
+
 			$source_label_class = isset( $control['label_class'] ) && is_scalar( $control['label_class'] ) ? trim( (string) $control['label_class'] ) : '';
 			$label_class        = trim( $source_label_class . ' ' . $label_class );
 			if ( '' !== $label_class ) {
