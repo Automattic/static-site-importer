@@ -784,6 +784,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					// ssi-error-class: integrity
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
+				// Step timings are run-only observations, never part of a checkpoint identity.
+				if ( ! empty( $metrics['step_timings'] ) && is_array( $metrics['step_timings'] ) ) {
+					$run['step_timings']['compose'] = $metrics['step_timings'];
+				}
+				unset( $metrics['step_timings'] );
 				// Publication encodes and hashes the whole composed payload; release the
 				// uncompacted result, the receipts and the shared plan it was built from first.
 				unset( $result, $receipts );
@@ -1583,9 +1588,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( true !== $allowed ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_rejected', 'The direct artifact run checkpoint publication was rejected.' );
 		}
+		// Observational step timings are deliberately outside the run checksum too.
 		$record = array(
 			'schema'         => self::RUN_SCHEMA,
-			'payload_sha256' => self::hash( $run ),
+			'payload_sha256' => self::hash( array_diff_key( $run, array( 'step_timings' => true ) ) ),
 			'payload'        => $run,
 		);
 		return $workspace->publish_json( 'run.json', $record );
@@ -1594,7 +1600,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private static function read_run( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $import_id ) {
 		$raw    = $workspace->read_raw( 'run.json' );
 		$record = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $record ) || self::RUN_SCHEMA !== ( $record['schema'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ( $record['payload']['import_id'] ?? '' ) !== $import_id || ! is_array( $record['payload']['binding'] ?? null ) ) {
+		if ( ! is_array( $record ) || self::RUN_SCHEMA !== ( $record['schema'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( array_diff_key( $record['payload'], array( 'step_timings' => true ) ) ) ) || ( $record['payload']['import_id'] ?? '' ) !== $import_id || ! is_array( $record['payload']['binding'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_run_not_found', 'The direct artifact run was not found or failed validation.' );
 		}
 		return $record['payload'];
