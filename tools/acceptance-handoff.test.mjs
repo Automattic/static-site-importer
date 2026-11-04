@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -50,6 +51,22 @@ test('acceptance handoff accepts v2 and v3 site plan schemas', () => {
       assert.equal(document.disposition, 'passed', schema);
       assert.deepEqual(consumeAcceptanceHandoff(path.join(directory, 'handoff'), document), { schema: 'static-site-importer/acceptance-handoff/v1', disposition: 'passed', reasons: [] });
     }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('acceptance handoff follows a hash-bound compose checkpoint descriptor', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ssi-handoff-checkpoint-'));
+  try {
+    const plan = { schema: 'blocks-engine/wordpress-site-plan/v2', pages: [{ route: '/' }], routes: [{ path: '/' }] };
+    const checkpoint = JSON.stringify({ payload: { result: { wordpress_site_plan: plan } } });
+    const file = path.join(directory, 'composed-result.json');
+    writeFileSync(file, checkpoint);
+    const descriptor = { path: file, sha256: createHash('sha256').update(checkpoint).digest('hex'), json_pointer: '/payload/result/wordpress_site_plan' };
+    const document = produceAcceptanceHandoff(completeInput(directory, { sitePlan: descriptor }));
+    assert.equal(document.disposition, 'passed');
+    assert.equal(validateAcceptanceHandoff(path.join(directory, 'handoff'), document).valid, true);
+    const invalid = produceAcceptanceHandoff(completeInput(directory, { sitePlan: { ...descriptor, sha256: '0'.repeat(64) } }));
+    assert.equal(invalid.disposition, 'not_proven');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

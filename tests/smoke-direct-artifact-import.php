@@ -141,6 +141,7 @@ class Static_Site_Importer_Theme_Generator {
 			'materialization_receipt' => array(
 				'status'     => 'completed',
 				'page_count' => count( $plan['pages'] ?? array() ),
+				...( ! empty( $GLOBALS['ssi_direct_test_retained_plan'] ) ? array( 'plan' => $plan, 'plan_identity' => $plan['plan_identity'] ?? array() ) : array() ),
 			),
 		);
 	}
@@ -1368,6 +1369,14 @@ $capture_markup = implode( '\n', array_column( $capture_documents, 'canonical_bl
 $assert( str_contains( $capture_markup, '<dialog' ) && str_contains( $capture_markup, 'data-blocks-engine-triggers="menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
 $capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), 'data-blocks-engine-triggers="menu-toggle"' ) ) );
 $assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '<dialog' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
+
+$GLOBALS['ssi_direct_test_retained_plan'] = true;
+$retained_result = $drive_apply( $input() );
+$retained_descriptor = $retained_result['result']['response_artifacts']['artifacts']['wordpress_site_plan'] ?? array();
+$retained_plan = Static_Site_Importer_Canonical_Import_Service::load_response_artifact( $retained_descriptor );
+$assert( ! empty( $retained_plan['pages'] ) && '/payload/result/wordpress_site_plan' === ( $retained_descriptor['json_pointer'] ?? '' ), 'completed import keeps its canonical compose checkpoint readable through the response descriptor' );
+$assert( $retained_result === Static_Site_Importer_Canonical_Import_Service::import( $resume( $retained_result['import_id'] ) ), 'retained checkpoint descriptor survives terminal replay' );
+unset( $GLOBALS['ssi_direct_test_retained_plan'] );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
