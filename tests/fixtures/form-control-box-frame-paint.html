@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Pre-order</title>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#515b2a}
+main{max-width:960px;margin:40px auto}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;row-gap:8px}
+.cap{display:flex;align-items:flex-end}
+.lbl{color:#eaea9e;font-size:14px}
+.root{display:flex;flex-direction:column;--field-border:234,234,158;--field-radius:40px}
+.frame{position:relative;display:flex;align-items:center;background-color:#515b2a;border:1px solid rgb(var(--field-border));border-radius:var(--field-radius);padding-inline-end:12px}
+.frame input{border-radius:var(--field-radius)}
+.ctl{background-color:transparent;border:0;box-sizing:border-box;color:#eaea9e;font-size:16px;line-height:24px;padding-block:8px;padding-inline-start:0;text-indent:12px;width:100%;min-width:0}
+.prefix{display:flex;align-items:center;margin-inline-start:12px;color:#b4b875}
+.flag{border:0;background:transparent;display:inline-block;margin:0;padding:0;width:40px;height:24px;color:#eaea9e;font-size:15px}
+.area{display:flex;background-color:#515b2a;border:1px solid rgb(234,234,158);border-radius:21px;height:92px}
+.area textarea{background:transparent;border:0;color:#eaea9e;font-size:16px;padding:12px;width:100%;height:100%;resize:none;border-radius:21px}
+@media (max-width:1023px){
+.frame{background-color:#515b2a;border:1px solid rgb(var(--field-border));border-radius:var(--field-radius)}
+.ctl{background-color:transparent;border:0;font-size:15px;line-height:1.2em}
+}
+</style></head><body><main>
+<form action="/order" method="post">
+<div class="grid">
+<div class="cap" style="grid-row:1;grid-column:1 / span 6"><label class="lbl" for="first">First name</label></div>
+<div style="grid-row:2;grid-column:1 / span 6"><div class="root"><div class="err"><div class="frame"><input id="first" name="first" type="text" class="ctl" required></div></div></div><div class="errmsg"></div></div>
+<div class="cap" style="grid-row:1;grid-column:7 / span 6"><label class="lbl" for="phone">Phone</label></div>
+<div style="grid-row:2;grid-column:7 / span 6"><div class="root"><div class="err"><div class="frame"><span class="prefix"><button type="button" class="flag" aria-label="Select a country code" aria-haspopup="listbox">+1</button></span><input id="phone" name="phone" type="tel" class="ctl"></div></div></div><div class="errmsg"></div></div>
+<div class="cap" style="grid-row:3;grid-column:1 / span 12"><label class="lbl" for="msg">Message</label></div>
+<div style="grid-row:4;grid-column:1 / span 12"><div class="err"><div class="area"><textarea id="msg" name="msg"></textarea></div></div></div>
+</div>
+<button type="submit">Send</button>
+</form></main></body></html>

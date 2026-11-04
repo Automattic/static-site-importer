@@ -80,6 +80,7 @@
     { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
     { "path": "tests/smoke-shared-part-form.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-control-box-shell.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-control-box-frame-paint.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-wrapping-choice-label.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-button-parent.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },

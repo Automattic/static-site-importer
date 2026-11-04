@@ -473,7 +473,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$tokens = preg_split( '/\s+/', trim( $matches[2] ) );
 				$keep   = array();
 				foreach ( false === $tokens ? array() : $tokens as $token ) {
-					if ( preg_match( '/^(?:ssi-source-box--[A-Za-z_][A-Za-z0-9_-]{0,79}|ssi-node-[a-f0-9]{12}-destination-box)-wrap$/D', $token ) ) {
+					if ( preg_match( '/^(?:ssi-source-(?:box|prefix)--[A-Za-z_][A-Za-z0-9_-]{0,79}|ssi-node-[a-f0-9]{12}-destination-box)-wrap$/D', $token ) ) {
 						continue;
 					}
 					$keep[] = $token;
@@ -531,6 +531,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! str_contains( $wrapped, 'ssi-source-box--' ) ) {
 			return $wrapped;
 		}
+		$wrapped = self::with_phone_shell_box( $wrapped );
+		if ( ! str_contains( $wrapped, 'ssi-source-box--' ) ) {
+			return $wrapped;
+		}
 		// No bare control carried the markers: keep the frame classes where the
 		// control is rather than dropping them.
 		$converted = preg_replace_callback(
@@ -550,6 +554,68 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$wrapped
 		);
 		return is_string( $converted ) ? $converted : $html;
+	}
+
+	/**
+	 * Wrap a country-selector telephone's phone shell in its control box.
+	 *
+	 * The provider renders the country trigger and the tel input together
+	 * inside one shell element, which the source frame held as one box. That
+	 * shell is no bare control, so the box goes around the whole shell: the
+	 * caption stays outside the frame, and the trigger and input share it.
+	 * The shell keeps its own classes; its box markers and hook move to the
+	 * new element. The source element that held the trigger inside the frame
+	 * travels as `ssi-source-prefix--` markers, which become the provider
+	 * prefix's classes: that prefix stands where the source element stood.
+	 *
+	 * @param string $html Provider field HTML.
+	 */
+	private static function with_phone_shell_box( string $html ): string {
+		if ( ! preg_match( '/<div\b[^>]*\bclass=("|\')([^"\']*\bjetpack-field__input-phone-wrapper\b[^"\']*)\1[^>]*>/i', $html, $match, PREG_OFFSET_CAPTURE ) || ! str_contains( $match[2][0], 'ssi-source-box--' ) ) {
+			return $html;
+		}
+		$start = $match[0][1];
+		$depth = 0;
+		$end   = null;
+		if ( preg_match_all( '/<(\/?)div\b[^>]*>/i', $html, $tags, PREG_OFFSET_CAPTURE | PREG_SET_ORDER, $start ) ) {
+			foreach ( $tags as $tag ) {
+				$depth += '' === $tag[1][0] ? 1 : -1;
+				if ( 0 === $depth ) {
+					$end = $tag[0][1] + strlen( $tag[0][0] );
+					break;
+				}
+			}
+		}
+		if ( null === $end ) {
+			return $html;
+		}
+		$box    = array();
+		$prefix = array();
+		$hook   = array();
+		$tokens = preg_split( '/\s+/', trim( $match[2][0] ) );
+		$keep   = array();
+		foreach ( false === $tokens ? array() : $tokens as $token ) {
+			if ( preg_match( '/^ssi-source-box--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $token, $marker ) ) {
+				$box[ $marker[1] ] = true;
+				continue;
+			}
+			if ( preg_match( '/^ssi-source-prefix--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $token, $marker ) ) {
+				$prefix[ $marker[1] ] = true;
+				continue;
+			}
+			if ( 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-box$/D', $token ) ) {
+				$hook = array( $token );
+				continue;
+			}
+			$keep[] = $token;
+		}
+		$opening = substr( $match[0][0], 0, $match[2][1] - $start ) . implode( ' ', $keep ) . substr( $match[0][0], $match[2][1] - $start + strlen( $match[2][0] ) );
+		$shell   = $opening . substr( $html, $start + strlen( $match[0][0] ), $end - $start - strlen( $match[0][0] ) );
+		if ( array() !== $prefix ) {
+			$prefixed = preg_replace( '/(<div\b[^>]*\bclass=("|\')[^"\']*\bjetpack-field__input-prefix\b[^"\']*)\2/i', '$1 ' . implode( ' ', array_keys( $prefix ) ) . '$2', $shell, 1 );
+			$shell    = is_string( $prefixed ) ? $prefixed : $shell;
+		}
+		return substr( $html, 0, $start ) . '<div class="' . implode( ' ', array_merge( $hook, array_keys( $box ) ) ) . '">' . $shell . '</div>' . substr( $html, $end );
 	}
 
 	/** Carry the captured wrapping choice caption onto the native choice box. */

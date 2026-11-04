@@ -410,6 +410,10 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		if ( isset( $block['form_control_box'] ) && is_int( $block['form_control_box'] ) ) {
 			return self::control_box_field( $block, $state, $parent_name );
 		}
+		$composite = self::composite_control_box_index( $block, $state );
+		if ( null !== $composite ) {
+			return self::control_box_field( $block, $state, $parent_name, $composite );
+		}
 		if ( self::is_provider_field_label( $block, $state ) ) {
 			return null;
 		}
@@ -437,9 +441,16 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * @param string                               $parent_name The block the shell stands in.
 	 * @return array<string,mixed>|null
 	 */
-	private static function control_box_field( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name ): ?array {
-		$index = (int) $block['form_control_box'];
-		$inner = is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array();
+	private static function control_box_field( array $block, Static_Site_Importer_Form_Plan_State $state, string $parent_name, ?int $composite = null ): ?array {
+		$index  = $composite ?? (int) $block['form_control_box'];
+		$inner  = is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array();
+		$prefix = array();
+		if ( null !== $composite ) {
+			// The provider composite renders its consumed parts (the country
+			// trigger and its captured panel) itself, inside its own control.
+			$prefix = self::composite_prefix_classes( $inner, $composite );
+			$inner  = array_values( array_filter( $inner, static fn( array $child ): bool => ( $child['form_control_index'] ?? null ) === $composite ) );
+		}
 		if ( 1 !== count( $inner ) || ( $inner[0]['form_control_index'] ?? null ) !== $index ) {
 			// The marker promises one control the shell holds alone; anything
 			// else keeps the shell, and the generic substitution walks it.
@@ -452,7 +463,8 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				$state->field_blocks[ $index ],
 				$frame['classes'],
 				$wraps,
-				$wraps ? Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $state->scope, $index ) : ''
+				$wraps ? Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $state->scope, $index ) : '',
+				$wraps ? $prefix : array()
 			);
 		}
 		$field = self::substitute( $inner[0], $state, $parent_name );
@@ -469,11 +481,87 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	}
 
 	/**
+	 * The control a shell frames together with the parts its provider field
+	 * renders inside itself: a telephone input beside the country trigger the
+	 * provider field consumed as its own selector.
+	 *
+	 * The producer marks a shell `form_control_box` only when it holds one
+	 * control, so a frame holding the source's country button and the tel
+	 * input arrives unmarked. Yet the provider renders both inside one
+	 * control (its phone shell), so the frame is that control's box exactly
+	 * as for a lone input: substituting the shell whole would put the field's
+	 * caption inside the frame. A shell qualifies only when every other child
+	 * holds nothing but the consumed trigger, or is the trigger's captured
+	 * listbox panel, and the control is the telephone field that consumed it.
+	 *
+	 * @param array<string,mixed>                  $block Readable block.
+	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
+	 */
+	private static function composite_control_box_index( array $block, Static_Site_Importer_Form_Plan_State $state ): ?int {
+		$wrappers = $block['attrs']['wrappers'] ?? null;
+		if ( ! str_ends_with( (string) ( $block['blockName'] ?? '' ), '/layout-shell' ) || ! is_array( $wrappers ) || array() === $wrappers ) {
+			return null;
+		}
+		$control  = null;
+		$triggers = array();
+		foreach ( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() as $child ) {
+			if ( is_int( $child['form_control_index'] ?? null ) && ! isset( $state->suppressed_controls[ $child['form_control_index'] ] ) ) {
+				if ( null !== $control ) {
+					return null;
+				}
+				$control = $child['form_control_index'];
+				continue;
+			}
+			if ( array() !== $triggers && self::is_captured_listbox_panel( $child ) ) {
+				continue;
+			}
+			$indices = self::control_indices( $child );
+			if ( array() === $indices || count( $indices ) !== count( array_filter( $indices, static fn( int $index ): bool => 'provider_auxiliary_button' === ( $state->field_contract[ $index ]['reason_code'] ?? null ) ) ) ) {
+				return null;
+			}
+			$triggers = array_merge( $triggers, $indices );
+		}
+		if ( null === $control || array( $control - 1 ) !== $triggers ) {
+			return null;
+		}
+		$field = $state->field_blocks[ $control ] ?? array();
+		return in_array( $field['name'] ?? null, array( 'jetpack/field-telephone', 'jetpack/field-phone' ), true ) && ! empty( $field['attrs']['showCountrySelector'] ) ? $control : null;
+	}
+
+	/**
+	 * The source classes of the element that held a composite box's consumed
+	 * trigger inside the frame: the frame's own child the provider's prefix
+	 * stands in for. Its class-owned box (the trigger's inset from the frame
+	 * edge) then reaches the provider prefix as it did the source element.
+	 *
+	 * @param array<int,array<string,mixed>> $children The frame shell's children.
+	 * @param int                            $control  The composite's control index.
+	 * @return array<int,string>
+	 */
+	private static function composite_prefix_classes( array $children, int $control ): array {
+		$classes = array();
+		foreach ( $children as $child ) {
+			if ( ( $child['form_control_index'] ?? null ) === $control || array() === self::control_indices( $child ) ) {
+				continue;
+			}
+			$outer = $child['attrs']['wrappers'][0] ?? null;
+			foreach ( Static_Site_Importer_Form_Presentation::class_tokens( is_array( $outer ) ? ( $outer['attributes'] ?? null ) : null ) as $class ) {
+				if ( count( $classes ) < 16 && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class ) ) {
+					$classes[ $class ] = true;
+				}
+			}
+		}
+		return array_keys( $classes );
+	}
+
+	/**
 	 * Whether the provider field renders the one control a control box frames
 	 * as a bare input or textarea, which the runtime can wrap in the frame's
-	 * box. A dropdown renders inside its own wrapper div, a country-selector
-	 * telephone inside its own shell, and a standalone choice inside its own
-	 * box, so each already carries its frame on a real element.
+	 * box. A telephone is wrapped too: a plain tel renders as a bare input,
+	 * and a country-selector telephone's phone shell (trigger and input
+	 * together) is wrapped whole. A dropdown renders inside its own wrapper
+	 * div and a standalone choice inside its own box, so each already carries
+	 * its frame on a real element.
 	 *
 	 * @param array<string,mixed> $field_block Provider field block.
 	 */
@@ -487,7 +575,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				return 'dropdown' !== strtolower( trim( (string) ( $inner['attrs']['type'] ?? '' ) ) );
 			}
 			if ( 'jetpack/phone-input' === $name ) {
-				return empty( $inner['attrs']['showCountrySelector'] );
+				return true;
 			}
 			if ( 'jetpack/option' === $name && ! empty( $inner['attrs']['isStandalone'] ) ) {
 				return false;
@@ -556,9 +644,11 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * @param array<int,string>   $classes      Source class tokens.
 	 * @param bool                $wraps        Whether the runtime wraps the rendered control in the box.
 	 * @param string              $box_class    The box's presentation hook, when it wraps.
+	 * @param array<int,string>   $prefix       Source classes of a composite's trigger element, which travel
+	 *                                          as `ssi-source-prefix--` markers to the provider's prefix.
 	 * @return array<string,mixed>
 	 */
-	public static function with_control_box_classes( array $field_block, array $classes, bool $wraps = false, string $box_class = '' ): array {
+	public static function with_control_box_classes( array $field_block, array $classes, bool $wraps = false, string $box_class = '', array $prefix = array() ): array {
 		if ( array() === $classes && '' === $box_class ) {
 			return $field_block;
 		}
@@ -579,6 +669,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					foreach ( $classes as $class ) {
 						$tokens[] = 'ssi-source-box--' . $class;
 					}
+					foreach ( 'jetpack/phone-input' === $name ? $prefix : array() as $class ) {
+						$tokens[] = 'ssi-source-prefix--' . $class;
+					}
 				} else {
 					$tokens = array_merge( $tokens, $classes );
 				}
@@ -588,7 +681,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				continue;
 			}
 			if ( ! empty( $inner['innerBlocks'] ) ) {
-				$field_block['innerBlocks'][ $key ] = self::with_control_box_classes( $inner, $classes, $wraps, $box_class );
+				$field_block['innerBlocks'][ $key ] = self::with_control_box_classes( $inner, $classes, $wraps, $box_class, $prefix );
 			}
 		}
 		return $field_block;
@@ -611,10 +704,14 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		foreach ( $frames as $index => $frame ) {
 			$facts         = $frame['facts'];
 			$control_class = isset( $descriptors[ $index ]['control_class'] ) && is_string( $descriptors[ $index ]['control_class'] ) ? trim( $descriptors[ $index ]['control_class'] ) : '';
-			if ( empty( $frame['wrap'] ) || array() === $facts || '' === $control_class || ! is_array( $descriptors[ $index ]['destinations'] ?? null ) ) {
+			if ( empty( $frame['wrap'] ) || ! is_array( $descriptors[ $index ]['destinations'] ?? null ) ) {
 				continue;
 			}
-			$class                                     = Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $scope, $index );
+			$class                                 = Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $scope, $index );
+			$descriptors[ $index ]['destinations'] = self::with_control_box_container( $descriptors[ $index ]['destinations'], $scope, $class );
+			if ( array() === $facts || '' === $control_class ) {
+				continue;
+			}
 			$descriptors[ $index ]['destinations'][]   = array(
 				'part'       => 'control_box',
 				'role'       => 'control_box',
@@ -627,6 +724,36 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			$descriptors[ $index ]['has_presentation'] = true;
 		}
 		return $descriptors;
+	}
+
+	/**
+	 * The source frame's paint (its background, border, and radius) belongs to
+	 * the box the runtime builds around a wrapped control, not to the control.
+	 *
+	 * The container destination otherwise addresses the field's layout hook,
+	 * which Jetpack copies onto the rendered `<input>` or `<textarea>` itself:
+	 * the control would paint the frame a second time inside the box (a second
+	 * rounded edge), or, where the control's own descriptor (`border:0`) comes
+	 * later at equal specificity, the frame paint would be lost from the
+	 * control while the box only carried what its source classes match on
+	 * their own. The box is the frame, so it alone paints it. The editor
+	 * renders no box, so its copy keeps the layout hook.
+	 *
+	 * @param array<int,array<string,mixed>> $destinations Descriptor destinations.
+	 * @param string                         $scope        Provider form scope.
+	 * @param string                         $box_class    The control box's destination class.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function with_control_box_container( array $destinations, string $scope, string $box_class ): array {
+		foreach ( $destinations as $key => $destination ) {
+			if ( 'control_container' !== ( $destination['part'] ?? null ) ) {
+				continue;
+			}
+			$destinations[ $key ]['part']     = 'control_box_container';
+			$destinations[ $key ]['editor']   = array( 'selector' => (string) $destination['selector'] );
+			$destinations[ $key ]['selector'] = '.' . $scope . ' .' . $box_class;
+		}
+		return $destinations;
 	}
 
 	/**
