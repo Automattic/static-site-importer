@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Form test</title>
+<style>
+body { margin: 0; background: #222; color: #ddd; font-family: sans-serif; }
+.field { border-style: none; padding: 0.5em; width: 100%; box-sizing: border-box; }
+.plain { border-style: dashed; border-width: 1px; border-color: #999999; }
+@media (min-width: 1280px) {
+  .boxed { border-width: 1px; border-color: rgba(255, 255, 255, 0.7); border-style: solid; }
+}
+</style></head>
+<body><main><form>
+  <div><input class="field boxed" id="f-name" type="text"><label for="f-name">Name</label></div>
+  <div><input class="field boxed" id="f-email" type="text"><label for="f-email">Email*</label></div>
+  <div><input class="field plain" id="f-notes" type="text"><label for="f-notes">Notes</label></div>
+  <div><input class="boxed" id="f-topic" type="text"><label for="f-topic">Topic</label></div>
+  <div><button type="submit">Send</button></div>
+</form></main></body></html>
