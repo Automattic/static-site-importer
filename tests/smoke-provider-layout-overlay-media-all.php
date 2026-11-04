@@ -139,4 +139,23 @@ $without_base = array( 'variants' => $with_base['variants'] );
 $alone        = (string) ( Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $without_base )['css'] ?? '' );
 $assert( 1 === substr_count( $alone, 'font-family:revert' ) && strpos( $alone, 'font-family:revert' ) < strpos( $alone, 'background-color:rgb(1,2,3)' ), 'resets are emitted once, before the promoted patch: ' . $alone );
 
+// A range stated as an `and` chain of features is a real breakpoint too.
+$range        = array(
+	'controls' => array(),
+	'variants' => array(
+		array(
+			'index'       => 0,
+			'role'        => 'control',
+			'condition'   => array(
+				'kind'  => 'media',
+				'query' => 'screen and (min-width: 1px) and (max-width: 750px)',
+			),
+			'style_patch' => array( 'font_size' => '15px' ),
+		),
+	),
+);
+$range_result = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $range );
+$assert( 1 === preg_match( '/@media screen and \(min-width: 1px\) and \(max-width: 750px\)\{[^{}]*\.ssi-node-000000000000 > \.wp-block-button__link\{[^}]*font-size:15px/', (string) ( $range_result['css'] ?? '' ) ), 'an and-chained range compiles as its own breakpoint: ' . json_encode( $range_result ) );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $range_result['overlay'] ), 'the range overlay is admitted' );
+
 echo "provider layout overlay media all smoke passed ({$assertions} assertions)\n";

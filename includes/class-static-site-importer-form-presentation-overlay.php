@@ -30,7 +30,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
-	private const MEDIA_FEATURE_QUERY = '(?:screen and )?\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+	private const MEDIA_FEATURE      = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+	// Builders such as Wix state a range as `screen and (min-width: 1px) and (max-width: 750px)`.
+	private const MEDIA_FEATURE_QUERY = '(?:screen and )?' . self::MEDIA_FEATURE . '(?: and ' . self::MEDIA_FEATURE . '){0,3}';
 
 	public const SURFACE_FRONT_END = 'front_end';
 	public const SURFACE_EDITOR    = 'editor';
@@ -880,8 +882,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 
 	/** The body of an admitted `@media` / `@container` rule, or null when the rule is not one. */
 	private static function unwrap_condition( string $rule ): ?string {
-		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return $matches[3];
+		if ( preg_match( '/^@(?:media (?<query>' . self::MEDIA_FEATURE_QUERY . ')(?:,(?&query)){0,127}|container (?&query))\{(?<body>.+)\}$/D', $rule, $matches ) ) {
+			return $matches['body'];
 		}
 		return null;
 	}
