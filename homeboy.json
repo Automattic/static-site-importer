@@ -215,6 +215,7 @@
           "tests/smoke-form-readable-substitution.php",
           "tests/smoke-shared-part-form.php",
           "tests/smoke-form-control-box-shell.php",
+          "tests/smoke-form-wrapping-choice-label.php",
           "tests/smoke-form-button-parent.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/smoke-form-linked-placeholder-colors.php",

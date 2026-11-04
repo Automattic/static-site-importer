@@ -203,6 +203,28 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * The source's visible required marker, in the label attributes Jetpack
+	 * reads it from. A required field states it as its `requiredText`; a
+	 * marker without validation keeps the same span on the label, since
+	 * Jetpack renders its indicator only for required fields.
+	 *
+	 * @param array<string, mixed> $control  Source control.
+	 * @param string               $label    Label text.
+	 * @param bool                 $required Whether the field is required.
+	 * @return array<string, string>
+	 */
+	private static function required_marker_attrs( array $control, string $label, bool $required ): array {
+		$text = $control['required_text'] ?? null;
+		if ( ! is_string( $text ) || '' === trim( $text ) || strlen( $text ) > 32 ) {
+			return array();
+		}
+		if ( $required ) {
+			return array( 'requiredText' => wp_strip_all_tags( $text ) );
+		}
+		return array( 'label' => $label . '<span class="grunion-label-required" aria-hidden="true">' . esc_html( wp_strip_all_tags( $text ) ) . '</span>' );
+	}
+
+	/**
 	 * Build a Jetpack field block definition from a source control.
 	 *
 	 * @param string               $tag     Source control tag.
@@ -332,12 +354,17 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( ! empty( $control['checked'] ) ) {
 				$attrs['defaultValue'] = true;
 			}
+			// A standalone checkbox's label is its option: the source marker
+			// rides there, or Jetpack states its own "(required)" instead.
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
-				'attrs' => array_filter( array(
-					'label'        => $label,
-					'isStandalone' => true,
-					'className'    => trim( $control_class . ' ' . $label_class ),
+				'attrs' => array_filter( array_merge(
+					array(
+						'label'        => $label,
+						'isStandalone' => true,
+					),
+					self::required_marker_attrs( $control, $label, ! empty( $attrs['required'] ) ),
+					array( 'className' => trim( $control_class . ' ' . $label_class ) )
 				) ),
 			);
 		} elseif ( '' !== $label ) {
@@ -345,15 +372,8 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( isset( $attrs['requiredIndicator'] ) ) {
 				$label_attrs['requiredIndicator'] = $attrs['requiredIndicator'];
 			}
-			if ( is_string( $control['required_text'] ?? null ) && '' !== trim( $control['required_text'] ) && strlen( $control['required_text'] ) <= 32 ) {
-				if ( ! empty( $attrs['required'] ) ) {
-					$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
-				} else {
-					// A visible marker without validation: Jetpack renders its
-					// indicator only for required fields, so carry the same span.
-					$label_attrs['label'] = $label . '<span class="grunion-label-required" aria-hidden="true">' . esc_html( wp_strip_all_tags( $control['required_text'] ) ) . '</span>';
-				}
-			}
+			$label_attrs = array_merge( $label_attrs, self::required_marker_attrs( $control, $label, ! empty( $attrs['required'] ) ) );
+
 			$source_label_class = isset( $control['label_class'] ) && is_scalar( $control['label_class'] ) ? trim( (string) $control['label_class'] ) : '';
 			$label_class        = trim( $source_label_class . ' ' . $label_class );
 			if ( '' !== $label_class ) {

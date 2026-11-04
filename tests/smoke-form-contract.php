@@ -142,7 +142,8 @@ $page = ssi_role_box_render_form( ssi_role_box_parse_blocks( $row['block_markup'
 $selected_options = array_values( array_filter( explode( "\n", $page ), static fn( string $line ): bool => str_contains( $line, 'selected=' ) ) );
 $checks['logged-out render shows the source select default selected'] = 1 === count( $selected_options ) && str_contains( $selected_options[0] ?? '', 'Product manager' );
 $checkbox_lines = array_values( array_filter( explode( "\n", $page ), static fn( string $line ): bool => 1 === preg_match( "/type=['\"]checkbox['\"]/", $line ) ) );
-$checked_lines  = array_values( array_filter( $checkbox_lines, static fn( string $line ): bool => str_contains( $line, 'checked=' ) ) );
+// The runtime may reserialize a choice box, which writes a bare `checked`.
+$checked_lines  = array_values( array_filter( $checkbox_lines, static fn( string $line ): bool => 1 === preg_match( '/<input\b[^>]*\schecked(?:[\s=\/>])/', $line ) ) );
 $required_boxes = array_values( array_filter( $checkbox_lines, static fn( string $line ): bool => str_contains( $line, 'required' ) ) );
 $checks['logged-out render ticks only the checked checkbox'] = 4 === count( $checkbox_lines ) && 1 === count( $checked_lines ) && str_contains( $page, 'value="engineer"' ) && str_contains( $page, 'value="pm"' );
 $checks['consent renders required'] = 1 === count( $required_boxes ) && str_contains( $page, '(required)' );

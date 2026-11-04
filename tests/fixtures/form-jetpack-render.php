@@ -143,6 +143,7 @@ function ssi_role_box_render_field( array $block ): string {
 		} elseif ( 'jetpack/option' === $inner['name'] ) {
 			$label       = (string) ( $inner['attrs']['label'] ?? '' );
 			$option_cls  = trim( 'wp-block-jetpack-option ' . $support['class'] );
+			$required_tx = is_string( $inner['attrs']['requiredText'] ?? null ) ? $inner['attrs']['requiredText'] : $required_tx;
 		} elseif ( 'jetpack/options' === $inner['name'] ) {
 			foreach ( $inner['innerBlocks'] as $option ) {
 				$option_support = ssi_role_box_block_support( $option['attrs'] );
