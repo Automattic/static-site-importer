@@ -662,6 +662,56 @@ $gap_contract    = Static_Site_Importer_Diagnostic_Contract::build(
 $gap_diagnostics = array_values( array_filter( $gap_contract['diagnostics'] ?? array(), static fn( array $diagnostic ): bool => 'gap-plan-contract' === ( $diagnostic['id'] ?? '' ) ) );
 $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status'] ?? '' ) && array( 'file:./view.js' ) === ( $gap_diagnostics[0]['references'] ?? array() ), 'gutenberg-gap-diagnostics-retain-materialization-status-and-references' );
 
+// Section terms have membership evidence without claiming an archive route.
+{
+	$section_files = array( 'index.html' => '<main><h1>Sections</h1></main>' );
+	foreach ( array( 'journal', 'podcast' ) as $section ) {
+		foreach ( range( 1, 2 ) as $number ) {
+			$section_files[] = array( 'path' => $section . '/post-' . $number . '.html', 'content' => '<article><h1>Post ' . $number . '</h1><p>Section body.</p></article>', 'metadata' => array( 'post_type' => 'post' ) );
+		}
+	}
+	$section_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => $section_files ) )->toArray()['source_reports']['wordpress_site_plan'];
+	$section_plan['taxonomy_entities'] = array();
+	foreach ( array( 'journal', 'podcast' ) as $section ) {
+		$section_plan['taxonomy_entities'][] = array( 'kind' => 'taxonomy_term', 'taxonomy' => 'category', 'slug' => $section, 'name' => ucfirst( $section ), 'evidence' => array( 'membership' => true, 'name' => true ), 'membership_source_paths' => array( $section . '/post-1.html', $section . '/post-2.html' ) );
+	}
+	$section_markup = '<!-- wp:query {"query":{"postType":"post","inherit":false,"taxQuery":{"category":["{{wordpress-site-plan:term:category:journal}}"]}}} /-->';
+	foreach ( $section_plan['pages'] as &$section_page ) {
+		if ( 'index.html' === $section_page['source_path'] ) {
+			$section_page['canonical_block_markup'] = $section_markup;
+			$section_page['content_hash'] = hash( 'sha256', $section_markup );
+		}
+	}
+	unset( $section_page );
+	// The pinned producer still requires archives at its resolver boundary;
+	// exercise the consumer persistence contract on the prepared state.
+	$section_entities = $section_plan['taxonomy_entities'];
+	$section_plan['taxonomy_entities'] = array();
+	foreach ( array_merge( $section_plan['pages'], $section_plan['templates'], $section_plan['template_parts'] ) as $section_document ) {
+		$register_document_blocks( $block_runtime->parseBlocks( (string) ( $section_document['canonical_block_markup'] ?? '' ) ) );
+	}
+	$section_plan['plan_identity'] = WordPressSitePlan::planIdentity( $section_plan );
+	$section_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $section_plan, array( 'slug' => 'section-terms', 'defer_materialization_commit' => true ) );
+	$section_prepared['plan']['taxonomy_entities'] = $section_entities;
+	$section_receipt = ( new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'materialize_prepared_state' ) )->invoke( null, $section_prepared );
+	$assert( 'completed' === ( $section_receipt['status'] ?? '' ), 'Archive-less section terms materialize: ' . wp_json_encode( $section_receipt['errors'] ?? array() ) );
+	foreach ( array( 'journal', 'podcast' ) as $section ) {
+		$section_term = (int) ( term_exists( $section, 'category' )['term_id'] ?? 0 );
+		foreach ( range( 1, 2 ) as $number ) {
+			$section_post = (int) ( $section_receipt['completed']['pages'][ $section . '/post-' . $number . '.html' ] ?? 0 );
+			$assert( $section_term > 0 && array( $section_term ) === ( $GLOBALS['ssi_plan_term_memberships'][ $section_post ]['category'] ?? array() ), 'Each section post belongs to its proven category.' );
+		}
+	}
+	$section_content = (string) get_post_field( 'post_content', (int) ( $section_receipt['completed']['pages']['index.html'] ?? 0 ) );
+	$assert( str_contains( $section_content, '"category":[' . term_exists( 'journal', 'category' )['term_id'] . ']' ) && ! str_contains( $section_content, '{{wordpress-site-plan:term:' ), 'Section Query Loop persists a bare integer term ID.' );
+	Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $section_receipt, 'section_terms_smoke' );
+	$section_plan['taxonomy_entities'] = array();
+	$section_plan['plan_identity'] = WordPressSitePlan::planIdentity( $section_plan );
+	$section_failure_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $section_plan, array( 'slug' => 'unresolved-section-term' ) );
+	$section_failure = ( new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'materialize_prepared_state' ) )->invoke( null, $section_failure_prepared );
+	$assert( 'completed' !== ( $section_failure['status'] ?? '' ) && str_contains( wp_json_encode( $section_failure ), 'taxonomy_term_reference_unresolved' ), 'Undeclared term references fail import instead of persisting dangling tokens.' );
+}
+
 $taxonomy_source_for = static function ( bool $recategorized ): array {
 	$members = $recategorized
 		? array( 'personal' => array( 1, 3 ), 'work' => array( 2, 3, 4 ) )

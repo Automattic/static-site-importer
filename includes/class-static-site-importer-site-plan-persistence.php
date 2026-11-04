@@ -330,6 +330,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $taxonomy_entities );
 		}
 		$state['applied']['taxonomy_entities'] = $taxonomy_entities;
+		$term_references                       = self::resolve_term_references( $state );
+		if ( is_wp_error( $term_references ) ) {
+			return self::failed_receipt_from_error( $state, $term_references );
+		}
 		// Reading settings determine the front-page permalink before links are stored.
 		if ( ! empty( $args['activate'] ) ) {
 			self::journal_runtime( $state );
@@ -739,11 +743,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$resolved_terms = array();
 		foreach ( $ordered as $entity ) {
-			if ( ! is_array( $entity ) || 'taxonomy_term' !== ( $entity['kind'] ?? '' ) || ! in_array( $entity['taxonomy'] ?? '', array( 'category', 'post_tag' ), true ) || ( $entity['evidence'] ?? null ) !== array(
+			$has_archive = is_array( $entity ) && array_key_exists( 'archive', $entity );
+			$evidence    = array(
 				'membership' => true,
 				'name'       => true,
-				'archive'    => true,
-			) || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,199}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ! is_array( $entity['archive'] ?? null ) || ! is_string( $entity['archive']['source_route'] ?? null ) ) {
+			);
+			if ( $has_archive ) {
+				$evidence['archive'] = true;
+			}
+			if ( ! is_array( $entity ) || 'taxonomy_term' !== ( $entity['kind'] ?? '' ) || ! in_array( $entity['taxonomy'] ?? '', array( 'category', 'post_tag' ), true ) || ( $entity['evidence'] ?? null ) !== $evidence || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,199}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ( $has_archive && ( ! is_array( $entity['archive'] ) || ! is_string( $entity['archive']['source_route'] ?? null ) ) ) ) {
 				return new WP_Error( 'taxonomy_entity_contract_invalid' );
 			}
 			$taxonomy = $entity['taxonomy'];
@@ -797,7 +805,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'term_id'                 => $term_id,
 				'taxonomy'                => $taxonomy,
 				'slug'                    => $entity['slug'],
-				'archive_route'           => $entity['archive']['source_route'],
+				'archive_route'           => $entity['archive']['source_route'] ?? '',
 				'membership_source_paths' => $entity['membership_source_paths'],
 				'post_ids'                => array_map( static fn( string $path ): int => (int) $state['source_ids'][ $path ], $entity['membership_source_paths'] ),
 				'created'                 => $created,
@@ -858,6 +866,73 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		return $reports;
+	}
+
+	/** Resolve quoted JSON term references after destination term IDs exist. */
+	private static function resolve_term_references( array &$state ): ?WP_Error {
+		$refs = array();
+		foreach ( $state['applied']['taxonomy_entities'] as $entity ) {
+			$refs[ '"{{wordpress-site-plan:term:' . $entity['taxonomy'] . ':' . $entity['slug'] . '}}"' ] = (string) (int) $entity['term_id'];
+		}
+		$rewrite = static function ( string $markup ) use ( $refs ) {
+			$markup = strtr( $markup, $refs );
+			return str_contains( $markup, '{{wordpress-site-plan:term:' )
+				? new WP_Error( 'taxonomy_term_reference_unresolved', 'A term reference could not be resolved to a materialized taxonomy term ID.' )
+				: $markup;
+		};
+		foreach ( $state['ordered_pages'] as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
+				continue;
+			}
+			$content = self::served_document( $state, $page );
+			if ( ! is_string( $content ) ) {
+				return new WP_Error( 'taxonomy_term_reference_read_failed' );
+			}
+			$markup = $rewrite( $content );
+			if ( is_wp_error( $markup ) ) {
+				return $markup;
+			}
+			if ( $markup !== $content ) {
+				$result = self::write_served_document( $state, $page, $markup, 'taxonomy_term_reference_write_failed' );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+		}
+		foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+			if ( 'utf8' !== ( $write['payload']['encoding'] ?? null ) ) {
+				continue;
+			}
+			$path   = $state['theme_dir'] . '/' . $write['target_path'];
+			$source = $state['composed_theme_writes'][ $path ] ?? $write['payload']['data'];
+			$markup = $rewrite( $source );
+			if ( is_wp_error( $markup ) ) {
+				return $markup;
+			}
+			if ( $markup === $source ) {
+				continue;
+			}
+			$state['resolved']['writes'][ $index ]['payload']['data'] = $markup;
+			$state['resolved']['writes'][ $index ]['payload_hash']    = hash( 'sha256', $markup );
+			if ( isset( $state['composed_theme_writes'][ $path ] ) ) {
+				$state['composed_theme_writes'][ $path ] = $markup;
+			}
+		}
+		foreach ( array( 'pages', 'templates', 'template_parts', 'synced_patterns' ) as $group ) {
+			foreach ( $state['resolved'][ $group ] ?? array() as $index => $document ) {
+				foreach ( array( 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
+					if ( ! is_string( $document[ $field ] ?? null ) ) {
+						continue;
+					}
+					$markup = $rewrite( $document[ $field ] );
+					if ( is_wp_error( $markup ) ) {
+						return $markup;
+					}
+					$state['resolved'][ $group ][ $index ][ $field ] = $markup;
+				}
+			}
+		}
+		return null;
 	}
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */
