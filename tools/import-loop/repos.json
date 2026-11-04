@@ -1,7 +1,7 @@
 {
   "blocks-engine": {
     "github": "Automattic/blocks-engine",
-    "verify": "cd php-transformer && composer test:unit",
+    "verify": "cd php-transformer && composer test:canonical && cd tools/visual-parity && npm ci --silent && npm test",
     "shipped_via": "static-site-importer",
     "lock_package": "automattic/blocks-engine-php-transformer",
     "release_tag_prefix": "php-transformer-",

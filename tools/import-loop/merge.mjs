@@ -22,7 +22,14 @@ for (const item of triage.tracked) {
     if (!checked || checked.head !== pr.headRefOid) { held.push({ pr: pr.url, reason: checked ? `head moved since confirm: ${checked.head.slice(0, 8)} -> ${pr.headRefOid.slice(0, 8)}` : 'not checked by confirm' }); continue; }
     const refutation = confirm.refuted.find((r) => r.pr === pr.url);
     if (refutation) { held.push({ pr: pr.url, reason: refutation.cells.map((c) => (c.collateral ? `restyles outside ${c.signature}` : `defect reproduces at ${c.route}@${c.width}`)).join(', ') }); continue; }
-    const checks = pr.statusCheckRollup || [];
+    // Wait for checks still running at this head (up to an hour), then judge them.
+    let checks = pr.statusCheckRollup || [];
+    for (let waited = 0; checks.some((c) => !(c.conclusion || ['SUCCESS', 'FAILURE', 'ERROR'].includes(c.state))) && waited < 60; waited++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000);
+      const now = JSON.parse(gh('pr', 'view', pr.url, '--json', 'headRefOid,statusCheckRollup'));
+      if (now.headRefOid !== pr.headRefOid) break;
+      checks = now.statusCheckRollup || [];
+    }
     const red = checks.filter((c) => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion || c.state));
     // GitHub computes mergeability lazily; UNKNOWN settles within seconds.
     for (let attempt = 0; pr.mergeable === 'UNKNOWN' && attempt < 6; attempt++) {
