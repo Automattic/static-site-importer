@@ -681,21 +681,33 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	/**
 	 * Recover source description elements omitted from older form declarations.
 	 *
+	 * An entity names its source fallback by `fallback_identity`. That is the
+	 * join whenever both sides state it: an entity hoisted into a shared
+	 * document (a template part or synced pattern) is rebased onto that
+	 * document's `source_path`, while its fallback stays on the page it was
+	 * found in, so the page path and selector no longer pair them.
+	 *
 	 * @param array $entities Declared form entities.
 	 * @param array $plan     Site plan carrying the matching fallback evidence.
 	 * @return array
 	 */
 	public static function with_form_source_html( array $entities, array $plan ): array {
-		$sources = array();
+		$sources    = array();
+		$identities = array();
 		foreach ( $plan['quality']['fallbacks'] ?? array() as $fallback ) {
 			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
 				$key             = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) . "\n" . (string) ( $fallback['selector'] ?? '' );
 				$sources[ $key ] = $fallback;
+				$identity        = $fallback['fallback_identity'] ?? null;
+				if ( is_string( $identity ) && '' !== $identity ) {
+					$identities[ $identity ] = $key;
+				}
 			}
 		}
 		foreach ( $entities as &$entity ) {
 			if ( is_array( $entity ) ) {
-				$key = (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$identity = $entity['fallback_identity'] ?? null;
+				$key      = is_string( $identity ) && isset( $identities[ $identity ] ) ? $identities[ $identity ] : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
 				if ( isset( $sources[ $key ] ) ) {
 					$entity['form_intent'] = Static_Site_Importer_Form_Fallback_Contract::intent( $sources[ $key ] );
 					foreach ( array( 'readable_blocks', 'choice_groups' ) as $fact ) {

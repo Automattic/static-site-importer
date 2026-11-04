@@ -1,0 +1,12 @@
+body{margin:0;font-family:Georgia,serif;color:#222}
+.site-head{background:#f4efe8;padding:16px 32px}.site-head .cell{display:flex;justify-content:space-between;align-items:center}
+.primary a{margin-left:16px;color:#222}
+.content{padding:48px 32px}
+.site-foot{background:#2b2b2b;color:#fff;padding:48px 32px}.foot-grid{display:flex;gap:48px}.foot-col{flex:1}
+.foot-title{font-size:28px;margin:0 0 16px}
+.news{display:flex;flex-direction:column;gap:12px;max-width:420px}
+.field-label{display:block;font-size:14px;margin-bottom:6px}.req{color:#e0a96d;margin-left:2px}
+.input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #fff;background:transparent;color:#fff}
+.consent{display:flex;gap:8px;align-items:center;font-size:14px}
+.submit{background:#e0a96d;color:#222;border:0;padding:12px 24px;font-size:16px;cursor:pointer}
+.legal{font-size:12px;color:#bbb}
