@@ -1,8 +1,7 @@
 <?php
 /**
- * Report-size regression: the persisted import report embeds a reduced site
- * plan (no inline payload content) and a single diagnostics list, so its size
- * tracks page count rather than asset bytes.
+ * Report-size regression: response artifacts persist evidence once and reference
+ * the plan and shared evidence by identity.
  *
  * Reduced fixture: a multi-page import whose pages share one small stylesheet.
  *
@@ -47,6 +46,28 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-asset-re
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document-metadata-reporter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-block-document-reporter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-receipt-projection.php';
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value, int $flags = 0 ) { return json_encode( $value, $flags ); }
+}
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0700, true ); }
+}
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir(): array {
+		$root = sys_get_temp_dir() . '/ssi-bounded-response-smoke-' . getmypid();
+		wp_mkdir_p( $root );
+		return array( 'basedir' => $root );
+	}
+}
+if ( ! function_exists( 'wp_rand' ) ) {
+	function wp_rand(): int { return random_int( 1, PHP_INT_MAX ); }
+}
+if ( ! defined( 'WEEK_IN_SECONDS' ) ) {
+	define( 'WEEK_IN_SECONDS', 604800 );
+}
+
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php';
 
 $failures   = array();
 $assertions = 0;
@@ -128,6 +149,7 @@ $fixture_receipt = static function ( int $page_count, string $css ): array {
 		),
 		'assets'         => array(
 			array(
+				'token'          => 'asset:site-css',
 				'source_path'    => 'website/site.css',
 				'target_path'    => 'assets/css/site.css',
 				'kind'           => 'css',
@@ -188,31 +210,10 @@ $small_css = '.report-size-css-payload-sentinel{margin:0 auto}';
 $baseline  = $persisted_report( $fixture_receipt( 3, $small_css ) );
 $persisted = $baseline['report'];
 $json      = $baseline['json'];
-$plan      = $persisted['blocks_engine']['wordpress_site_plan'] ?? array();
-
-$write = $plan['writes'][0] ?? array();
-$assert( ! array_key_exists( 'canonical_payload', $write ), 'report-plan-write-drops-canonical-payload' );
-$assert( is_array( $write['payload'] ?? null ) && ! array_key_exists( 'data', $write['payload'] ), 'report-plan-write-drops-resolved-payload-data' );
-$assert( 'assets/css/site.css' === ( $write['target_path'] ?? '' ) && hash( 'sha256', $small_css ) === ( $write['payload_hash'] ?? '' ) && hash( 'sha256', $small_css ) === ( $write['canonical_payload_hash'] ?? '' ), 'report-plan-write-keeps-target-path-and-hashes' );
-
-$asset = $plan['assets'][0] ?? array();
-$assert( ! array_key_exists( 'content', $asset ) && ! array_key_exists( 'content_base64', $asset ), 'report-plan-asset-drops-inline-content' );
-$assert( 'assets/css/site.css' === ( $asset['target_path'] ?? '' ) && strlen( $small_css ) === ( $asset['bytes'] ?? 0 ) && hash( 'sha256', $small_css ) === ( $asset['hash'] ?? '' ), 'report-plan-asset-keeps-target-path-bytes-and-hash' );
-
-$visual_repair = $plan['visual_repair'] ?? array();
-$assert( ! array_key_exists( 'css', $visual_repair ) && ! array_key_exists( 'compat_css', $visual_repair ), 'report-plan-visual-repair-drops-css-copies' );
-$assert( 'website/site.css' === ( $visual_repair['stylesheets'][0]['path'] ?? '' ) && strlen( $small_css ) === ( $visual_repair['stylesheets'][0]['bytes'] ?? 0 ), 'report-plan-visual-repair-keeps-stylesheet-paths-and-bytes' );
-
-$markup_free = true;
-$hashes_kept = true;
-foreach ( $plan['pages'] ?? array() as $page ) {
-	foreach ( array( 'canonical_block_markup', 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
-		$markup_free = $markup_free && ! array_key_exists( $field, $page );
-	}
-	$hashes_kept = $hashes_kept && '' !== (string) ( $page['content_hash'] ?? '' ) && '' !== (string) ( $page['source_path'] ?? '' );
-}
-$assert( 3 === count( $plan['pages'] ?? array() ) && $markup_free, 'report-plan-pages-drop-block-markup' );
-$assert( $hashes_kept, 'report-plan-pages-keep-source-paths-and-content-hashes' );
+$plan = $persisted['blocks_engine']['plan_summary'] ?? array();
+$assert( ! isset( $persisted['blocks_engine']['wordpress_site_plan'] ), 'site-plan-is-not-embedded' );
+$assert( 3 === ( $plan['page_count'] ?? 0 ), 'summary-keeps-page-count' );
+$assert( ! isset( $plan['pages'], $plan['writes'] ), 'summary-is-not-executable-plan' );
 
 $assert( ! str_contains( $json, $small_css ), 'persisted-report-carries-no-stylesheet-payload-bytes' );
 $assert( ! str_contains( $json, base64_encode( $small_css ) ), 'persisted-report-carries-no-base64-asset-payload' );
@@ -231,6 +232,50 @@ $large_asset_json = $persisted_report( $fixture_receipt( 3, $large_css ) )['json
 $more_pages_json  = $persisted_report( $fixture_receipt( 6, $small_css ) )['json'];
 $assert( abs( strlen( $large_asset_json ) - strlen( $json ) ) < 2048, 'report-size-is-independent-of-asset-bytes', sprintf( 'baseline %d bytes, 200KB-asset %d bytes', strlen( $json ), strlen( $large_asset_json ) ) );
 $assert( strlen( $more_pages_json ) > strlen( $json ), 'report-size-grows-with-page-count', sprintf( '3 pages %d bytes, 6 pages %d bytes', strlen( $json ), strlen( $more_pages_json ) ) );
+
+// Exercise the same immutable response publication path used by abilities/CLI.
+$response_fixture = static function ( int $bytes ) use ( $fixture_receipt, $persisted_report, $small_css ): array {
+	$receipt = $fixture_receipt( 3, $small_css );
+	$receipt['plan']['quality']['fallbacks'] = array( array( 'type' => 'html_form_fallback', 'evidence' => 'fallback-evidence-sentinel' . str_repeat( 'f', $bytes ) ) );
+	$entity = array( 'id' => 'form.contact', 'evidence' => 'runtime-evidence-sentinel' . str_repeat( 'r', 1024 ) );
+	$receipt['plan']['runtime_entity_records'] = array( array( 'content_hash' => hash( 'sha256', json_encode( $entity ) ), 'entity' => $entity ) );
+	$receipt['plan']['runtime_entity_resolution'] = array( array( 'entities' => array( $entity ) ) );
+	$receipt['runtime_lifecycle']['entities']['form.contact']['manifest']['forms'] = array( $entity );
+	$report = $persisted_report( $receipt )['report'];
+	$report['import_run_id'] = 'size-' . $bytes . '-' . bin2hex( random_bytes( 5 ) );
+	$result = Static_Site_Importer_Canonical_Import_Service::bound_success_result( array(
+		'import_report' => $report,
+		'materialization_receipt' => $receipt,
+		'quality' => $report['quality'],
+	) );
+	$artifacts = $result['response_artifacts']['artifacts'] ?? array();
+	$total = 0;
+	$copies = 0;
+	$runtime_copies = 0;
+	foreach ( $artifacts as $artifact ) {
+		$content = (string) file_get_contents( $artifact['path'] );
+		$total += strlen( $content );
+		$copies += substr_count( $content, 'fallback-evidence-sentinel' );
+		$runtime_copies += substr_count( $content, 'runtime-evidence-sentinel' );
+	}
+	$loaded = array();
+	foreach ( $artifacts as $name => $artifact ) {
+		$loaded[ $name ] = json_decode( (string) file_get_contents( $artifact['path'] ), true );
+	}
+	$resolved = method_exists( Static_Site_Importer_Canonical_Import_Service::class, 'resolve_response_evidence' )
+		? Static_Site_Importer_Canonical_Import_Service::resolve_response_evidence( $loaded['result_details']['quality']['fallbacks_ref'] ?? array(), $loaded )
+		: array();
+	return array( 'bytes' => $total, 'copies' => $copies, 'artifacts' => $artifacts, 'resolved' => $resolved, 'runtime_copies' => $runtime_copies );
+};
+$response_small = $response_fixture( 1024 );
+$response_large = $response_fixture( 101024 );
+$assert( ! empty( $response_small['artifacts'] ), 'response-artifacts-published' );
+$assert( 'html_form_fallback' === ( $response_small['resolved'][0]['type'] ?? '' ), 'fallback-reference-resolves-to-canonical-evidence' );
+$assert( 1 === $response_small['runtime_copies'], 'runtime-manifest-persisted-once' );
+$assert( 1 === $response_small['copies'] && 1 === $response_large['copies'], 'fallback-list-persisted-once' );
+$growth = $response_large['bytes'] - $response_small['bytes'];
+$assert( $growth >= 100000 && $growth < 102048, 'artifact-growth-is-distinct-evidence-only', (string) $growth );
+echo sprintf( "Reduced response fixture: %d bytes; +100KB distinct evidence: %d bytes\n", $response_small['bytes'], $response_large['bytes'] );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

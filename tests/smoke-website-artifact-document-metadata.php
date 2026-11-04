@@ -125,7 +125,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
 	$assert( ! empty( $report['quality']['pass'] ), 'canonical-plan-quality-passes' );
 	$assert( isset( $report['quality']['metrics'] ) || isset( $report['quality']['score'] ), 'canonical-plan-quality-is-reported-without-fabricated-core-html-count' );
-	$assert( ! isset( $report['generated_theme']['wordpress_site_plan'] ) && isset( $report['blocks_engine']['wordpress_site_plan'] ), 'report-keeps-one-canonical-wordpress-site-plan' );
+	$assert( ! isset( $report['generated_theme']['wordpress_site_plan'] ) && isset( $report['blocks_engine']['plan_summary'] ), 'report-keeps-one-canonical-wordpress-site-plan' );
 	$assert( '' === ( $result['report_path'] ?? '' ), 'theme-report-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['validation_result_path'] ?? '' ), 'theme-validation-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['finding_packets_path'] ?? '' ), 'theme-finding-packets-artifact-is-not-written-by-default' );
@@ -277,7 +277,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_findings          = json_decode( $read( $multi_page_result['finding_packets_path'] ), true );
 	$source_docs             = $multi_report['source_documents'] ?? array();
 	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
-	$wordpress_site_plan     = $multi_report['blocks_engine']['wordpress_site_plan'] ?? array();
+	$wordpress_site_plan     = $multi_report['blocks_engine']['plan_summary'] ?? array();
 	$block_documents         = $multi_report['generated_theme']['block_documents'] ?? array();
 	$template_parts          = $multi_report['generated_theme']['template_parts'] ?? array();
 	$documents_by_source     = array();
@@ -329,7 +329,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( $multi_report['import_validation_result'] === $multi_validation, 'theme-validation-sidecar-matches-finalized-report-contract' );
 	$assert( $multi_report['finding_packets'] === $multi_findings, 'theme-findings-sidecar-matches-finalized-report-contract' );
 	$assert( isset( $multi_validation['quality_gates'], $multi_validation['diagnostic_summary'] ), 'theme-validation-sidecar-is-complete' );
-	$assert( 3 === count( $wordpress_site_plan['pages'] ?? array() ), 'wordpress-site-plan-page-count-is-recorded' );
+	$assert( 3 === ( $wordpress_site_plan['page_count'] ?? 0 ), 'wordpress-site-plan-page-count-is-recorded' );
 	$assert( isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-synthesizes-header-template-part' );
 	$assert( isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-synthesizes-footer-template-part' );
 	$assert( str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"header"' ), 'multi-page-template-references-synthesized-header-part' );

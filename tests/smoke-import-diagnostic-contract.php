@@ -209,7 +209,7 @@ $quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
 		'import_report' => array(
 			'schema'        => 'static-site-importer/import-report/v1',
 			'quality'       => $quality_fixture['importer_report_evidence']['quality'],
-			'blocks_engine' => array( 'wordpress_site_plan' => $quality_fixture['source_evidence'] ),
+			'blocks_engine' => array( 'plan_summary' => $quality_fixture['source_evidence'] ),
 			'quality_resolutions' => $quality_fixture['quality_resolutions_evidence'],
 		),
 		'materialization_receipt' => $quality_fixture['materialization_receipt_evidence'],
@@ -222,11 +222,11 @@ $assert( $expected_unresolved['diagnostic_count'] === ( $quality_contract['quali
 $assert( 458 === ( $quality_contract['quality_counts']['source_detected']['fallback_count'] ?? null ), 'quality-reconciliation-preserves-source-evidence' );
 $assert( 8 === ( $quality_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'quality-reconciliation-preserves-provider-resolution-evidence' );
 $assert( $expected_unresolved['fallback_count'] === ( $quality_contract['quality_counts']['unresolved']['fallback_count'] ?? null ), 'quality-reconciliation-exposes-unresolved-evidence' );
-$assert( 'blocks_engine.wordpress_site_plan.quality' === ( $quality_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'quality-reconciliation-identifies-compiler-provenance' );
+$assert( 'blocks_engine.plan_summary.quality' === ( $quality_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'quality-reconciliation-identifies-compiler-provenance' );
 $assert( false === ( $quality_contract['quality_counts']['consistent'] ?? true ), 'quality-reconciliation-detects-contradictory-layers' );
 $assert( 'quality_count_consistency_failure' === ( $quality_contract['diagnostics'][0]['type'] ?? '' ), 'quality-reconciliation-emits-gating-diagnostic' );
 
-$absent_quality_contract = Static_Site_Importer_Diagnostic_Contract::build( array( 'import_report' => array( 'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ) ) ) ) );
+$absent_quality_contract = Static_Site_Importer_Diagnostic_Contract::build( array( 'import_report' => array( 'blocks_engine' => array( 'plan_summary' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ) ) ) ) );
 $assert( 0 === ( $absent_quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-absent-fields-zero' );
 $assert( array() === ( $absent_quality_contract['quality_counts']['provenance'] ?? null ), 'quality-reconciliation-does-not-invent-absent-provenance' );
 $assert( true === ( $absent_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-absent-layers-consistent' );
@@ -235,7 +235,7 @@ $clean_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(
 		'import_report' => array(
 			'quality'       => array( 'block_count' => 2, 'fallback_count' => 0, 'diagnostic_count' => 0 ),
-			'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'block_count' => 2, 'fallback_count' => 0, 'diagnostic_count' => 0 ) ) ) ),
+			'blocks_engine' => array( 'plan_summary' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'block_count' => 2, 'fallback_count' => 0, 'diagnostic_count' => 0 ) ) ) ),
 		),
 	)
 );
@@ -247,7 +247,7 @@ $importer_info_diagnostic_contract = Static_Site_Importer_Diagnostic_Contract::b
 	array(
 		'import_report' => array(
 			'quality'       => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ),
-			'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ) ) ) ),
+			'blocks_engine' => array( 'plan_summary' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ) ) ) ),
 			'import_validation_result' => array(
 				'schema'      => 'blocks-engine/import-validation-result/v1',
 				'quality_pass' => true,
@@ -273,7 +273,7 @@ $contradictory_quality_contract = Static_Site_Importer_Diagnostic_Contract::buil
 	array(
 		'import_report' => array(
 			'quality'       => array( 'fallback_count' => 0 ),
-			'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 1 ) ) ) ),
+			'blocks_engine' => array( 'plan_summary' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 1 ) ) ) ),
 			'import_validation_result' => array( 'counts' => array( 'fallback_blocks' => 1 ) ),
 		),
 	)
@@ -283,7 +283,7 @@ $assert( 1 === count( array_filter( $contradictory_quality_contract['diagnostics
 
 $partial_quality_report = Static_Site_Importer_Import_Report::from_array(
 	array(
-	'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ) ),
+	'blocks_engine' => array( 'plan_summary' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ) ),
 	'quality'       => array( 'metrics' => array( 'block_count' => 1 ) ),
 	'diagnostics'   => array( array( 'type' => 'unsupported_html_fallback', 'severity' => 'warning' ) ),
 	)
@@ -357,7 +357,7 @@ $forged_resolution_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(
 		'import_report' => array(
 			'quality'             => array( 'fallback_count' => 0 ),
-			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'blocks_engine'       => array( 'plan_summary' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
 			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => array() ) ),
 		),
 	)
@@ -369,7 +369,7 @@ $stale_resolution_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(
 		'import_report' => array(
 			'quality'             => array( 'fallback_count' => 0 ),
-			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'blocks_engine'       => array( 'plan_summary' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
 			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => array_slice( $verified_resolutions, 0, 7 ) ) ),
 		),
 	)
@@ -382,7 +382,7 @@ $mismatched_resolution_contract = Static_Site_Importer_Diagnostic_Contract::buil
 	array(
 		'import_report' => array(
 			'quality'             => array( 'fallback_count' => 0 ),
-			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'blocks_engine'       => array( 'plan_summary' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
 			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => $mismatched_resolution_entries ) ),
 		),
 	)

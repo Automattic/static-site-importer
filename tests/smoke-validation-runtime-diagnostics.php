@@ -157,7 +157,7 @@ file_put_contents(
 					'version'   => 'dev-trunk',
 					'reference' => str_repeat( 'a', 40 ),
 				),
-				'wordpress_site_plan' => array(
+				'plan_summary' => array(
 					'schema' => 'blocks-engine/wordpress-site-plan/v2',
 					'assets' => array(
 						array(
@@ -215,8 +215,8 @@ $assert( 'semantic_parity_navigation_missing' === ( $result['diagnostics'][0]['t
 $assert( 'footer nav' === ( $result['diagnostics'][0]['selector'] ?? '' ), 'top-level-diagnostic-selector-preserved' );
 $assert( 1 === ( $result['diagnostic_summary']['total'] ?? 0 ), 'top-level-diagnostic-summary-present' );
 $assert( str_repeat( 'a', 40 ) === ( $result['fixture_diagnostics']['blocks_engine']['transformer']['reference'] ?? '' ), 'transformer-provenance-preserved' );
-$assert( 1 === ( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['asset_count'] ?? 0 ), 'site-plan-asset-count-preserved' );
-$assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['assets'][0]['content_base64'] ), 'site-plan-asset-payload-omitted' );
+$assert( 1 === ( $result['fixture_diagnostics']['blocks_engine']['plan_summary']['asset_count'] ?? 0 ), 'site-plan-asset-count-preserved' );
+$assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['plan_summary']['assets'][0]['content_base64'] ), 'site-plan-asset-payload-omitted' );
 $assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
 $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
 
@@ -230,7 +230,7 @@ $assert( 5 === ( $matrix_result['fixture_diagnostics']['quality_counts']['block_
 $assert( 1 === ( $matrix_result['fixture_diagnostics']['quality_counts']['core_html_block_count'] ?? 0 ), 'fixture-matrix-derives-core-html-count' );
 $assert( 1 === ( $matrix_result['fixture_diagnostics']['quality_counts']['freeform_block_count'] ?? 0 ), 'fixture-matrix-derives-freeform-count' );
 $assert( str_repeat( 'a', 40 ) === ( $matrix_result['fixture_diagnostics']['blocks_engine']['transformer']['reference'] ?? '' ), 'fixture-matrix-keeps-transformer-reference' );
-$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $matrix_result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'fixture-matrix-keeps-site-plan' );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $matrix_result['fixture_diagnostics']['blocks_engine']['plan_summary']['schema'] ?? '' ), 'fixture-matrix-keeps-site-plan' );
 $assert( 'completed' === ( $matrix_result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'fixture-matrix-keeps-materialization-receipt' );
 
 $default_artifact_dir = $artifact_dir . '/default-materialization';

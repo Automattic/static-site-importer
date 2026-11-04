@@ -249,7 +249,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
 		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'raw_html_companion_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'image_missing_source_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count', 'unsafe_layout_constraint_count' );
-		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
+		$compiler_quality                  = $import_report['blocks_engine']['plan_summary']['quality'] ?? array();
 		$report_quality                    = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
 		$source_counts                     = self::quality_metric_values( $compiler_quality, $keys );
 		$report_counts                     = self::quality_metric_values( $report_quality, $keys );
@@ -277,9 +277,9 @@ class Static_Site_Importer_Diagnostic_Contract {
 		if ( ! empty( $compiler_quality ) ) {
 			$provenance['source_detected'] = array(
 				'owner'   => 'blocks-engine',
-				'path'    => 'blocks_engine.wordpress_site_plan.quality',
-				'schema'  => isset( $import_report['blocks_engine']['wordpress_site_plan']['schema'] ) ? (string) $import_report['blocks_engine']['wordpress_site_plan']['schema'] : '',
-				'metrics' => 'blocks_engine.wordpress_site_plan.quality.metrics',
+				'path'    => 'blocks_engine.plan_summary.quality',
+				'schema'  => (string) ( $import_report['blocks_engine']['plan_summary']['schema'] ?? '' ),
+				'metrics' => 'blocks_engine.plan_summary.quality.metrics',
 			);
 		} elseif ( ! empty( $report_quality ) ) {
 			$provenance['source_detected'] = array(
@@ -344,7 +344,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			array(
 				'compiler'                => isset( $compiler_diagnostic_count['diagnostic_count'] ) ? array(
 					'owner' => 'blocks-engine',
-					'path'  => 'blocks_engine.wordpress_site_plan.quality.' . ( is_array( $compiler_quality['metrics'] ?? null ) ? 'metrics.' : '' ) . 'diagnostic_count',
+					'path'  => 'blocks_engine.plan_summary.quality.' . ( is_array( $compiler_quality['metrics'] ?? null ) ? 'metrics.' : '' ) . 'diagnostic_count',
 				) : null,
 				'import_report'           => isset( $report_diagnostic_count['diagnostic_count'] ) ? array(
 					'owner' => 'static-site-importer',
@@ -560,12 +560,12 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$summary[ $field ] = $blocks_engine[ $field ];
 			}
 		}
-		$plan = isset( $blocks_engine['wordpress_site_plan'] ) && is_array( $blocks_engine['wordpress_site_plan'] ) ? $blocks_engine['wordpress_site_plan'] : array();
+		$plan = $blocks_engine['plan_summary'] ?? array();
 		if ( ! empty( $plan ) ) {
-			$assets                         = isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array();
-			$summary['wordpress_site_plan'] = array(
+			$assets                  = isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array();
+			$summary['plan_summary'] = array(
 				'schema'      => isset( $plan['schema'] ) && is_scalar( $plan['schema'] ) ? (string) $plan['schema'] : '',
-				'asset_count' => count( $assets ),
+				'asset_count' => (int) ( $plan['asset_count'] ?? count( $assets ) ),
 				'assets'      => array_map( array( self::class, 'plan_asset_summary' ), array_slice( $assets, 0, 50 ) ),
 			);
 		}

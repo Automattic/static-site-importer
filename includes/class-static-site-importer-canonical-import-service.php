@@ -592,6 +592,72 @@ class Static_Site_Importer_Canonical_Import_Service {
 		return static_site_importer_staged_archive_payload_reader( $archive );
 	}
 
+	/** Resolve retained evidence using already loaded response artifacts (no arbitrary file reads). */
+	public static function resolve_response_evidence( array $value, array $artifacts ): array {
+		if ( isset( $value['artifact'], $value['path'] ) && is_string( $value['artifact'] ) && is_string( $value['path'] ) && isset( $artifacts[ $value['artifact'] ] ) ) {
+			$resolved = $artifacts[ $value['artifact'] ];
+			foreach ( explode( '/', ltrim( $value['path'], '/' ) ) as $segment ) {
+				$key = str_replace( array( '~1', '~0' ), array( '/', '~' ), $segment );
+				if ( ! is_array( $resolved ) || ! array_key_exists( $key, $resolved ) ) {
+					return $value;
+				}
+				$resolved = $resolved[ $key ];
+			}
+			return is_array( $resolved ) ? $resolved : $value;
+		}
+		foreach ( $value as $key => $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$resolved = self::resolve_response_evidence( $item, $artifacts );
+			if ( is_string( $key ) && str_ends_with( $key, '_ref' ) && isset( $item['artifact'] ) && $resolved !== $item ) {
+				$value[ substr( $key, 0, -4 ) ] = $resolved;
+				unset( $value[ $key ] );
+			} else {
+				$value[ $key ] = $resolved;
+			}
+		}
+		return $value;
+	}
+
+	/** Replace runtime manifest content with identities in retained evidence only. */
+	private static function reference_runtime_evidence( array &$value, array &$records, bool $runtime = false ): void {
+		foreach ( $value as $key => &$item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$is_runtime = $runtime || in_array( $key, array( 'runtime_entity_records', 'runtime_entity_resolution', 'manifest' ), true );
+			if ( $is_runtime && 'entity' === $key ) {
+				$hash             = hash( 'sha256', (string) wp_json_encode( $item ) );
+				$records[ $hash ] = $item;
+				$item             = array(
+					'artifact' => 'runtime_evidence',
+					'path'     => '/records/' . $hash,
+					'sha256'   => $hash,
+				);
+			} elseif ( $is_runtime && in_array( $key, array( 'entities', 'forms', 'products', 'comments' ), true ) && array() !== $item ) {
+				// Store individual entities so equal manifests in different envelopes
+				// share bytes while distinct resolution results remain distinct.
+				foreach ( $item as &$entity ) {
+					if ( ! is_array( $entity ) ) {
+						continue;
+					}
+					$hash             = hash( 'sha256', (string) wp_json_encode( $entity ) );
+					$records[ $hash ] = $entity;
+					$entity           = array(
+						'artifact' => 'runtime_evidence',
+						'path'     => '/records/' . $hash,
+						'sha256'   => $hash,
+					);
+				}
+				unset( $entity );
+			} else {
+				self::reference_runtime_evidence( $item, $records, $is_runtime );
+			}
+		}
+		unset( $item );
+	}
+
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input ): array {
 		$contract               = self::success_diagnostics_contract( $result );
@@ -653,14 +719,56 @@ class Static_Site_Importer_Canonical_Import_Service {
 			static fn ( $value ): bool => null !== $value
 		);
 		$result['materialization_receipt_summary'] = $receipt_summary;
-		if ( isset( $payloads['materialization_receipt'] ) ) {
+		if ( isset( $payloads['materialization_receipt']['plan'] ) ) {
+			$plan = $payloads['materialization_receipt']['plan'];
+			if ( isset( $plan['quality']['fallbacks'] ) ) {
+				unset( $plan['quality']['fallbacks'] );
+				$plan['quality']['fallbacks_ref'] = array(
+					'artifact'      => 'import_report',
+					'path'          => '/quality/fallbacks',
+					'plan_identity' => $receipt['plan_identity'] ?? array(),
+				);
+			}
+			// Resolved and source records may be identical; never discard a
+			// genuinely different (pre-resolution) manifest.
+			if ( isset( $plan['runtime_entity_records'], $plan['runtime_entity_resolution'] ) && $plan['runtime_entity_records'] === $plan['runtime_entity_resolution'] ) {
+				unset( $plan['runtime_entity_records'] );
+				$plan['runtime_entity_records_ref'] = array(
+					'artifact'      => 'wordpress_site_plan',
+					'path'          => '/runtime_entity_resolution',
+					'plan_identity' => $receipt['plan_identity'] ?? array(),
+				);
+			}
+			$payloads['wordpress_site_plan'] = $plan;
 			unset( $payloads['materialization_receipt']['plan'] );
 		}
 		if ( isset( $payloads['import_report']['materialization_receipt'] ) ) {
 			$payloads['import_report']['materialization_receipt'] = $receipt_summary;
 		}
 		unset( $details['import_report'], $details['materialization_receipt'] );
+		if ( isset( $details['quality']['fallbacks'] ) && isset( $payloads['import_report']['quality']['fallbacks'] ) ) {
+			unset( $details['quality']['fallbacks'] );
+			$details['quality']['fallbacks_ref'] = array(
+				'artifact'      => 'import_report',
+				'path'          => '/quality/fallbacks',
+				'plan_identity' => $receipt['plan_identity'] ?? array(),
+			);
+		}
 		$payloads['result_details'] = $details;
+		// Runtime evidence is shared by the source plan, its resolved view and
+		// lifecycle receipts. Address each entity by content, retaining different
+		// resolved bindings rather than conflating them with source declarations.
+		$runtime_evidence = array();
+		foreach ( $payloads as &$payload ) {
+			self::reference_runtime_evidence( $payload, $runtime_evidence );
+		}
+		unset( $payload );
+		if ( array() !== $runtime_evidence ) {
+			$payloads['runtime_evidence'] = array(
+				'schema'  => 'static-site-importer/runtime-evidence/v1',
+				'records' => $runtime_evidence,
+			);
+		}
 
 		$inline_keys = array(
 			'theme_slug',

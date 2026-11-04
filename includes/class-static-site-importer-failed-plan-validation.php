@@ -97,16 +97,19 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			static fn( $value ): bool => '' !== $value
 		);
 
+		$quality = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		unset( $quality['fallbacks'] );
+
 		return array(
-			'available'           => ! empty( $compiled ),
-			'website_artifact'    => array(
+			'available'        => ! empty( $compiled ),
+			'website_artifact' => array(
 				'summary'    => $summary,
 				'provenance' => array_slice( $provenance, 0, self::MAX_DIAGNOSTICS ),
 			),
-			'wordpress_site_plan' => array(
+			'plan_summary'     => array(
 				'schema'  => (string) ( $plan['schema'] ?? 'blocks-engine/wordpress-site-plan/v3' ),
 				'source'  => $source,
-				'quality' => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
+				'quality' => $quality,
 			),
 		);
 	}

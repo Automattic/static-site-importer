@@ -2543,7 +2543,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 */
 	public static function compact_import_report_compiler_summary( array|Static_Site_Importer_Import_Report $report ): array {
 		$compiler = isset( $report['blocks_engine'] ) && is_array( $report['blocks_engine'] ) ? $report['blocks_engine'] : array();
-		$plan     = isset( $compiler['wordpress_site_plan'] ) && is_array( $compiler['wordpress_site_plan'] ) ? $compiler['wordpress_site_plan'] : array();
+		$plan     = $compiler['plan_summary'] ?? array();
 		$summary  = array(
 			'available'      => ! empty( $compiler['available'] ) || ! empty( $plan ),
 			'fragment_count' => (int) ( $compiler['fragment_count'] ?? 0 ),
@@ -2551,7 +2551,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		if ( ! empty( $plan ) ) {
 			$metrics                   = isset( $plan['quality']['metrics'] ) && is_array( $plan['quality']['metrics'] ) ? $plan['quality']['metrics'] : ( is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array() );
 			$summary['plan_available'] = true;
-			$summary['page_count']     = count( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() );
+			$summary['page_count']     = (int) ( $plan['page_count'] ?? count( $plan['pages'] ?? array() ) );
 			foreach ( array( 'block_count', 'diagnostic_count' ) as $field ) {
 				if ( isset( $metrics[ $field ] ) && is_numeric( $metrics[ $field ] ) ) {
 					$summary[ $field ] = (int) $metrics[ $field ];

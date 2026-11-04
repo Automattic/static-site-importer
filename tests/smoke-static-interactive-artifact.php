@@ -92,7 +92,7 @@ if ( ! is_wp_error( $result ) ) {
 	$page_ids  = array_values( $result['pages'] ?? array() );
 	$page      = ! empty( $page_ids[0] ) ? get_post( (int) $page_ids[0] ) : null;
 	$content   = $page instanceof WP_Post ? $page->post_content : '';
-	$plan      = $report['blocks_engine']['wordpress_site_plan'] ?? array();
+	$plan      = $result['materialization_receipt']['plan'] ?? array();
 	$provenance = $report['blocks_engine']['transformer'] ?? array();
 	$receipt   = $result['materialization_receipt'] ?? array();
 	$validation = $result['import_validation_result'] ?? array();
