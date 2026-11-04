@@ -20,8 +20,8 @@
 //
 // With `pixels`, the whole rendered page must also stay the same: the full-page
 // screenshots of base and candidate are compared, and any route and width where
-// more than PIXEL_SHARE of the pixels differ (channel tolerance PIXEL_DELTA) is
-// a change. Editability fixes change how a page is built, never how it looks,
+// more than PIXEL_LIMIT pixels differ (channel tolerance PIXEL_DELTA) is a
+// change. Editability fixes change how a page is built, never how it looks,
 // so they are held to it, subject included.
 //
 // Usage: node collateral.mjs <base url> <candidate url> <key,...> <route,...> [pixels]
@@ -33,7 +33,7 @@ process.on('uncaughtException', (error) => { console.error(`collateral: ${error.
 process.on('unhandledRejection', (error) => { console.error(`collateral: ${error?.message || error}`); process.exit(2); });
 
 const [baseUrl, candidateUrl, keyList, routeList, mode] = process.argv.slice(2);
-const PIXEL_DELTA = 24, PIXEL_SHARE = 0.001;
+const PIXEL_DELTA = 24, PIXEL_LIMIT = Number(process.env.COLLATERAL_PIXEL_LIMIT ?? 0);
 if (!baseUrl || !candidateUrl || !keyList || !routeList) process.exit(2);
 const keys = keyList.split(',').map((key) => { const at = key.indexOf(':'); return [key.slice(0, at), key.slice(at + 1)]; })
   .filter(([kind]) => ['group', 'link', 'img'].includes(kind));
@@ -106,7 +106,7 @@ async function pixelDiff(page, a, b) {
         count++; const row = Math.floor(i / 4 / x.width); top = Math.min(top, row); bottom = Math.max(bottom, row);
       }
     }
-    return { share: Number((count / (p.length / 4)).toFixed(5)), rows: count ? [top, bottom] : null };
+    return { count, rows: count ? [top, bottom] : null };
   }, [a, b, PIXEL_DELTA]);
 }
 
@@ -135,7 +135,8 @@ for (const route of routeList.split(',')) {
     }
     if (mode === 'pixels') {
       const diff = await pixelDiff(page, sides[0].shot, sides[1].shot);
-      if (diff.size || diff.share > PIXEL_SHARE) changes.push({ route, width, pixels: diff });
+      if (process.env.COLLATERAL_DEBUG) console.error(JSON.stringify({ route, width, pixels: diff }));
+      if (diff.size || diff.count > PIXEL_LIMIT) changes.push({ route, width, pixels: diff });
     }
     const [before, after] = sides;
     const roots = [...scopes(before), ...scopes(after)];
