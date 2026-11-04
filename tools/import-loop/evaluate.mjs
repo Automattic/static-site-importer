@@ -185,7 +185,24 @@ if (!reportFile) {
   const metrics = importReport.design_system?.metrics || {};
   const quality = importReport.quality || {};
   if (quality.status && quality.status !== 'pass' && quality.status !== 'passed') report({ stage: 'editability', check: 'quality_status', owner_repo: stageOwners.import, subject: quality.status, evidence: quality.status });
-  for (const key of ['raw_html_companion_block_count', 'invalid_block_count']) if (quality[key] > 0) report({ stage: 'editability', check: key, owner_repo: 'blocks-engine', subject: key, evidence: quality[key] });
+  if (quality.invalid_block_count > 0) report({ stage: 'editability', check: 'invalid_block_count', owner_repo: 'blocks-engine', subject: 'invalid_block_count', evidence: quality.invalid_block_count });
+  // One finding per raw-HTML companion block, keyed by its slug (the prefix is
+  // per site). The report does not map documents to routes, so each finding
+  // lists every route; triage keeps the cells its predicate reproduces at trunk.
+  if (quality.raw_html_companion_block_count > 0) {
+    const bySlug = new Map();
+    for (const d of importReport.diagnostics || []) {
+      if (d.type !== 'raw_html_companion_block') continue;
+      const slug = String(d.context?.block_name || '').split('/').pop() || 'unknown';
+      const entry = bySlug.get(slug) || { count: 0, documents: new Set(), selectors: new Set() };
+      entry.count += 1; entry.documents.add(d.source_path); entry.selectors.add(d.selector);
+      bySlug.set(slug, entry);
+    }
+    for (const [slug, entry] of bySlug) {
+      const evidence = { count: entry.count, documents: [...entry.documents].sort(), selectors: [...entry.selectors].slice(0, 8) };
+      for (const route of routes) report({ stage: 'editability', check: 'raw_html_companion_block_count', owner_repo: 'blocks-engine', subject: slug, evidence, route });
+    }
+  }
   if (metrics.restyle_coverage < THRESHOLDS.restyle_coverage) report({ stage: 'theme', check: 'restyle_coverage_low', owner_repo: 'blocks-engine', subject: 'restyle_coverage', evidence: { restyle_coverage: metrics.restyle_coverage, refused_value_count: metrics.refused_value_count, threshold: THRESHOLDS.restyle_coverage } });
   if (metrics.generated_to_source_css_ratio > THRESHOLDS.css_ratio) report({ stage: 'theme', check: 'theme_css_bloat', owner_repo: 'blocks-engine', subject: 'generated_to_source_css_ratio', evidence: { ratio: metrics.generated_to_source_css_ratio, theme_css_bytes: metrics.theme_css_bytes, unique_source_css_bytes: metrics.unique_source_css_bytes, threshold: THRESHOLDS.css_ratio } });
 }
