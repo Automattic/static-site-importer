@@ -47,6 +47,8 @@ function get_post_meta( int $id, string $key, bool $single ) { unset( $single );
 function wp_json_encode( $value ) { return json_encode( $value ); }
 function wp_delete_comment( int $id, bool $force ) { unset( $force ); if ( ! isset( $GLOBALS['ssi_default_comments'][ $id ] ) ) { return false; } unset( $GLOBALS['ssi_default_comments'][ $id ] ); return true; }
 function wp_delete_post( int $id, bool $force ) { unset( $force ); if ( ! isset( $GLOBALS['ssi_default_posts'][ $id ] ) ) { return false; } $post = $GLOBALS['ssi_default_posts'][ $id ]; unset( $GLOBALS['ssi_default_posts'][ $id ] ); return $post; }
+function add_filter( $hook, $callback, $priority = 10 ) {}
+function remove_filter( $hook, $callback, $priority = 10 ) {}
 class WP_Privacy_Policy_Content { public static function get_default_content(): string { return 'Core privacy policy'; } }
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-default-content.php';

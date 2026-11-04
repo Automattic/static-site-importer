@@ -244,6 +244,7 @@
           "tests/smoke-content-only-policy.php",
           "tests/smoke-current-site-capabilities.php",
           "tests/smoke-default-content.php",
+          "tests/smoke-privacy-seed-url-change.php",
           "tests/smoke-dependency-manager-readiness.php",
           "tests/smoke-design-system-report-absent.php",
           "tests/smoke-design-system-report-present.php",

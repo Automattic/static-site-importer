@@ -21,15 +21,9 @@ final class Static_Site_Importer_Default_Content {
 			return $result;
 		}
 
-		foreach (
-			array(
-				1 => 'post',
-				2 => 'page',
-				3 => 'page',
-			) as $id => $post_type
-		) {
+		foreach ( array( 1, 2, 3 ) as $id ) {
 			$post = get_post( $id );
-			if ( ! $post instanceof WP_Post || $post_type !== $post->post_type || ! self::is_core_seed( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
+			if ( ! $post instanceof WP_Post || ! self::is_core_seed( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
 				continue;
 			}
 			$result['posts'][] = array(
@@ -51,15 +45,20 @@ final class Static_Site_Importer_Default_Content {
 
 	/** Whether a discovered seed remains safe to materialize through the normal existing-post lifecycle. */
 	public static function is_untouched_seed( array $discovery, WP_Post $post ): bool {
+		return null === self::declined_adoption_reason( $discovery, $post );
+	}
+
+	/** Explain why an occupant cannot be adopted as untouched installation content. */
+	public static function declined_adoption_reason( array $discovery, WP_Post $post ): ?string {
 		if ( empty( $discovery['eligible'] ) ) {
-			return false;
+			return 'site_not_fresh';
 		}
 		foreach ( $discovery['posts'] ?? array() as $candidate ) {
-			if ( (int) ( $candidate['id'] ?? 0 ) === (int) $post->ID && hash_equals( (string) ( $candidate['fingerprint'] ?? '' ), self::post_fingerprint( $post ) ) ) {
-				return true;
+			if ( (int) ( $candidate['id'] ?? 0 ) === (int) $post->ID ) {
+				return hash_equals( (string) ( $candidate['fingerprint'] ?? '' ), self::post_fingerprint( $post ) ) ? null : 'record_changed';
 			}
 		}
-		return false;
+		return self::core_seed_mismatch( $post, (int) $post->ID ) ?? 'not_discovered';
 	}
 
 	/** Remove records that still exactly match their pre-import fingerprints. */
@@ -127,26 +126,43 @@ final class Static_Site_Importer_Default_Content {
 	}
 
 	private static function is_core_seed( WP_Post $post, int $id ): bool {
-		if ( ! str_ends_with( (string) $post->guid, 1 === $id ? '/?p=1' : '/?page_id=' . $id ) ) {
-			return false;
+		return null === self::core_seed_mismatch( $post, $id );
+	}
+
+	private static function core_seed_mismatch( WP_Post $post, int $id ): ?string {
+		if ( ! in_array( $id, array( 1, 2, 3 ), true ) || ( 1 === $id ? 'post' : 'page' ) !== $post->post_type || ! str_ends_with( (string) $post->guid, 1 === $id ? '/?p=1' : '/?page_id=' . $id ) ) {
+			return 'not_core_seed';
 		}
 		if ( 3 !== $id ) {
-			return true;
+			return null;
+		}
+		if ( 3 !== (int) get_option( 'wp_page_for_privacy_policy', 0 ) ) {
+			return 'option_mismatch';
 		}
 
 		// wp_install_defaults() creates this draft from the localized, filterable
 		// core source and assigns this exact page to the privacy-policy option.
-		if ( 3 !== (int) get_option( 'wp_page_for_privacy_policy', 0 ) || 'draft' !== $post->post_status || __( 'Privacy Policy' ) !== $post->post_title || __( 'privacy-policy' ) !== $post->post_name || 'default' !== (string) get_post_meta( 3, '_wp_page_template', true ) ) { // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- These seed strings belong to WordPress core's default text domain.
-			return false;
+		if ( 'draft' !== $post->post_status || __( 'Privacy Policy' ) !== $post->post_title || __( 'privacy-policy' ) !== $post->post_name || 'default' !== (string) get_post_meta( 3, '_wp_page_template', true ) ) { // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- These seed strings belong to WordPress core's default text domain.
+			return 'metadata_mismatch';
 		}
 		if ( ! class_exists( 'WP_Privacy_Policy_Content' ) ) {
 			$source = ABSPATH . 'wp-admin/includes/class-wp-privacy-policy-content.php';
 			if ( ! is_readable( $source ) ) {
-				return false;
+				return 'core_source_unavailable';
 			}
 			require_once $source;
 		}
-		return WP_Privacy_Policy_Content::get_default_content() === (string) $post->post_content;
+		// Core baked the installation home into the draft. Rebuild that exact
+		// source, without relaxing the comparison for any user-authored text.
+		$install_home     = substr( (string) $post->guid, 0, -strlen( '/?page_id=3' ) );
+		$use_install_home = static fn () => $install_home;
+		add_filter( 'option_home', $use_install_home, PHP_INT_MAX );
+		try {
+			$expected = WP_Privacy_Policy_Content::get_default_content();
+		} finally {
+			remove_filter( 'option_home', $use_install_home, PHP_INT_MAX );
+		}
+		return $expected === (string) $post->post_content ? null : 'content_mismatch';
 	}
 
 	private static function post_fingerprint( WP_Post $post ): string {

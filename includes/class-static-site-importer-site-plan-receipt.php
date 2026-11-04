@@ -58,7 +58,10 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 	public static function with_error_diagnostics( array $state, WP_Error $error ): array {
 		$state['diagnostics'][]  = array( 'reason_code' => $error->get_error_code() );
 		$state['failure_reason'] = $error->get_error_code();
-		$data                    = $error->get_error_data();
+		if ( 'post_conflict' === $error->get_error_code() ) {
+			$state['failure_message'] = $error->get_error_message();
+		}
+		$data = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
 			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $diagnostics ) : $diagnostics;
@@ -110,7 +113,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 		if ( isset( $state['failure_reason'] ) && is_string( $state['failure_reason'] ) && '' !== $state['failure_reason'] ) {
 			$errors[] = array(
 				'code'    => $state['failure_reason'],
-				'message' => class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ? Static_Site_Importer_Public_Error_Projection::project_public_error_message( $state['failure_reason'] ) : 'Materialization failed.',
+				'message' => $state['failure_message'] ?? ( class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ? Static_Site_Importer_Public_Error_Projection::project_public_error_message( $state['failure_reason'] ) : 'Materialization failed.' ),
 			);
 		}
 		$receipt = array(
