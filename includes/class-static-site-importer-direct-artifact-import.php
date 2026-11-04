@@ -1458,6 +1458,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( true !== $allowed ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_rejected', 'The direct artifact checkpoint publication was rejected.' );
 		}
+		if ( 'receipt' === $kind ) {
+			// Keep observations durable for worker adoption, but outside checkpoint identities.
+			$timings = $payload['receipt']['work']['step_timings'] ?? array();
+			unset( $payload['receipt']['work']['step_timings'] );
+			$write = $workspace->publish_json_once( $relative . '.timings', $timings );
+			if ( is_wp_error( $write ) ) {
+				return $write;
+			}
+		}
 		$payload_hash = self::hash( $payload );
 		$shards       = array();
 		if ( in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
@@ -1595,7 +1604,30 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		return $record;
 	}
 
-	private static function write_run( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
+	private static function write_run( Static_Site_Importer_Artifact_Run_Workspace $workspace, array &$run ) {
+		if ( empty( $run['refs']['composed'] ) && ! empty( $run['refs']['receipts'] ) ) {
+			// Rebuild from adopted pages, never from the previous invocation's totals.
+			$steps = array();
+			foreach ( $run['page_ids'] as $page_id ) {
+				if ( ! isset( $run['refs']['receipts'][ $page_id ] ) ) {
+					continue;
+				}
+				$raw = $workspace->read_raw( self::page_file( 'receipts', $page_id ) . '.timings' );
+				foreach ( ( is_string( $raw ) ? json_decode( $raw, true ) : null ) ?? array() as $timing ) {
+					$name = $timing['step'];
+					if ( ! isset( $steps[ $name ] ) ) {
+						$steps[ $name ] = array(
+							'step'  => $name,
+							'ms'    => 0,
+							'calls' => 0,
+						);
+					}
+					$steps[ $name ]['ms']    += $timing['ms'];
+					$steps[ $name ]['calls'] += $timing['calls'];
+				}
+			}
+			$run['step_timings']['compile'] = array_values( $steps );
+		}
 		$allowed = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_direct_artifact_checkpoint_publish', true, 'run', 'run.json', self::evidence( $run ) ) : true;
 		if ( is_wp_error( $allowed ) ) {
 			return $allowed;
