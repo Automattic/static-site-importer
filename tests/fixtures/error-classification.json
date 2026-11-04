@@ -589,7 +589,6 @@
     "taxonomy_term_resolution_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "taxonomy_term_reference_read_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "taxonomy_term_reference_unresolved": { "class": "integrity", "owning_layer": "blocks-engine" },
-    "taxonomy_term_reference_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "taxonomy_unavailable": { "class": "operational", "owning_layer": "wordpress" },
     "theme_bootstrap_merge_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "theme_bootstrap_merge_read_failed": { "class": "operational", "owning_layer": "blocks-engine" },
