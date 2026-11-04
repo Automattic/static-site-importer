@@ -708,6 +708,25 @@ $work_term = $GLOBALS['ssi_plan_terms']['category:work']['term_id'] ?? 0;
 $assert( 'completed' === ( $taxonomy_receipt['status'] ?? '' ) && ! isset( $taxonomy_pages['archives/personal.html'], $taxonomy_pages['archives/work.html'] ), 'SSI materializes native terms without writing either captured archive as a frozen page: ' . wp_json_encode( array( 'status' => $taxonomy_receipt['status'] ?? null, 'errors' => $taxonomy_receipt['errors'] ?? array(), 'pages' => $taxonomy_pages ) ) );
 $assert( $personal_term > 0 && $work_term > 0 && in_array( $personal_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_first ]['category'] ?? array(), true ) && in_array( $work_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_second ]['category'] ?? array(), true ), 'SSI assigns only source-proven memberships to canonical imported posts' );
 $assert( '' === (string) ( $GLOBALS['ssi_plan_options']['category_base'] ?? '' ) && array() === $GLOBALS['ssi_plan_rewrite_rules'] && ! isset( $taxonomy_receipt['rollback']['options']['rewrite_rules'] ), 'Taxonomy persistence neither registers nor journals archive rewrites or changes the category base.' );
+// The pinned producer may lift a shared article into a dedicated single
+// template and assign individual posts to it through `_wp_page_template`.
+// The planned page-templates wrapper registers exactly those shipped-and-
+// assigned templates for the materialization window; persistence must keep
+// every assignment so the incoming theme renders the post through it.
+$assigned_templates = array();
+foreach ( is_array( $taxonomy_plan['pages'] ?? null ) ? $taxonomy_plan['pages'] : array() as $assigned_page ) {
+	$template_slug = is_array( $assigned_page ) ? ( $assigned_page['metadata']['post_meta']['_wp_page_template'] ?? null ) : null;
+	if ( is_string( $template_slug ) && '' !== $template_slug && is_string( $assigned_page['source_path'] ?? null ) ) {
+		$assigned_templates[ $assigned_page['source_path'] ] = $template_slug;
+	}
+}
+$assigned_templates_persisted = array() !== $assigned_templates;
+foreach ( $assigned_templates as $assigned_source => $assigned_slug ) {
+	$assigned_post_id = (int) ( $taxonomy_pages[ $assigned_source ] ?? 0 );
+	$assigned_templates_persisted = $assigned_templates_persisted && $assigned_post_id > 0
+		&& $assigned_slug === ( $GLOBALS['ssi_plan_posts'][ $assigned_post_id ]['meta_input']['_wp_page_template'] ?? null );
+}
+$assert( $assigned_templates_persisted, 'plan pages assigned a shipped custom template keep their _wp_page_template assignment through materialization' );
 $owner_term = wp_insert_term( 'Owner selected', 'category', array( 'slug' => 'owner-selected' ) );
 wp_set_object_terms( $taxonomy_second, array( $personal_term, $work_term, (int) $owner_term['term_id'] ), 'category', false );
 $recategorized_plan = ( new ArtifactCompiler() )->compile( $taxonomy_source_for( true ) )->toArray()['source_reports']['wordpress_site_plan'];
@@ -4170,6 +4189,16 @@ function add_action( string $hook, $callback ): void {
 	$GLOBALS['ssi_plan_hooks'][ $hook ] = $callback; }
 function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
 	$GLOBALS['ssi_plan_filters'][ $hook ][ $priority ][] = array( 'callback' => $callback, 'accepted_args' => $accepted_args ); }
+function remove_filter( string $hook, $callback, int $priority = 10 ): bool {
+	$registered = $GLOBALS['ssi_plan_filters'][ $hook ][ $priority ] ?? array();
+	foreach ( $registered as $index => $entry ) {
+		if ( ( $entry['callback'] ?? null ) === $callback ) {
+			unset( $GLOBALS['ssi_plan_filters'][ $hook ][ $priority ][ $index ] );
+			return true;
+		}
+	}
+	return false;
+}
 function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '', string $media = 'all' ): void {
 	$GLOBALS['ssi_plan_styles'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'media' => $media, 'hook' => (string) ( $GLOBALS['ssi_plan_style_hook'] ?? '' ) ); } // phpcs:ignore WordPress.WP.EnqueuedResourcesParameters.NonEnqueuedScript -- Deterministic test-only enqueue capture.
 function get_the_ID(): int {

@@ -1324,8 +1324,18 @@ $assert( empty( $capture_result['continuation'] ) && ! empty( $capture_result['s
 $capture_compiled = end( $GLOBALS['ssi_direct_compiled_results'] );
 $capture_output = (string) wp_json_encode( $capture_compiled );
 $assert( ! str_contains( $capture_output, '_route_map_missing' ), 'capture request-bundle must retain the receipt route map for every projector' );
-$capture_markup = implode( '\n', array_column( $capture_compiled['wordpress_site_plan']['pages'] ?? array(), 'canonical_block_markup' ) );
+// A captured dialog mounts in its trigger's header so it travels with the
+// trigger when that header is extracted as a shared template part; assert
+// the projection across every persisted plan document, not pages alone.
+$capture_documents = array_merge(
+	$capture_compiled['wordpress_site_plan']['pages'] ?? array(),
+	$capture_compiled['wordpress_site_plan']['templates'] ?? array(),
+	$capture_compiled['wordpress_site_plan']['template_parts'] ?? array()
+);
+$capture_markup = implode( '\n', array_column( $capture_documents, 'canonical_block_markup' ) );
 $assert( str_contains( $capture_markup, '<dialog' ) && str_contains( $capture_markup, 'data-blocks-engine-triggers="menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
+$capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), 'data-blocks-engine-triggers="menu-toggle"' ) ) );
+$assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '<dialog' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
