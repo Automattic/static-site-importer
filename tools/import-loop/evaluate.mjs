@@ -25,17 +25,18 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, inde
 for (const required of ['url', 'wp-url', 'site', 'source', 'out']) if (!args[required]) throw new Error(`evaluate_argument_missing: --${required}`);
 import { chromium } from 'playwright';
 import { fitViewport, measure } from './measure.mjs';
+import { editorPages } from './editor.mjs';
 
 const stageOwners = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(new URL('./repos.json', import.meta.url), 'utf8'))).map(([id, repo]) => [repo.stage, id]));
 
 const WIDTHS = [390, 768, 1440];
-const THRESHOLDS = { visible_text_ratio: 0.7, restyle_coverage: 0.5, css_ratio: 2, cover_share: 0.5, aspect_change: 0.2 };
+const THRESHOLDS = { visible_text_ratio: 0.7, restyle_coverage: 0.5, css_ratio: 2, cover_share: 0.5, aspect_change: 0.2, block_depth: 8 };
 const sourceUrl = new URL(args.url);
 const wpUrl = new URL(args['wp-url']);
 fs.mkdirSync(args.out, { recursive: true });
 
 const findings = new Map();
-const ADVISORY = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status']);
+const ADVISORY = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep']);
 function report({ stage, check, owner_repo, subject, evidence, route = null, width = null }) {
   const severity = ADVISORY.has(check) ? 'advisory' : 'blocker';
   const signature = createHash('sha1').update(JSON.stringify([stage, check, owner_repo, subject])).digest('hex').slice(0, 12);
@@ -205,6 +206,31 @@ if (!reportFile) {
   }
   if (metrics.restyle_coverage < THRESHOLDS.restyle_coverage) report({ stage: 'theme', check: 'restyle_coverage_low', owner_repo: 'blocks-engine', subject: 'restyle_coverage', evidence: { restyle_coverage: metrics.restyle_coverage, refused_value_count: metrics.refused_value_count, threshold: THRESHOLDS.restyle_coverage } });
   if (metrics.generated_to_source_css_ratio > THRESHOLDS.css_ratio) report({ stage: 'theme', check: 'theme_css_bloat', owner_repo: 'blocks-engine', subject: 'generated_to_source_css_ratio', evidence: { ratio: metrics.generated_to_source_css_ratio, theme_css_bytes: metrics.theme_css_bytes, unique_source_css_bytes: metrics.unique_source_css_bytes, threshold: THRESHOLDS.css_ratio } });
+}
+
+// Editability as an editor meets it: each page opened in the block editor.
+// A block the editor cannot validate is a blocker. So is each block outside
+// WordPress core: the importer's generated blocks keep source structure an
+// editor cannot change with core tools. Raw HTML companions are already
+// reported by slug above. Deep nesting is advisory.
+const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
+if (args['wp-cli']) {
+  let pages = [];
+  try {
+    pages = await editorPages(args['wp-url'], args.site, args['wp-cli']);
+  } catch (error) {
+    report({ stage: 'editability', check: 'editor_unreachable', owner_repo: stageOwners.import, subject: 'block_editor', evidence: String(error.message || error).slice(0, 300) });
+  }
+  const tally = (list, key) => list.reduce((m, b) => m.set(key(b), (m.get(key(b)) || 0) + 1), new Map());
+  for (const { route, blocks } of pages) {
+    const cell = routes.includes(route) ? { route, width: 1440 } : { route: null };
+    for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { route, count }, ...cell });
+    for (const [slug, count] of tally(blocks.filter((b) => !b.name.startsWith('core/')), (b) => b.name.split('/').pop())) {
+      if (!rawSlugs.has(slug)) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject: slug, evidence: { route, count, of: blocks.length }, ...cell });
+    }
+    const depth = Math.max(0, ...blocks.map((b) => b.depth));
+    if (depth > THRESHOLDS.block_depth) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { route, depth, threshold: THRESHOLDS.block_depth }, ...cell });
+  }
 }
 
 const list = [...findings.values()].sort((a, b) => a.signature.localeCompare(b.signature));

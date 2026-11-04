@@ -82,7 +82,9 @@
           "--source",
           "{{steps.import.output/source}}",
           "--out",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval"
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
         ]
       }
     },
