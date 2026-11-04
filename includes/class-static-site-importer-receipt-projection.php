@@ -213,6 +213,18 @@ class Static_Site_Importer_Receipt_Projection {
 			$report->set_section( 'theme_runtime', $runtime );
 			Static_Site_Importer_Quality_Gates::mark_companion_script_fallbacks_materialized( $report, $runtime['runtime_scripts'] ?? array(), (string) $runtime['owner_slug'], 'generated_theme' );
 		}
+		// Both runtime owners feed the same block-definition analysis. Theme-owned
+		// definitions live in the resolved writes rather than a companion payload.
+		$runtime_blocks = $plan['source_reports']['companion_plugin_payload']['blocks'] ?? array();
+		foreach ( $plan['writes'] ?? array() as $write ) {
+			if ( 1 !== preg_match( '#^ssi-runtime/blocks/[^/]+/block\.json$#', $write['target_path'] ?? '' ) ) {
+				continue;
+			}
+			$metadata = json_decode( $write['payload']['data'] ?? '', true );
+			if ( is_array( $metadata ) ) {
+				$runtime_blocks[] = array( 'block_json' => $metadata );
+			}
+		}
 		// Every block document the import writes — the persisted page content,
 		// the generated templates/*.html and the shared parts/*.html — is counted
 		// by the same analysis, so a raw block in the site shell fails the
@@ -231,7 +243,7 @@ class Static_Site_Importer_Receipt_Projection {
 				)
 			),
 			$report,
-			$plan['source_reports']['companion_plugin_payload']['blocks'] ?? array()
+			$runtime_blocks
 		);
 		// Page markup is persisted in WordPress and analyzed above; the report
 		// keeps each document's identity, not a second copy of its content.

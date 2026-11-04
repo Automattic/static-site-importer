@@ -29,6 +29,7 @@ require_once ABSPATH . 'includes/class-static-site-importer-report-diagnostics.p
 require_once ABSPATH . 'includes/class-static-site-importer-block-document-reporter.php';
 require_once ABSPATH . 'includes/class-static-site-importer-quality-gates.php';
 require_once ABSPATH . 'includes/class-static-site-importer-quality-budget-admission.php';
+require_once ABSPATH . 'includes/class-static-site-importer-receipt-projection.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -60,4 +61,31 @@ $assert( $documents[0]['path'] === $diagnostic['source'] && 'generated_theme_blo
 $assert( true === $quality['pass'] && false === $quality['fail_import'] && array() === $quality['failure_reasons'], 'Reported companions do not fail quality.' );
 $admission = Static_Site_Importer_Quality_Budget_Admission::evaluate( array(), array(), array( 'quality_budget' => array( 'mode' => 'production', 'max_core_html_block_count' => 0, 'max_fallback_count' => 0 ) ), $report->to_array() );
 $assert( ! Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $admission ), 'Companions do not fail quality budget admission.' );
+// Theme-owned runtimes carry block.json in plan writes, not a companion payload.
+$receipt = array(
+	'status' => 'completed',
+	'theme' => array( 'slug' => 'raw-html-theme', 'dir' => sys_get_temp_dir() . '/raw-html-theme' ),
+	'completed' => array(
+		'theme_runtime' => array( 'status' => 'theme_owned', 'owner' => 'theme', 'owner_slug' => 'raw-html-theme', 'block_names' => array( 'example/declared', 'example/responsive-layout' ), 'runtime_scripts' => array() ),
+	),
+	'plan' => array(
+		'source' => array( 'source_hash' => 'raw-html-theme', 'provenance' => array() ),
+		'template_parts' => array(),
+		'assets' => array(),
+		'pages' => array( array( 'source_path' => 'index.html', 'slug' => 'home', 'entrypoint' => true, 'reconciliation_identity' => 'home', 'content_hash' => 'home', 'route' => array( 'path' => '/', 'permalink' => '/' ), 'post_type' => 'page', 'resolved_block_markup' => $documents[0]['content'] ) ),
+		'writes' => array_map(
+			static fn( $definition ) => array(
+				'kind' => 'theme_bootstrap',
+				'target_path' => 'ssi-runtime/blocks/' . basename( $definition['block_json']['name'] ) . '/block.json',
+				'payload' => array( 'encoding' => 'utf8', 'data' => wp_json_encode( $definition['block_json'] ) ),
+			),
+			$definitions
+		),
+	),
+);
+$projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, array(), array(), array(), array(), 'raw-html-theme-run', array(), array() );
+$theme_report = $projection['report'];
+$assert( 'runtime_owned_by_generated_theme' === $theme_report['companion_plugin_materialization']['reason'], 'Regression exercises the theme-owned runtime without a companion payload.' );
+$assert( $theme_report['materialized_content']['block_documents'][0]['raw_html_companion_block_count'] >= 1, 'Theme-owned raw HTML blocks count in the materialized document report.' );
+$assert( 1 === $theme_report['quality']['raw_html_companion_block_count'], 'Theme-owned metadata uses the same raw HTML classification as companion metadata.' );
 echo "PASS: raw HTML companion quality\n";
