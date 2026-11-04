@@ -84,7 +84,11 @@ class WP_Post {
 	public string $post_type;
 	public string $post_status;
 	public string $post_content;
+	public string $post_title;
+	public string $guid;
 	public function __construct( int $id ) {
+		$this->post_title   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_title'] ?? '' );
+		$this->guid         = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['guid'] ?? '' );
 		$this->ID           = $id;
 		$this->post_name    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
 		$this->post_type    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
@@ -178,7 +182,13 @@ function wp_remote_retrieve_response_code( $response ): int {
 function wp_remote_retrieve_body( $response ): string {
 	return (string) ( $response['body'] ?? '' ); }
 function get_option( string $key, mixed $default = false ): mixed {
-	return $GLOBALS['ssi_plan_options'][ $key ] ?? $default; }
+	$value = $GLOBALS['ssi_plan_options'][ $key ] ?? $default;
+	foreach ( $GLOBALS['ssi_plan_filters'][ 'option_' . $key ] ?? array() as $callbacks ) {
+		foreach ( $callbacks as $entry ) {
+			$value = ( $entry['callback'] )( $value );
+		}
+	}
+	return $value; }
 function esc_html( string $value ): string {
 	return htmlspecialchars( $value, ENT_QUOTES, 'UTF-8', false ); }
 function sanitize_option( string $key, mixed $value ): mixed {
@@ -484,6 +494,10 @@ $normalize_receipt = static function ( mixed $value ) use ( &$normalize_receipt 
 	}
 	return $value;
 };
+
+if ( defined( 'SSI_PLAN_HARNESS_ONLY' ) ) {
+	return;
+}
 
 $theme_generator_source      = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
 $prepared_application_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-prepared-plan-application.php' );

@@ -685,6 +685,18 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// overwrite decision; anything that predates the run still conflicts.
 			$dependency_created = $conflict && ! $default_content_seed && self::post_created_by_dependency_materialization( $conflict, $state['args'] );
 			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! $default_content_seed && ! $dependency_created ) {
+				$reason     = Static_Site_Importer_Default_Content::declined_adoption_reason( $state['default_content'], $conflict );
+				$message    = sprintf( 'Route %s is occupied by post %d (type %s, status %s); seed adoption declined: %s.', $route, $conflict->ID, $conflict->post_type, $conflict->post_status, $reason );
+				$diagnostic = array(
+					'reason_code'              => 'post_conflict',
+					'route'                    => $route,
+					'post_id'                  => (int) $conflict->ID,
+					'post_type'                => $conflict->post_type,
+					'post_status'              => $conflict->post_status,
+					'declined_adoption_reason' => $reason,
+				);
+				// ssi-error-class: integrity
+				$state['preflight_error'] = new WP_Error( 'post_conflict', $message, array( 'diagnostics' => array( $diagnostic ) ) );
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'post_conflict' );
 			}
