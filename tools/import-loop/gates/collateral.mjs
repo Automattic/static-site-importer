@@ -10,7 +10,12 @@
 // the element labelled <label>, `link:<host>` the links to <host>, `img:<name>`
 // that image and its parent. A source group label need not survive the import,
 // so a group finding also names its members' keys. Findings without element
-// keys have no scope and pass.
+// keys have no style scope and skip the style comparison.
+//
+// Images are checked whatever the scope: every rendered image outside the
+// subject keeps its rendered size (2px tolerance) and stays rendered. A fix
+// that changes how media is emitted (a carrier block lowered to core/image,
+// a new wrapper) must not resize, crop, or drop the images it touches.
 //
 // Usage: node collateral.mjs <base url> <candidate url> <key,...> <route,...>
 // Exit 0: no change outside the subject. 1: changes outside it (on stderr).
@@ -24,10 +29,7 @@ const [baseUrl, candidateUrl, keyList, routeList] = process.argv.slice(2);
 if (!baseUrl || !candidateUrl || !keyList || !routeList) process.exit(2);
 const keys = keyList.split(',').map((key) => { const at = key.indexOf(':'); return [key.slice(0, at), key.slice(at + 1)]; })
   .filter(([kind]) => ['group', 'link', 'img'].includes(kind));
-if (!keys.length) {
-  console.error(`collateral: ${keyList} has no element scope; not checked`);
-  process.exit(0);
-}
+if (!keys.length) console.error(`collateral: ${keyList} has no element scope; style comparison skipped, image geometry checked`);
 
 const WIDTHS = [390, 768, 1440];
 const PROPERTIES = [
@@ -67,6 +69,7 @@ const snapshot = ({ properties }) => {
       label: el.getAttribute('aria-label')?.trim().toLowerCase() || null,
       link: el.tagName === 'A' && el.getAttribute('href') && !el.getAttribute('href').startsWith('#') ? host(el) : null,
       img: file(el),
+      box: el.tagName === 'IMG' ? (({ width, height }) => [Math.round(width), Math.round(height)])(el.getBoundingClientRect()) : null,
       style: Object.fromEntries(properties.map((p) => [p, p === 'background-image' ? style.getPropertyValue(p).slice(0, 200) : style.getPropertyValue(p)])),
     };
   });
@@ -95,6 +98,15 @@ for (const route of routeList.split(',')) {
     const [before, after] = sides;
     const roots = [...scopes(before), ...scopes(after)];
     const previous = new Map(before.map((el) => [el.path, el]));
+    // Images pair by file name and occurrence, since a fix may move them in the tree.
+    const images = (els) => { const seen = new Map(); return new Map(els.filter((el) => el.box && el.img && !keys.some(([k, n]) => k === 'img' && n === el.img)).map((el) => { const n = (seen.get(el.img) || 0) + 1; seen.set(el.img, n); return [`${el.img}#${n}`, el]; })); };
+    const afterImages = images(after);
+    for (const [id, was] of images(before)) {
+      const now = afterImages.get(id);
+      const box = now?.box || [0, 0];
+      if (Math.abs(box[0] - was.box[0]) > 2 || Math.abs(box[1] - was.box[1]) > 2) changes.push({ route, width, image: id, box: [was.box, now ? box : 'missing'] });
+    }
+    if (!keys.length) continue;
     for (const el of after) {
       const was = previous.get(el.path);
       if (!was || inside(el.path, roots)) continue;
@@ -106,5 +118,5 @@ for (const route of routeList.split(',')) {
 await browser.close();
 for (const change of changes.slice(0, 20)) console.error(JSON.stringify(change));
 if (changes.length > 20) console.error(`... ${changes.length - 20} more`);
-console.error(`collateral: ${changes.length} element style change(s) outside ${keyList}`);
+console.error(`collateral: ${changes.length} change(s) outside ${keyList}`);
 process.exit(changes.length ? 1 : 0);
