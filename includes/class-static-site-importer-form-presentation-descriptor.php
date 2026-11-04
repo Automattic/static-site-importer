@@ -91,13 +91,20 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'shell' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'shell' ),
-				'properties' => array(),
+				// The country trigger inherits the shell's text (`font:inherit`,
+				// `color:inherit`), so the shell carries the control's text paint:
+				// the trigger states the selector at the field's own size and colour.
+				'properties' => array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight' ),
 				'resets'     => array(
 					'padding'     => '0',
 					'border'      => '0',
 					'background'  => 'transparent',
 					'text-indent' => '0',
 					'gap'         => '0',
+					// Inside a control box (a flex frame) the shell fills the frame
+					// as the source's trigger and input did together.
+					'flex'        => '1 1 auto',
+					'min-width'   => '0',
 				),
 				'priority'   => 'important',
 				'editor'     => array( 'drop' => true ),
@@ -138,6 +145,9 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					'display'     => 'flex',
 					'align-items' => 'center',
 					'height'      => '100%',
+					// The trigger states the field's text paint (the shell's), not
+					// a prefix colour the source element's class rule names.
+					'color'       => 'inherit',
 				),
 				'priority'   => 'important',
 				'editor'     => array( 'drop' => true ),

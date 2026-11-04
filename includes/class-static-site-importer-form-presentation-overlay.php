@@ -1500,12 +1500,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'max-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'flex-direction', 'align-items', 'align-self', 'order', 'width', 'height', 'appearance', 'transform', 'word-break', '--jetpack--contact-form--input-height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'max-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'flex-direction', 'align-items', 'align-self', 'order', 'width', 'height', 'appearance', 'transform', 'word-break', 'color', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
-			// A transform or word-break reset may only release the provider's own default.
-			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) || ( 'transform' === $property && 'none' !== $value ) || ( 'word-break' === $property && 'normal' !== $value ) ) {
+			// A transform or word-break reset may only release the provider's own
+			// default, and a colour reset may only defer to the parent's paint.
+			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) || ( 'transform' === $property && 'none' !== $value ) || ( 'word-break' === $property && 'normal' !== $value ) || ( 'color' === $property && 'inherit' !== $value ) ) {
 				return false;
 			}
 		}
