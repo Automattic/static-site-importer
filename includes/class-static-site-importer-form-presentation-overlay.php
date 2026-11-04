@@ -30,7 +30,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
-	private const MEDIA_FEATURE      = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+	private const MEDIA_FEATURE = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
 	// Builders such as Wix state a range as `screen and (min-width: 1px) and (max-width: 750px)`.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?' . self::MEDIA_FEATURE . '(?: and ' . self::MEDIA_FEATURE . '){0,3}';
 
