@@ -25,6 +25,9 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
  * Emits Jetpack field and contact-form block markup.
  */
 final class Static_Site_Importer_Form_Field_Markup {
+	/** The country Jetpack's phone field editor selects when none is set. */
+	private const PROVIDER_DEFAULT_COUNTRY = 'US';
+
 	/** Identify a provider-owned field companion without consuming ordinary buttons. */
 	public static function is_provider_auxiliary_button( array $controls, int $control_index ): bool {
 		$button = $controls[ $control_index ] ?? array();
@@ -53,6 +56,27 @@ final class Static_Site_Importer_Form_Field_Markup {
 		return ( '' === $popup || in_array( $popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) )
 			&& str_contains( strtolower( self::control_text( $button ) ), 'phone' )
 			&& str_contains( strtolower( self::control_text( $button ) ), 'country' );
+	}
+
+	/**
+	 * The provider phone field's country selector, for a source field whose
+	 * country picker the provider field consumes (is_provider_auxiliary_button()).
+	 *
+	 * Jetpack renders no selected country without a `default`, and its editor
+	 * fills in its own default country whenever the selector is on. The source
+	 * states no country code the provider can read, so the field keeps the
+	 * provider's default: the saved block then renders the selector the editor
+	 * shows.
+	 *
+	 * @param array<string,mixed> $attrs Telephone field attributes.
+	 * @return array<string,mixed>
+	 */
+	public static function with_country_selector( array $attrs ): array {
+		$attrs['showCountrySelector'] = true;
+		if ( '' === trim( (string) ( $attrs['default'] ?? '' ) ) ) {
+			$attrs['default'] = self::PROVIDER_DEFAULT_COUNTRY;
+		}
+		return $attrs;
 	}
 
 	/**

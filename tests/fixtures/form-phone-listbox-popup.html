@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<style>
+.phone-box{display:flex;align-items:center;border:1px solid #223;border-radius:4px}
+.phone-box input{border:0;flex:1 1 auto}
+.country{border:0;background-color:transparent}
+.country-option{display:flex;gap:8px}
+</style>
+</head>
+<body>
+<main>
+<form aria-label="Contact us">
+<label for="email">Email</label>
+<input id="email" name="email" type="email" required>
+<label for="phone">Phone</label>
+<div class="phone-root"><div class="phone-box"><span class="prefix"><span class="prefix-inner"><button class="country" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Phone. Select a country code" data-blocks-engine-capture-listbox-trigger="0"><span class="flag">+1</span></button><div hidden class="country-panel" data-blocks-engine-capture-listbox-panel="0"><div class="country-menu"><div role="listbox" class="country-list"><div role="option" id="phone_option-AD" aria-selected="false" class="country-option"><img src="https://example.com/flags/ad.svg" alt=""><span>Andorra</span> <span>+376</span></div><div role="option" id="phone_option-BE" aria-selected="false" class="country-option"><img src="https://example.com/flags/be.svg" alt=""><span>Belgium</span> <span>+32</span></div><div role="option" id="phone_option-CA" aria-selected="false" class="country-option"><img src="https://example.com/flags/ca.svg" alt=""><span>Canada</span> <span>+1</span></div></div></div></div></span></span><input id="phone" name="phone" type="tel"></div></div>
+<button type="submit">Send</button>
+</form>
+</main>
+</body>
+</html>

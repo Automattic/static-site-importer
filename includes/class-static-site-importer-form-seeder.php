@@ -630,6 +630,9 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			unset( $inner_block );
 		}
+		if ( 'jetpack/field-telephone' === ( $field_block['name'] ?? '' ) && 0 < $control_index && Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $state->controls, $control_index - 1 ) ) {
+			$field_block['attrs'] = Static_Site_Importer_Form_Field_Markup::with_country_selector( $field_block['attrs'] );
+		}
 		$state->field_blocks[ $control_index ] = $field_block;
 		$state->mapped_types[]                 = $field_block['name'];
 		$state->record_mapped( $control_index, $field_block['name'] );

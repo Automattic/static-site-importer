@@ -180,6 +180,32 @@ $collect_labels( parse_blocks( $cells_row['block_markup'] ?? '' ) );
 $checks['sibling cell labels: form maps'] = 'mapped' === $cells_row['status'];
 $checks['sibling cell labels: one label per field'] = array( 'First name', 'Last name', 'Fields marked * are required' ) === $cells_labels;
 $checks['sibling cell labels: unowned label stays authored'] = 1 === preg_match( '/authored-label \{"htmlFor":"nowhere"/', $cells_row['block_markup'] ?? '' );
+// A provider phone field renders its own country selector: the captured
+// listbox trigger it consumes takes the captured listbox panel it opens with
+// it, so the hidden option rows never replay as form copy.
+$phone_result      = ( new ArtifactCompiler() )->compile( array(
+	'entrypoint' => 'index.html',
+	'files'      => array( 'index.html' => file_get_contents( __DIR__ . '/fixtures/form-phone-listbox-popup.html' ) ),
+) )->toArray();
+$phone_plan        = $phone_result['source_reports']['wordpress_site_plan'];
+$phone_declaration = current( array_filter( $phone_plan['runtime_declarations'], static fn( array $entry ): bool => 'forms' === ( $entry['type'] ?? null ) ) );
+$phone_row         = Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $phone_declaration['payload']['entities'], $phone_plan ) ) ) )['forms'][0];
+$phone_markup      = $phone_row['block_markup'] ?? '';
+$phone_fields      = array();
+$collect_phone     = static function ( array $blocks ) use ( &$collect_phone, &$phone_fields ): void {
+	foreach ( $blocks as $block ) {
+		if ( 'jetpack/field-telephone' === $block['blockName'] ) {
+			$phone_fields[] = $block;
+		}
+		$collect_phone( $block['innerBlocks'] );
+	}
+};
+$collect_phone( parse_blocks( $phone_markup ) );
+$checks['phone popup: form maps'] = 'mapped' === $phone_row['status'] && 1 === count( $phone_fields );
+$checks['phone popup: field shows its country selector'] = true === ( $phone_fields[0]['attrs']['showCountrySelector'] ?? null ) && 'US' === ( $phone_fields[0]['attrs']['default'] ?? null );
+$checks['phone popup: captured listbox panel is dropped'] = ! str_contains( $phone_markup, 'data-blocks-engine-capture-listbox-panel' ) && ! str_contains( $phone_markup, 'country-panel' ) && ! str_contains( $phone_markup, '_option-' );
+$checks['phone popup: no option rows replay'] = ! str_contains( $phone_markup, 'Andorra' ) && ! str_contains( $phone_markup, '+376' ) && ! str_contains( $phone_markup, 'flags/ad.svg' );
+$checks['phone popup: field box stays'] = str_contains( $phone_markup, 'phone-box' );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
