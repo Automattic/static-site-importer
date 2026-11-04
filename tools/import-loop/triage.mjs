@@ -221,7 +221,7 @@ for (const item of tracked) {
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
       '',
-      `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.`,
+      `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces. Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
       ...(refuted.length ? [
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) does not fix it: on a whole re-import of the capture with that head, the predicate still exits 0 on ${refuted.map((c) => `\`${c.route}@${c.width}\``).join(', ')}. Continue on its branch.`,
