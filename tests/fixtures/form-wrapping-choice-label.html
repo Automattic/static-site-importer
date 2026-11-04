@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Consent checkbox form</title><style>
+.group{border:0;margin:0;padding:0;min-width:0}
+.rows{display:flex;flex-direction:column;gap:15px;width:313px}
+.row{display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px}
+.cell{grid-column:1/span 12}
+.caption{display:block;margin-bottom:8px;font-size:14px;font-weight:700;color:#515b2a}
+.box{border:1px solid #515b2a;border-radius:100px}
+.entry{display:block;width:100%;box-sizing:border-box;border:0;padding:8px 12px;background:transparent;font-size:15px}
+.choice{display:flex;position:relative;align-items:center;width:100%;box-sizing:border-box;font-size:15px;font-weight:700;color:#515b2a}
+.native{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);border:0}
+.glyph{display:block;width:16px;height:16px;flex-shrink:0;border:1px solid #515b2a}
+.text{flex:1 1 0%;margin-left:12px}
+.send{border:0;border-radius:100px;padding:11px 32px;background:#515b2a;color:#fff;font-weight:700}
+</style></head><body><main>
+<form aria-label="Newsletter"><fieldset class="group"><div class="rows">
+<div class="row"><div class="cell"><label for="sub-email" class="caption">Email<span aria-hidden="true">*</span></label></div><div class="cell"><div class="box"><input id="sub-email" type="email" required class="entry"></div></div></div>
+<div class="row"><div class="cell"><label class="choice"><input id="sub-consent" type="checkbox" required class="native"><span class="glyph"></span><span class="text">Yes, subscribe me to the newsletter.<span aria-hidden="true">*</span></span></label></div></div>
+<div class="row"><div class="cell"><button type="submit" class="send">Sign Up</button></div></div>
+</div></fieldset></form>
+</main></body></html>

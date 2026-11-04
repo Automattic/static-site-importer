@@ -387,12 +387,20 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			}
 		}
 		if ( isset( $roles['required_marker'] ) ) {
+			// The source marker is text of its label: it inherits the label's
+			// type and sits flush against it, where Jetpack shrinks, unbolds and
+			// spaces its indicator. A choice box's label is the box's `<label>`.
 			$destinations[] = array(
-				'part'       => 'required_marker',
+				'part'       => $choice_box ? 'choice_required_marker' : 'required_marker',
 				'role'       => 'required_marker',
-				'selector'   => '.' . $scope . ' .' . $label_class . ' > .grunion-label-required',
+				'selector'   => '.' . $scope . ' .' . $label_class . ( $choice_box ? ' > label' : '' ) . ' > .grunion-label-required',
 				'properties' => array_keys( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() ),
-				'resets'     => array( 'font-size' => 'inherit' ),
+				'resets'     => array(
+					'font-size'    => 'inherit',
+					'font-weight'  => 'inherit',
+					'margin-left'  => '0',
+					'margin-right' => '0',
+				),
 				'priority'   => 'important',
 			);
 		}
@@ -511,13 +519,16 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		$parent  = $control['parent'] ?? null;
 		while ( is_string( $parent ) && isset( $nodes[ $parent ] ) ) {
 			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
-				$label ??= $nodes[ $parent ];
-			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) && ( $box['id'] ?? null ) !== $parent ) {
+				// The label is the choice box. What groups the field above it (a
+				// fieldset, a list item) holds the whole box, not its parts.
+				return $nodes[ $parent ];
+			}
+			if ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) && ( $box['id'] ?? null ) !== $parent ) {
 				return null;
 			}
 			$parent = $nodes[ $parent ]['parent'] ?? null;
 		}
-		return $label ?? $box;
+		return $box;
 	}
 
 	/**
@@ -681,6 +692,12 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			),
 			'choice_label_box'          => array( 'replace' => array( ' .', ' .ssi-source-choice-label--' ) ),
 			'required_marker'           => array(),
+			// The standalone option states its marker as the `required` span
+			// beside the label RichText.
+			'choice_required_marker'    => array(
+				'replace'  => array( ' .', ' .ssi-source-choice-label--' ),
+				'retarget' => array( ' > label > .grunion-label-required', ' > .jetpack-field-option__label-wrapper > .required' ),
+			),
 		);
 	}
 
