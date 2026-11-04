@@ -121,6 +121,14 @@ for (const route of routeList.split(',')) {
       // Imported pages may keep requests open; settle on load plus a bounded idle wait.
       await page.goto(new URL(route, base).href, { waitUntil: 'load', timeout: 60000 });
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      // Scroll the page through so lazy images load as they would for a reader.
+      for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 600) {
+        await page.evaluate((top) => window.scrollTo(0, top), y);
+        await page.waitForTimeout(100);
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(500);
       const state = await page.evaluate(snapshot, { properties: PROPERTIES });
       if (mode === 'pixels') state.shot = (await page.screenshot({ fullPage: true })).toString('base64');
       sides.push(state);
