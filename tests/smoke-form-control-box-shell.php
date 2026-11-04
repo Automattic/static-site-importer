@@ -9,7 +9,18 @@ require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 
-$seed = static function ( bool $marked ): array {
+// The producer splits the field box at the caption level and marks the
+// control's own box (Automattic/blocks-engine#4145); the smoke reads that
+// real finding. Unmarked, the same finding is what a consumer sees from a
+// producer that states no control box.
+$unmark = static function ( array $blocks ) use ( &$unmark ): array {
+	foreach ( $blocks as &$block ) {
+		unset( $block['form_control_box'] );
+		$block['innerBlocks'] = $unmark( $block['innerBlocks'] ?? array() );
+	}
+	return $blocks;
+};
+$seed = static function ( bool $marked ) use ( $unmark ): array {
 	$result = ( new ArtifactCompiler() )->compile( array(
 		'entrypoint' => 'index.html',
 		'files'      => array( 'index.html' => file_get_contents( __DIR__ . '/fixtures/form-control-box-shell.html' ) ),
@@ -18,35 +29,8 @@ $seed = static function ( bool $marked ): array {
 	$declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
 	$entities    = Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $declaration['payload']['entities'], $plan );
 	$validated   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $entities ) );
-	if ( $marked ) {
-		// The producer's control-box marker (Automattic/blocks-engine#4145),
-		// stated directly: the captured field box splits, and inside it the
-		// exclusive wrapper chain encloses the control marked with its index.
-		$shell =& $validated['forms'][0]['readable_blocks'][0]['innerBlocks'][0]['innerBlocks'][0];
-		$split = static function ( array $wrappers, array $inner, string $marker ): array {
-			$opening = implode( '', array_column( $wrappers, 'opening' ) );
-			$closing = implode( '', array_reverse( array_column( $wrappers, 'closing' ) ) );
-			$block   = array(
-				'blockName'    => $wrappers[0]['shell_block'],
-				'attrs'        => array( 'wrappers' => array_map( static fn( array $wrapper ): array => array( 'tagName' => $wrapper['tagName'], 'attributes' => $wrapper['attributes'] ), $wrappers ) ),
-				'innerBlocks'  => $inner,
-				'innerHTML'    => $opening . $closing,
-				'innerContent' => array_merge( array( $opening ), array_fill( 0, count( $inner ), null ), array( $closing ) ),
-			);
-			if ( '' !== $marker ) {
-				$block[ $marker ] = 0;
-			}
-			return $block;
-		};
-		$chain = array_map(
-			static fn( array $wrapper ): array => $wrapper + array( 'shell_block' => (string) $shell['blockName'] ),
-			is_array( $shell['_layout_shell_wrappers'] ?? null ) ? $shell['_layout_shell_wrappers'] : array()
-		);
-		$shell = $split(
-			array( $chain[0] ),
-			array( $split( array( $chain[1] ), $shell['innerBlocks'], 'form_control_box' ) ),
-			'_form_field_box'
-		);
+	if ( ! $marked ) {
+		$validated['forms'][0]['readable_blocks'] = $unmark( $validated['forms'][0]['readable_blocks'] );
 	}
 	return Static_Site_Importer_Form_Seeder::seed( $validated )['forms'][0];
 };
@@ -90,17 +74,17 @@ $checks['caption keeps the field box arrangement'] = str_contains( $wrap, 'flex-
 $checks['overlay is admitted']                     = null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $overlay );
 $checks['no gate losses']                          = 'mapped' === $row['status'] && empty( $row['mapping_decision']['losses'] );
 
-// A finding without the marker renders as it does today: the captured field
-// box is one shell, and the provider field sits inside it.
+// A finding without the marker keeps the generic walk: the provider field
+// sits inside the control's own shell, which carries the frame.
 $today        = $seed( false );
 $today_tree   = parse_blocks( $today['block_markup'] )[0]['innerBlocks'][0];
-$today_shell  = $today_tree['innerBlocks'][0]['innerBlocks'][0] ?? array();
+$today_shell  = $today_tree['innerBlocks'][0]['innerBlocks'][0]['innerBlocks'][0] ?? array();
 $today_field  = $today_shell['innerBlocks'][0] ?? array();
 $today_input  = $today_field['innerBlocks'][1] ?? array();
 $today_hook   = $token_of( $today_input, '/^ssi-node-[a-f0-9]{12}$/D' );
 $today_rule   = $rule( (string) ( $today['provider_layout_overlay_css']['css'] ?? '' ), $today_hook );
 $checks['unmarked tree maps']                       = 'mapped' === $today['status'];
-$checks['unmarked field sits inside the shell']     = 2 === count( $today_shell['attrs']['wrappers'] ?? array() )
+$checks['unmarked field sits inside the shell']     = 'framer-form-input-wrapper framer-io8vii' === ( $today_shell['attrs']['wrappers'][0]['attributes']['class'] ?? '' )
 	&& str_contains( (string) $today['block_markup'], '<div class="framer-form-input-wrapper framer-io8vii">' );
 $checks['unmarked control carries no frame classes'] = ! in_array( 'framer-io8vii', preg_split( '/\s+/', trim( (string) ( $today_input['attrs']['className'] ?? '' ) ) ) ?: array(), true );
 $checks['unmarked control keeps its own facts']      = str_contains( $today_rule, 'height:100%' );
