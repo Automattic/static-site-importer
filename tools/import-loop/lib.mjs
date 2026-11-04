@@ -63,6 +63,10 @@ export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
 // and the media keys its evidence names, as one comma list.
 export const scopeKeys = (item) => [...new Set([item.subject, ...(item.cells || []).flatMap((cell) => [cell.evidence?.key, ...(cell.evidence?.missing || []).map((m) => m.key)])].filter(Boolean))].join(',');
 
+// Editability findings change how pages are built, not how they look: their
+// fixes are held to whole-page pixel parity (gates/collateral.mjs `pixels`).
+export const collateralMode = (item) => (item.stage === 'editability' ? 'pixels' : '');
+
 // Restyles outside `item`'s scope on a pull request's head: its whole import
 // against the import of its merge base with trunk, on every route.
 // Returns {exit, report}; exit 0 means none.
@@ -83,7 +87,7 @@ export function collateralAtHead(item, pr, { clone, root, work, reimport, routes
   // Exit 1 is a verdict (changes outside the subject); 2 means the comparison
   // itself failed, so it is retried and, if it persists, reported as unchecked.
   let run;
-  for (let attempt = 0; attempt < 3 && (!run || run.status === 2); attempt++) run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(',')], { encoding: 'utf8' });
+  for (let attempt = 0; attempt < 3 && (!run || run.status === 2); attempt++) run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(','), collateralMode(item)], { encoding: 'utf8' });
   return { exit: run.status, report: (run.stderr || '').trim().split('\n').slice(-6) };
 }
 

@@ -24,7 +24,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead, collateralMode } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -195,7 +195,7 @@ function acceptanceGate(item, repo) {
     ...(checked ? [
       `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
       `burl=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$base/${repo.predicate_root}" '${reimport.capture}' "$base/site") || exit 1; burl=$(tail -n1 <<<"$burl")`,
-      `node '${path.join(here, 'gates/collateral.mjs')}' "$burl" "$url" '${scopeKeys(item).replace(/'/g, "'\\''")}' '${result.routes.join(',')}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
+      `node '${path.join(here, 'gates/collateral.mjs')}' "$burl" "$url" '${scopeKeys(item).replace(/'/g, "'\\''")}' '${result.routes.join(',')}' '${collateralMode(item)}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
     ] : []),
     checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
@@ -244,6 +244,7 @@ for (const item of tracked) {
       ...(checkable ? [
         '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate`: run it with bash from your worktree root. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed).',
         `- Nothing outside the finding's elements (\`${scopeKeys(item)}\`) changes style on any route or width: the gate re-imports this change's merge base with trunk the same way and compares every element's computed style (\`collateral.mjs\`).`,
+        ...(collateralMode(item) === 'pixels' ? ['- The whole site looks exactly as it did: this is an editability finding, so the gate also compares full-page screenshots of every route and width against the merge base. Change how the page is built, not how it renders.'] : []),
         '- Its `reimport.sh` line also runs on its own and prints the imported site\'s URL, for inspecting the import. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),

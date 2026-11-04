@@ -18,7 +18,13 @@
 // that changes how media is emitted (a carrier block lowered to core/image,
 // a new wrapper) must not resize, crop, or drop the images it touches.
 //
-// Usage: node collateral.mjs <base url> <candidate url> <key,...> <route,...>
+// With `pixels`, the whole rendered page must also stay the same: the full-page
+// screenshots of base and candidate are compared, and any route and width where
+// more than PIXEL_SHARE of the pixels differ (channel tolerance PIXEL_DELTA) is
+// a change. Editability fixes change how a page is built, never how it looks,
+// so they are held to it, subject included.
+//
+// Usage: node collateral.mjs <base url> <candidate url> <key,...> <route,...> [pixels]
 // Exit 0: no change outside the subject. 1: changes outside it (on stderr).
 // 2: the comparison failed.
 import { chromium } from 'playwright';
@@ -26,7 +32,8 @@ import { chromium } from 'playwright';
 process.on('uncaughtException', (error) => { console.error(`collateral: ${error.message || error}`); process.exit(2); });
 process.on('unhandledRejection', (error) => { console.error(`collateral: ${error?.message || error}`); process.exit(2); });
 
-const [baseUrl, candidateUrl, keyList, routeList] = process.argv.slice(2);
+const [baseUrl, candidateUrl, keyList, routeList, mode] = process.argv.slice(2);
+const PIXEL_DELTA = 24, PIXEL_SHARE = 0.001;
 if (!baseUrl || !candidateUrl || !keyList || !routeList) process.exit(2);
 const keys = keyList.split(',').map((key) => { const at = key.indexOf(':'); return [key.slice(0, at), key.slice(at + 1)]; })
   .filter(([kind]) => ['group', 'link', 'img'].includes(kind));
@@ -85,6 +92,24 @@ const scopes = (elements) => elements.flatMap((el) => keys.flatMap(([kind, name]
 }));
 const inside = (path, roots) => roots.some((root) => root && (path === root || path.startsWith(`${root}>`)));
 
+// Differing pixels of two PNG screenshots, decoded and compared in the page.
+async function pixelDiff(page, a, b) {
+  return page.evaluate(async ([a, b, delta]) => {
+    const load = (data) => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = `data:image/png;base64,${data}`; });
+    const [x, y] = await Promise.all([load(a), load(b)]);
+    if (x.width !== y.width || x.height !== y.height) return { size: [[x.width, x.height], [y.width, y.height]] };
+    const pixels = (img) => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+    const [p, q] = [pixels(x), pixels(y)];
+    let count = 0, top = Infinity, bottom = -1;
+    for (let i = 0; i < p.length; i += 4) {
+      if (Math.abs(p[i] - q[i]) > delta || Math.abs(p[i + 1] - q[i + 1]) > delta || Math.abs(p[i + 2] - q[i + 2]) > delta) {
+        count++; const row = Math.floor(i / 4 / x.width); top = Math.min(top, row); bottom = Math.max(bottom, row);
+      }
+    }
+    return { share: Number((count / (p.length / 4)).toFixed(5)), rows: count ? [top, bottom] : null };
+  }, [a, b, PIXEL_DELTA]);
+}
+
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const changes = [];
@@ -96,7 +121,13 @@ for (const route of routeList.split(',')) {
       // Imported pages may keep requests open; settle on load plus a bounded idle wait.
       await page.goto(new URL(route, base).href, { waitUntil: 'load', timeout: 60000 });
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-      sides.push(await page.evaluate(snapshot, { properties: PROPERTIES }));
+      const state = await page.evaluate(snapshot, { properties: PROPERTIES });
+      if (mode === 'pixels') state.shot = (await page.screenshot({ fullPage: true })).toString('base64');
+      sides.push(state);
+    }
+    if (mode === 'pixels') {
+      const diff = await pixelDiff(page, sides[0].shot, sides[1].shot);
+      if (diff.size || diff.share > PIXEL_SHARE) changes.push({ route, width, pixels: diff });
     }
     const [before, after] = sides;
     const roots = [...scopes(before), ...scopes(after)];
