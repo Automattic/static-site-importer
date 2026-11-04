@@ -184,9 +184,18 @@
       ],
       "always": true,
       "when": {
-        "step": "triage",
-        "output": "/continue",
-        "exists": true
+        "all": [
+          {
+            "step": "triage",
+            "output": "/continue",
+            "exists": true
+          },
+          {
+            "step": "confirm",
+            "output": "/confirmed_count",
+            "gt": 0
+          }
+        ]
       },
       "approval": {
         "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges the green, non-draft, mergeable PRs that were not refuted, at the head confirm checked."
