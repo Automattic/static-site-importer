@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3d3c52357daddff7c9ced772ecd8a56c",
+    "content-hash": "f672ba7d2c29c1d69ca044de4642e569",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.45.161",
+            "version": "v0.45.164",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "220a28e39475c6263f5a5cfff7855ed26298aaa9"
+                "reference": "11484aafe0e9cdad046499ae51cf7277dae1de4b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/220a28e39475c6263f5a5cfff7855ed26298aaa9",
-                "reference": "220a28e39475c6263f5a5cfff7855ed26298aaa9",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/11484aafe0e9cdad046499ae51cf7277dae1de4b",
+                "reference": "11484aafe0e9cdad046499ae51cf7277dae1de4b",
                 "shasum": ""
             },
             "require": {
@@ -95,8 +95,8 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-11-04T08:14:10+00:00",
-            "published-time": "2026-11-04T08:15:13+00:00"
+            "time": "2026-11-04T09:04:02+00:00",
+            "published-time": "2026-11-04T09:05:44+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -669,7 +669,7 @@
         },
         {
             "name": "symfony/deprecation-contracts",
-            "version": "v3.7.1",
+            "version": "v3.8.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/deprecation-contracts.git",
@@ -716,7 +716,7 @@
             "description": "A generic function and convention to trigger deprecation notices",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/deprecation-contracts/tree/v3.7.1"
+                "source": "https://github.com/symfony/deprecation-contracts/tree/v3.8.0"
             },
             "funding": [
                 {
@@ -737,7 +737,7 @@
                 }
             ],
             "time": "2026-06-05T06:23:12+00:00",
-            "published-time": "2026-06-27T21:46:34+00:00"
+            "published-time": "2026-11-04T08:53:06+00:00"
         },
         {
             "name": "symfony/polyfill-php80",
