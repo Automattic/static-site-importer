@@ -421,7 +421,37 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 $GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
 unset( $_SERVER['argv'][0] );
+// The pinned transformer predates StepTimer; simulate the additive metrics contract.
+$compose_step_timings = array(
+	array( 'step' => 'reduce_pages', 'ms' => 12.5, 'calls' => 3 ),
+	array( 'step' => 'build_plan', 'ms' => 2.25, 'calls' => 1 ),
+);
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ) use ( $compose_step_timings ): object {
+	return new class( $compiler, $compose_step_timings ) {
+		public function __construct( private object $compiler, private array $timings ) {}
+		public function __call( string $method, array $args ) { return $this->compiler->$method( ...$args ); }
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ) {
+			$result = $this->compiler->compose( $shared, $receipts, $payload_reader );
+			return new class( $result, $this->timings ) {
+				public array $metrics;
+				public function __construct( private object $result, array $timings ) {
+					$this->metrics = array_merge( $result->metrics, array( 'step_timings' => $timings ) );
+				}
+				public function toCompactWordPressSitePlanView(): array { return $this->result->toCompactWordPressSitePlanView(); }
+			};
+		}
+	};
+};
 $composed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'] );
+$timed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
+$assert( $compose_step_timings === ( $timed_run['payload']['step_timings']['compose'] ?? null ) && ! isset( $timed_run['payload']['step_timings']['compile_pages'] ), 'run.json must retain ordered compose step timings without inventing unavailable compile timings' );
+$timed_checkpoint = json_decode( (string) $frozen_workspace->read_raw( 'composed-result.json' ), true );
+$assert( ! str_contains( (string) wp_json_encode( $timed_checkpoint ), 'step_timings' ), 'compose step timings must never enter the published checkpoint or its digest' );
+$run_hash = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'hash' );
+$untimed_run = $timed_run['payload'];
+unset( $untimed_run['step_timings'] );
+$assert( $timed_run['payload_sha256'] === $run_hash->invoke( null, $untimed_run ), 'run checksum must exclude observational step timings' );
 if ( null !== $original_argv_zero ) {
 	$_SERVER['argv'][0] = $original_argv_zero;
 }
@@ -452,6 +482,8 @@ $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materi
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
 $assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && null === $frozen_workspace->read_raw( 'artifact.json' ) && null === $frozen_workspace->read_raw( 'shared-plan.json' ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a completed run prunes resume-only checkpoints and keeps its terminal response' );
+$completed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
+$assert( $compose_step_timings === ( $completed_run['payload']['step_timings']['compose'] ?? null ), 'compose step timings must survive resume and terminal checkpoint pruning' );
 $replayed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ( $replayed['artifact_run']['receipt_identities'] ?? null ) === ( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 1 === $GLOBALS['ssi_direct_mutations'], 'a pruned completed run still replays its terminal response without mutation' );
 $composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();

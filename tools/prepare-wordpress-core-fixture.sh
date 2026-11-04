@@ -21,7 +21,10 @@ test ! -e "$destination" || { printf 'Existing fixture directory is incomplete: 
 test -d "$root/vendor" || { printf 'Run composer install first.\n' >&2; exit 2; }
 work="$(mktemp -d "$root/vendor/.wordpress-core-fixture.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 "https://codeload.github.com/WordPress/WordPress/tar.gz/$revision" --output "$work/core.tar.gz"
+# The pinned source archive is over 60 MiB; a healthy download on a slow CI
+# connection can exceed three minutes. Bound stalls separately from total time
+# and suppress the progress meter so failures stay visible in gate logs.
+curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --speed-limit 1024 --speed-time 60 --max-time 900 "https://codeload.github.com/WordPress/WordPress/tar.gz/$revision" --output "$work/core.tar.gz"
 mkdir "$work/core"
 tar --extract --gzip --file "$work/core.tar.gz" --directory "$work/core" --strip-components=1
 test -r "$work/core/wp-includes/html-api/class-wp-html-tag-processor.php"
