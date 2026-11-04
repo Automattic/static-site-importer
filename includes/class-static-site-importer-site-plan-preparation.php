@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Automattic\BlocksEngine\PhpTransformer\Support\BlockMarkupIndex;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
@@ -1190,8 +1191,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
 	 */
 	private static function splice_canonical_markup( string $resolved, string $canonical, array $patches ): string {
-		$resolved_ranges  = WordPressSitePlan::blockRanges( $resolved );
-		$canonical_ranges = WordPressSitePlan::blockRanges( $canonical );
+		$resolved_ranges  = ( new BlockMarkupIndex( $resolved ) )->ranges();
+		$canonical_ranges = ( new BlockMarkupIndex( $canonical ) )->ranges();
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
