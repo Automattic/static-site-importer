@@ -76,6 +76,7 @@
     { "path": "tests/smoke-form-contract.php", "environment": "standalone-php" },
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-shared-part-form.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-control-box-shell.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-button-parent.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },
