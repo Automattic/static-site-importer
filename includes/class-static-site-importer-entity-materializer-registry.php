@@ -669,7 +669,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'product_grids', 'product_listings', 'order_lookup', 'order_lookups' ), true ) ) {
+		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'checkout', 'checkouts', 'product_grids', 'product_listings', 'order_lookup', 'order_lookups' ), true ) ) {
 			return 'shop';
 		}
 		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
@@ -1437,9 +1437,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// the finding no longer derives (Automattic/blocks-engine#3088). A store
 		// listing that adopted a grid replaces that grid inside its own region (see
 		// with_adopted_product_regions()), so its receipt answers for the grid.
-		// A cart binding replaces its whole cart view the same way and joins its
-		// finding by the cart view's own selector.
-		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart' ), true ) ? $entity : ( 'commerce_listing' === $binding['role'] ? ( is_array( $entity['grid'] ?? null ) ? $entity['grid'] : ( ! empty( $entity['empty_listing'] ) ? array( 'selector' => $entity['grid_selector'] ?? '' ) : array() ) ) : array() );
+		// A cart or checkout binding replaces its whole commerce view the same way
+		// and joins its finding by the view's own selector.
+		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart', 'commerce_checkout' ), true ) ? $entity : ( 'commerce_listing' === $binding['role'] ? ( is_array( $entity['grid'] ?? null ) ? $entity['grid'] : ( ! empty( $entity['empty_listing'] ) ? array( 'selector' => $entity['grid_selector'] ?? '' ) : array() ) ) : array() );
 		$grid_selector                     = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
 		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::page_region_fallback_identity( self::fallback_region( $binding['role'] ), (string) $binding['source_path'], $grid_selector );
 		return array(
@@ -1488,7 +1488,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** The replaced-region kind a provider binding role reconciles as. */
 	public static function fallback_region( string $role ): string {
-		return 'commerce_cart' === $role ? 'cart-view' : 'product-grid';
+		return 'commerce_cart' === $role ? 'cart-view' : ( 'commerce_checkout' === $role ? 'checkout-view' : 'product-grid' );
 	}
 
 	/**
@@ -1496,12 +1496,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * source-evidence hash from the canonical source page plus the region's own
 	 * source selector — the one evidence both the detected finding and a
 	 * completed binding receipt carry. A product grid (`product-grid`) and a
-	 * cart view (`cart-view`) are replaced whole by their provider block, and
-	 * since Automattic/blocks-engine#3088 a grid finding carries no
-	 * `readable_blocks`, so no preserved-region hash exists on the finding side;
-	 * the page-scoped selector is the matching evidence instead. Both
-	 * reconciliation sides call this one derivation, so the pair can never drift
-	 * apart, and the region kind keeps a grid and a cart on one page apart.
+	 * cart or checkout view (`cart-view`, `checkout-view`) are replaced whole by
+	 * their provider block, and since Automattic/blocks-engine#3088 a grid
+	 * finding carries no `readable_blocks`, so no preserved-region hash exists on
+	 * the finding side; the page-scoped selector is the matching evidence
+	 * instead. Both reconciliation sides call this one derivation, so the pair
+	 * can never drift apart, and the region kind keeps a grid, a cart and a
+	 * checkout on one page apart.
 	 *
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when the page/selector pair is incomplete.
 	 */
@@ -1610,11 +1611,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-cart-materializer.php';
+		require_once __DIR__ . '/class-static-site-importer-woo-checkout-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-order-lookup-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-grid-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php';
 		// A capability's first adapter is its default; collection adapters follow it.
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_Consent_Banner', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Checkout_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_Consent_Banner', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1707,41 +1709,74 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @return array{carts:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
 	 */
 	public static function validate_carts_manifest( mixed $data ): array {
-		$rows   = is_array( $data ) && is_array( $data['carts'] ?? null ) && array_is_list( $data['carts'] ) ? $data['carts'] : null;
+		list( $carts, $errors ) = self::validate_commerce_views_manifest( $data, 'carts', 'commerce_cart', 'carts must be a list of cart views.', 'cart view must carry source_path, selector and canonical commerce_cart generic/block-binding/v1 anchors.' );
+		return array(
+			'carts'  => $carts,
+			'errors' => $errors,
+		);
+	}
+
+	/**
+	 * Validate a `generic/checkouts/v1` manifest: each checkout view names its
+	 * source page and selector and carries exactly its canonical
+	 * `commerce_checkout` anchor.
+	 *
+	 * @param mixed $data Decoded manifest.
+	 * @return array{checkouts:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	public static function validate_checkouts_manifest( mixed $data ): array {
+		list( $checkouts, $errors ) = self::validate_commerce_views_manifest( $data, 'checkouts', 'commerce_checkout', 'checkouts must be a list of checkout views.', 'checkout view must carry source_path, selector and canonical commerce_checkout generic/block-binding/v1 anchors.' );
+		return array(
+			'checkouts' => $checkouts,
+			'errors'    => $errors,
+		);
+	}
+
+	/**
+	 * Shared validator for the script-owned commerce views (cart, checkout) one
+	 * provider block replaces whole: each view names its source page and
+	 * selector and carries only its collection's canonical anchor role.
+	 *
+	 * @param mixed  $data          Decoded manifest.
+	 * @param string $collection    Validated manifest key.
+	 * @param string $role          The collection's one canonical binding role.
+	 * @param string $shape_message Rejection message for a manifest that is not a list of views.
+	 * @param string $row_message   Rejection message for one invalid view row.
+	 * @return array{0:array<int,array<string,mixed>>,1:array<int,array<string,string>>} Validated views, then validator errors.
+	 */
+	private static function validate_commerce_views_manifest( mixed $data, string $collection, string $role, string $shape_message, string $row_message ): array {
+		$rows   = is_array( $data ) && is_array( $data[ $collection ] ?? null ) && array_is_list( $data[ $collection ] ) ? $data[ $collection ] : null;
 		$errors = array();
-		$carts  = array();
+		$views  = array();
 		if ( null === $rows ) {
 			return array(
-				'carts'  => array(),
-				'errors' => array(
+				array(),
+				array(
 					array(
-						'path'    => '$.carts',
-						'message' => 'carts must be a list of cart views.',
+						'path'    => '$.' . $collection,
+						'message' => $shape_message,
 					),
 				),
 			);
 		}
 		foreach ( $rows as $index => $row ) {
-			$path     = '$.carts[' . $index . ']';
+			$path     = '$.' . $collection . '[' . $index . ']';
 			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
-			$valid    = array() !== $bindings && array() === array_filter( $bindings, static fn( ?array $binding ): bool => empty( $binding ) || 'commerce_cart' !== $binding['role'] );
+			$valid    = array() !== $bindings && array() === array_filter( $bindings, static fn( ?array $binding ): bool => empty( $binding ) || $role !== $binding['role'] );
 			if ( ! is_array( $row ) || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || ! $valid ) {
 				$errors[] = array(
 					'path'    => $path,
-					'message' => 'cart view must carry source_path, selector and canonical commerce_cart generic/block-binding/v1 anchors.',
+					'message' => $row_message,
 				);
 				continue;
 			}
-			$carts[] = array(
+			$views[] = array(
 				'source_path' => (string) $row['source_path'],
 				'selector'    => (string) $row['selector'],
 				'bindings'    => $bindings,
 			);
 		}
-		return array(
-			'carts'  => $carts,
-			'errors' => $errors,
-		);
+		return array( $views, $errors );
 	}
 
 	/**
@@ -2846,7 +2881,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'commerce_checkout', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(
