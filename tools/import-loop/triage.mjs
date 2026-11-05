@@ -251,12 +251,15 @@ for (const item of tracked) {
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
-    // Cook continues a refuted PR on its own branch. A fresh attempt gets a
-    // branch of its own per pass: Cook refuses a derived branch that still
-    // holds an earlier pass's work (closed draft, merged PR). The name keeps
-    // `issue-N-`, which links it back to the issue.
-    const head = item.refuted ? pr.headRefName : `fix/issue-${item.issue_url.split('/').pop()}-${item.repo}-p${args.iteration}`;
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, head, prompt: `@${prompt}`, ...gate });
+    // A refuted PR is reworked through its PR URL on its own branch: Cook
+    // refuses an issue URL whose destination already holds PR work. A fresh
+    // attempt gets a branch of its own per pass, because a derived branch may
+    // still hold an earlier pass's work (closed draft, merged PR). The name
+    // keeps `issue-N-`, which links it back to the issue.
+    const [task_url, head] = item.refuted
+      ? [pr.url, pr.headRefName]
+      : [item.issue_url, `fix/issue-${item.issue_url.split('/').pop()}-${item.repo}-p${args.iteration}`];
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url, head, prompt: `@${prompt}`, ...gate });
   }
 }
 
