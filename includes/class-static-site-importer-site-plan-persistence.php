@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
+require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -1020,7 +1021,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return new WP_Error( 'whole_page_claim_unproven', 'The final provider document did not persist unchanged.' );
 				}
 			}
-			$persisted_markup = 'template' === ( $claim['result']['document_destination'] ?? '' ) ? self::write_whole_page_template( $state, $destination, $source, $page ) : get_post_field( 'post_content', $destination );
+			$page['product_data'] = $claim['result']['product_data'] ?? array();
+			$persisted_markup     = 'template' === ( $claim['result']['document_destination'] ?? '' ) ? self::write_whole_page_template( $state, $destination, $source, $page ) : get_post_field( 'post_content', $destination );
 			if ( is_wp_error( $persisted_markup ) ) {
 				return $persisted_markup;
 			}
@@ -1060,6 +1062,61 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $ordered );
 		}
+		return self::share_product_templates( $state );
+	}
+
+	/** Consolidate identical bound documents; exceptional layouts keep their hierarchy overrides. */
+	private static function share_product_templates( array &$state ) {
+		$groups = array();
+		foreach ( $state['ordered_pages'] as $index => $page ) {
+			if ( 'product' !== ( $page['post_type'] ?? '' ) || empty( $page['product_data'] ) || empty( $page['served_template'] ) ) {
+				continue;
+			}
+			$markup                                = self::served_document( $state, $page );
+			$groups[ hash( 'sha256', $markup ) ][] = $index;
+		}
+		if ( empty( $groups ) ) {
+			return true;
+		}
+		// The most common layout is the default; ties are stable in source order.
+		usort( $groups, static fn( $a, $b ) => count( $b ) <=> count( $a ) );
+		$default = $groups[0];
+		if ( 1 === count( $default ) && count( $groups ) > 1 ) {
+			return true;
+		}
+		$target = 'templates/single-product.html';
+		$markup = self::served_document( $state, $state['ordered_pages'][ $default[0] ] );
+		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
+		$written = self::write_file( $state['theme_dir'], array(
+			'target_path' => $target,
+			'source_path' => $state['ordered_pages'][ $default[0] ]['source_path'],
+			'payload'     => array(
+				'encoding' => 'utf8',
+				'data'     => $markup,
+			),
+		) );
+		if ( is_wp_error( $written ) ) {
+			return $written;
+		}
+		$state['applied']['files'][] = $written;
+		foreach ( $default as $index ) {
+			$obsolete = $state['ordered_pages'][ $index ]['served_template'];
+			foreach ( $state['resolved']['writes'] ?? array() as $key => $write ) {
+				if ( in_array( $write['target_path'], array( $obsolete, $target ), true ) ) {
+					unset( $state['resolved']['writes'][ $key ] );
+				}
+			}
+			self::journal_file( $state, $state['theme_dir'] . '/' . $obsolete );
+			if ( ! unlink( $state['theme_dir'] . '/' . $obsolete ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Journaled obsolete template removal.
+				return new WP_Error( 'whole_page_route_template_remove_failed' );
+			}
+			foreach ( $state['applied']['files'] as $key => $file ) {
+				if ( ( $file['target_path'] ?? '' ) === $obsolete ) {
+					unset( $state['applied']['files'][ $key ] );
+				}
+			}
+			$state['ordered_pages'][ $index ]['served_template'] = $target;
+		}
 		return true;
 	}
 
@@ -1097,6 +1154,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$markup    = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
 		if ( ! is_string( $slug ) || '' === $slug || sanitize_title( $slug ) !== $slug || sanitize_key( $post_type ) !== $post_type || '' === $markup ) {
 			return new WP_Error( 'whole_page_template_target_invalid' );
+		}
+		if ( 'product' === $post_type && ! empty( $page['product_data'] ) ) {
+			$markup = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'] );
 		}
 		// Use the route's planned shell, not a newly invented provider shell.
 		$route_slug = (string) ( $page['slug'] ?? $slug );
@@ -1147,8 +1207,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					unset( $state['resolved']['writes'][ $index ] );
 				}
 			}
-			$planned_targets = array_column( $writes, 'target_path' );
-			if ( in_array( $obsolete, $planned_targets, true ) && is_file( $state['theme_dir'] . '/' . $obsolete ) ) {
+			if ( is_file( $state['theme_dir'] . '/' . $obsolete ) ) {
 				self::journal_file( $state, $state['theme_dir'] . '/' . $obsolete );
 				if ( ! unlink( $state['theme_dir'] . '/' . $obsolete ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Transactional local theme file removal.
 					return new WP_Error( 'whole_page_route_template_remove_failed' );
@@ -1750,6 +1809,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
+			if ( str_contains( $fragment, 'wp:woocommerce/single-product' ) && str_contains( $content, 'wp:woocommerce/single-product' ) ) {
+				$fragment                                   = Static_Site_Importer_Product_Field_Blocks::bind_document( $fragment, array() );
+				$binding_report['replacement_block_markup'] = $fragment;
+			}
 			if ( '' === $content || '' === $fragment || ! str_contains( $content, $fragment ) ) {
 				$binding_report['status'] = 'unresolved';
 				continue;

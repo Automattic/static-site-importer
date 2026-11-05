@@ -266,6 +266,17 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$report['products'][] = $row;
 			$document             = self::whole_page_document( $product, $args );
 			if ( is_array( $document ) && in_array( $row['status'] ?? '', array( 'created', 'updated' ), true ) ) {
+				// Include resolved Media Library URLs as well as captured image URLs.
+				$field_data     = $product;
+				$seeded_product = function_exists( 'wc_get_product' ) ? wc_get_product( $row['id'] ) : null;
+				if ( is_object( $seeded_product ) && function_exists( 'wp_get_attachment_url' ) ) {
+					foreach ( array_merge( array( $seeded_product->get_image_id() ), $seeded_product->get_gallery_image_ids() ) as $attachment_id ) {
+						$url = wp_get_attachment_url( $attachment_id );
+						if ( is_string( $url ) && '' !== $url ) {
+							$field_data['images'][] = array( 'src' => $url );
+						}
+					}
+				}
 				$claim                          = array_intersect_key( $document, array_flip( array( 'source_path', 'source_route', 'page_reconciliation_identity', 'declaration_reconciliation_identity', 'entity_id' ) ) );
 				$report['whole_page_results'][] = $claim + array(
 					'schema'               => Static_Site_Importer_Whole_Page_Handoff::SCHEMA,
@@ -274,6 +285,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					'post_type'            => 'product',
 					// The product keeps its own description; its single template serves the page.
 					'document_destination' => 'template',
+					'product_data'         => $field_data,
 				);
 			}
 
