@@ -154,7 +154,8 @@
         "gate-env": "{{item.gate_env}}",
         "provider-evidence": "{{item.provider_evidence}}",
         "publish-incomplete-draft": true,
-        "timeout-ms": 2400000
+        "timeout-ms": 2400000,
+        "head": "{{item.head}}"
       }
     },
     {
