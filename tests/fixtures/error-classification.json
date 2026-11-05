@@ -189,6 +189,7 @@
     "invalid_source_excerpt": { "class": "integrity", "owning_layer": "static-site-importer" },
     "invalid_source_post_meta": { "class": "integrity", "owning_layer": "static-site-importer" },
     "invalid_theme_slug": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "materialization_reference_unresolved": { "class": "integrity", "owning_layer": "static-site-importer" },
     "media_library_attachment_failed": { "class": "operational", "owning_layer": "wordpress" },
     "media_library_source_missing": { "class": "integrity", "owning_layer": "wordpress" },
     "media_library_upload_failed": { "class": "operational", "owning_layer": "wordpress" },

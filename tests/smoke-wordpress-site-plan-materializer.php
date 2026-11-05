@@ -245,6 +245,9 @@ function update_post_meta( int $id, string $key, mixed $value ): void {
 	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = wp_unslash( $value ); }
 function get_post_meta( int $id, string $key, bool $single = true ): mixed {
 	return $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? ( $single ? '' : array() ); }
+function add_post_meta( int $id, string $key, string $value ): void {
+	$GLOBALS['ssi_plan_meta'][ $id ][ $key ][] = stripslashes( $value );
+}
 function metadata_exists( string $meta_type, int $id, string $key ): bool {
 	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_plan_meta'][ $id ] ?? array() ); }
 function delete_post_meta( int $id, string $key ): void {
@@ -256,9 +259,9 @@ function get_posts( array $args ): array {
 	}
 	return $matches ?? array();
 }
-function get_page_by_path( string $slug, $output, string $type ) {
+function get_page_by_path( string $slug, $output, string|array $type ) {
 	foreach ( $GLOBALS['ssi_plan_posts'] as $id => $post ) {
-		if ( $post['post_name'] === $slug && $post['post_type'] === $type ) {
+		if ( $post['post_name'] === $slug && in_array( $post['post_type'], (array) $type, true ) ) {
 			return new WP_Post( $id ); }
 	}
 	return null;
@@ -326,7 +329,7 @@ function sanitize_title( string $value ): string {
 function wp_kses_post( string $value ): string {
 	return $value; }
 function post_type_exists( string $type ): bool {
-	return 'product' === $type; }
+	return in_array( $type, array( 'product', 'wp_navigation' ), true ); }
 function taxonomy_exists( string $taxonomy ): bool {
 	return in_array( $taxonomy, array( 'product_cat', 'category', 'post_tag' ), true ); }
 function term_exists( string $term, string $taxonomy ) {
@@ -4866,5 +4869,62 @@ foreach ( array( 'family' => '', 'outside-srcset' => '', 'img-tag' => '', 'indep
 	}
 	$assert( str_contains( $markup, wp_get_attachment_url( $id ) ), 'src binds to owner URL even outside srcset' );
 }
+
+// Route templates inline the entire page, not the rewritten header part.
+$nav_artifact = array(
+	'entrypoint' => 'index.html',
+	'files' => array( 'index.html' => '<main><h1>Home</h1></main>', 'products/route.html' => '<main><h1>Route product</h1></main>' ),
+	'runtime_declarations' => array( array(
+		'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html',
+		'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( array(
+			'id' => 'navigation-route-product', 'name' => 'Route product', 'slug' => 'navigation-route', 'regular_price' => '24',
+			'source_path' => 'products/route.html', 'source_route' => '/products/route', 'whole_page_candidate' => 'blocks-engine/whole-page-candidate/v1',
+		) ) ),
+	) ),
+);
+$nav_plan = ( new ArtifactCompiler() )->compile( $nav_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$nav_token = 'navigation-aaaaaaaaaaaaaaaa';
+$nav_markup = '<!-- wp:group --><div class="wp-block-group"><!-- wp:navigation {"ref":"{{wordpress-site-plan:navigation:' . $nav_token . '}}"} /--><!-- wp:paragraph --><p>Route body</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
+$nav_index = array_search( 'products/route.html', array_column( $nav_plan['pages'], 'source_path' ), true );
+$nav_plan['pages'][ $nav_index ]['canonical_block_markup'] = $nav_markup;
+$nav_plan['pages'][ $nav_index ]['content_hash'] = hash( 'sha256', $nav_markup );
+$nav_candidate = $nav_plan['pages'][ $nav_index ]['whole_page_candidates'][0];
+$nav_plan['menus'] = array( array(
+	'kind' => 'menu', 'target_slug' => 'route-menu', 'source_relation' => 'navigation', 'order' => 0, 'items' => 1,
+	'token' => $nav_token, 'source_path' => 'index.html', 'title' => 'Route menu',
+	'block_markup' => '<!-- wp:navigation-link {"label":"Home","url":"/"} /-->',
+	'reconciliation_identity' => str_repeat( 'cd', 32 ),
+) );
+$nav_plan['reference_semantics']['navigation_entities'] = 'explicit_refs/v1';
+$nav_bootstrap = ( new ReflectionMethod( WordPressSitePlan::class, 'bootstrap' ) )->invoke( null, $nav_plan['assets'], array(), $nav_plan['template_parts'], $nav_plan['reference_tokens'], $nav_plan['templates'], $nav_plan['pages'], $nav_plan['menus'], 'wordpress' === ( $nav_plan['theme']['runtime_emoji'] ?? null ) );
+foreach ( $nav_plan['writes'] as &$nav_write ) {
+	if ( 'functions.php' === $nav_write['target_path'] ) {
+		$nav_write['payload']['data'] = $nav_bootstrap;
+		$nav_write['payload_hash'] = hash( 'sha256', $nav_bootstrap );
+		if ( isset( $nav_write['canonical_payload'] ) ) {
+			$nav_write['canonical_payload'] = $nav_bootstrap;
+		}
+	}
+}
+unset( $nav_write );
+$nav_plan['plan_identity'] = WordPressSitePlan::planIdentity( $nav_plan );
+$nav_product = wp_insert_post( array( 'post_type' => 'product', 'post_name' => 'navigation-route', 'post_status' => 'publish', 'post_content' => 'Product description' ), true );
+$nav_result = array_diff_key( $nav_candidate, array( 'schema' => true ) ) + array(
+	'schema' => Static_Site_Importer_Whole_Page_Handoff::SCHEMA,
+	'status' => 'committed', 'destination_post_id' => $nav_product,
+	'post_type' => 'product', 'document_destination' => 'template',
+);
+$register_document_blocks( $block_runtime->parseBlocks( $nav_markup ) );
+$nav_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $nav_plan, array( 'slug' => 'navigation-route', 'whole_page_provider_results' => array( $nav_result ) ) );
+$assert( 'completed' === $nav_receipt['status'], 'Navigation route materializes: ' . wp_json_encode( $nav_receipt['errors'] ?? array() ) );
+$nav_post = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( str_repeat( 'cd', 32 ), 'wp_navigation' );
+$nav_id = (int) $nav_post->ID;
+$nav_template = $GLOBALS['ssi_plan_root'] . '/navigation-route/templates/single-product-navigation-route.html';
+$assert( str_contains( (string) file_get_contents( $nav_template ), '"ref":' . $nav_id ) && ! str_contains( (string) file_get_contents( $nav_template ), '{{wordpress-site-plan:' ), 'Inlined route header uses the persisted numeric navigation ref.' );
+$invalid_write = Static_Site_Importer_Site_Plan_Persistence::write_file( $GLOBALS['ssi_plan_root'] . '/navigation-route', array( 'target_path' => 'templates/page-unresolvable.html', 'payload' => array( 'encoding' => 'utf8', 'data' => '{{wordpress-site-plan:unknown:missing}}' ) ) );
+$assert( is_wp_error( $invalid_write ) && str_contains( $invalid_write->get_error_message(), 'templates/page-unresolvable.html' ), 'An unresolvable token fails loudly and names the template.' );
+$GLOBALS['ssi_plan_posts'][ $nav_product ]['post_content'] = '{{wordpress-site-plan:unknown:missing}}';
+$invalid_post = Static_Site_Importer_Site_Plan_Persistence::validate_output_references( array( 'applied' => array( 'posts' => array( array( 'id' => $nav_product ) ) ) ) );
+$assert( is_wp_error( $invalid_post ) && str_contains( $invalid_post->get_error_message(), 'post:' . $nav_product ), 'The final invariant names a post containing an unresolved token.' );
 
 echo "WordPress site plan materializer smoke passed.\n";
