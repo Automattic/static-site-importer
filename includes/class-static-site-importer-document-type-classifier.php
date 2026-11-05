@@ -13,8 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Classifies plan page rows as WordPress posts or pages.
  *
  * Producer `content_decision` and a non-page declared `post_type` win.
- * Consumer dated-meta / dated-route inference runs only when the producer
- * defaulted the row to page (or omitted a decision). The site entrypoint
+ * Consumer dated-meta / dated-route inference runs only when no producer
+ * decision is present. The site entrypoint
  * is always a page.
  */
 final class Static_Site_Importer_Document_Type_Classifier {
@@ -44,12 +44,17 @@ final class Static_Site_Importer_Document_Type_Classifier {
 		}
 
 		$decision = self::content_decision( $page );
-		if ( is_array( $decision ) && in_array( $decision['state'], array( 'declared', 'inferred' ), true ) ) {
+		if ( is_array( $decision ) ) {
 			$post_type = sanitize_key( (string) ( $decision['post_type'] ?? '' ) );
 			if ( '' !== $post_type && self::post_type_registered( $post_type ) ) {
-				$signal = 'declared' === $decision['state'] ? 'producer_declared' : 'producer_inferred';
+				$signal = 'declared' === $decision['state'] ? 'producer_declared' : ( 'inferred' === $decision['state'] ? 'producer_inferred' : 'page_default' );
+				if ( 'defaulted' === $decision['state'] && 'page' !== $post_type ) {
+					$signal = 'producer_defaulted';
+				}
 				return self::result( $post_type, self::producer_date( $page ), $signal );
 			}
+			// A valid decision whose post type is unavailable falls through to the
+			// legacy consumer behavior, as before.
 		}
 
 		// Hand-built plans and older rows may omit content_decision. A non-page
