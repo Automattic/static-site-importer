@@ -109,7 +109,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 		}
 		foreach ( array( 'pages', 'template_parts', 'templates', 'synced_patterns' ) as $group ) {
 			foreach ( $state['resolved'][ $group ] ?? array() as $index => $document ) {
-				foreach ( array( 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
+				foreach ( array( 'canonical_block_markup', 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
 					if ( is_string( $document[ $field ] ?? null ) ) {
 						$state['resolved'][ $group ][ $index ][ $field ] = self::rewrite_references( $document[ $field ], $refs );
 					}
@@ -117,7 +117,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			}
 		}
 		foreach ( $state['ordered_pages'] ?? array() as $index => $page ) {
-			foreach ( array( 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
+			foreach ( array( 'canonical_block_markup', 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
 				if ( is_string( $page[ $field ] ?? null ) ) {
 					$state['ordered_pages'][ $index ][ $field ] = self::rewrite_references( $page[ $field ], $refs );
 				}

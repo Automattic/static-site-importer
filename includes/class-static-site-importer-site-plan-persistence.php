@@ -214,11 +214,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::serve_source_routes( $state ) ) {
 			return self::failed_receipt( $state, 'permalink_structure_not_applied' );
 		}
-		$handoffs = self::apply_whole_page_handoffs( $state );
-		if ( is_wp_error( $handoffs ) ) {
-			return self::failed_receipt_from_error( $state, $handoffs );
-		}
-
+		// Resolve entity references before handoffs snapshot page markup into
+		// route/product templates or provider posts.
 		require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
 		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
 		if ( is_wp_error( $navigation_entities ) ) {
@@ -228,6 +225,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$synced_patterns = Static_Site_Importer_Synced_Pattern_Materializer::materialize( $state );
 		if ( is_wp_error( $synced_patterns ) ) {
 			return self::failed_receipt_from_error( $state, $synced_patterns );
+		}
+		$handoffs = self::apply_whole_page_handoffs( $state );
+		if ( is_wp_error( $handoffs ) ) {
+			return self::failed_receipt_from_error( $state, $handoffs );
 		}
 		$authors = self::materialize_author_entities( $state );
 		if ( is_wp_error( $authors ) ) {
@@ -405,7 +406,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			} : null;
 			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer );
 			if ( is_wp_error( $result ) ) {
-				return self::failed_receipt( $state, $result->get_error_code() );
+				return self::failed_receipt_from_error( $state, $result );
 			}
 			$state['applied']['files'][] = $result + array( 'publication' => $publication );
 		}
@@ -545,6 +546,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			Static_Site_Importer_Build_Provenance::record_artifact_identity( Static_Site_Importer_Build_Provenance::describe_artifact( $artifact_provenance ) );
 		}
 
+		$references = self::validate_output_references( $state );
+		if ( is_wp_error( $references ) ) {
+			return self::failed_receipt_from_error( $state, $references );
+		}
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 
@@ -1607,6 +1612,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$path          = $theme_dir . '/' . $write['target_path'];
 		$declared_hash = self::payload_hash( $write );
 		if ( is_file( $path ) && '' !== $declared_hash && self::file_hash( $path ) === $declared_hash ) {
+			$error = self::validate_output_content( (string) file_get_contents( $path ), $write['target_path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Validate the reconciled output without fetching payload bytes.
+			if ( $error ) {
+				return $error;
+			}
 			return array(
 				'target_path'             => $write['target_path'],
 				'hash'                    => self::file_hash( $path ),
@@ -1617,6 +1626,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$data = self::write_payload_bytes( $write, $payload_reader );
 		if ( is_wp_error( $data ) ) {
 			return $data;
+		}
+		$error = self::validate_output_content( $data, $write['target_path'] );
+		if ( $error ) {
+			return $error;
 		}
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
@@ -1637,6 +1650,34 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
 		);
+	}
+
+	/** Reject unresolved producer tokens regardless of entity kind or output path. */
+	public static function validate_output_content( string $content, string $target ): ?WP_Error {
+		return str_contains( $content, '{{wordpress-site-plan:' )
+			? new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target, array( 'target' => $target ) )
+			: null;
+	}
+
+	/** Final invariant over persisted files and posts, including late mutations. */
+	public static function validate_output_references( array $state ): ?WP_Error {
+		foreach ( $state['applied']['files'] ?? array() as $file ) {
+			$target  = (string) $file['target_path'];
+			$content = file_get_contents( $state['theme_dir'] . '/' . $target ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verify journaled materialization outputs.
+			$error   = self::validate_output_content( (string) $content, $target );
+			if ( $error ) {
+				return $error;
+			}
+		}
+		foreach ( $state['applied']['posts'] ?? array() as $post ) {
+			$id      = (int) $post['id'];
+			$content = get_post_field( 'post_content', $id );
+			$error   = self::validate_output_content( is_string( $content ) ? $content : '', 'post:' . $id );
+			if ( $error ) {
+				return $error;
+			}
+		}
+		return null;
 	}
 
 	/**
