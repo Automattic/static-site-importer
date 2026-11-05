@@ -995,8 +995,12 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$patch['replacement']                      = $binding['archive_replacement_block_markup'] ?? $patch['replacement'];
 				$page_patches[ $binding['source_path'] ][] = $patch;
 			}
-			if ( 'pages' === $group && 'commerce_listing' === ( $binding['role'] ?? '' ) ) {
-				$archive_pages[ $binding['source_path'] ] = max( $archive_pages[ $binding['source_path'] ] ?? 0, (int) ( $binding['archive_product_count'] ?? 0 ) );
+			if ( 'pages' === $group && in_array( $binding['role'] ?? '', array( 'commerce_listing', 'commerce_product_grid' ), true ) ) {
+				$source                   = $binding['source_path'];
+				$archive_pages[ $source ] = array(
+					'listing' => ( $archive_pages[ $source ]['listing'] ?? false ) || 'commerce_listing' === $binding['role'],
+					'count'   => max( $archive_pages[ $source ]['count'] ?? 0, (int) ( $binding['archive_product_count'] ?? 0 ) ),
+				);
 			}
 			$plan[ $group ][ $index ]['materialized_block_markup'] = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$reports[ $binding['reconciliation_identity'] ]        = array(
@@ -1018,12 +1022,17 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $part_patches as $source_path => $patches ) {
 			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches, $documents[ $source_path ]['group'] );
 		}
-		// Prefer the largest adopted grid, then the first source path, never processing order.
+		// Prefer listing pages over grid-only pages, then the largest adopted grid
+		// and first source path, never processing order.
 		$archive_sources = array_keys( $archive_pages );
 		usort(
 			$archive_sources,
 			static function ( string $left, string $right ) use ( $archive_pages ): int {
-				$count = $archive_pages[ $right ] <=> $archive_pages[ $left ];
+				$listing = $archive_pages[ $right ]['listing'] <=> $archive_pages[ $left ]['listing'];
+				if ( 0 !== $listing ) {
+					return $listing;
+				}
+				$count = $archive_pages[ $right ]['count'] <=> $archive_pages[ $left ]['count'];
 				return 0 !== $count ? $count : strcmp( $left, $right );
 			}
 		);
@@ -1232,7 +1241,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Write the page that holds a store listing as the theme's product archive
+	 * Write the page that holds a store listing or grid as the theme's product archive
 	 * template: the page template with the page's own blocks in place of its
 	 * content, so WooCommerce's shop archive renders the imported listing.
 	 * A theme without a page template has no archive design to derive.

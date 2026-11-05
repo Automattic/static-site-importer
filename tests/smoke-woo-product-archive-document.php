@@ -72,6 +72,34 @@ foreach ( array( array( $small, $large ), array( $large, $small ) ) as $ordered 
 	$assert( 'large.html' === $archives[0]['source_path'], 'equal-grids-use-first-source-path' );
 }
 
+// A grid-only binding has no archive-specific producer markup or product count.
+$grid_binding = $large;
+$grid_binding['role'] = 'commerce_product_grid';
+$grid_binding['search_block_markup'] = $grid_raw;
+$grid_binding['replacement_block_markup'] = Static_Site_Importer_Woo_Product_Grid_Materializer::grid_block_markup( $grid );
+unset( $grid_binding['archive_replacement_block_markup'], $grid_binding['archive_product_count'] );
+$listing_binding = $small;
+$listing_binding['archive_product_count'] = 0;
+foreach ( array(
+	'grid-only'            => array( array( $grid_binding ), 'large.html', str_repeat( 'b', 64 ) ),
+	'listing-before-grid'  => array( array( $listing_binding, $grid_binding ), 'small.html', str_repeat( 'c', 64 ) ),
+	'grid-before-listing'  => array( array( $grid_binding, $listing_binding ), 'small.html', str_repeat( 'c', 64 ) ),
+) as $case => $expected ) {
+	$prepared    = $fixture;
+	$reports     = array();
+	$diagnostics = array();
+	Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, $expected[0], $reports, $diagnostics );
+	$archives = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
+	$archive_markup = (string) ( $archives[0]['payload']['data'] ?? '' );
+	$first = parse_blocks( $archive_markup )[0] ?? array();
+	$assert( 1 === count( $archives ) && $expected[1] === $archives[0]['source_path'], $case . '-archive-source' );
+	$assert( $expected[2] === ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ), $case . '-archive-page-identity' );
+	$assert( str_contains( $archive_markup, $url ) && ! str_contains( $archive_markup, $token ), $case . '-archive-assets-resolved' );
+	if ( 'grid-only' === $case ) {
+		$assert( str_contains( $archive_markup, $grid_binding['replacement_block_markup'] ), 'grid-archive-keeps-producer-page-replacement' );
+	}
+}
+
 $temp = tempnam( sys_get_temp_dir(), 'ssi-archive-' );
 file_put_contents( $temp, $data ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary theme fixture.
 $GLOBALS['ssi_listing_theme_file'] = $temp;
