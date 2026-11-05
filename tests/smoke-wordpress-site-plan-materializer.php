@@ -4557,6 +4557,27 @@ foreach ( array( 'completed' => $part_bound_write['payload']['data'], 'unresolve
 // same conflict/rollback contract as the rest of the generated theme.
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
+// Exercise the ordinary artifact conversion and native WordPress handoff.
+$title_html = file_get_contents( __DIR__ . '/fixtures/front-page-title.html' );
+foreach ( array( 'source-title' => $title_html, 'meta-description' => str_replace( '<title>Example Site | Example tagline</title>', '<title>Example Site</title><meta name="description" content="Example description.">', $title_html ), 'no-title' => str_replace( '<title>Example Site | Example tagline</title>', '', $title_html ) ) as $title_case => $html ) {
+	$GLOBALS['ssi_plan_options']['blogdescription'] = '';
+	$title_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( array( 'entrypoint' => 'index.html', 'files' => array( array( 'path' => 'index.html', 'content' => $html ) ) ), array( 'slug' => $title_case, 'activate' => true ) );
+	$assert( ! is_wp_error( $title_compiled ), $title_case . ' compiles' );
+	$title_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $title_compiled['plan'], $title_compiled['args'] );
+	$title_page_id = $title_receipt['completed']['pages']['index.html'] ?? 0;
+	$expected_title = 'source-title' === $title_case ? 'Example Site | Example tagline' : ( 'no-title' === $title_case ? 'Home' : 'Example Site' );
+	$assert( 'completed' === $title_receipt['status'] && $expected_title === ( $GLOBALS['ssi_plan_posts'][ $title_page_id ]['post_title'] ?? '' ), $title_case . ' uses document title or Home, not heading spans' );
+	$expected_tagline = 'source-title' === $title_case ? 'Example tagline' : ( 'meta-description' === $title_case ? 'Example description.' : '' );
+	$assert( $expected_tagline === get_option( 'blogdescription', '' ), $title_case . ' native tagline' );
+	if ( 'source-title' === $title_case ) {
+		$bootstrap = file_get_contents( $GLOBALS['ssi_plan_root'] . '/' . $title_case . '/functions.php' );
+		$assert( str_contains( $bootstrap, "add_filter( 'document_title_separator', static fn() => '|' )" ), 'imported theme declares the source separator' );
+		preg_match( "/add_filter\\( 'document_title_separator', static fn\\(\\) => '[^']+' \\);/", $bootstrap, $separator_filter );
+		eval( $separator_filter[0] );
+		$separator = $GLOBALS['ssi_plan_filters']['document_title_separator'][10][0]['callback']( '–' );
+		$assert( 'Example Site | Example tagline' === get_option( 'blogname' ) . ' ' . $separator . ' ' . get_option( 'blogdescription' ), 'core front-page title composition with the imported filter reproduces the source exactly' );
+	}
+}
 $preview_png      = getenv( 'SSI_THEME_PREVIEW' ) ? file_get_contents( getenv( 'SSI_THEME_PREVIEW' ) ) : base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=' );
 $preview_artifact = array(
 	'entrypoint' => 'website/index.html',

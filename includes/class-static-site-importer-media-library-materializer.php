@@ -341,6 +341,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( '' === $tagline ) {
 			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
 		}
+		if ( '' === $tagline ) {
+			$front_identity = Static_Site_Importer_Site_Plan_Persistence::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
+			foreach ( $state['resolved']['pages'] ?? array() as $page ) {
+				if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
+					$tagline = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
+					break;
+				}
+			}
+		}
 		$report['blogdescription'] = array( 'status' => '' === $tagline ? 'absent' : 'preserved_owner_value' );
 		if ( '' !== $tagline && '' === trim( (string) get_option( 'blogdescription', '' ) ) ) {
 			Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'blogdescription' );
