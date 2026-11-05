@@ -297,6 +297,7 @@
       "needs": [
         "confirm"
       ],
+      "always": true,
       "when": {
         "all": [
           {
