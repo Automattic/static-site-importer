@@ -96,6 +96,16 @@ foreach ( array(
 	$assert( $expected[2] === ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ), $case . '-archive-page-identity' );
 	$assert( str_contains( $archive_markup, $url ) && ! str_contains( $archive_markup, $token ), $case . '-archive-assets-resolved' );
 	if ( 'grid-only' === $case ) {
+		$temp = tempnam( sys_get_temp_dir(), 'ssi-grid-archive-' );
+		// Block attribute JSON permits whitespace, including in saved templates.
+		$styled_archive = str_replace( '"staticSiteImporterArchiveDocument":"', '"staticSiteImporterArchiveDocument" : "', $archive_markup );
+		file_put_contents( $temp, $styled_archive ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary theme fixture.
+		$GLOBALS['ssi_listing_theme_file'] = $temp;
+		$GLOBALS['ssi_archive_shop'] = true;
+		$GLOBALS['ssi_archive_taxonomy'] = false;
+		Static_Site_Importer_Product_Grid_Runtime::register();
+		$assert( 73 === apply_filters( 'blocks_engine_document_id', 0 ), 'grid-archive-resolves-source-page-for-page-scoped-styles' );
+		unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Temporary fixture cleanup.
 		preg_match_all( '/<img src="([^"]+)"/', $archive_markup, $archive_assets );
 		preg_match_all( '/<img src="([^"]+)"/', $prepared['pages'][0]['materialized_block_markup'], $page_assets );
 		$assert( $page_assets[1] === $archive_assets[1] && in_array( $url, $archive_assets[1], true ), 'grid-archive-uses-source-deduplicated-asset-urls' );
