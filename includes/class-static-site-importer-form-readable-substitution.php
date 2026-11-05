@@ -708,7 +708,12 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				continue;
 			}
 			$class                                 = Static_Site_Importer_Form_Presentation_Descriptor::control_box_destination_class( $scope, $index );
-			$descriptors[ $index ]['destinations'] = self::with_control_box_container( $descriptors[ $index ]['destinations'], $scope, $class );
+			$editor_class                          = $descriptors[ $index ]['phone_destinations'][0]['class'] ?? $control_class;
+			$editor                                = array(
+				'selector' => '{scope} .' . $editor_class,
+				'priority' => 'important',
+			);
+			$descriptors[ $index ]['destinations'] = self::with_control_box_container( $descriptors[ $index ]['destinations'], $scope, $class, $editor );
 			if ( array() === $facts || '' === $control_class ) {
 				continue;
 			}
@@ -719,7 +724,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				'selector'   => '.' . $scope . ' .' . $class,
 				'properties' => array_keys( array_intersect_key( Static_Site_Importer_Form_Presentation_Overlay::presentation_property_map(), self::CONTROL_BOX_ITEM_FACTS ) ),
 				'resets'     => array(),
-				'editor'     => array( 'selector' => '{scope} .' . $control_class ),
+				'editor'     => $editor,
 			);
 			$descriptors[ $index ]['has_presentation'] = true;
 		}
@@ -737,20 +742,21 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * later at equal specificity, the frame paint would be lost from the
 	 * control while the box only carried what its source classes match on
 	 * their own. The box is the frame, so it alone paints it. The editor
-	 * renders no box, so its copy keeps the layout hook.
+	 * renders no box, so its copy paints the control or phone-input shell.
 	 *
 	 * @param array<int,array<string,mixed>> $destinations Descriptor destinations.
 	 * @param string                         $scope        Provider form scope.
 	 * @param string                         $box_class    The control box's destination class.
+	 * @param array<string,string>           $editor       Editor control destination.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private static function with_control_box_container( array $destinations, string $scope, string $box_class ): array {
+	private static function with_control_box_container( array $destinations, string $scope, string $box_class, array $editor ): array {
 		foreach ( $destinations as $key => $destination ) {
 			if ( 'control_container' !== ( $destination['part'] ?? null ) ) {
 				continue;
 			}
 			$destinations[ $key ]['part']     = 'control_box_container';
-			$destinations[ $key ]['editor']   = array( 'selector' => (string) $destination['selector'] );
+			$destinations[ $key ]['editor']   = $editor;
 			$destinations[ $key ]['selector'] = '.' . $scope . ' .' . $box_class;
 		}
 		return $destinations;

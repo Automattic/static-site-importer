@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,6 +42,36 @@ test('fractional page origins cannot manufacture editor pixel or dimension misma
     await assert.rejects(captureAlignedRegion(frame.locator('.region')), /clipped/);
     await host.locator('iframe').evaluate(element => { element.style.height = '200px'; });
     await captureAlignedRegion(frame.locator('.region'));
+  } finally { await browser.close(); }
+});
+
+test('imported Jetpack control frames paint inputs and phone shells, not label-containing field wrappers', async () => {
+  const fixture = JSON.parse(execFileSync('php', ['tests/fixtures/form-editor-control-frame.php'], { encoding: 'utf8' }));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    // Model provider defaults with higher specificity than the imported control rule:
+    // the editor-only frame must override these without changing frontend priority.
+    await page.setContent(`<style>
+      .editor-styles-wrapper [data-block]{border:0}
+      .editor-styles-wrapper [data-block] input,
+      .editor-styles-wrapper [data-block] [data-control="phone"]{border:0;border-radius:0;background:transparent}
+      ${fixture.css}
+    </style><div class="editor-styles-wrapper">${fixture.html}</div>`);
+    for (const [field, control] of [
+      ['jetpack/field-email', 'input'],
+      ['jetpack/field-telephone', '[data-control="phone"]'],
+    ]) {
+      const wrapper = page.locator(`[data-block="${field}"]`);
+      assert.equal(await wrapper.count(), 1, `${field} was seeded`);
+      assert.equal(await wrapper.locator('label').count(), 1, 'label remains outside the control');
+      assert.equal(await wrapper.evaluate(node => getComputedStyle(node).borderTopWidth), '0px', `${field} wrapper has no frame`);
+      const paint = await wrapper.locator(control).evaluate(node => {
+        const style = getComputedStyle(node);
+        return [style.borderTopWidth, style.borderTopColor, style.borderRadius, style.backgroundColor];
+      });
+      assert.deepEqual(paint, ['1px', 'rgb(234, 234, 158)', '40px', 'rgb(81, 91, 42)'], `${field} control paints the frame`);
+    }
   } finally { await browser.close(); }
 });
 
