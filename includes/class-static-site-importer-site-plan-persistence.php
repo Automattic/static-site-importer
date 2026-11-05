@@ -522,6 +522,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return self::failed_receipt( $state, 'injected_after_use_smilies_failure' );
 				}
 			}
+			if ( ! isset( $args['disable_page_engagement_buttons'] ) || false !== (bool) $args['disable_page_engagement_buttons'] ) {
+				$sharing_options = get_option( 'sharing-options' );
+				if ( is_array( $sharing_options ) && isset( $sharing_options['global'] ) && is_array( $sharing_options['global'] ) && isset( $sharing_options['global']['show'] ) && is_array( $sharing_options['global']['show'] ) ) {
+					$sharing_options['global']['show'] = array_values( array_diff( $sharing_options['global']['show'], array( 'page' ) ) );
+				} else {
+					// Jetpack defaults minus pages, even when Jetpack is not installed yet.
+					$sharing_options = array(
+						'global' => array(
+							'button_style'  => 'icon-text',
+							'sharing_label' => 'Share this:',
+							'open_links'    => 'same',
+							'show'          => array( 'post' ),
+							'custom'        => array(),
+						),
+					);
+				}
+				if ( ! self::write_option( 'sharing-options', $sharing_options ) ) {
+					return self::failed_receipt( $state, 'disable_page_engagement_buttons_not_applied' );
+				}
+				$state['applied']['runtime_policy']['disable_page_engagement_buttons'] = true;
+			}
 			if ( '' !== trim( (string) ( $args['site_title'] ?? '' ) ) ) {
 				$title = sanitize_text_field( (string) $args['site_title'] );
 				if ( ! self::write_option( 'blogname', $title ) ) {
@@ -2806,7 +2827,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' !== $stylesheet ) {
 			self::journal_option( $state, 'theme_mods_' . $stylesheet );
 		}
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_icon', 'site_logo', 'WPLANG' ) as $option ) {
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'sharing-options', 'blogname', 'blogdescription', 'site_icon', 'site_logo', 'WPLANG' ) as $option ) {
 			self::journal_option( $state, $option );
 		}
 	}
