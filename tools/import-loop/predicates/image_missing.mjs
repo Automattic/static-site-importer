@@ -30,8 +30,19 @@ const media = async (load) => {
   return (await page.evaluate(measure, { coverShare: 1, exclusions: [], geometryOnly: false })).media;
 };
 const wanted = (await media(() => page.setContent(fs.readFileSync(candidate, 'utf8'), { waitUntil: 'load' }))).filter((m) => (m.key === subject || m.group === subject) && asRecorded(m));
-const shown = new Set((await media(() => loadOutput(page, transformer, candidate, route))).map((m) => m.key));
+const output = await media(() => loadOutput(page, transformer, candidate, route));
 await browser.close();
-const missing = wanted.filter((m) => !shown.has(m.key));
+// Materialization may rename an image (an attachment takes its title or alt
+// as its file name): one without a key match counts as shown when an output
+// image of no wanted key renders at its size (2px), as evaluate.mjs matches.
+const shown = new Set(output.map((m) => m.key));
+const renamed = output.filter((m) => !wanted.some((w) => w.key === m.key));
+const missing = wanted.filter((m) => {
+  if (shown.has(m.key)) return false;
+  const at = renamed.findIndex((r) => Math.abs(r.w - m.w) <= 2 && Math.abs(r.h - m.h) <= 2);
+  if (at < 0) return true;
+  renamed.splice(at, 1);
+  return false;
+});
 if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ wanted: wanted.map((m) => m.key), missing: missing.map((m) => m.key) }));
 process.exit(wanted.length && missing.length ? 0 : 1);

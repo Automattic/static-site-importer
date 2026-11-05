@@ -112,9 +112,16 @@ function compare(source, candidate) {
   const rendered = new Map();
   for (const m of candidate.media) if (!rendered.has(m.key)) rendered.set(m.key, m);
   const missing = new Map();
+  // Materialization renames media (an attachment takes its title or alt as
+  // its file name), so an image without a key match is matched by rendered
+  // size (2px) among the candidate's images that matched no source key.
+  const sourceKeys = new Set(source.media.map((s) => s.key));
+  const unmatched = [...rendered.values()].filter((m) => !sourceKeys.has(m.key));
   for (const m of new Map(source.media.map((s) => [s.key, s])).values()) {
     const match = rendered.get(m.key);
     if (!match) {
+      const at = unmatched.findIndex((c) => Math.abs(c.w - m.w) <= 2 && Math.abs(c.h - m.h) <= 2);
+      if (at >= 0) { unmatched.splice(at, 1); continue; }
       const subject = m.group || m.key;
       missing.set(subject, [...(missing.get(subject) || []), { key: m.key, source: [m.w, m.h] }]);
     } else if (Math.min(m.w, m.h, match.w, match.h) >= 8 && Math.abs((match.w / match.h) / (m.w / m.h) - 1) > THRESHOLDS.aspect_change) {
