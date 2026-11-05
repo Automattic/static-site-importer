@@ -563,6 +563,21 @@ class Static_Site_Importer_Form_Seeder {
 		$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $state->submit_text, trim( Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $state->submit_presentation );
 	}
 
+	/** Whether a control variant owns any border property, so inline block styles cannot mask it. */
+	private static function control_has_responsive_border( array $variants, int $control_index ): bool {
+		foreach ( $variants as $variant ) {
+			if ( ! is_array( $variant ) || ( $variant['index'] ?? null ) !== $control_index || 'control' !== ( $variant['role'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+				continue;
+			}
+			foreach ( array_keys( $variant['style_patch'] ) as $property ) {
+				if ( 'border' === $property || str_starts_with( (string) $property, 'border_' ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	/** Build a provider field block and carry its source class, layout hook, help and choice tokens. */
 	private static function map_field_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control, string $tag, string $type, array $presentation_descriptor, bool $choice_box ): void {
 		$control_phone_destinations = $presentation_descriptor['phone_destinations'];
@@ -572,7 +587,8 @@ class Static_Site_Importer_Form_Seeder {
 			$control,
 			empty( $control_phone_destinations ) ? $presentation_descriptor['control_class'] : '',
 			$choice_box && '' !== $presentation_descriptor['label_class'] ? 'ssi-source-choice-label--' . $presentation_descriptor['label_class'] : $presentation_descriptor['label_class'],
-			$state->control_presentations[ $control_index ]['control']['styles'] ?? array()
+			$state->control_presentations[ $control_index ]['control']['styles'] ?? array(),
+			self::control_has_responsive_border( $state->form['presentation_graph']['variants'] ?? array(), $control_index )
 		);
 		if ( null === $field_block ) {
 			$state->skipped[] = '' !== $type ? $type : $tag;

@@ -256,7 +256,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param array<string, mixed> $control Source control metadata.
 	 * @return array<string, mixed>|null
 	 */
-	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array() ): ?array {
+	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array(), bool $responsive_border = false ): ?array {
 		$map = Static_Site_Importer_Jetpack_Forms_Runtime::field_block_map();
 
 		$lookup = 'textarea' === $tag ? 'textarea' : ( 'select' === $tag ? 'select' : $type );
@@ -430,11 +430,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'wrapper'     => 'ul',
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
-			$input_attrs = array(
-				'style' => array( 'border' => array( 'style' => 'solid' ) ),
-			);
-			if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
-				$input_attrs['style']['border']['style'] = $control_styles['border_style'];
+			$input_attrs = array();
+			if ( ! $responsive_border ) {
+				$input_attrs['style'] = array( 'border' => array( 'style' => 'solid' ) );
+				if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
+					$input_attrs['style']['border']['style'] = $control_styles['border_style'];
+				}
 			}
 			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			$input_class  = trim( $source_class . ' ' . $control_class );
