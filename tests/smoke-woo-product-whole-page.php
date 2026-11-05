@@ -46,7 +46,7 @@ require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once __DIR__ . '/fixtures/core-block-parser.php';
 ssi_test_require_core_block_parser( require __DIR__ . '/fixtures/wordpress-core-root.php' );
 function apply_filters( $tag, $value, ...$args ) { return $value; }
-foreach ( array( 'woo-product-seeder', 'entity-materializer-registry', 'whole-page-handoff', 'source-route', 'site-plan-persistence' ) as $file ) {
+foreach ( array( 'woo-product-seeder', 'entity-materializer-registry', 'whole-page-handoff', 'source-route', 'site-plan-persistence', 'form-fallback-contract', 'import-report', 'diagnostic-projection', 'report-diagnostics', 'quality-gates' ) as $file ) {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-' . $file . '.php';
 }
 $assert = static function ( bool $ok, string $message ): void {
@@ -85,11 +85,29 @@ $media_pages[0]['materialized_block_markup'] = $bound_markup;
 $route_template = '<!-- wp:template-part {"slug":"header","area":"header"} /-->' . "\n"
 	. '<!-- wp:group --><div class="wp-block-group route-frame"><!-- wp:post-content /--></div><!-- /wp:group -->' . "\n"
 	. '<!-- wp:template-part {"slug":"footer","area":"footer"} /-->';
+$fallback = array(
+	'type' => 'unsupported_html_fallback',
+	'diagnostic_code' => 'html_commerce_controls_fallback',
+	'source_path' => $row['source_path'],
+	'selector' => '.purchase',
+	'binding' => array( 'role' => 'commerce_add_to_cart_form' ),
+	'html_excerpt' => '<button>Add to cart</button>',
+);
+$fallback['fallback_reconciliation_identity'] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+$fallback['fallback_hash'] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback );
+$binding_receipt = array(
+	'source_path' => $row['source_path'], 'status' => 'prepared', 'replacement_block_markup' => $binding,
+	'role' => 'commerce_add_to_cart_form', 'provider' => 'woocommerce',
+	'reconciliation_identity' => hash( 'sha256', 'mug-cart-binding' ),
+	'fallback_reconciliation_identity' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback ),
+	'fallback_hash' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ),
+	'materialized_block_hash' => hash( 'sha256', $binding ),
+);
 $state = array(
 	'resolved' => array( 'writes' => array( array( 'kind' => 'theme_template', 'target_path' => 'templates/page-mug.html', 'payload' => array( 'encoding' => 'utf8', 'data' => $route_template ) ) ) ),
 	'args' => array( 'whole_page_provider_results' => $report['whole_page_results'] ),
 	'ordered_pages' => $media_pages, 'diagnostics' => array(), 'source_route_aliases' => array(),
-	'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array( array( 'source_path' => $row['source_path'], 'status' => 'prepared', 'replacement_block_markup' => $binding ) ) ) ),
+	'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array( $binding_receipt ) ) ),
 	'theme_dir' => sys_get_temp_dir() . '/ssi-product-handoff-' . uniqid(),
 );
 // Simulate an earlier import's route file: cleanup must be journaled too.
@@ -110,6 +128,20 @@ $assert( $expected_template === file_get_contents( $template ), 'Product single 
 $assert( $expected_template === Static_Site_Importer_Site_Plan_Persistence::served_document( $state, $state['ordered_pages'][0] ), 'Served-document proof reads the composed template.' );
 $assert( empty( $state['resolved']['writes'] ) && ! is_file( $state['theme_dir'] . '/templates/page-mug.html' ), 'Unused page-specific route template is not left in the theme or pending writes.' );
 $assert( $route_template === $state['rollback']['files'][ $state['theme_dir'] . '/templates/page-mug.html' ]['content'], 'Removed route template participates in rollback.' );
+$completed_binding = $state['applied']['runtime_declarations']['entity_bindings'][0];
+$quality_report = Static_Site_Importer_Import_Report::from_array( array(
+	'quality' => array( 'fallback_count' => 1 ),
+	'diagnostics' => array( $fallback ),
+	'materialization_receipt' => array( 'completed' => array(
+		'runtime_declarations' => $state['applied']['runtime_declarations'],
+		'files' => $state['applied']['files'],
+		'materialized_pages' => array( $row['source_path'] => array( 'content_hash' => hash( 'sha256', Static_Site_Importer_Site_Plan_Persistence::served_document( $state, $state['ordered_pages'][0] ) ) ) ),
+	) ),
+) );
+$quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $quality_report, array() );
+$assert( 0 === $quality['unsupported_fallback_count'], 'Bound and consolidated product controls reconcile against their persisted receipt.' );
+$assert( hash( 'sha256', $completed_binding['replacement_block_markup'] ) === $completed_binding['materialized_block_hash'] && $completed_binding['materialized_block_hash'] === $completed_binding['persisted_fragment_hash'], 'Receipt hashes prove the final context-inheriting fragment.' );
+$assert( ! str_contains( $completed_binding['replacement_block_markup'], 'productId' ) && ! is_file( $state['theme_dir'] . '/templates/single-product-mug.html' ), 'Proof survives removal of captured product context and route-specific template.' );
 $write_template = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'write_whole_page_template' );
 foreach ( array( null, '<!-- wp:paragraph --><p>No slot</p><!-- /wp:paragraph -->', $route_template ) as $shell ) {
 	$probe = $state;
