@@ -229,6 +229,7 @@
     { "path": "tests/smoke-navigation-entity-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-synced-pattern-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-region-binding-row-degradation.php", "environment": "standalone-php" },
+    { "path": "tests/source-content-decision.php", "environment": "standalone-php" },
     { "path": "tests/source-local-post-date.php", "environment": "standalone-php" },
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-comment-entities.php", "environment": "standalone-php" },
