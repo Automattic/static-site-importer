@@ -4943,7 +4943,8 @@ foreach ( array(
 	'post-entity' => array( '{{wordpress-site-plan:entity:missing}}', true, true ),
 ) as $runtime_case => [ $runtime_content, $runtime_post, $runtime_fails ] ) {
 	$runtime_target = 'templates/runtime-' . $runtime_case . '.html';
-	$runtime_state = array( 'plan' => $runtime_plan, 'theme_dir' => $GLOBALS['ssi_plan_root'] . '/navigation-route' );
+	// No plan is needed after coverage is computed: final validation must reuse it.
+	$runtime_state = array( 'runtime_asset_tokens' => $runtime_covered, 'theme_dir' => $GLOBALS['ssi_plan_root'] . '/navigation-route' );
 	if ( $runtime_post ) {
 		$GLOBALS['ssi_plan_posts'][ $nav_product ]['post_content'] = $runtime_content;
 		$runtime_target = 'post:' . $nav_product;

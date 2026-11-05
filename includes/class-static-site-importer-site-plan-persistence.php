@@ -148,6 +148,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['applied']['attachments']    = $media_state['applied']['attachments'] ?? array();
 			$state['media_library_unavailable'] = $media_state['media_library_unavailable'] ?? array();
 		}
+		// The final plan is now loaded, including any media-library rebind.
+		// Reuse bootstrap coverage across all writes and the final invariant.
+		$state['runtime_asset_tokens'] = self::template_asset_tokens( $state['plan'] );
 		require_once __DIR__ . '/class-static-site-importer-media-library-materializer.php';
 		// Theme-owned capture records (fonts) are verified against the exact
 		// declared write bytes before any theme file materializes.
@@ -179,7 +182,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					continue;
 				}
 				self::journal_file( $state, $state['theme_dir'] . '/' . $write['target_path'] );
-				$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], null, self::template_asset_tokens( $state['plan'] ) );
+				$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], null, $state['runtime_asset_tokens'] );
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt_from_error( $state, $result );
 				}
@@ -388,7 +391,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'functions.php' === $write['target_path'] && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
-				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write, self::template_asset_tokens( $state['plan'] ) );
+				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write, $state['runtime_asset_tokens'] );
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt( $state, $result->get_error_code() );
 				}
@@ -405,7 +408,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$length = max( 1, intdiv( strlen( $data ), 2 ) );
 				return (int) fwrite( $stream, substr( $data, 0, $length ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Deterministic test-only short-write injection.
 			} : null;
-			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer, self::template_asset_tokens( $state['plan'] ) );
+			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer, $state['runtime_asset_tokens'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt_from_error( $state, $result );
 			}
@@ -1094,7 +1097,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'encoding' => 'utf8',
 				'data'     => $markup,
 			),
-		), null, null, self::template_asset_tokens( $state['plan'] ?? array() ) );
+		), null, null, $state['runtime_asset_tokens'] ?? array() );
 		if ( is_wp_error( $written ) ) {
 			return $written;
 		}
@@ -1228,7 +1231,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			),
 			null,
 			null,
-			self::template_asset_tokens( $state['plan'] ?? array() )
+			$state['runtime_asset_tokens'] ?? array()
 		);
 		if ( is_wp_error( $written ) ) {
 			return $written;
@@ -1279,7 +1282,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				null,
 				null,
-				self::template_asset_tokens( $state['plan'] )
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $written ) ) {
 				return $written;
@@ -1811,7 +1814,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( $state['applied']['files'] ?? array() as $file ) {
 			$target  = (string) $file['target_path'];
 			$content = file_get_contents( $state['theme_dir'] . '/' . $target ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verify journaled materialization outputs.
-			$error   = self::validate_output_content( (string) $content, $target, self::template_asset_tokens( $state['plan'] ?? array() ) );
+			$error   = self::validate_output_content( (string) $content, $target, $state['runtime_asset_tokens'] ?? array() );
 			if ( $error ) {
 				return $error;
 			}
@@ -2026,7 +2029,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				null,
 				null,
-				self::template_asset_tokens( $state['plan'] )
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2154,7 +2157,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				null,
 				null,
-				self::template_asset_tokens( $state['plan'] )
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2228,7 +2231,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				null,
 				null,
-				self::template_asset_tokens( $state['plan'] )
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2343,7 +2346,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				null,
 				null,
-				self::template_asset_tokens( $state['plan'] )
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return new WP_Error( 'static_site_importer_companion_asset_loader_unavailable', sprintf( 'The companion asset loader could not publish %s at %s.', $target, $path ) );
