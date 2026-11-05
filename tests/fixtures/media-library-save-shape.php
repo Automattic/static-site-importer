@@ -7,7 +7,8 @@ function wp_parse_url( string $url, int $component ) { return parse_url( $url, $
 function wp_get_attachment_url( int $id ): string { return 'https://example.test/uploads/' . $id . '.png'; }
 function esc_url( string $url ): string { return htmlspecialchars( $url, ENT_QUOTES ); }
 function esc_attr( string $value ): string { return htmlspecialchars( $value, ENT_QUOTES ); }
-function serialize_block_attributes( array $attrs ): string { return json_encode( $attrs, JSON_UNESCAPED_SLASHES ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone serialization-boundary stub.
+function wp_json_encode( $value, int $flags = 0 ) { return json_encode( $value, $flags ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone serialization-boundary stub.
+function serialize_block_attributes( array $attrs ): string { return str_replace( array( '<', '>', '&' ), array( '\\u003c', '\\u003e', '\\u0026' ), json_encode( $attrs, JSON_UNESCAPED_SLASHES ) ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone serialization-boundary stub.
 
 require __DIR__ . '/class-media-library-tag-processor.php';
 
