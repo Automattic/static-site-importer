@@ -152,7 +152,8 @@
         "model": "roadie/cook-heavy",
         "acknowledge-model-override": true,
         "gate-env": "{{item.gate_env}}",
-        "provider-evidence": "{{item.provider_evidence}}"
+        "provider-evidence": "{{item.provider_evidence}}",
+        "publish-incomplete-draft": true
       }
     },
     {
