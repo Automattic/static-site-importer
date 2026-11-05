@@ -148,6 +148,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['applied']['attachments']    = $media_state['applied']['attachments'] ?? array();
 			$state['media_library_unavailable'] = $media_state['media_library_unavailable'] ?? array();
 		}
+		// The final plan is now loaded, including any media-library rebind.
+		// Reuse bootstrap coverage across all writes and the final invariant.
+		$state['runtime_asset_tokens'] = self::template_asset_tokens( $state['plan'] );
 		require_once __DIR__ . '/class-static-site-importer-media-library-materializer.php';
 		// Theme-owned capture records (fonts) are verified against the exact
 		// declared write bytes before any theme file materializes.
@@ -179,7 +182,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					continue;
 				}
 				self::journal_file( $state, $state['theme_dir'] . '/' . $write['target_path'] );
-				$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'] );
+				$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], null, $state['runtime_asset_tokens'] );
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt_from_error( $state, $result );
 				}
@@ -388,7 +391,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'functions.php' === $write['target_path'] && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
-				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write );
+				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write, $state['runtime_asset_tokens'] );
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt( $state, $result->get_error_code() );
 				}
@@ -405,7 +408,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$length = max( 1, intdiv( strlen( $data ), 2 ) );
 				return (int) fwrite( $stream, substr( $data, 0, $length ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Deterministic test-only short-write injection.
 			} : null;
-			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer );
+			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer, $state['runtime_asset_tokens'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt_from_error( $state, $result );
 			}
@@ -1094,7 +1097,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'encoding' => 'utf8',
 				'data'     => $markup,
 			),
-		) );
+		), null, null, $state['runtime_asset_tokens'] ?? array() );
 		if ( is_wp_error( $written ) ) {
 			return $written;
 		}
@@ -1225,7 +1228,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					'encoding' => 'utf8',
 					'data'     => $markup,
 				),
-			)
+			),
+			null,
+			null,
+			$state['runtime_asset_tokens'] ?? array()
 		);
 		if ( is_wp_error( $written ) ) {
 			return $written;
@@ -1273,7 +1279,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'encoding' => 'utf8',
 						'data'     => $content,
 					),
-				)
+				),
+				null,
+				null,
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $written ) ) {
 				return $written;
@@ -1724,11 +1733,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/** @param array<string,mixed> $write */
-	public static function write_file( string $theme_dir, array $write, ?object $payload_reader = null, ?Closure $chunk_writer = null ) {
+	public static function write_file( string $theme_dir, array $write, ?object $payload_reader = null, ?Closure $chunk_writer = null, array $runtime_asset_tokens = array() ) {
 		$path          = $theme_dir . '/' . $write['target_path'];
 		$declared_hash = self::payload_hash( $write );
 		if ( is_file( $path ) && '' !== $declared_hash && self::file_hash( $path ) === $declared_hash ) {
-			$error = self::validate_output_content( (string) file_get_contents( $path ), $write['target_path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Validate the reconciled output without fetching payload bytes.
+			$error = self::validate_output_content( (string) file_get_contents( $path ), $write['target_path'], $runtime_asset_tokens ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Validate the reconciled output without fetching payload bytes.
 			if ( $error ) {
 				return $error;
 			}
@@ -1743,7 +1752,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $data ) ) {
 			return $data;
 		}
-		$error = self::validate_output_content( $data, $write['target_path'] );
+		$error = self::validate_output_content( $data, $write['target_path'], $runtime_asset_tokens );
 		if ( $error ) {
 			return $error;
 		}
@@ -1768,11 +1777,36 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Reject unresolved producer tokens regardless of entity kind or output path. */
-	public static function validate_output_content( string $content, string $target ): ?WP_Error {
-		return str_contains( $content, '{{wordpress-site-plan:' )
-			? new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target, array( 'target' => $target ) )
-			: null;
+	/** Derive the map keys using the same inputs and activation condition as WordPressSitePlan::bootstrap(). */
+	public static function template_asset_tokens( array $plan ): array {
+		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array() ) as $document ) {
+			if ( ! str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' ) ) {
+				continue;
+			}
+			$covered = array();
+			foreach ( $plan['reference_tokens'] ?? array() as $token ) {
+				if ( is_string( $token['token'] ?? null ) && is_string( $token['target_path'] ?? null ) ) {
+					$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
+				}
+			}
+			return $covered;
+		}
+		return array();
+	}
+
+	/** Reject references with no runtime resolver; posts never receive a covered set. */
+	public static function validate_output_content( string $content, string $target, array $runtime_asset_tokens = array() ): ?WP_Error {
+		preg_match_all( '/\{\{wordpress-site-plan:[^}]*(?:\}\})?/', $content, $matches );
+		foreach ( $matches[0] as $token ) {
+			if ( str_starts_with( $token, '{{wordpress-site-plan:asset:' ) && isset( $runtime_asset_tokens[ $token ] ) ) {
+				continue;
+			}
+			return new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target . ': ' . $token, array(
+				'target' => $target,
+				'token'  => $token,
+			) );
+		}
+		return null;
 	}
 
 	/** Final invariant over persisted files and posts, including late mutations. */
@@ -1780,7 +1814,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( $state['applied']['files'] ?? array() as $file ) {
 			$target  = (string) $file['target_path'];
 			$content = file_get_contents( $state['theme_dir'] . '/' . $target ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verify journaled materialization outputs.
-			$error   = self::validate_output_content( (string) $content, $target );
+			$error   = self::validate_output_content( (string) $content, $target, $state['runtime_asset_tokens'] ?? array() );
 			if ( $error ) {
 				return $error;
 			}
@@ -1897,7 +1931,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/** Merge a validated later-batch bootstrap as an idempotent PHP include. */
-	public static function merge_batch_bootstrap( string $theme_dir, array $write ) {
+	public static function merge_batch_bootstrap( string $theme_dir, array $write, array $runtime_asset_tokens = array() ) {
 		$bootstrap = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared canonical bootstrap payload.
 		if ( false === $bootstrap || ! is_string( $bootstrap ) || ! str_starts_with( ltrim( $bootstrap ), '<?php' ) ) {
 			return new WP_Error( 'theme_bootstrap_merge_invalid' );
@@ -1921,7 +1955,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'data'     => $bootstrap,
 					),
 					'payload_hash' => $hash,
-				)
+				),
+				null,
+				null,
+				$runtime_asset_tokens
 			);
 			if ( is_wp_error( $include_write ) ) {
 				return $include_write;
@@ -1936,7 +1973,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'data'     => $current . $require,
 					),
 					'payload_hash' => hash( 'sha256', $current . $require ),
-				)
+				),
+				null,
+				null,
+				$runtime_asset_tokens
 			);
 			if ( is_wp_error( $functions_write ) ) {
 				return $functions_write;
@@ -1986,7 +2026,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'encoding' => 'utf8',
 						'data'     => $content,
 					),
-				)
+				),
+				null,
+				null,
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2111,7 +2154,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					),
 					'payload_hash'            => 'base64' === ( $write['encoding'] ?? 'utf8' ) ? hash( 'sha256', (string) base64_decode( (string) ( $write['content'] ?? '' ), true ) ) : hash( 'sha256', (string) ( $write['content'] ?? '' ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Hashes decoded declared font payload bytes.
 					'reconciliation_identity' => hash( 'sha256', "font-materialization\n" . $target ),
-				)
+				),
+				null,
+				null,
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2182,7 +2228,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					),
 					'payload_hash'            => hash( 'sha256', $content ),
 					'reconciliation_identity' => hash( 'sha256', "internal-links\n" . $target ),
-				)
+				),
+				null,
+				null,
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
@@ -2294,7 +2343,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					),
 					'payload_hash'            => hash( 'sha256', $content ),
 					'reconciliation_identity' => hash( 'sha256', "companion-asset-loading\n" . $target ),
-				)
+				),
+				null,
+				null,
+				$state['runtime_asset_tokens'] ?? array()
 			);
 			if ( is_wp_error( $result ) ) {
 				return new WP_Error( 'static_site_importer_companion_asset_loader_unavailable', sprintf( 'The companion asset loader could not publish %s at %s.', $target, $path ) );

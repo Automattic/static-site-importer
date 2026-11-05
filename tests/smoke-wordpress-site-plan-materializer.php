@@ -4927,4 +4927,48 @@ $GLOBALS['ssi_plan_posts'][ $nav_product ]['post_content'] = '{{wordpress-site-p
 $invalid_post = Static_Site_Importer_Site_Plan_Persistence::validate_output_references( array( 'applied' => array( 'posts' => array( array( 'id' => $nav_product ) ) ) ) );
 $assert( is_wp_error( $invalid_post ) && str_contains( $invalid_post->get_error_message(), 'post:' . $nav_product ), 'The final invariant names a post containing an unresolved token.' );
 
+// Runtime coverage comes from bootstrap inputs, not from scanning generated PHP.
+$runtime_token = '{{wordpress-site-plan:asset:asset-covered}}';
+$runtime_plan = array(
+	'templates' => array( array( 'canonical_block_markup' => '<img src="' . $runtime_token . '">' ) ),
+	'reference_tokens' => array( array( 'token' => 'asset-covered', 'target_path' => 'assets/logo.svg' ) ),
+);
+$runtime_covered = Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan );
+foreach ( array(
+	'covered-asset' => array( $runtime_token, false, false ),
+	'navigation' => array( $runtime_token . '{{wordpress-site-plan:navigation:missing}}', false, true ),
+	'uncovered-asset' => array( $runtime_token . '{{wordpress-site-plan:asset:missing}}', false, true ),
+	'post-asset' => array( $runtime_token, true, true ),
+	'post-navigation' => array( '{{wordpress-site-plan:navigation:missing}}', true, true ),
+	'post-entity' => array( '{{wordpress-site-plan:entity:missing}}', true, true ),
+) as $runtime_case => [ $runtime_content, $runtime_post, $runtime_fails ] ) {
+	$runtime_target = 'templates/runtime-' . $runtime_case . '.html';
+	// No plan is needed after coverage is computed: final validation must reuse it.
+	$runtime_state = array( 'runtime_asset_tokens' => $runtime_covered, 'theme_dir' => $GLOBALS['ssi_plan_root'] . '/navigation-route' );
+	if ( $runtime_post ) {
+		$GLOBALS['ssi_plan_posts'][ $nav_product ]['post_content'] = $runtime_content;
+		$runtime_target = 'post:' . $nav_product;
+		$runtime_state['applied']['posts'] = array( array( 'id' => $nav_product ) );
+	} else {
+		$runtime_write = array( 'source_path' => $runtime_target, 'target_path' => $runtime_target, 'payload_hash' => hash( 'sha256', $runtime_content ), 'payload' => array( 'encoding' => 'utf8', 'data' => $runtime_content ) );
+		$runtime_result = Static_Site_Importer_Site_Plan_Persistence::write_file( $runtime_state['theme_dir'], $runtime_write, null, null, $runtime_covered );
+		$assert( $runtime_fails === is_wp_error( $runtime_result ), 'Theme write validates runtime coverage: ' . $runtime_case );
+		// Also exercise hash-identical reconciliation and late mutations independently.
+		file_put_contents( $runtime_state['theme_dir'] . '/' . $runtime_target, $runtime_content );
+		$runtime_reconciled = Static_Site_Importer_Site_Plan_Persistence::write_file( $runtime_state['theme_dir'], $runtime_write, null, null, $runtime_covered );
+		$assert( $runtime_fails === is_wp_error( $runtime_reconciled ), 'Reconciled theme write validates runtime coverage: ' . $runtime_case );
+		$runtime_state['applied']['files'] = array( array( 'target_path' => $runtime_target ) );
+	}
+	$runtime_error = Static_Site_Importer_Site_Plan_Persistence::validate_output_references( $runtime_state );
+	$assert( $runtime_fails === is_wp_error( $runtime_error ), 'Final output invariant validates runtime coverage: ' . $runtime_case );
+	if ( $runtime_fails ) {
+		$offending_token = $runtime_post ? $runtime_content : substr( $runtime_content, strlen( $runtime_token ) );
+		$assert( array( 'target' => $runtime_target, 'token' => $offending_token ) === $runtime_error->get_error_data() && str_contains( $runtime_error->get_error_message(), $runtime_target ) && str_contains( $runtime_error->get_error_message(), $offending_token ), 'Failure identifies target and first offending token: ' . $runtime_case );
+	}
+}
+$runtime_plan['templates'] = array();
+$assert( array() === Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan ), 'Reference rows alone do not activate the runtime map.' );
+$runtime_plan['template_parts'] = array( array( 'canonical_block_markup' => $runtime_token ) );
+$assert( $runtime_covered === Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan ), 'Template parts activate the same runtime map.' );
+
 echo "WordPress site plan materializer smoke passed.\n";
