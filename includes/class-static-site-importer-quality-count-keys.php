@@ -37,6 +37,7 @@ final class Static_Site_Importer_Quality_Count_Keys {
 		'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
 		'commerce_dependency_failures'       => 'commerce_dependency_failures',
 		'interaction_candidates'             => 'interaction_candidate_count',
+		'choice_submission_forms'            => 'choice_submission_form_count',
 		'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
 		'semantic_parity_failures'           => 'semantic_parity_failure_count',
 		'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
