@@ -150,7 +150,7 @@ for (const finding of blockers) {
   if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
   else if (issue) entry = { status: 'untracked', reason: `fix did not hold: ${issue.url} is closed and the finding still reproduces` };
   else entry = reduceAndFile(finding);
-  const record = { signature: finding.signature, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
+  const record = { signature: finding.signature, stage: finding.stage, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
   if (record.status === 'tracked') {
     record.cells = acceptanceCells(finding);
     // The import shows the defect but the predicate cannot: a fix gated on it
