@@ -191,7 +191,8 @@ final class Static_Site_Importer_Quality_Gates {
 	 * Website-artifact composition supplies the compiler's nested metrics rather
 	 * than the complete conversion-report quality shape. Preserve every supplied
 	 * report value while making the quality gate consume its authoritative fallback
-	 * count until a materialization receipt explicitly resolves it.
+	 * count until a materialization receipt explicitly resolves it, and its count
+	 * of pages whose compiled text the plan no longer carries.
 	 *
 	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
@@ -205,8 +206,10 @@ final class Static_Site_Importer_Quality_Gates {
 			? $report['blocks_engine']['plan_summary']['quality']
 			: array();
 		$plan_metrics = isset( $plan_quality['metrics'] ) && is_array( $plan_quality['metrics'] ) ? $plan_quality['metrics'] : $plan_quality;
-		if ( isset( $plan_metrics['fallback_count'] ) && is_numeric( $plan_metrics['fallback_count'] ) ) {
-			$quality['fallback_count'] = max( (int) $quality['fallback_count'], (int) $plan_metrics['fallback_count'] );
+		foreach ( array( 'fallback_count', 'content_loss_count' ) as $key ) {
+			if ( isset( $plan_metrics[ $key ] ) && is_numeric( $plan_metrics[ $key ] ) ) {
+				$quality[ $key ] = max( (int) $quality[ $key ], (int) $plan_metrics[ $key ] );
+			}
 		}
 
 		$report['quality'] = $quality;

@@ -202,6 +202,7 @@
         ],
         "standalone_php_test_paths": [
           "tests/smoke-raw-html-companion-quality.php",
+          "tests/smoke-plan-content-loss-quality.php",
           "tests/smoke-dependency-created-route-adoption.php",
           "tests/form-fallback-contract-equivalence.php",
           "tests/smoke-form-submit-box.php",

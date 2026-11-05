@@ -9,6 +9,7 @@
   },
   "tests": [
     { "path": "tests/smoke-raw-html-companion-quality.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-plan-content-loss-quality.php", "environment": "standalone-php" },
     { "path": "tests/smoke-dependency-created-route-adoption.php", "environment": "standalone-php" },
     { "path": "tests/smoke-dependency-route-conflict-wordpress.php", "environment": "wordpress-runtime", "reason": "Runs the two-page CLI import through every fresh-runtime continuation on a disposable WordPress; needs a real runtime to reproduce the dependency-seeded checkout conflict." },
     { "path": "tests/consent-banner.test.mjs", "environment": "node" },
