@@ -36,10 +36,12 @@ for (const item of triage.tracked) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
       pr.mergeable = JSON.parse(gh('pr', 'view', pr.url, '--json', 'mergeable')).mergeable;
     }
-    if (pr.isDraft) { held.push({ pr: pr.url, reason: 'draft' }); continue; }
     if (pr.mergeable !== 'MERGEABLE') { held.push({ pr: pr.url, reason: `mergeable=${pr.mergeable}` }); continue; }
     if (!checks.length || red.length) { held.push({ pr: pr.url, reason: checks.length ? `checks not green: ${red.map((c) => c.name || c.context).join(', ')}` : 'no checks reported' }); continue; }
     if (args['dry-run']) { merged.push({ repo: item.repo, github: pr.github, pr: pr.url, sha: pr.headRefOid }); continue; }
+    // A draft is an incomplete Cook that later passes kept working on. Once it is
+    // confirmed at this head, green, and approved, it is ready.
+    if (pr.isDraft) gh('pr', 'ready', pr.url);
     gh('pr', 'merge', pr.url, '--squash', '--match-head-commit', pr.headRefOid);
     // Delete only the remote head: gh's --delete-branch also edits the local
     // checkout, which fails after the merge when the loop runs detached.
