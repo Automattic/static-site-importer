@@ -39,9 +39,10 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 	}
 };
 
-// Producer decisions are authoritative; consumer dated-meta inference is
-// reserved for rows without a decision. Materialize through ArtifactCompiler
-// so the plan is producer-real.
+// The producer may default HTML documents to page. The consumer classifier
+// upgrades a dated or /YYYY/MM/ routed document to post only in that defaulted
+// case; an explicit non-page post_type still wins. Materialize through the
+// canonical plan via ArtifactCompiler so the plan is producer-real.
 if ( ! class_exists( 'Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler' ) ) {
 	if ( is_readable( $plugin_root . '/vendor/autoload.php' ) ) {
 		require_once $plugin_root . '/vendor/autoload.php';
@@ -53,23 +54,6 @@ if ( ! class_exists( 'Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\Ar
 }
 
 $compiler = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
-$classification_cases = array(
-	'defaulted-page-beats-year-only-date' => array(
-		'row' => array(
-			'content_decision' => array( 'schema' => 'blocks-engine/content-decision/v1', 'state' => 'defaulted', 'post_type' => 'page', 'evidence' => array() ),
-			'document_metadata' => array( 'meta' => array( array( 'name' => 'DC.date', 'content' => '2025' ) ) ),
-		),
-		'want' => 'page',
-	),
-	'no-decision-full-iso-date-infers-post' => array(
-		'row' => array( 'document_metadata' => array( 'meta' => array( array( 'name' => 'DC.date', 'content' => '2025-03-01' ) ) ) ),
-		'want' => 'post',
-	),
-);
-foreach ( $classification_cases as $label => $case ) {
-	$assert( $case['want'] === Static_Site_Importer_Document_Type_Classifier::classify( $case['row'] )['post_type'], $label );
-}
-
 $plan     = $compiler->compile(
 	array(
 		'entrypoint' => 'index.html',

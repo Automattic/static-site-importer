@@ -1192,7 +1192,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$offset     = $opener['end'];
 		}
 		$rewritten .= substr( $content, $offset );
-		if ( null !== $error || ! str_contains( $rewritten, '<img' ) ) {
+		if ( null !== $error || ( ! str_contains( $rewritten, '<img' ) && ! str_contains( $rewritten, 'data-' ) ) ) {
 			return $rewritten;
 		}
 
@@ -1308,10 +1308,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			++$bound;
 		}
 		foreach ( $attrs as $key => $value ) {
-			if ( ! is_string( $value ) || ! str_contains( $value, '<img' ) ) {
-				continue;
-			}
-			$rewritten = self::rewrite_markup( $value, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+			$rewritten = self::rewrite_attribute_media( $value, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
 			if ( null !== $error ) {
 				return $raw;
 			}
@@ -1336,6 +1333,42 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
+	 * Rewrite markup in structured attributes, including JSON-encoded configs.
+	 * Keep untouched values byte-identical; decode JSON before looking for tags
+	 * so escaped quotes and Unicode escapes cannot hide image references.
+	 *
+	 * @param mixed $value Attribute value.
+	 * @param array<mixed> $state Transaction state.
+	 * @param array<string,int> $attachments Attachment identities.
+	 * @param array<string,int> $by_hash Attachment hashes.
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report Binding report.
+	 * @return array{html:mixed,ids:array<int,int>}
+	 */
+	private static function rewrite_attribute_media( $value, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): array {
+		$structured = is_string( $value ) ? json_decode( $value, true ) : $value;
+		if ( is_array( $structured ) ) {
+			$updated = $structured;
+			$ids     = array();
+			foreach ( $structured as $key => $child ) {
+				$result          = self::rewrite_attribute_media( $child, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+				$updated[ $key ] = $result['html'];
+				$ids             = array_merge( $ids, $result['ids'] );
+			}
+			return array(
+				'html' => $updated === $structured ? $value : ( is_string( $value ) ? wp_json_encode( $updated, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : $updated ),
+				'ids'  => $ids,
+			);
+		}
+		if ( is_string( $value ) ) {
+			return self::rewrite_markup( $value, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+		}
+		return array(
+			'html' => $value,
+			'ids'  => array(),
+		);
+	}
+
+	/**
 	 * Rewrite img and source tags whose raster sources live in the generated theme.
 	 *
 	 * @param array<mixed>                                                                  $state
@@ -1346,6 +1379,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 */
 	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error, ?string $image_class = null, ?string $unbound_size_slug = null ): array {
 		$ids = array();
+		// Saved companion configs mirror their comment attributes in HTML data
+		// attributes. Use the same structured rewrite on the decoded value.
+		$html = preg_replace_callback(
+			'/\bdata-[a-z0-9_-]+=("|\x27)(.*?)\1/is',
+			static function ( array $attribute_match ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
+				$value  = html_entity_decode( $attribute_match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+				$result = self::rewrite_attribute_media( $value, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+				$ids    = array_merge( $ids, $result['ids'] );
+				return $result['html'] === $value ? $attribute_match[0] : str_replace( $attribute_match[1] . $attribute_match[2] . $attribute_match[1], $attribute_match[1] . esc_attr( $result['html'] ) . $attribute_match[1], $attribute_match[0] );
+			},
+			$html
+		) ?? $html;
 		if ( ! str_contains( $html, '<img' ) && ! str_contains( $html, '<source' ) ) {
 			return array(
 				'html' => $html,

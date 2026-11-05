@@ -13,8 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Classifies plan page rows as WordPress posts or pages.
  *
  * Producer `content_decision` and a non-page declared `post_type` win.
- * Consumer dated-meta / dated-route inference runs only when no producer
- * decision is present. The site entrypoint
+ * Consumer dated-meta / dated-route inference runs only when the producer
+ * defaulted the row to page (or omitted a decision). The site entrypoint
  * is always a page.
  */
 final class Static_Site_Importer_Document_Type_Classifier {
@@ -44,17 +44,12 @@ final class Static_Site_Importer_Document_Type_Classifier {
 		}
 
 		$decision = self::content_decision( $page );
-		if ( is_array( $decision ) ) {
+		if ( is_array( $decision ) && in_array( $decision['state'], array( 'declared', 'inferred' ), true ) ) {
 			$post_type = sanitize_key( (string) ( $decision['post_type'] ?? '' ) );
 			if ( '' !== $post_type && self::post_type_registered( $post_type ) ) {
-				$signal = 'declared' === $decision['state'] ? 'producer_declared' : ( 'inferred' === $decision['state'] ? 'producer_inferred' : 'page_default' );
-				if ( 'defaulted' === $decision['state'] && 'page' !== $post_type ) {
-					$signal = 'producer_defaulted';
-				}
+				$signal = 'declared' === $decision['state'] ? 'producer_declared' : 'producer_inferred';
 				return self::result( $post_type, self::producer_date( $page ), $signal );
 			}
-			// A valid decision whose post type is unavailable falls through to the
-			// legacy consumer behavior, as before.
 		}
 
 		// Hand-built plans and older rows may omit content_decision. A non-page
@@ -191,11 +186,10 @@ final class Static_Site_Importer_Document_Type_Classifier {
 			if ( ! in_array( strtolower( $key ), self::PUBLISH_DATE_META_KEYS, true ) ) {
 				continue;
 			}
-			$timestamp = strtotime( (string) ( $row['content'] ?? '' ) );
-			if ( false === $timestamp ) {
-				continue;
+			$date = self::normalize_date( (string) ( $row['content'] ?? '' ) );
+			if ( null !== $date ) {
+				return $date;
 			}
-			return gmdate( 'Y-m-d H:i:s', $timestamp );
 		}
 		return null;
 	}
@@ -207,6 +201,16 @@ final class Static_Site_Importer_Document_Type_Classifier {
 	 * @return string|null
 	 */
 	private static function normalize_date( string $value ): ?string {
+		// PHP supplies day 1 for the ISO year-month form, even in date_parse().
+		if ( 1 === preg_match( '/^\s*\d{4}-\d{2}\s*$/', $value ) ) {
+			return null;
+		}
+		$parsed = date_parse( $value );
+		// Require a complete date; strtotime otherwise supplies today's missing parts.
+		// Do not reject relative data: RFC 2822 weekday names also populate it.
+		if ( 0 !== $parsed['error_count'] || ! is_int( $parsed['year'] ) || ! is_int( $parsed['month'] ) || ! is_int( $parsed['day'] ) ) {
+			return null;
+		}
 		$timestamp = strtotime( $value );
 		if ( false === $timestamp ) {
 			return null;

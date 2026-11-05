@@ -1975,7 +1975,7 @@ $declared_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_ru
 $assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
 $entity_artifact                         = $artifact;
-$entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"tagName":"button"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+$entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"style":{"border":{"radius":"0px"}},"tagName":"button"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button" style="border-radius:0px">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 $entity_artifact['files']['index.html']  = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';
 $entity_artifact['runtime_declarations'] = array(
 	array(
