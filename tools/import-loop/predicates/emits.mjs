@@ -17,7 +17,9 @@ export function exitWhileEmitted() {
   if (out.status !== 0) process.exit(2);
   let result;
   try { result = JSON.parse(out.stdout); } catch { process.exit(2); }
-  const emitted = [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)[ \/]/g)].filter((m) => m[1].endsWith(`/${subject}`)).length;
-  if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ subject, emitted }));
-  process.exit(emitted ? 0 : 1);
+  const emitted = [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => m[1].endsWith(`/${subject}`));
+  // What still reproduces: each remaining block's attributes, so a fix can
+  // tell which source structures it has not reached yet.
+  if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ subject, emitted: emitted.length, remaining: emitted.slice(0, 8).map((m) => (m[2] || '').trim().slice(0, 300)) }));
+  process.exit(emitted.length ? 0 : 1);
 }

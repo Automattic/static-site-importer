@@ -188,7 +188,7 @@ function acceptanceGate(item, repo) {
     ] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
-      return `PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
+      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
     }),
     // Scope: nothing outside the finding's elements may change against the
     // import of this change's merge base with trunk.
