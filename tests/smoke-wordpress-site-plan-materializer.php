@@ -3206,7 +3206,7 @@ $receipt_default             = Static_Site_Importer_WordPress_Site_Plan_Material
 );
 $assert( true === ( $receipt_default['completed']['runtime_policy']['disable_smilies']['requested'] ?? null ), 'disable-smilies-defaults-requested-true' );
 $assert( false === ( $receipt_default['completed']['runtime_policy']['disable_smilies']['applied'] ?? null ), 'disable-smilies-not-applied-without-activate' );
-$assert( true === $GLOBALS['ssi_plan_options']['use_smilies'], 'non-activating-import-preserves-use-smilies' );
+$assert( true === $GLOBALS['ssi_plan_options']['use_smilies'] && ! isset( $GLOBALS['ssi_plan_options']['sharing-options'] ), 'non-activating-import-preserves-runtime-options' );
 
 // Explicit opt-out, non-activating: requested and applied both false.
 $receipt_off = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -3267,6 +3267,47 @@ $receipt_repeat_policy                      = Static_Site_Importer_WordPress_Sit
 $assert( 'completed' === $receipt_repeat_policy['status'], 'repeated-activating-import-completes' );
 $assert( true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['requested'] ?? null ) && true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['applied'] ?? null ), 'repeated-activating-import-records-requested-and-applied' );
 $assert( false === $GLOBALS['ssi_plan_options']['use_smilies'], 'repeated-activating-import-keeps-use-smilies-false' );
+
+// Page engagement policy preserves configured sharing settings and journals missing options too.
+$sharing_before = array(
+	'global' => array( 'show' => array( 'post', 'page', 'product' ), 'sharing_label' => 'Pass it on', 'custom' => array( 'custom-service' ) ),
+	'other'  => array( 'enabled' => true ),
+);
+foreach ( array( 'missing', 'existing', 'opt_out' ) as $sharing_case ) {
+	unset( $GLOBALS['ssi_plan_options']['sharing-options'] );
+	if ( 'missing' !== $sharing_case ) {
+		$GLOBALS['ssi_plan_options']['sharing-options'] = $sharing_before;
+	}
+	$sharing_snapshot = $GLOBALS['ssi_plan_options'];
+	$sharing_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+		$plan,
+		array_merge(
+			array(
+				'slug'                         => 'site-plan',
+				'overwrite'                    => true,
+				'activate'                     => true,
+				'defer_materialization_commit' => true,
+			),
+			'opt_out' === $sharing_case ? array( 'disable_page_engagement_buttons' => false ) : array()
+		)
+	);
+	$sharing_expected = $sharing_before;
+	if ( 'missing' === $sharing_case ) {
+		$sharing_expected = array( 'global' => array( 'button_style' => 'icon-text', 'sharing_label' => 'Share this:', 'open_links' => 'same', 'show' => array( 'post' ), 'custom' => array() ) );
+	} elseif ( 'existing' === $sharing_case ) {
+		$sharing_expected['global']['show'] = array( 'post', 'product' );
+	}
+	$sharing_actual = $GLOBALS['ssi_plan_options']['sharing-options'] ?? null;
+	$sharing_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $sharing_receipt, 'sharing_policy_smoke' );
+	$assert(
+		'completed' === $sharing_receipt['status']
+		&& $sharing_expected === $sharing_actual
+		&& ( 'opt_out' !== $sharing_case ) === ( $sharing_receipt['completed']['runtime_policy']['disable_page_engagement_buttons']['applied'] ?? null )
+		&& 'rolled_back' === ( $sharing_result['rollback']['status'] ?? '' )
+		&& $sharing_snapshot === $GLOBALS['ssi_plan_options'],
+		'page engagement policy applies only when requested and rollback restores existing or missing sharing options: ' . $sharing_case
+	);
+}
 
 // Every runtime mutation boundary restores the exact option snapshot on failure.
 foreach ( array( 'after_activation', 'after_show_on_front', 'after_page_on_front', 'after_use_smilies', 'after_blogname' ) as $stage ) {
