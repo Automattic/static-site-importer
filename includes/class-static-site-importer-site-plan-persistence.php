@@ -380,6 +380,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				);
 				continue;
 			}
+			// The producer retains template asset tokens for runtime resolution.
+			// Publish resolved markup instead, preserving the lookup tables in PHP.
+			if ( 'utf8' === ( $write['payload']['encoding'] ?? null ) && ( str_starts_with( $write['target_path'], 'templates/' ) || str_starts_with( $write['target_path'], 'parts/' ) ) ) {
+				$asset_refs               = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $state['plan']['reference_tokens'], $state['theme']['uri'], $resolutions );
+				$write['payload']['data'] = strtr( $write['payload']['data'], $asset_refs );
+				$write['payload_hash']    = hash( 'sha256', $write['payload']['data'] );
+			}
 			$path        = $state['theme_dir'] . '/' . $write['target_path'];
 			$publication = self::asset_publication_receipt( $destination, $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), (string) ( $write['kind'] ?? '' ) );
 			self::journal_file( $state, $path );
@@ -1768,8 +1775,48 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Reject unresolved producer tokens regardless of entity kind or output path. */
+	/** Reject unresolved references except literal keys in producer runtime asset tables. */
 	public static function validate_output_content( string $content, string $target ): ?WP_Error {
+		if ( ! str_contains( $content, '{{wordpress-site-plan:' ) ) {
+			return null;
+		}
+		// Inspect PHP syntax, not the filename: these two producer tables retain
+		// asset tokens as lookup keys for the runtime template resolver. Never
+		// exempt tokens in values, other arrays, markup, or navigation refs.
+		$tokens = array_values( array_filter( token_get_all( $content ), static fn( $token ) => ! is_array( $token ) || T_WHITESPACE !== $token[0] ) );
+		foreach ( $tokens as $index => $token ) {
+			if ( ! is_array( $token ) || T_VARIABLE !== $token[0] || ! in_array( $token[1], array( '$blocks_engine_template_asset_tokens', '$blocks_engine_template_attachment_ids' ), true ) ) {
+				continue;
+			}
+			if ( '=' !== ( $tokens[ $index + 1 ] ?? null ) || T_ARRAY !== ( $tokens[ $index + 2 ][0] ?? null ) || '(' !== ( $tokens[ $index + 3 ] ?? null ) ) {
+				continue;
+			}
+			$attachment = '$blocks_engine_template_attachment_ids' === $token[1];
+			$keys       = array();
+			$cursor     = $index + 4;
+			while ( T_CONSTANT_ENCAPSED_STRING === ( $tokens[ $cursor ][0] ?? null )
+				&& preg_match( '/^([\'\"])\{\{wordpress-site-plan:asset:asset-[a-f0-9]{16}\}\}\\1$/', $tokens[ $cursor ][1] )
+				&& T_DOUBLE_ARROW === ( $tokens[ $cursor + 1 ][0] ?? null ) ) {
+				$value = $tokens[ $cursor + 2 ] ?? null;
+				if ( ! is_array( $value ) || ( $attachment
+					? T_LNUMBER !== $value[0] || (int) $value[1] <= 0
+					: T_CONSTANT_ENCAPSED_STRING !== $value[0] || strlen( $value[1] ) <= 2 || str_contains( $value[1], '{{wordpress-site-plan:' ) ) ) {
+					break;
+				}
+				$keys[]  = $cursor;
+				$cursor += 3;
+				if ( ',' !== ( $tokens[ $cursor ] ?? null ) ) {
+					break;
+				}
+				++$cursor;
+			}
+			if ( ')' === ( $tokens[ $cursor ] ?? null ) && ';' === ( $tokens[ $cursor + 1 ] ?? null ) ) {
+				foreach ( $keys as $key ) {
+					$tokens[ $key ] = array( T_CONSTANT_ENCAPSED_STRING, "''", 0 );
+				}
+			}
+		}
+		$content = implode( '', array_map( static fn( $token ) => is_array( $token ) ? $token[1] : $token, $tokens ) );
 		return str_contains( $content, '{{wordpress-site-plan:' )
 			? new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target, array( 'target' => $target ) )
 			: null;

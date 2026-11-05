@@ -4870,6 +4870,33 @@ foreach ( array( 'family' => '', 'outside-srcset' => '', 'img-tag' => '', 'indep
 	$assert( str_contains( $markup, wp_get_attachment_url( $id ) ), 'src binds to owner URL even outside srcset' );
 }
 
+// Template assets intentionally remain literal lookup keys in the producer bootstrap.
+$runtime_asset_plan = ( new ArtifactCompiler() )->compile( array(
+	'entrypoint' => 'index.html',
+	'files' => array(
+		'index.html' => '<header><img src="/media/photo.png" alt="Logo"></header><main><h1>Runtime assets</h1></main>',
+		'media/photo.png' => $media_files['media/photo-800.png'],
+	),
+) )->toArray()['source_reports']['wordpress_site_plan'];
+$runtime_asset_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $runtime_asset_plan, array( 'slug' => 'runtime-asset-tables' ) );
+$assert( 'completed' === $runtime_asset_receipt['status'], 'Producer runtime asset token tables materialize: ' . wp_json_encode( $runtime_asset_receipt['errors'] ?? array() ) );
+$runtime_asset_functions = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/runtime-asset-tables/functions.php' );
+$assert( str_contains( $runtime_asset_functions, '$blocks_engine_template_asset_tokens = array (' ) && str_contains( $runtime_asset_functions, '$blocks_engine_template_attachment_ids = array (' ) && str_contains( $runtime_asset_functions, '{{wordpress-site-plan:asset:' ), 'The materialized bootstrap retains both runtime lookup tables and their token keys.' );
+$assert( null === Static_Site_Importer_Site_Plan_Persistence::validate_output_content( $runtime_asset_functions, 'runtime-bootstrap.php' ), 'Runtime table recognition follows PHP declarations, not the functions.php filename.' );
+foreach ( $runtime_asset_receipt['completed']['files'] ?? array() as $runtime_asset_file ) {
+	if ( str_ends_with( $runtime_asset_file['target_path'], '.html' ) ) {
+		$assert( ! str_contains( (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/runtime-asset-tables/' . $runtime_asset_file['target_path'] ), '{{wordpress-site-plan:' ), 'Template asset references are resolved before writing served markup.' );
+	}
+}
+foreach ( array(
+	"<?php \$other = array ( '{{wordpress-site-plan:asset:asset-aaaaaaaaaaaaaaaa}}' => 'assets/logo.png', );",
+	"<?php \$blocks_engine_template_asset_tokens = array ( '{{wordpress-site-plan:navigation:navigation-aaaaaaaaaaaaaaaa}}' => 'assets/logo.png', );",
+	"<?php \$blocks_engine_template_asset_tokens = array ( 'logo' => '{{wordpress-site-plan:asset:asset-aaaaaaaaaaaaaaaa}}', );",
+	$runtime_asset_functions . '{{wordpress-site-plan:navigation:navigation-aaaaaaaaaaaaaaaa}}',
+) as $invalid_runtime_table ) {
+	$assert( is_wp_error( Static_Site_Importer_Site_Plan_Persistence::validate_output_content( $invalid_runtime_table, 'functions.php' ) ), 'Unresolved references outside asset-table keys still fail, including navigation refs.' );
+}
+
 // Route templates inline the entire page, not the rewritten header part.
 $nav_artifact = array(
 	'entrypoint' => 'index.html',
