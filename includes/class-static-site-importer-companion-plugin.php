@@ -1275,7 +1275,10 @@ JS;
 	 * lowered to the `url()` fallback KSES accepts so background-only imagery
 	 * is not discarded with its style attribute, literal `rgb()`/`rgba()`/
 	 * `hsl()`/`hsla()` color notations are lowered to the hex equivalents KSES
-	 * accepts so authored text and background colors are not discarded, and the
+	 * accepts so authored text and background colors are not discarded,
+	 * var()-driven color notations whose channels are literals and var(--name)
+	 * references ride through the boundary as opaque hex tokens that KSES
+	 * accepts and are restored to their authored text afterwards, and the
 	 * result is KSES-filtered against an SVG-aware allowlist so inline SVG
 	 * structure survives while nothing executable reaches the frontend.
 	 *
@@ -1498,9 +1501,52 @@ $lower_image_sets = static function ( string $value ) use ( $image_set_fallback 
 // rgb(255, 255, 255) paragraph text on a dark band reaches the browser as
 // inherited near-black while a sibling #FFFFFF heading survives. Lower
 // literal-component color functions to the hex equivalent the sanitizer
-// already accepts. A notation carrying anything but numeric/percentage
-// literals (var(), calc(), color keywords) is left untouched for the
-// sanitizer to judge exactly as before.
+// already accepts. Component libraries publish theme colors as channel
+// tuples and wrap them where they are used, so a notation that cannot be
+// lowered because its channels reference var(--name) has to ride through
+// the boundary instead: when its components are only numeric/percentage
+// literals, slash alpha separators, and var() references with literal
+// fallbacks, swap the notation for an opaque hex token the sanitizer
+// accepts and restore the authored text once the boundary has judged the
+// declaration (#2623). Anything else (calc(), url(), nested unknown
+// functions) is left untouched for the sanitizer to judge exactly as
+// before.
+$color_tokens            = array();
+$color_var_reference     = 'var\\(\\s*--[a-zA-Z0-9_-]+\\s*(?:,(?:[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:%|deg)?|[\\s,\\/])+)?\\)';
+$color_literal_component = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:%|deg)?';
+$color_safe_notation     = '/^(?:rgba?|hsla?)\\(\\s*(?:' . $color_var_reference . '|' . $color_literal_component . ')(?:[\\s,\\/]+(?:' . $color_var_reference . '|' . $color_literal_component . '))*\\s*\\)$/i';
+$tokenize_color_functions = static function ( string $value ) use ( $color_safe_notation, &$color_tokens ): string {
+	$result = '';
+	$offset = 0;
+	while ( preg_match( '/\b(?:rgba?|hsla?)\(/i', $value, $found, PREG_OFFSET_CAPTURE, $offset ) ) {
+		$start  = (int) $found[0][1];
+		$open   = $start + strlen( (string) $found[0][0] );
+		$length = strlen( $value );
+		$depth  = 1;
+		for ( $cursor = $open; $cursor < $length && $depth > 0; ++$cursor ) {
+			if ( '(' === $value[ $cursor ] ) {
+				++$depth;
+			} elseif ( ')' === $value[ $cursor ] ) {
+				--$depth;
+			}
+		}
+		if ( 0 !== $depth ) {
+			break;
+		}
+		$notation = substr( $value, $start, $cursor - $start );
+		$interior = substr( $value, $open, $cursor - 1 - $open );
+		$result  .= substr( $value, $offset, $start - $offset );
+		if ( preg_match( $color_safe_notation, $notation ) && preg_match( '/\bvar\(/i', $interior ) ) {
+			$token                  = '#' . str_pad( (string) dechex( count( $color_tokens ) + 1 ), 12, '0', STR_PAD_LEFT );
+			$color_tokens[ $token ] = $notation;
+			$result                .= $token;
+		} else {
+			$result .= $notation;
+		}
+		$offset = $cursor;
+	}
+	return $result . substr( $value, $offset );
+};
 $color_channel = static function ( string $component ): ?float {
 	if ( preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)$/', $component ) ) {
 		return (float) $component;
@@ -1594,9 +1640,9 @@ $lower_color_functions = static function ( string $value ) use ( $color_channel,
 };
 $content = preg_replace_callback(
 	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
-	static function ( array $match ) use ( $safe_url, $lower_image_sets, $lower_color_functions ): string {
+	static function ( array $match ) use ( $safe_url, $lower_image_sets, $lower_color_functions, $tokenize_color_functions ): string {
 		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
-		$value = $lower_color_functions( $lower_image_sets( $value ) );
+		$value = $tokenize_color_functions( $lower_color_functions( $lower_image_sets( $value ) ) );
 		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
 			foreach ( $urls[1] as $url ) {
 				if ( ! $safe_url( $url, true ) ) {
@@ -1707,6 +1753,18 @@ $output = wp_kses(
 	)
 );
 remove_filter( 'safe_style_css', $safe_style_css );
+// The tokens carried validated var()-driven color notations through the
+// boundary. Their authored text holds nothing outside the validated
+// character set (no quotes, ampersands, angle brackets, semicolons, or
+// backslashes), so put each notation back byte-for-byte in style attributes
+// now that KSES has judged the declarations the tokens rode in on.
+$output = preg_replace_callback(
+	'/\bstyle\s*=\s*(["\'])(.*?)\1/is',
+	static function ( array $match ) use ( $color_tokens ): string {
+		return 'style=' . $match[1] . strtr( $match[2], $color_tokens ) . $match[1];
+	},
+	$output
+) ?? $output;
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
