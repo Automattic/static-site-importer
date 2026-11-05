@@ -1469,6 +1469,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'gutenberg_save_validation'               => (string) ( $quality['gutenberg_save_validation'] ?? 'unverified' ),
 			'image_missing_source_count'              => (int) ( $quality['image_missing_source_count'] ?? 0 ),
 			'interaction_candidate_count'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
+			'choice_submission_form_count'            => (int) ( $quality['choice_submission_form_count'] ?? 0 ),
 			'runtime_dependency_parity_issue_count'   => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			'unsafe_layout_constraint_count'          => (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ),

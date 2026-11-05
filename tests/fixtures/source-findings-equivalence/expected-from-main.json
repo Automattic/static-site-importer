@@ -487,6 +487,7 @@
             "gutenberg_save_validation": "unverified",
             "image_missing_source_count": 0,
             "interaction_candidate_count": 0,
+            "choice_submission_form_count": 0,
             "runtime_dependency_parity_issue_count": 0,
             "semantic_parity_failure_count": 0,
             "unsafe_layout_constraint_count": 0,
@@ -1193,6 +1194,7 @@
             "gutenberg_save_validation": "unverified",
             "image_missing_source_count": 0,
             "interaction_candidate_count": 0,
+            "choice_submission_form_count": 0,
             "runtime_dependency_parity_issue_count": 0,
             "semantic_parity_failure_count": 0,
             "unsafe_layout_constraint_count": 0,
@@ -1383,8 +1385,7 @@
                     "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
                     "type": "data-liberation-agent",
                     "loss_class": "degraded_unit",
-                    "source": "https://example.test/",
-                    "message": "a code the importer does not register"
+                    "source": "https://example.test/"
                 }
             ]
         }
