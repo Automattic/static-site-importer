@@ -638,7 +638,7 @@ final class Static_Site_Importer_Quality_Gates {
 				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'commerce_checkout', 'order_lookup', 'commerce_add_to_cart_form' ), true ) ) {
 					continue;
 				}
-				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'commerce_checkout' ), true ) ) {
+				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'commerce_checkout' ), true ) || ( 'commerce_collection' === $binding['role'] && '' !== ( $binding['selector'] ?? '' ) ) ) {
 					// A canonical grid receipt, the receipt of the store listing that
 					// adopted the grid, or a cart or checkout receipt joins its finding
 					// page-and-selector-scoped.

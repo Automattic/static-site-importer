@@ -2085,7 +2085,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 
 			$matches = $fallbacks[ self::producer_fallback_key( array_merge( $diagnostic, array( 'source_path' => $source_path ) ) ) ] ?? array();
 			if ( 1 === count( $matches ) ) {
-				foreach ( array( 'binding', 'source_html_preview', 'html_excerpt', 'excerpt' ) as $field ) {
+				foreach ( array( 'binding', 'form', 'controls', 'source_html_preview', 'html_excerpt', 'excerpt' ) as $field ) {
 					if ( isset( $matches[0][ $field ] ) ) {
 						$diagnostic[ $field ] = $matches[0][ $field ];
 					}
