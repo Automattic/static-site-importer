@@ -139,8 +139,14 @@ $quality_report = Static_Site_Importer_Import_Report::from_array( array(
 	) ),
 ) );
 $quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $quality_report, array() );
-$assert( 0 === $quality['unsupported_fallback_count'], 'Bound and consolidated product controls reconcile against their persisted receipt.' );
-$assert( hash( 'sha256', $completed_binding['replacement_block_markup'] ) === $completed_binding['materialized_block_hash'] && $completed_binding['materialized_block_hash'] === $completed_binding['persisted_fragment_hash'], 'Receipt hashes prove the final context-inheriting fragment.' );
+foreach ( array(
+	'completed receipt' => 'completed' === $completed_binding['status'],
+	'resolved fallback' => 0 === $quality['unsupported_fallback_count'],
+	'rebound fragment proof' => hash( 'sha256', $completed_binding['replacement_block_markup'] ) === $completed_binding['materialized_block_hash'],
+	'persisted proof' => $completed_binding['materialized_block_hash'] === $completed_binding['persisted_fragment_hash'],
+) as $case => $ok ) {
+	$assert( $ok, 'Materialized whole-page product: ' . $case );
+}
 $assert( ! str_contains( $completed_binding['replacement_block_markup'], 'productId' ) && ! is_file( $state['theme_dir'] . '/templates/single-product-mug.html' ), 'Proof survives removal of captured product context and route-specific template.' );
 $write_template = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'write_whole_page_template' );
 foreach ( array( null, '<!-- wp:paragraph --><p>No slot</p><!-- /wp:paragraph -->', $route_template ) as $shell ) {
@@ -167,6 +173,26 @@ foreach ( array(
 	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $data );
 	$assert( str_contains( $converted, $fixture[1] ), $case . ': data-backed field converts' );
 	if ( 'description' === $case ) { $assert( str_contains( $converted, 'copy' ) && str_contains( $converted, '#123456' ), 'Presentation survives conversion' ); }
+}
+// Slides and thumbnails may repeat the complete image set, but only one
+// smallest complete block becomes the live gallery; partial sets stay source.
+$image = static fn( string $src ) => '<!-- wp:image --><figure><img src="' . $src . '" /></figure><!-- /wp:image -->';
+$group = static fn( string $body ) => '<!-- wp:group --><div>' . $body . '</div><!-- /wp:group -->';
+$front = $image( 'https://example.org/front.jpg' );
+$back = $image( 'https://example.org/back.jpg' );
+$slides = $group( $front . $back );
+$gallery_data = $row + array( 'images' => array( array( 'src' => 'https://example.org/front.jpg' ), array( 'src' => 'https://example.org/back.jpg' ) ) );
+foreach ( array(
+	'slides and thumbnails' => array( $group( $slides . $slides ), 1, 2 ),
+	'partial image set' => array( $front, 0, 1 ),
+	'unrelated image' => array( $group( $front . $back . $image( 'https://example.org/logo.jpg' ) ), 0, 3 ),
+	'nested complete set' => array( $group( $slides . $image( 'https://example.org/logo.jpg' ) ), 1, 1 ),
+	'existing live gallery' => array( '<!-- wp:woocommerce/product-image-gallery /-->' . $slides, 1, 2 ),
+) as $case => $fixture ) {
+	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $gallery_data );
+	$assert( $fixture[1] === substr_count( $converted, 'wp:woocommerce/product-image-gallery' ), $case . ': at most one complete gallery' );
+	$assert( $fixture[2] === substr_count( $converted, '<img ' ), $case . ': only the smallest complete block is replaced' );
+	$assert( $converted === Static_Site_Importer_Product_Field_Blocks::bind_document( $converted, $gallery_data ), $case . ': binding is idempotent' );
 }
 $unknown = '<!-- wp:paragraph --><p>Unbacked promotion</p><!-- /wp:paragraph -->';
 $assert( $unknown === Static_Site_Importer_Product_Field_Blocks::bind_document( $unknown, $row ), 'Unbacked source stays editable source markup' );
