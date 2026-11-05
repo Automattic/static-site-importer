@@ -22,6 +22,7 @@ final class Static_Site_Importer_Image_Assets {
 		'application/gzip',
 		'application/x-7z-compressed',
 		'application/rtf',
+		'text/plain',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -322,6 +323,12 @@ final class Static_Site_Importer_Image_Assets {
 		}
 		if ( str_starts_with( $bytes, '{\\rtf' ) ) {
 			return 'application/rtf';
+		}
+		if ( '' !== $bytes ) {
+			$text = str_starts_with( $bytes, "\xef\xbb\xbf" ) ? substr( $bytes, 3 ) : $bytes;
+			if ( '' !== $text && 1 === preg_match( '//u', $text ) && ! preg_match( '/[\\x00-\\x08\\x0b\\x0e-\\x1f]/', $text ) && ! preg_match( '/^\\s*<(?:!doctype\\s+html|html)(?:\\s|>)/i', $text ) ) {
+				return 'text/plain';
+			}
 		}
 		return null;
 	}

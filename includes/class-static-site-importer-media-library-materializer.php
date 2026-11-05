@@ -43,6 +43,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		'application/gzip'            => 'gz',
 		'application/x-7z-compressed' => '7z',
 		'application/rtf'             => 'rtf',
+		'text/plain'                  => 'txt',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',

@@ -35,6 +35,17 @@ $artifact = array(
 	),
 );
 $extracted = Static_Site_Importer_Image_Assets::extract( $artifact );
+$document_cases = array(
+	'citation text' => array( "A citation from a source document.\n", 'text/plain' ),
+	'HTML body'     => array( '<!doctype html><html>content</html>', null ),
+	'NUL bytes'     => array( "citation\0text", null ),
+	'empty body'    => array( '', null ),
+);
+$document_type = new ReflectionMethod( Static_Site_Importer_Image_Assets::class, 'document_content_type' );
+$document_type->setAccessible( true );
+foreach ( $document_cases as $label => $case ) {
+	$assert( $case[1] === $document_type->invoke( null, $case[0] ), "Document verification must handle {$label}." );
+}
 $assert( is_array( $extracted ), 'Valid record must be consumed.' );
 $assert( 2 === count( $extracted['artifact']['files'] ), 'Evidence must not become a theme asset.' );
 $assert( $record === $extracted['records']['website/photo.png'], 'Source aliases and provenance must survive.' );
