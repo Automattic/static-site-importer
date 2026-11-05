@@ -1093,6 +1093,63 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! is_string( $slug ) || '' === $slug || sanitize_title( $slug ) !== $slug || sanitize_key( $post_type ) !== $post_type || '' === $markup ) {
 			return new WP_Error( 'whole_page_template_target_invalid' );
 		}
+		// Use the route's planned shell, not a newly invented provider shell.
+		$route_slug = (string) ( $page['slug'] ?? $slug );
+		$route_type = (string) ( $page['post_type'] ?? 'page' );
+		$candidates = array_filter(
+			array(
+				! empty( $page['entrypoint'] ) ? 'front-page' : null,
+				$page['metadata']['post_meta']['_wp_page_template'] ?? null,
+				'page' === $route_type ? 'page-' . $route_slug : 'single-' . $route_type . '-' . $route_slug,
+				'page' === $route_type ? 'page' : 'single-' . $route_type,
+				'page' !== $route_type ? 'single' : null,
+				'index',
+			),
+			static fn( $candidate ): bool => is_string( $candidate ) && '' !== $candidate && 'default' !== $candidate
+		);
+		$writes     = $state['resolved']['writes'] ?? array();
+		foreach ( $candidates as $candidate ) {
+			$route_target = 'templates/' . $candidate . '.html';
+			foreach ( $writes as $write ) {
+				if ( 'theme_template' !== ( $write['kind'] ?? '' ) || $route_target !== $write['target_path'] || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) ) {
+					continue;
+				}
+				// Replace only the slot; preserve the shell's serialization verbatim.
+				$composed = preg_replace_callback( '~<!--\s+wp:post-content\b[^>]*?(?:/-->|-->.*?<!--\s+/wp:post-content\s+-->)~s', static fn(): string => $markup, $write['payload']['data'] );
+				if ( is_string( $composed ) && $composed !== $write['payload']['data'] ) {
+					$markup = $composed;
+				}
+				break 2;
+			}
+		}
+
+		// A page-specific route no longer serves this page. Keep it only if
+		// another planned page explicitly uses it (shared templates stay intact).
+		$obsolete = 'templates/page-' . $route_slug . '.html';
+		$shared   = false;
+		foreach ( $state['ordered_pages'] as $other ) {
+			$other_source   = $other['source_path'] ?? '';
+			$other_template = $other['metadata']['post_meta']['_wp_page_template'] ?? '';
+			$other_slug     = $other['slug'] ?? '';
+			$page_template  = 'page-' . $route_slug;
+			if ( $source !== $other_source && ( $page_template === $other_template || $route_slug === $other_slug ) ) {
+				$shared = true;
+			}
+		}
+		if ( ! $shared ) {
+			foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+				if ( 'theme_template' === ( $write['kind'] ?? '' ) && $obsolete === $write['target_path'] ) {
+					unset( $state['resolved']['writes'][ $index ] );
+				}
+			}
+			$planned_targets = array_column( $writes, 'target_path' );
+			if ( in_array( $obsolete, $planned_targets, true ) && is_file( $state['theme_dir'] . '/' . $obsolete ) ) {
+				self::journal_file( $state, $state['theme_dir'] . '/' . $obsolete );
+				if ( ! unlink( $state['theme_dir'] . '/' . $obsolete ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Transactional local theme file removal.
+					return new WP_Error( 'whole_page_route_template_remove_failed' );
+				}
+			}
+		}
 		$target = 'templates/single-' . $post_type . '-' . $slug . '.html';
 		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
 		$written = self::write_file(

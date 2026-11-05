@@ -79,12 +79,19 @@ $media_pages = $pages;
 $media_pages[0]['resolved_block_markup'] = str_replace( 'original-layout', 'original-layout media-bound', $markup );
 $bound_markup = $media_pages[0]['resolved_block_markup'] . $binding;
 $media_pages[0]['materialized_block_markup'] = $bound_markup;
+$route_template = '<!-- wp:template-part {"slug":"header","area":"header"} /-->' . "\n"
+	. '<!-- wp:group --><div class="wp-block-group route-frame"><!-- wp:post-content /--></div><!-- /wp:group -->' . "\n"
+	. '<!-- wp:template-part {"slug":"footer","area":"footer"} /-->';
 $state = array(
+	'resolved' => array( 'writes' => array( array( 'kind' => 'theme_template', 'target_path' => 'templates/page-mug.html', 'payload' => array( 'encoding' => 'utf8', 'data' => $route_template ) ) ) ),
 	'args' => array( 'whole_page_provider_results' => $report['whole_page_results'] ),
 	'ordered_pages' => $media_pages, 'diagnostics' => array(), 'source_route_aliases' => array(),
 	'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array( array( 'source_path' => $row['source_path'], 'status' => 'prepared', 'replacement_block_markup' => $binding ) ) ) ),
 	'theme_dir' => sys_get_temp_dir() . '/ssi-product-handoff-' . uniqid(),
 );
+// Simulate an earlier import's route file: cleanup must be journaled too.
+wp_mkdir_p( $state['theme_dir'] . '/templates' );
+file_put_contents( $state['theme_dir'] . '/templates/page-mug.html', $route_template );
 $apply = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'apply_whole_page_handoffs' );
 $arguments = array( &$state );
 $assert( true === $apply->invokeArgs( null, $arguments ), 'Product handoff commits.' );
@@ -94,7 +101,21 @@ $assert( 'draft' === get_post( 10 )->post_status, 'Captured page is no longer pu
 $assert( $id === $state['source_ids'][ $row['source_path'] ], 'Product is the page owner.' );
 $assert( in_array( 'products/mug', get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY ), true ), 'Source route becomes a redirect alias.' );
 $template = $state['theme_dir'] . '/templates/single-product-mug.html';
-$assert( $bound_markup === file_get_contents( $template ), 'Product single template serves the final media- and add-to-cart-bound page.' );
+$expected_template = str_replace( '<!-- wp:post-content /-->', $bound_markup, $route_template );
+$assert( $expected_template === file_get_contents( $template ), 'Product single template keeps header/footer parts and frame around the final page document, replacing post-content.' );
+$assert( $expected_template === Static_Site_Importer_Site_Plan_Persistence::served_document( $state, $state['ordered_pages'][0] ), 'Served-document proof reads the composed template.' );
+$assert( empty( $state['resolved']['writes'] ) && ! is_file( $state['theme_dir'] . '/templates/page-mug.html' ), 'Unused page-specific route template is not left in the theme or pending writes.' );
+$assert( $route_template === $state['rollback']['files'][ $state['theme_dir'] . '/templates/page-mug.html' ]['content'], 'Removed route template participates in rollback.' );
+$write_template = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'write_whole_page_template' );
+foreach ( array( null, '<!-- wp:paragraph --><p>No slot</p><!-- /wp:paragraph -->', $route_template ) as $shell ) {
+	$probe = $state;
+	$probe['resolved']['writes'] = null === $shell ? array() : array( array( 'kind' => 'theme_template', 'target_path' => 'templates/page.html', 'payload' => array( 'encoding' => 'utf8', 'data' => $shell ) ) );
+	$probe_page = $media_pages[0];
+	$probe_args = array( &$probe, $id, $row['source_path'], &$probe_page );
+	$expected = $route_template === $shell ? $expected_template : $bound_markup;
+	$assert( $expected === $write_template->invokeArgs( null, $probe_args ), 'Generic route composes its slot; missing route or slot preserves body-only fallback.' );
+	$assert( null === $shell || 1 === count( $probe['resolved']['writes'] ), 'Shared generic route remains planned.' );
+}
 $assert( false === $state['rollback']['files'][ $template ]['exists'], 'Template participates in transactional rollback.' );
 $assert( 'publish' === $state['rollback']['posts'][10]['post']['post_status'], 'Rollback retains the captured page publication state.' );
 $binding = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $id ) );
