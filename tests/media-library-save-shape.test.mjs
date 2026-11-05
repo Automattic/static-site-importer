@@ -10,7 +10,34 @@ import { join } from 'node:path';
 const require = createRequire( import.meta.url );
 const { ensureRuntime, validateMarkup } = require( '../lib/gutenberg-block-validation.cjs' );
 ensureRuntime();
-const { createBlock, parse, serialize } = require( '@wordpress/blocks' );
+const { createBlock, parse, serialize, validateBlock, registerBlockType } = require( '@wordpress/blocks' );
+const { createElement } = require( '@wordpress/element' );
+const vm = require( 'node:vm' );
+const definition = JSON.parse( execFileSync( 'php', [ '-r', `
+require 'vendor/autoload.php';
+$generator = new Automattic\\BlocksEngine\\PhpTransformer\\HtmlToBlocks\\Generators\\CapturedChoiceGroupBlockGenerator();
+echo json_encode($generator->definition('fixture/captured-choice-group'));
+` ], { encoding: 'utf8' } ) );
+// Execute the real generated save contract with an empty InnerBlocks fixture.
+vm.runInNewContext( definition.assets[ 'index.js' ], { window: { wp: {
+	blocks: { registerBlockType: ( name, settings ) => registerBlockType( name, { ...definition.block_json, ...settings } ) },
+	blockEditor: { InnerBlocks: { Content: () => null } },
+	element: { createElement },
+} } } );
+
+test( 'choice config image markup and saved data attribute bind identically and validate', () => {
+	const config = JSON.stringify( { choices: [ { markup: `<img data-v="1" src="${ source }" alt="First">` }, { markup: '<img src="https://example.test/themes/source/child.png" alt="Second">' } ], label: 'Neutral & unchanged' } );
+	const original = serialize( createBlock( 'fixture/captured-choice-group', { config } ) );
+	assert.equal( validateMarkup( original ).ok, true );
+	const bound = bind( original );
+	const block = parse( bound )[ 0 ];
+	assert.equal( validateBlock( block )[ 0 ], true );
+	const choices = JSON.parse( block.attributes.config ).choices;
+	assert.match( choices[ 0 ].markup, /https:\/\/example.test\/uploads\/7.png/ );
+	assert.match( choices[ 1 ].markup, /https:\/\/example.test\/uploads\/8.png/ );
+	assert.equal( validateMarkup( bound ).ok, true );
+	assert.equal( bind( bound ), bound );
+} );
 test( 'capture record compiles to an editable attachment-bound image that validates in Gutenberg', () => {
 	const dir = mkdtempSync( join( tmpdir(), 'ssi-record-validation-' ) );
 	try {
