@@ -43,6 +43,9 @@ function wp_mkdir_p( $path ) { return mkdir( $path, 0777, true ); }
 function wp_normalize_path( $path ) { return $path; }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once __DIR__ . '/fixtures/core-block-parser.php';
+ssi_test_require_core_block_parser( require __DIR__ . '/fixtures/wordpress-core-root.php' );
+function apply_filters( $tag, $value, ...$args ) { return $value; }
 foreach ( array( 'woo-product-seeder', 'entity-materializer-registry', 'whole-page-handoff', 'source-route', 'site-plan-persistence' ) as $file ) {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-' . $file . '.php';
 }
@@ -100,7 +103,8 @@ $assert( 'completed' === $state['applied']['runtime_declarations']['entity_bindi
 $assert( 'draft' === get_post( 10 )->post_status, 'Captured page is no longer published.' );
 $assert( $id === $state['source_ids'][ $row['source_path'] ], 'Product is the page owner.' );
 $assert( in_array( 'products/mug', get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY ), true ), 'Source route becomes a redirect alias.' );
-$template = $state['theme_dir'] . '/templates/single-product-mug.html';
+$template = $state['theme_dir'] . '/templates/single-product.html';
+$bound_markup = Static_Site_Importer_Product_Field_Blocks::bind_document( $bound_markup, $row );
 $expected_template = str_replace( '<!-- wp:post-content /-->', $bound_markup, $route_template );
 $assert( $expected_template === file_get_contents( $template ), 'Product single template keeps header/footer parts and frame around the final page document, replacing post-content.' );
 $assert( $expected_template === Static_Site_Importer_Site_Plan_Persistence::served_document( $state, $state['ordered_pages'][0] ), 'Served-document proof reads the composed template.' );
@@ -111,6 +115,7 @@ foreach ( array( null, '<!-- wp:paragraph --><p>No slot</p><!-- /wp:paragraph --
 	$probe = $state;
 	$probe['resolved']['writes'] = null === $shell ? array() : array( array( 'kind' => 'theme_template', 'target_path' => 'templates/page.html', 'payload' => array( 'encoding' => 'utf8', 'data' => $shell ) ) );
 	$probe_page = $media_pages[0];
+	$probe_page['product_data'] = $row;
 	$probe_args = array( &$probe, $id, $row['source_path'], &$probe_page );
 	$expected = $route_template === $shell ? $expected_template : $bound_markup;
 	$assert( $expected === $write_template->invokeArgs( null, $probe_args ), 'Generic route composes its slot; missing route or slot preserves body-only fallback.' );
@@ -120,12 +125,64 @@ $assert( false === $state['rollback']['files'][ $template ]['exists'], 'Template
 $assert( 'publish' === $state['rollback']['posts'][10]['post']['post_status'], 'Rollback retains the captured page publication state.' );
 $binding = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $id ) );
 $assert( str_contains( $binding, '"productId":' . $id ) && str_contains( $binding, 'woocommerce/add-to-cart-form' ), 'Bound form explicitly retains Woo product context.' );
+// Data matching is independent of source platform hooks; unsupported fields survive.
+foreach ( array(
+	'description' => array( '<!-- wp:paragraph {"className":"copy","style":{"color":{"text":"#123456"}}} --><p>A sturdy mug.</p><!-- /wp:paragraph -->', 'wp:post-content' ),
+	'gallery' => array( '<!-- wp:gallery --><figure><!-- wp:image --><figure><img src="https://example.org/mug.jpg" /></figure><!-- /wp:image --></figure><!-- /wp:gallery -->', 'woocommerce/product-image-gallery' ),
+	'breadcrumb' => array( '<!-- wp:paragraph --><p>Home &gt; Drinkware &gt; Mug</p><!-- /wp:paragraph -->', 'woocommerce/breadcrumbs' ),
+) as $case => $fixture ) {
+	$data = $row + array( 'images' => array( array( 'src' => 'https://example.org/mug.jpg' ) ), 'categories' => array( 'Drinkware' ) );
+	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $data );
+	$assert( str_contains( $converted, $fixture[1] ), $case . ': data-backed field converts' );
+	if ( 'description' === $case ) { $assert( str_contains( $converted, 'copy' ) && str_contains( $converted, '#123456' ), 'Presentation survives conversion' ); }
+}
+$unknown = '<!-- wp:paragraph --><p>Unbacked promotion</p><!-- /wp:paragraph -->';
+$assert( $unknown === Static_Site_Importer_Product_Field_Blocks::bind_document( $unknown, $row ), 'Unbacked source stays editable source markup' );
+// Table: a shared layout and a structural outlier.
+foreach ( array( 'same-layout' => false, 'structural-outlier' => true ) as $case => $outlier ) {
+	$rows = array();
+	$documents = array();
+	foreach ( array( 'cup', 'plate', 'bowl' ) as $index => $slug ) {
+		if ( ! $outlier && 2 === $index ) { continue; }
+		$product = $row;
+		$product['id'] = $slug;
+		$product['slug'] = $slug;
+		$product['name'] = ucfirst( $slug );
+		$product['regular_price'] = (string) ( 27.99 + $index );
+		$product['source_path'] = 'website/products/' . $slug . '.html';
+		$product['source_route'] = '/products/' . $slug;
+		$body = '<!-- wp:heading {"level":3,"className":"source-title"} --><h3 class="source-title">' . $product['name'] . '</h3><!-- /wp:heading -->'
+			. '<!-- wp:paragraph --><p>$' . $product['regular_price'] . '</p><!-- /wp:paragraph -->';
+		if ( $outlier && 2 === $index ) { $body .= '<!-- wp:paragraph --><p>Special layout</p><!-- /wp:paragraph -->'; }
+		$documents[] = array( 'source_path' => $product['source_path'], 'route' => array( 'path' => $product['source_route'] ), 'reconciliation_identity' => $slug, 'post_type' => 'page', 'resolved_block_markup' => $body );
+		$rows[] = $product;
+	}
+	$documents = $attach->invoke( null, $documents, array( array( 'kind' => 'entity_collection', 'reconciliation_identity' => 'declaration-products', 'payload' => array( 'entities' => $rows ) ) ), array() );
+	$seeded = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => $rows ), array( 'declaration_reconciliation_identity' => 'declaration-products', 'whole_page_documents' => Static_Site_Importer_Whole_Page_Handoff::documents( $documents ) ) );
+	foreach ( $documents as $index => &$document ) {
+		$document['materialized_block_markup'] = $document['resolved_block_markup'] . Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $seeded['products'][ $index ]['id'] ) );
+	}
+	unset( $document );
+	$probe = array( 'resolved' => array( 'writes' => array() ), 'args' => array( 'whole_page_provider_results' => $seeded['whole_page_results'] ), 'ordered_pages' => $documents, 'diagnostics' => array(), 'source_route_aliases' => array(), 'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array() ) ), 'theme_dir' => sys_get_temp_dir() . '/ssi-bound-' . uniqid() );
+	$args = array( &$probe );
+	$assert( true === $apply->invokeArgs( null, $args ), $case . ': commits' );
+	$files = glob( $probe['theme_dir'] . '/templates/*.html' );
+	$assert( count( $files ) === ( $outlier ? 2 : 1 ), $case . ': template count' );
+	$shared = file_get_contents( $probe['theme_dir'] . '/templates/single-product.html' );
+	$assert( str_contains( $shared, 'wp:post-title' ) && str_contains( $shared, 'wp:woocommerce/product-price' ) && str_contains( $shared, 'wp:woocommerce/add-to-cart-form' ), $case . ': bound fields' );
+	$assert( ! str_contains( $shared, '$27.99' ) && ! str_contains( $shared, 'Cup' ), $case . ': no frozen fields' );
+	$assert( ! $outlier || is_file( $probe['theme_dir'] . '/templates/single-product-bowl.html' ), 'Outlier retains its template' );
+	foreach ( $files as $file ) { unlink( $file ); }
+	rmdir( $probe['theme_dir'] . '/templates' );
+	rmdir( $probe['theme_dir'] );
+}
 unset( $row['whole_page_candidate'] );
 $row['slug'] = 'translated-mug';
 $row['description'] = 'Normal description';
 $normal = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => array( $row ) ) );
 $assert( empty( $normal['whole_page_results'] ), 'No candidate: no handoff.' );
 $assert( 'Normal description' === get_post_field( 'post_content', $normal['products'][0]['id'] ), 'No candidate: existing description behavior unchanged.' );
+unlink( $state['theme_dir'] . '/templates/single-product-mug.html' );
 unlink( $template );
 rmdir( dirname( $template ) );
 rmdir( $state['theme_dir'] );

@@ -8,6 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 require_once __DIR__ . '/class-static-site-importer-product-grid-runtime.php';
+require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
 
 /**
  * Replaces each `generic/product-grids/v1` grid with a WooCommerce product
@@ -391,13 +392,10 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 			}
 			$node = &$node['innerBlocks'][ $index ];
 		}
-		$role = (string) ( $slot['role'] ?? 'field' );
-		if ( 'name' === $role && 'core/heading' === $node['blockName'] ) {
-			$node = self::dynamic_block( 'core/post-title', self::presentation_attrs( $node['attrs'], array( 'level' => (int) ( $node['attrs']['level'] ?? 2 ) ) ) );
-			return true;
-		}
-		if ( 'price' === $role ) {
-			$node = self::dynamic_block( 'woocommerce/product-price', self::presentation_attrs( $node['attrs'], array( 'isDescendentOfQueryLoop' => true ) ) );
+		$role        = (string) ( $slot['role'] ?? 'field' );
+		$replacement = Static_Site_Importer_Product_Field_Blocks::field( $node, $role, true );
+		if ( null !== $replacement ) {
+			$node = $replacement;
 			return true;
 		}
 		$marker = array( 'role' => in_array( $role, array( 'description', 'add_to_cart' ), true ) ? $role : 'field' );
@@ -430,34 +428,6 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 		}
 		$node['attrs']['metadata'][ Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY ] = $marker;
 		return true;
-	}
-
-	/**
-	 * The source block's classes and style supports on a replacement block.
-	 *
-	 * @param array<string,mixed> $attrs Source attributes.
-	 * @param array<string,mixed> $own Replacement attributes.
-	 * @return array<string,mixed> Merged attributes.
-	 */
-	private static function presentation_attrs( array $attrs, array $own ): array {
-		return array_merge( array_intersect_key( $attrs, array_flip( array( 'className', 'textAlign', 'textColor', 'backgroundColor', 'fontSize', 'fontFamily', 'style' ) ) ), $own );
-	}
-
-	/**
-	 * Build a dynamic block.
-	 *
-	 * @param string              $name Block name.
-	 * @param array<string,mixed> $attrs Block attributes.
-	 * @return array<string,mixed> Parsed block.
-	 */
-	private static function dynamic_block( string $name, array $attrs ): array {
-		return array(
-			'blockName'    => $name,
-			'attrs'        => $attrs,
-			'innerBlocks'  => array(),
-			'innerHTML'    => '',
-			'innerContent' => array(),
-		);
 	}
 
 	/**
