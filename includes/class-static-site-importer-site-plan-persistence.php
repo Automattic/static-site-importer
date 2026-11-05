@@ -1846,6 +1846,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( str_contains( $fragment, 'wp:woocommerce/single-product' ) && str_contains( $content, 'wp:woocommerce/single-product' ) ) {
 				$fragment                                   = Static_Site_Importer_Product_Field_Blocks::bind_document( $fragment, array() );
 				$binding_report['replacement_block_markup'] = $fragment;
+				// Field binding removes captured product context; prove the transformed
+				// fragment, not the provider's original product-specific serialization.
+				$binding_report['materialized_block_hash'] = hash( 'sha256', $fragment );
 			}
 			if ( '' === $content || '' === $fragment || ! str_contains( $content, $fragment ) ) {
 				$binding_report['status'] = 'unresolved';
