@@ -256,7 +256,11 @@ for (const item of tracked) {
 }
 
 const signatures = blockers.map((f) => f.signature).sort().join(',');
-const stalled = Number(args.iteration) > 1 && signatures === (args.prev || '') && Number(args['prev-merged'] || 0) === 0;
+// A pass that ends with the same blockers and nothing merged extends the
+// streak; after STALL_PASSES such passes in a row the loop stops.
+const STALL_PASSES = 3;
+const streak = Number(args.iteration) > 1 && signatures === (args.prev || '') && Number(args['prev-merged'] || 0) === 0 ? Number(args.streak || 0) + 1 : 0;
+const stalled = streak >= STALL_PASSES;
 const output = {
   iteration: Number(args.iteration),
   site: result.site,
@@ -267,8 +271,9 @@ const output = {
   tracked,
   untracked,
   tracked_count: tracked.length,
-  cook_items,
-  cook_count: cook_items.length,
+  cook_items: stalled ? [] : cook_items,
+  cook_count: stalled ? 0 : cook_items.length,
+  streak,
   stalled,
   ...(blockers.length && tracked.length && !stalled ? { continue: true, next_iteration: Number(args.iteration) + 1 } : {}),
 };

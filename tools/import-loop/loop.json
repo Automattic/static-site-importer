@@ -28,6 +28,9 @@
     },
     "wp_cli": {
       "default": "studio wp"
+    },
+    "streak": {
+      "default": "0"
     }
   },
   "env": {
@@ -119,7 +122,9 @@
           "--prev-merged",
           "{{inputs.prev_merged}}",
           "--wp-cli",
-          "{{inputs.wp_cli}}"
+          "{{inputs.wp_cli}}",
+          "--streak",
+          "{{inputs.streak}}"
         ]
       }
     },
@@ -282,7 +287,54 @@
         "--input",
         "prev_merged={{steps.merge.output/merged_count}}",
         "--input",
-        "wp_cli={{inputs.wp_cli}}"
+        "wp_cli={{inputs.wp_cli}}",
+        "--input",
+        "streak={{steps.triage.output/streak}}"
+      ]
+    },
+    {
+      "id": "retry",
+      "needs": [
+        "confirm"
+      ],
+      "when": {
+        "all": [
+          {
+            "step": "triage",
+            "output": "/continue",
+            "exists": true
+          },
+          {
+            "step": "confirm",
+            "output": "/confirmed_count",
+            "equals": 0
+          }
+        ]
+      },
+      "homeboy": [
+        "workflow",
+        "run",
+        "{{inputs.loop_dir}}/loop.json",
+        "--input",
+        "url={{inputs.url}}",
+        "--input",
+        "slug={{inputs.slug}}",
+        "--input",
+        "loop_dir={{inputs.loop_dir}}",
+        "--input",
+        "runs_dir={{inputs.runs_dir}}",
+        "--input",
+        "blocks_engine={{inputs.blocks_engine}}",
+        "--input",
+        "iteration={{steps.triage.output/next_iteration}}",
+        "--input",
+        "prev={{steps.triage.output/signatures}}",
+        "--input",
+        "prev_merged=0",
+        "--input",
+        "wp_cli={{inputs.wp_cli}}",
+        "--input",
+        "streak={{steps.triage.output/streak}}"
       ]
     }
   ]
