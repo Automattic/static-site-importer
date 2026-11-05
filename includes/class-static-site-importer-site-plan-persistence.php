@@ -1846,9 +1846,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( str_contains( $fragment, 'wp:woocommerce/single-product' ) && str_contains( $content, 'wp:woocommerce/single-product' ) ) {
 				$fragment                                   = Static_Site_Importer_Product_Field_Blocks::bind_document( $fragment, array() );
 				$binding_report['replacement_block_markup'] = $fragment;
-				// Field binding removes captured product context; prove the transformed
-				// fragment, not the provider's original product-specific serialization.
-				$binding_report['materialized_block_hash'] = hash( 'sha256', $fragment );
 			}
 			if ( '' === $content || '' === $fragment || ! str_contains( $content, $fragment ) ) {
 				$binding_report['status'] = 'unresolved';
@@ -1856,7 +1853,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$binding_report = array_merge( $binding_report, $receipt );
 
-			$binding_report['status']                    = 'completed';
+			$binding_report['status'] = 'completed';
+			// The resolved fragment is the materialized block; its proof hash follows it.
+			$binding_report['materialized_block_hash']   = hash( 'sha256', $fragment );
 			$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
 			$binding_report['materialized_content_hash'] = hash( 'sha256', $content );
 		}

@@ -64,7 +64,34 @@ final class Static_Site_Importer_Product_Field_Blocks {
 
 	/** Bind only fields backed by the admitted producer row. */
 	public static function bind_document( string $markup, array $product ): string {
-		$visit = static function ( array $node ) use ( &$visit, $product ): array {
+		$blocks       = parse_blocks( $markup );
+		$images       = array_column( $product['images'] ?? array(), 'src' );
+		$images[]     = $product['image'] ?? '';
+		$images       = array_unique( array_filter( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $images ) ) );
+		$gallery_path = null;
+		$gallery_size = PHP_INT_MAX;
+		$has_gallery  = false;
+		// Select before rewriting: a slide containing only one product image is
+		// not a gallery. Prefer the smallest complete set, including custom groups.
+		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, &$gallery_path, &$gallery_size, &$has_gallery ): void {
+			foreach ( $nodes as $index => $node ) {
+				$path        = $parent_path . '/' . $index;
+				$has_gallery = $has_gallery || 'woocommerce/product-image-gallery' === $node['blockName'];
+				$select( $node['innerBlocks'] ?? array(), $path );
+				$html = serialize_block( $node );
+				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $html, $sources );
+				$sources = array_unique( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $sources[1] ) );
+				if ( null !== $node['blockName'] && $images && ! array_diff( $images, $sources ) && ! array_diff( $sources, $images ) && strlen( $html ) < $gallery_size ) {
+					$gallery_path = $path;
+					$gallery_size = strlen( $html );
+				}
+			}
+		};
+		$select( $blocks );
+		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery ): array {
+			if ( ! $has_gallery && $path === $gallery_path ) {
+				return self::field( $node, 'image' );
+			}
 			$html = $node['innerHTML'] ?? '';
 			$text = self::text( $html );
 			$role = '';
@@ -84,14 +111,6 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			if ( '' !== $description && $text === $description && empty( $node['innerBlocks'] ) ) {
 				$role = 'description';
 			}
-			if ( in_array( $node['blockName'], array( 'core/image', 'core/gallery' ), true ) ) {
-				$images   = array_column( $product['images'] ?? array(), 'src' );
-				$images[] = $product['image'] ?? '';
-				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', serialize_block( $node ), $sources );
-				if ( ! empty( $sources[1] ) && ! array_diff( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $sources[1] ), $images ) ) {
-					$role = 'image';
-				}
-			}
 			$categories = $product['categories'] ?? $product['category_names'] ?? array();
 			foreach ( (array) $categories as $category ) {
 				$category = is_array( $category ) ? (string) ( $category['name'] ?? '' ) : (string) $category;
@@ -103,15 +122,19 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			if ( null !== $replacement ) {
 				return $replacement;
 			}
-			$node['innerBlocks'] = array_map( $visit, $node['innerBlocks'] ?? array() );
+			foreach ( $node['innerBlocks'] ?? array() as $index => $child ) {
+				$node['innerBlocks'][ $index ] = $visit( $child, $path . '/' . $index );
+			}
 			// Single-product context must inherit the current product, not the capture.
 			if ( 'woocommerce/single-product' === $node['blockName'] ) {
 				unset( $node['attrs']['productId'] );
 			}
 			return $node;
 		};
+		foreach ( $blocks as $index => $block ) {
+			$blocks[ $index ] = $visit( $block, '/' . $index );
+		}
 		/** @var array<array{blockName: string|null, attrs: array, innerBlocks: array, innerHTML: string, innerContent: array}> $blocks */
-		$blocks = array_map( $visit, parse_blocks( $markup ) );
 		return serialize_blocks( $blocks );
 	}
 }
