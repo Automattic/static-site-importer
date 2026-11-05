@@ -170,6 +170,7 @@
     { "path": "tests/smoke-plan-owned-font-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialized-block-content-validation.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-form-repeated-instance-ids.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-companion-renderer-real-kses.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-planned-page-templates-materialization.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-managed-classic-theme-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-portable-source-manifest.php", "environment": "standalone-php" },
