@@ -133,7 +133,7 @@
       "needs": [
         "triage"
       ],
-      "timeout": "4h",
+      "timeout": "8h",
       "when": {
         "step": "triage",
         "output": "/cook_count",
@@ -153,7 +153,8 @@
         "acknowledge-model-override": true,
         "gate-env": "{{item.gate_env}}",
         "provider-evidence": "{{item.provider_evidence}}",
-        "publish-incomplete-draft": true
+        "publish-incomplete-draft": true,
+        "timeout-ms": 2400000
       }
     },
     {
