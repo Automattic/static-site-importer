@@ -61,7 +61,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		if ( ! array_key_exists( $path, $resolved ) ) {
 			$resolved[ $path ] = 0;
 			$markup            = '' !== $path && is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read the active theme's archive identity.
-			if ( is_string( $markup ) && preg_match( '/"' . self::ARCHIVE_DOCUMENT_KEY . '":"([a-f0-9]{64})"/', $markup, $match ) ) {
+			// Block attribute JSON may contain whitespace around the identity separator.
+			if ( is_string( $markup ) && preg_match( '/"' . self::ARCHIVE_DOCUMENT_KEY . '"\s*:\s*"([a-f0-9]{64})"/', $markup, $match ) ) {
 				$pages             = get_posts(
 					array(
 						'post_type'      => 'page',
