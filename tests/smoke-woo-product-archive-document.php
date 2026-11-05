@@ -23,7 +23,7 @@ $failures   = array();
 $assertions = 0;
 $assert( 2 === ( $record['archive_product_count'] ?? null ), 'binding-record-counts-adopted-grid-products' );
 $token                              = '{{wordpress-site-plan:asset:logo}}';
-$url                                = 'https://example.test/theme/assets/logo.png';
+$url                                = 'https://example.test/theme/assets/logo-2.png';
 $fixture                            = $plan;
 $fixture['reference_tokens']        = array(
 	array(
@@ -96,9 +96,30 @@ foreach ( array(
 	$assert( $expected[2] === ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ), $case . '-archive-page-identity' );
 	$assert( str_contains( $archive_markup, $url ) && ! str_contains( $archive_markup, $token ), $case . '-archive-assets-resolved' );
 	if ( 'grid-only' === $case ) {
-		$assert( str_contains( $archive_markup, $grid_binding['replacement_block_markup'] ), 'grid-archive-keeps-producer-page-replacement' );
+		preg_match_all( '/<img src="([^"]+)"/', $archive_markup, $archive_assets );
+		preg_match_all( '/<img src="([^"]+)"/', $prepared['pages'][0]['materialized_block_markup'], $page_assets );
+		$assert( $page_assets[1] === $archive_assets[1] && in_array( $url, $archive_assets[1], true ), 'grid-archive-uses-source-deduplicated-asset-urls' );
+		preg_match( '/<!-- wp:woocommerce\/product-collection (\{.*?\}) -->/s', $archive_markup, $collection );
+		$attrs = json_decode( $collection[1] ?? '{}', true );
+		$assert( true === ( $attrs['query']['inherit'] ?? false ) && ! isset( $attrs['query']['woocommerceHandPickedProducts'] ) && 'woocommerce/product-collection/product-catalog' === ( $attrs['collection'] ?? '' ), 'grid-archive-inherits-main-query' );
+		$assert( str_contains( $prepared['pages'][0]['materialized_block_markup'], $grid_binding['replacement_block_markup'] ), 'grid-source-keeps-hand-picked-page-query' );
 	}
 }
+
+// A final source projection may differ from the canonical token table. It
+// includes materialized SVG targets and Media Library URLs/attachment IDs.
+$prepared = $fixture;
+$media_url = 'https://example.test/uploads/logo.png';
+$svg_url = 'https://example.test/theme/assets/materialized-svg/inline-2.svg';
+$prepared['resolution']['attachment_resolutions'] = array( 'logo' => array( 'id' => 91, 'url' => $media_url ) );
+$prepared['pages'][0]['resolved_block_markup'] = str_replace( $url, $media_url, $prepared['pages'][0]['resolved_block_markup'] );
+$prepared['pages'][0]['resolved_block_markup'] .= '<!-- wp:html --><img src="' . $svg_url . '"><!-- /wp:html -->';
+$reports = array();
+$diagnostics = array();
+Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, array( $grid_binding ), $reports, $diagnostics );
+$archives = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
+$archive_markup = $archives[0]['payload']['data'];
+$assert( str_contains( $archive_markup, $media_url ) && str_contains( $archive_markup, $svg_url ) && ! str_contains( $archive_markup, $url ), 'grid-archive-keeps-final-media-and-materialized-svg-resolution' );
 
 $temp = tempnam( sys_get_temp_dir(), 'ssi-archive-' );
 file_put_contents( $temp, $data ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary theme fixture.

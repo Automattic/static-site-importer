@@ -992,7 +992,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( in_array( $group, array( 'templates', 'template_parts' ), true ) ) {
 				$part_patches[ $binding['source_path'] ][] = $patch;
 			} else {
-				$patch['replacement']                      = $binding['archive_replacement_block_markup'] ?? $patch['replacement'];
+				$patch['replacement']                      = $binding['archive_replacement_block_markup'] ?? ( 'commerce_product_grid' === ( $binding['role'] ?? '' ) ? self::archive_grid_markup( $patch['replacement'] ) : $patch['replacement'] );
 				$page_patches[ $binding['source_path'] ][] = $patch;
 			}
 			if ( 'pages' === $group && in_array( $binding['role'] ?? '', array( 'commerce_listing', 'commerce_product_grid' ), true ) ) {
@@ -1240,6 +1240,22 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		return $canonical;
 	}
 
+	/** Use the main archive query without changing the grid's wrapper or cards. */
+	private static function archive_grid_markup( string $markup ): string {
+		return (string) preg_replace_callback(
+			'/<!-- wp:woocommerce\/product-collection\s+(\{.*?\})\s+-->/s',
+			static function ( array $matches ): string {
+				$attrs                     = json_decode( $matches[1], true );
+				$attrs['query']['inherit'] = true;
+				$attrs['query']['pages']   = 0;
+				$attrs['collection']       = 'woocommerce/product-collection/product-catalog';
+				unset( $attrs['query']['woocommerceHandPickedProducts'] );
+				return '<!-- wp:woocommerce/product-collection ' . serialize_block_attributes( $attrs ) . ' -->';
+			},
+			$markup
+		);
+	}
+
 	/**
 	 * Write the page that holds a store listing or grid as the theme's product archive
 	 * template: the page template with the page's own blocks in place of its
@@ -1267,23 +1283,19 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		if ( null === $template ) {
 			return;
 		}
-		// Splice against canonical markup to preserve binding offsets, then resolve
-		// the new template through the same destination mapping as the source page.
-		try {
-			$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
-		} catch ( InvalidArgumentException $mismatch ) {
-			unset( $mismatch );
-			$resolved = (string) ( $page['resolved_block_markup'] ?? '' );
-			$content  = self::splice_canonical_markup( $resolved, $resolved, $patches );
-		}
-		$count  = 0;
-		$markup = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
+		// Keep the source page's final asset projection (including de-duplicated
+		// targets and Media Library IDs/URLs), changing only provider fragments.
+		$resolved = (string) ( $page['resolved_block_markup'] ?? '' );
+		$content  = self::splice_canonical_markup( $resolved, $resolved, $patches );
+		$count    = 0;
+		$markup   = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
 		if ( 1 !== $count || '' === $content ) {
 			return;
 		}
-		$references = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ) );
+		$attachments = $plan['resolution']['attachment_resolutions'] ?? array();
+		$references  = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $attachments );
 		try {
-			$markup = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $markup, $references );
+			$markup = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolveMarkup( $markup, $references, $attachments );
 		} catch ( InvalidArgumentException $error ) {
 			// The plan's own reference table must cover every token it emitted.
 			// ssi-error-class: integrity
