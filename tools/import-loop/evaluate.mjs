@@ -36,6 +36,9 @@ const wpUrl = new URL(args['wp-url']);
 fs.mkdirSync(args.out, { recursive: true });
 
 const findings = new Map();
+// Generated block slugs may end in a content hash (block-<sha256>): one per
+// carried fragment. They are one defect kind, so a finding names the stem.
+const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
 const ADVISORY = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep']);
 function report({ stage, check, owner_repo, subject, evidence, route = null, width = null }) {
   const severity = ADVISORY.has(check) ? 'advisory' : 'blocker';
@@ -201,7 +204,7 @@ if (!reportFile) {
     const bySlug = new Map();
     for (const d of importReport.diagnostics || []) {
       if (d.type !== 'raw_html_companion_block') continue;
-      const slug = String(d.context?.block_name || '').split('/').pop() || 'unknown';
+      const slug = slugStem(String(d.context?.block_name || '').split('/').pop() || 'unknown');
       const entry = bySlug.get(slug) || { count: 0, documents: new Set(), selectors: new Set() };
       entry.count += 1; entry.documents.add(d.source_path); entry.selectors.add(d.selector);
       bySlug.set(slug, entry);
@@ -232,7 +235,7 @@ if (args['wp-cli']) {
   for (const { route, blocks } of pages) {
     const cell = routes.includes(route) ? { route, width: 1440 } : { route: null };
     for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { route, count }, ...cell });
-    for (const [slug, count] of tally(blocks.filter((b) => !b.name.startsWith('core/')), (b) => b.name.split('/').pop())) {
+    for (const [slug, count] of tally(blocks.filter((b) => !b.name.startsWith('core/')), (b) => slugStem(b.name.split('/').pop()))) {
       if (!rawSlugs.has(slug)) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject: slug, evidence: { route, count, of: blocks.length }, ...cell });
     }
     const depth = Math.max(0, ...blocks.map((b) => b.depth));
