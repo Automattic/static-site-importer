@@ -242,7 +242,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( null !== $retired ) {
 			return $retired;
 		}
+		$front_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] );
 		foreach ( $state['ordered_pages'] as $page ) {
+			if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
+				$title         = $args['native_site_identity_evidence']['front_page_title'] ?? Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+				$page['title'] = '' !== $title ? $title : 'Home';
+			}
 			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
 				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
 			}

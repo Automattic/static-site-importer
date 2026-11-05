@@ -300,7 +300,10 @@ class Static_Site_Importer_Site_Identity {
 				}
 			}
 		}
-		return 1 === count( $candidates ) ? reset( $candidates ) : $title;
+		if ( 1 === count( $candidates ) ) {
+			return reset( $candidates );
+		}
+		return 1 === $routes && $edges ? $edges[0] : $title;
 	}
 
 	/** Extract explicit native branding evidence from the ordinary entrypoint document. */
@@ -324,7 +327,8 @@ class Static_Site_Importer_Site_Identity {
 		if ( '' === $html ) {
 			return $evidence;
 		}
-		$evidence['status'] = 'explicit_evidence';
+		$evidence['status']           = 'explicit_evidence';
+		$evidence['front_page_title'] = self::title_from_html( $html, false );
 		foreach ( self::jsonld_branding_nodes( $html, $evidence ) as $node ) {
 			if ( empty( $evidence['logo'] ) && isset( $node['logo'] ) ) {
 				$evidence['logo'] = self::logo_reference( $node['logo'] );

@@ -4,8 +4,11 @@ SSI reads branding only from the ordinary artifact entrypoint. Supported source
 evidence is an explicit `Organization` or `WebSite` JSON-LD `logo` URL and
 `slogan`, explicit `rel="icon"` / `rel="apple-touch-icon"` links, and a linked
 web app manifest. Callers may provide `site_tagline`; it takes precedence over
-an explicit JSON-LD slogan. Generic description metadata and headings are not
-tagline evidence.
+an explicit JSON-LD slogan. When neither is provided, a source document title
+of `site <separator> tagline` supplies the tagline and the generated theme's
+`document_title_separator`. Otherwise the front page's plan meta description is
+the fallback. Existing nonempty `blogdescription` values are preserved; headings
+are not tagline evidence.
 
 Branding changes are authorized only when SSI activates its generated theme.
 Existing owner values are preserved. The site icon uses WordPress `site_icon`;
