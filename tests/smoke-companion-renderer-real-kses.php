@@ -48,4 +48,22 @@ foreach ( $cases as $label => [ $markup, $expected, $present ] ) {
 		exit( 1 );
 	}
 }
-echo 'PASS smoke-companion-renderer-real-kses.php (' . count( $cases ) . " cases)\n";
+// Exercise the typed svg-artwork renderer with real core KSES, not a stub.
+$svg_method = new ReflectionMethod( Static_Site_Importer_Companion_Plugin::class, 'typed_renderer' );
+$svg_method->setAccessible( true );
+$renderer   = $svg_method->invoke( null, 'blocks-engine/svg-artwork/v1' );
+$filter     = '<filter id="tone" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0" result="matrix"></feColorMatrix><feColorMatrix in="matrix" type="saturate" values="0" result="gray"></feColorMatrix><feComponentTransfer in="gray" result="tint"><feFuncR type="table" tableValues="0.1 0.9"></feFuncR><feFuncG type="linear" slope="0.8" intercept="0.1"></feFuncG><feFuncB type="gamma" amplitude="0.9" exponent="1.2" offset="0.1"></feFuncB></feComponentTransfer></filter>';
+// HTML serializers may lowercase SVG names; values must remain untouched.
+$lowercase_filter = preg_replace_callback( '/(?<=<|\/)[a-z]+|[a-z]+(?==)/i', static fn ( array $name ): string => strtolower( $name[0] ), $filter );
+foreach ( array( $filter, $lowercase_filter ) as $filter_input ) {
+	$attributes = array( 'svg' => '<svg viewBox="0 0 10 10" onload="alert(1)"><script>alert(2)</script><defs>' . $filter_input . '<feImage href="https://example.com/external.svg" /></defs><rect width="10" height="10" filter="url(#tone)" onclick="alert(3)"></rect></svg>' );
+	$block      = null;
+	ob_start();
+	eval( '?>' . $renderer );
+	$output = (string) ob_get_clean();
+	if ( ! str_contains( $output, $filter ) || ! str_contains( $output, 'filter="url(#tone)"' ) || preg_match( '/onload|onclick|<script|alert\(|feimage|external\.svg/i', $output ) ) {
+		fwrite( STDERR, 'FAIL [svg-artwork-passive-filter]: ' . $output . "\n" );
+		exit( 1 );
+	}
+}
+echo 'PASS smoke-companion-renderer-real-kses.php (' . ( count( $cases ) + 2 ) . " cases)\n";
