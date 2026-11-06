@@ -70,26 +70,59 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		return trim( preg_replace( '/\s+/u', ' ', html_entity_decode( strip_tags( $value ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
 	}
 
+	/** Exact resource aliases from the producer plan and its attachment projection. */
+	public static function image_identities( array $state ): array {
+		$aliases = array();
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			$source     = (string) $asset['source_path'];
+			$identity   = '/' . ltrim( $source, '/' );
+			$record     = $state['args']['image_asset_records'][ $source ] ?? array();
+			$urls       = array_merge( $record['source_urls'] ?? array(), array( $source, $identity, '{{wordpress-site-plan:asset:' . $asset['token'] . '}}', rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) . '/' . $asset['target_path'] ) );
+			$attachment = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] ?? array();
+			if ( ! empty( $attachment['url'] ) ) {
+				$urls[] = $attachment['url'];
+			}
+			foreach ( $urls as $url ) {
+				$aliases[ html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ) ] = $identity;
+			}
+		}
+		return $aliases;
+	}
+
 	/** Bind only fields backed by the admitted producer row. */
-	public static function bind_document( string $markup, array $product, ?array &$presentations = null ): string {
+	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array() ): string {
+		$identity        = static function ( string $url ) use ( $image_identities ): string {
+			$url = html_entity_decode( $url, ENT_QUOTES, 'UTF-8' );
+			if ( isset( $image_identities[ $url ] ) ) {
+				return $image_identities[ $url ];
+			}
+			$id = function_exists( 'attachment_url_to_postid' ) ? (int) attachment_url_to_postid( $url ) : 0;
+			if ( $id && function_exists( 'get_post_meta' ) ) {
+				$source = (string) get_post_meta( $id, '_static_site_importer_source_image', true );
+				if ( '' !== $source ) {
+					return $image_identities[ $source ] ?? $source;
+				}
+			}
+			return $url;
+		};
 		$blocks          = parse_blocks( $markup );
 		$images          = array_column( $product['images'] ?? array(), 'src' );
 		$images[]        = $product['image'] ?? '';
-		$images          = array_unique( array_filter( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $images ) ) );
+		$images          = array_unique( array_filter( array_map( $identity, $images ) ) );
 		$gallery_path    = null;
 		$gallery_size    = PHP_INT_MAX;
 		$has_gallery     = false;
 		$gallery_capture = false;
 		// Select before rewriting: a slide containing only one product image is
 		// not a gallery. Prefer the smallest complete set, including custom groups.
-		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, &$gallery_path, &$gallery_size, &$has_gallery, &$gallery_capture ): void {
+		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, $identity, &$gallery_path, &$gallery_size, &$has_gallery, &$gallery_capture ): void {
 			foreach ( $nodes as $index => $node ) {
 				$path        = $parent_path . '/' . $index;
 				$has_gallery = $has_gallery || 'woocommerce/product-image-gallery' === $node['blockName'];
 				$select( $node['innerBlocks'] ?? array(), $path );
 				$html = serialize_block( $node );
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $html, $sources );
-				$sources  = array_unique( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $sources[1] ) );
+				$sources  = array_unique( array_map( $identity, $sources[1] ) );
 				$captured = ! empty( Static_Site_Importer_Product_Presentation::gallery_attrs( $node )['thumbnail'] );
 				if ( null !== $node['blockName'] && $images && ! array_diff( $images, $sources ) && ! array_diff( $sources, $images ) && ( ( $captured && ! $gallery_capture ) || ( $captured === $gallery_capture && strlen( $html ) < $gallery_size ) ) ) {
 					$gallery_path    = $path;

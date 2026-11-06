@@ -181,18 +181,47 @@ $group = static fn( string $body ) => '<!-- wp:group --><div>' . $body . '</div>
 $front = $image( 'https://example.org/front.jpg' );
 $back = $image( 'https://example.org/back.jpg' );
 $slides = $group( $front . $back );
+$identity_state = array(
+	'plan' => array( 'assets' => array(
+		array( 'source_path' => 'media/front.webp', 'target_path' => 'assets/website/media/front.webp', 'token' => 'front' ),
+		array( 'source_path' => 'media/back.webp', 'target_path' => 'assets/website/media/back.webp', 'token' => 'back' ),
+	) ),
+	'args' => array( 'image_asset_records' => array(
+		'media/front.webp' => array( 'source_urls' => array( 'https://example.org/front.jpg' ) ),
+		'media/back.webp' => array( 'source_urls' => array( 'https://example.org/back.jpg' ) ),
+	) ),
+	'resolved' => array( 'resolution' => array( 'attachment_resolutions' => array( 'front' => array( 'id' => 42, 'url' => 'https://import.test/wp-content/uploads/2026/11/front.webp' ) ) ) ),
+);
+$identities = Static_Site_Importer_Product_Field_Blocks::image_identities( $identity_state );
 $gallery_data = $row + array( 'images' => array( array( 'src' => 'https://example.org/front.jpg' ), array( 'src' => 'https://example.org/back.jpg' ) ) );
 foreach ( array(
 	'slides and thumbnails' => array( $group( $slides . $slides ), 1, 2 ),
 	'partial image set' => array( $front, 0, 1 ),
 	'unrelated image' => array( $group( $front . $back . $image( 'https://example.org/logo.jpg' ) ), 0, 3 ),
 	'nested complete set' => array( $group( $slides . $image( 'https://example.org/logo.jpg' ) ), 1, 1 ),
+	'mixed rewritten resource identities' => array( $group( $image( 'https://import.test/wp-content/uploads/2026/11/front.webp' ) . $image( '{{wordpress-site-plan:asset:back}}' ) . $back ), 1, 0, $row + array( 'images' => array( array( 'src' => '/media/front.webp' ), array( 'src' => 'https://example.org/back.jpg' ) ) ) ),
 	'existing live gallery' => array( '<!-- wp:woocommerce/product-image-gallery /-->' . $slides, 1, 2 ),
 ) as $case => $fixture ) {
-	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $gallery_data );
+	$presentations = array();
+	$data = $fixture[3] ?? $gallery_data;
+	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $data, $presentations, $identities );
 	$assert( $fixture[1] === substr_count( $converted, 'wp:woocommerce/product-image-gallery' ), $case . ': at most one complete gallery' );
 	$assert( $fixture[2] === substr_count( $converted, '<img ' ), $case . ': only the smallest complete block is replaced' );
 	$assert( $converted === Static_Site_Importer_Product_Field_Blocks::bind_document( $converted, $gallery_data ), $case . ': binding is idempotent' );
+}
+// Replaced photos are attachment-owned, not unused theme payloads. A shared
+// design reference still keeps its theme copy.
+foreach ( array( 'gallery only' => false, 'shared design reference' => true ) as $case => $shared ) {
+	$photo_state = $identity_state;
+	$photo_state['replaced_product_photo_targets'] = array( 'assets/website/media/front.webp' => true );
+	$photo_state['resolved']['writes'] = array(
+		array( 'kind' => 'theme_asset', 'target_path' => 'assets/website/media/front.webp', 'payload' => array( 'encoding' => 'base64', 'data' => 'photo bytes' ) ),
+	);
+	if ( $shared ) {
+		$photo_state['resolved']['writes'][] = array( 'kind' => 'theme_template', 'target_path' => 'parts/header.html', 'payload' => array( 'encoding' => 'utf8', 'data' => '{{wordpress-site-plan:asset:front}}' ) );
+	}
+	Static_Site_Importer_Site_Plan_Persistence::prune_replaced_product_photos( $photo_state );
+	$assert( $shared === isset( $photo_state['resolved']['writes'][0] ), $case . ': theme photo packaging follows remaining consumers' );
 }
 $unknown = '<!-- wp:paragraph --><p>Unbacked promotion</p><!-- /wp:paragraph -->';
 $assert( $unknown === Static_Site_Importer_Product_Field_Blocks::bind_document( $unknown, $row ), 'Unbacked source stays editable source markup' );

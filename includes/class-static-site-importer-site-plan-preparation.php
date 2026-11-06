@@ -728,7 +728,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 			$presentations = array();
 			$page          = $claim['page'];
-			Static_Site_Importer_Product_Field_Blocks::bind_document( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' ), $claim['result']['product_data'], $presentations );
+			Static_Site_Importer_Product_Field_Blocks::bind_document( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' ), $claim['result']['product_data'], $presentations, Static_Site_Importer_Product_Field_Blocks::image_identities( $state ) );
 			foreach ( $presentations as $presentation ) {
 				$state['args']['provider_layout_overlays'][] = $presentation;
 			}
