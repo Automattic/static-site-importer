@@ -237,6 +237,7 @@
           "tests/smoke-captured-interaction-diagnostics.php",
           "tests/smoke-cli-import-continuation.php",
           "tests/smoke-cli-receipt-quality-and-capture-reports.php",
+          "tests/smoke-cli-receipt-verdict.php",
           "tests/smoke-client-script-policy.php",
           "tests/smoke-companion-inventory-readme.php",
           "tests/smoke-companion-plugin-js.php",

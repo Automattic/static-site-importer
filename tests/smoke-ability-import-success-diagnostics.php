@@ -260,7 +260,7 @@ $reconciled_result = array(
 );
 $reconciled_envelope = static_site_importer_ability_import_success( $reconciled_result, array( 'slug' => 'compiler-quality-site' ) );
 $reconciled_contract = $reconciled_envelope['fixture_diagnostics'] ?? array();
-$assert( 331 === ( $reconciled_contract['quality_counts']['block_count'] ?? null ), 'success-envelope-retains-compiler-block-count' );
+$assert( 0 === ( $reconciled_contract['quality_counts']['block_count'] ?? null ), 'success-envelope-reports-final-materialized-block-count' );
 $assert( 450 === ( $reconciled_contract['quality_counts']['fallback_count'] ?? null ), 'success-envelope-emits-unresolved-fallback-count' );
 $assert( 8 === ( $reconciled_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'success-envelope-uses-provider-reconciliation' );
 $assert( 'blocks_engine.plan_summary.quality' === ( $reconciled_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'success-envelope-identifies-compiler-provenance' );
