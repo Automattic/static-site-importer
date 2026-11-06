@@ -88,7 +88,14 @@ export function collateralAtHead(item, pr, { clone, root, work, reimport, routes
   // itself failed, so it is retried and, if it persists, reported as unchecked.
   let run;
   for (let attempt = 0; attempt < 3 && (!run || run.status === 2); attempt++) run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(','), collateralMode(item)], { encoding: 'utf8' });
-  return { exit: run.status, report: (run.stderr || '').trim().split('\n').slice(-6) };
+  const report = (run.stderr || '').trim().split('\n').slice(-6);
+  if (run.status === 2) return { exit: 2, report };
+  // Editability debt counts as collateral: a fix must not trade one raw-HTML
+  // companion or invalid block for another anywhere on the import.
+  const editability = spawnSync('node', [new URL('./gates/editability.mjs', import.meta.url).pathname, `${base}-site`, `${head}-site`], { encoding: 'utf8' });
+  const debt = (editability.stderr || '').trim().split('\n').slice(-6);
+  if (editability.status === 2) return { exit: 2, report: debt };
+  return { exit: Math.max(run.status, editability.status), report: [...(run.status ? report : []), ...(editability.status ? debt : [])] };
 }
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.

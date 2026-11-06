@@ -196,6 +196,8 @@ function acceptanceGate(item, repo) {
       `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
       `burl=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$base/${repo.predicate_root}" '${reimport.capture}' "$base/site") || exit 1; burl=$(tail -n1 <<<"$burl")`,
       `node '${path.join(here, 'gates/collateral.mjs')}' "$burl" "$url" '${scopeKeys(item).replace(/'/g, "'\\''")}' '${result.routes.join(',')}' '${collateralMode(item)}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
+      // Editability: no new raw-HTML companion slug or invalid block either.
+      `node '${path.join(here, 'gates/editability.mjs')}' "$base/site" "$site"; code=$?; echo "editability: exit $code"; [ "$code" = 0 ] || failed=1`,
     ] : []),
     checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
@@ -245,6 +247,7 @@ for (const item of tracked) {
         '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate`: run it with bash from your worktree root. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed).',
         `- Nothing outside the finding's elements (\`${scopeKeys(item)}\`) changes style on any route or width: the gate re-imports this change's merge base with trunk the same way and compares every element's computed style (\`collateral.mjs\`).`,
         ...(collateralMode(item) === 'pixels' ? ['- The whole site looks exactly as it did: this is an editability finding, so the gate also compares full-page screenshots of every route and width against the merge base. Change how the page is built, not how it renders.'] : []),
+        '- The import adds no editability debt against the merge base: no new or larger raw-HTML companion block slug and no more invalid blocks (`editability.mjs`, from the importer\'s own report). Turning one companion into another does not fix the finding.',
         '- Its `reimport.sh` line also runs on its own and prints the imported site\'s URL, for inspecting the import. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
