@@ -925,7 +925,9 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$assert( file_exists( $staged_path ), 'staged-zip-preserves-provider-owned-archive' );
 	$staged_zip = new ZipArchive();
 	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
-	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
+	// The page references the image so the compiler plans both its asset row
+	// and its theme write; an unreferenced image is planned with no write.
+	$staged_zip->addFromString( 'index.html', '<main><img src="assets/photo.png" alt="Staged photo"></main>' );
 	$staged_binary = str_repeat( "\x00\xffPNG", 65536 );
 	$staged_zip->addFromString( 'assets/photo.png', $staged_binary );
 	$staged_zip->setCompressionName( 'assets/photo.png', ZipArchive::CM_STORE );
@@ -965,7 +967,10 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$reference_site_plan = $reference_compiled['source_reports']['wordpress_site_plan'] ?? array();
 	$inline_plan_json   = wp_json_encode( $inline_site_plan );
 	$reference_plan_json = wp_json_encode( $reference_site_plan );
-	$assert( is_string( $inline_plan_json ) && is_string( $reference_plan_json ) && str_contains( $reference_plan_json, 'payload_reference' ) && ! str_contains( $reference_plan_json, $inline_binary ) && strlen( $reference_plan_json ) + ( 2 * strlen( $inline_binary ) ) < strlen( $inline_plan_json ), 'staged-zip-compiler-plan-removes-duplicated-binary-assets-and-writes', strlen( $reference_plan_json ) . '/' . strlen( $inline_plan_json ) );
+	// JSON escapes "/" in base64, so search the plans for the encoded form.
+	$inline_binary_json = trim( (string) wp_json_encode( $inline_binary ), '"' );
+	$assert( is_string( $inline_plan_json ) && substr_count( $inline_plan_json, $inline_binary_json ) >= 2, 'staged-zip-compiler-inline-plan-carries-binary-in-assets-and-writes', is_string( $inline_plan_json ) ? (string) substr_count( $inline_plan_json, $inline_binary_json ) : 'not-json' );
+	$assert( is_string( $inline_plan_json ) && is_string( $reference_plan_json ) && str_contains( $reference_plan_json, 'payload_reference' ) && ! str_contains( $reference_plan_json, $inline_binary_json ) && strlen( $reference_plan_json ) + ( 2 * strlen( $inline_binary ) ) < strlen( $inline_plan_json ), 'staged-zip-compiler-plan-removes-duplicated-binary-assets-and-writes', strlen( $reference_plan_json ) . '/' . strlen( $inline_plan_json ) );
 	$staged_zip = new ZipArchive();
 	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
 	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
