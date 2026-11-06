@@ -1130,6 +1130,41 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks, array $resolved ): array {
 		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $resolved );
+		// Recover omitted device placements only from a producer-owned purchase
+		// anchor with identical region bytes on the same product page. A title or
+		// button label is never evidence of product ownership.
+		foreach ( $fallbacks as $fallback ) {
+			if ( ! is_array( $fallback ) || 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+				foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
+					foreach ( $product['bindings'] ?? array() as $binding ) {
+						$hash = $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
+						if ( 'commerce_add_to_cart_form' !== ( $binding['role'] ?? '' ) || ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) || self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) !== self::product_page_key( (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) ) ) {
+							continue;
+						}
+						$anchors = $fallback['bindings'] ?? array( $fallback['binding'] ?? array() );
+						foreach ( $anchors as $anchor ) {
+							$anchor['source_path'] = $fallback['source_path'] ?? $fallback['source'] ?? '';
+							$exists                = false;
+							foreach ( $product['bindings'] ?? array() as $existing ) {
+								if ( 'commerce_add_to_cart_form' === ( $existing['role'] ?? '' ) && self::binding_matches_fallback( $existing, $fallback ) ) {
+									$exists = true;
+								}
+							}
+							$document = $documents[ $anchor['source_path'] ?? '' ] ?? null;
+							$markup   = null === $document ? '' : (string) ( $resolved[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ?? '' );
+							if ( ! $exists && ! empty( $anchor['search_block_markup'] ) && (int) ( $anchor['occurrence'] ?? 0 ) > 0 && substr_count( $markup, $anchor['search_block_markup'] ) >= $anchor['occurrence'] ) {
+								$anchor['role'] = 'commerce_add_to_cart_form';
+								$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][] = $anchor;
+							}
+						}
+						break;
+					}
+				}
+			}
+		}
 		foreach ( $fallbacks as $fallback ) {
 			if ( is_array( $fallback ) && 'html_product_grid_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
 				foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
@@ -1142,7 +1177,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 				}
 			}
-			if ( ! is_array( $fallback ) || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
+			if ( ! is_array( $fallback ) || ( ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) && 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) ) {
 				continue;
 			}
 			$source                  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
@@ -1166,12 +1201,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						if ( ! self::binding_matches_fallback( $binding, $fallback ) ) {
 							continue;
 						}
-						$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+						$current = $binding['product_form_fallback'] ?? array();
+						if ( 'html_form_fallback' !== ( $current['diagnostic_code'] ?? $current['code'] ?? '' ) ) {
+							$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+						}
 						$declared = true;
 					}
 				}
 			}
-			if ( $declared ) {
+			if ( $declared || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
 				continue;
 			}
 			$matches = array( array(), array() );
@@ -1277,8 +1315,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( '' === $source || self::product_page_key( $source ) !== self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
 			return false;
 		}
+		$selector = $fallback['selector'] ?? '';
+		if ( '' !== $selector && in_array( $selector, $binding['superseded_runtime_selectors'] ?? array(), true ) ) {
+			return true;
+		}
 		$hash = $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
-		if ( isset( $binding['projected_anchor']['source_block_hash'] ) && ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) ) {
+		if ( ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) ) {
 			return false;
 		}
 		$anchors = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array( $fallback['binding'] ?? array() );

@@ -668,6 +668,7 @@ final class Static_Site_Importer_Quality_Gates {
 					'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
 					'status'                           => 'completed',
 					'role'                             => $binding['role'],
+					'selector'                         => $binding['selector'] ?? '',
 					'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
 					'source_path'                      => $binding['source_path'] ?? '',
 					'fallback_hash'                    => $binding['fallback_hash'] ?? '',
@@ -763,8 +764,16 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
-			if ( 'commerce_add_to_cart_form' === ( $receipt['role'] ?? '' ) && ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) ) {
-				$receipt = array();
+			// A purchase replacement owns all fallback families at its exact
+			// source placement, including unknown subscription forms. Rebind the
+			// proof to this finding's real hash; persistence checks still apply.
+			if ( empty( $receipt ) && ! empty( $diagnostic['selector'] ) ) {
+				$placement_receipts = array_values( array_filter( $receipts, static fn( $candidate ): bool => is_array( $candidate ) && 'commerce_add_to_cart_form' === ( $candidate['role'] ?? '' ) && ( $candidate['source_path'] ?? '' ) === $source_path && ( $candidate['selector'] ?? '' ) === $diagnostic['selector'] ) );
+				if ( 1 === count( $placement_receipts ) ) {
+					$receipt                                     = $placement_receipts[0];
+					$receipt['fallback_reconciliation_identity'] = $identity;
+					$receipt['fallback_hash']                    = $fallback_hash;
+				}
 			}
 			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
 			$reason               = ! $resolved_by_provider && Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) ? ( empty( $receipt ) ? 'no_seeded_product_for_page' : 'provider_replacement_not_persisted' ) : '';

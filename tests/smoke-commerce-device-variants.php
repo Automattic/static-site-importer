@@ -41,6 +41,22 @@ $files = array(
 $view = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( array( 'entrypoint' => 'shop.html', 'files' => $files ) )->toWordPressSitePlanView();
 $plan = $view['wordpress_site_plan'];
 $resolved = ( new Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => 'https://example.test/theme' ) );
+// Model the real producer handoff: unknown subscription forms in two device
+// documents, but only the first placement has a purchase declaration/control
+// finding. This is deliberately not inferred from the button labels.
+$purchase_forms = array_values( array_filter( $plan['quality']['fallbacks'], static fn( array $finding ): bool => 'html_form_fallback' === $finding['diagnostic_code'] ) );
+commerce_check( 2 === count( $purchase_forms ), 'Two subscription purchase boxes' );
+foreach ( $purchase_forms as $finding ) {
+	commerce_check( 'unknown' === Static_Site_Importer_Form_Fallback_Contract::intent( $finding ), 'Subscription form remains runtime intent' );
+}
+$purchase_anchor = $purchase_forms[0]['binding'];
+$purchase_anchor['role'] = 'commerce_add_to_cart_form';
+$purchase_anchor['source_path'] = $purchase_forms[0]['source_path'] ?? $purchase_forms[0]['source'];
+$controls_finding = array( 'diagnostic_code' => 'html_commerce_controls_fallback', 'code' => 'html_commerce_controls_fallback', 'source_path' => ( $purchase_forms[0]['source_path'] ?? $purchase_forms[0]['source'] ), 'selector' => $purchase_forms[0]['selector'], 'binding' => $purchase_anchor );
+$plan['quality']['fallbacks'][] = $controls_finding;
+$plan['diagnostics'][] = $controls_finding;
+$plan['quality']['fallback_count'] = 7;
+$plan['quality']['source_fallback_count'] = 7;
 $lifecycle = array( 'entities' => array() );
 $reports = array();
 foreach ( $plan['runtime_declarations'] as $declaration ) {
@@ -52,6 +68,14 @@ foreach ( $plan['runtime_declarations'] as $declaration ) {
 	$adapter = 'products' === $type ? Static_Site_Importer_Woo_Product_Seeder::adapter() : Static_Site_Importer_Woo_Product_Grid_Materializer::adapter();
 	$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'schema_version' => 1, $type => $declaration['payload']['entities'] ) );
 	commerce_check( empty( $validation['errors'] ), 'Valid provider manifest' );
+	if ( 'products' === $type ) {
+		foreach ( $validation[$type] as &$product ) {
+			if ( 'cup' === $product['slug'] ) {
+				$product['bindings'][] = $purchase_anchor;
+			}
+		}
+		unset( $product );
+	}
 	$lifecycle['entities'][ $id ] = array( 'adapter' => $adapter, 'manifest' => array( $type => $validation[ $type ] ) );
 	$reports[ $id ] = 'product_grids' === $type ? Static_Site_Importer_Woo_Product_Grid_Materializer::materialize( $validation ) : array( 'products' => array( array( 'slug' => 'cup', 'id' => 41, 'status' => 'created' ), array( 'slug' => 'bowl', 'id' => 42, 'status' => 'created' ) ) );
 }
@@ -99,7 +123,8 @@ Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, array() );
 $quality = $report['quality'];
 echo 'Unsupported commerce fallbacks: ' . $quality['unsupported_fallback_count'] . "\n";
 commerce_check( 0 === $quality['unsupported_fallback_count'], wp_json_encode( $report['fallback_reconciliation'] ) );
-commerce_check( 6 === $report['fallback_reconciliation']['source_fallback_count'], 'Both copies of grids, controls and forms were tested' );
+commerce_check( 7 === $report['fallback_reconciliation']['source_fallback_count'], 'Both copies of grids, controls and forms were tested' );
+commerce_check( 2 === count( array_filter( $binding_reports, static fn( array $binding ): bool => 'commerce_add_to_cart_form' === $binding['role'] ) ), 'Each device purchase placement has its own receipt' );
 foreach ( $binding_reports as $binding ) {
 	if ( 'commerce_add_to_cart_form' === $binding['role'] ) {
 		commerce_check( hash( 'sha256', '' ) !== $binding['fallback_hash'], 'Purchase receipt must hash its real fallback' );
@@ -115,7 +140,7 @@ foreach ( $receipt['completed']['materialized_pages'] as &$page ) {
 unset( $page );
 $stale = Static_Site_Importer_Import_Report::from_array( array( 'diagnostics' => $plan['diagnostics'], 'quality' => $plan['quality'], 'materialization_receipt' => $receipt ) );
 Static_Site_Importer_Quality_Gates::finalize_quality_report( $stale, array() );
-commerce_check( 6 === $stale['quality']['unsupported_fallback_count'], 'Stale persistence leaves every copy unresolved' );
+commerce_check( 7 === $stale['quality']['unsupported_fallback_count'], 'Stale persistence leaves every copy unresolved' );
 echo "Commerce device variants passed.\n";
 if ( ! in_array( '--legacy', $argv, true ) ) {
 	passthru( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __FILE__ ) . ' --legacy', $status );
