@@ -39,6 +39,7 @@ $cases = array(
 	'calc-color-is-dropped'              => array( '<div style="color: rgb(calc(1 + 2), 0, 0)">x</div>', 'style=', false ),
 	'url-bearing-color-is-dropped'       => array( '<div style="color: rgb(var(--a)) url(x)">x</div>', 'style=', false ),
 	'literal-rgb-is-lowered-to-hex'      => array( '<div style="color: rgb(255, 255, 255)">x</div>', '#ffffff', true ),
+	'non-scaling-svg-stroke-survives'    => array( '<svg viewBox="0 0 1 1" preserveAspectRatio="none"><path d="M0,1 L1,1" vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"></path></svg>', 'vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"', true ),
 );
 foreach ( $cases as $label => [ $markup, $expected, $present ] ) {
 	$output = $render( $markup );
