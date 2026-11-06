@@ -243,6 +243,7 @@
           "tests/smoke-companion-inventory-readme.php",
           "tests/smoke-companion-plugin-js.php",
           "tests/smoke-companion-plugin.php",
+          "tests/smoke-companion-text-shadow-real-kses.php",
           "tests/smoke-compiler-file-limits.php",
           "tests/smoke-contact-layout-transformer.php",
           "tests/smoke-content-only-policy.php",

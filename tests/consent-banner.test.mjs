@@ -60,6 +60,26 @@ test('presentation gap accepts one or two typed lengths in row-column order', ()
   assert.doesNotMatch(output, /gap:|ssi-consent-banner|display:none/);
  }
 });
+test('policy links render inline or standalone and use imported routes only for the source origin', () => {
+ const sentence = 'We use cookies on our website to see how you interact with it. By accepting, you agree to our use of such cookies.';
+ for (const { text, paragraph } of [
+  { text: `${sentence}Privacy Policy`, paragraph: anchor => `${sentence}${anchor}` },
+  { text: sentence, paragraph: anchor => `${sentence} ${anchor}` },
+  { text: 'Privacy Policy & Privacy Policy', paragraph: anchor => `${anchor} &amp; Privacy Policy` },
+ ]) {
+  for (const { href, target } of [
+   { href: 'https://www.jccollaborative.com/privacy', target: '/imported-privacy/' },
+   { href: 'https://external.example/privacy', target: 'https://external.example/privacy' },
+  ]) {
+   const fact = { text, accept_label: 'Accept', policy_link: { label: 'Privacy Policy', href } };
+   const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'policy-link', JSON.stringify(fact)], { encoding: 'utf8' });
+   assert.ok(markup.includes(`<p>${paragraph(`<a href="${target}">Privacy Policy</a>`)}</p>`), markup);
+   assert.equal((markup.match(/>Privacy Policy<\/a>/g) || []).length, 1);
+   const result = validateMarkup(markup);
+   assert.equal(result.ok, true, JSON.stringify(result.failures));
+  }
+ }
+});
 test('consent intent serializes against actual Jetpack save and core buttons', () => {
  const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php'], { encoding: 'utf8' });
  const result = validateMarkup(markup);

@@ -91,7 +91,7 @@ class Static_Site_Importer_Consent_Banner {
 			return array( 'findings' => array( self::finding( 'consent_banner_not_materialized', 'The jetpack/cookie-consent block runtime is unavailable.' ) ) );
 		}
 		Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'cookie_consent_template' );
-		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'cookie_consent_template', self::markup( $fact ) ) ) {
+		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'cookie_consent_template', $state['resolved']['consent_banner_markup'] ?? self::markup( $fact ) ) ) {
 			return array( 'findings' => array( self::finding( 'consent_banner_not_materialized', 'The cookie_consent_template option could not be written.' ) ) );
 		}
 		return array(
@@ -105,8 +105,14 @@ class Static_Site_Importer_Consent_Banner {
 	public static function markup( array $fact ): string {
 		$text = esc_html( $fact['text'] );
 		$link = $fact['policy_link'] ?? null;
-		if ( is_array( $link ) && is_string( $link['label'] ?? null ) && is_string( $link['href'] ?? null ) && preg_match( '#^https?://#i', $link['href'] ) ) {
-			$text .= ' <a href="' . esc_url( $link['href'] ) . '">' . esc_html( $link['label'] ) . '</a>';
+		if ( is_array( $link ) && is_string( $link['label'] ?? null ) && '' !== $link['label'] && is_string( $link['href'] ?? null ) && preg_match( '#^https?://#i', $link['href'] ) ) {
+			$anchor   = '<a href="' . esc_url( $link['href'] ) . '">' . esc_html( $link['label'] ) . '</a>';
+			$position = strpos( $fact['text'], $link['label'] );
+			if ( false === $position ) {
+				$text .= ' ' . $anchor;
+			} else {
+				$text = esc_html( substr( $fact['text'], 0, $position ) ) . $anchor . esc_html( substr( $fact['text'], $position + strlen( $link['label'] ) ) );
+			}
 		}
 		$colors       = is_array( $fact['colors'] ?? null ) ? $fact['colors'] : array();
 		$banner       = self::color_style( $colors, 'text', 'background' );

@@ -20,7 +20,21 @@ if ( count( $artifact['files'] ) !== 1 || ! isset( $args['consent_banner'] ) ) {
 	fwrite( STDERR, 'Consent evidence must be extracted before compile.' );
 	exit( 1 );
 }
-if ( 'legacy-markup' === ( $argv[1] ?? '' ) ) {
+if ( 'policy-link' === ( $argv[1] ?? '' ) ) {
+	require dirname( __DIR__, 3 ) . '/includes/class-static-site-importer-site-plan-persistence.php';
+	require ABSPATH . WPINC . '/http.php';
+	function get_permalink( $id ) {
+		return 'https://local.example/imported-privacy/';
+	}
+	$fact = json_decode( $argv[2], true );
+	$state = array(
+		'args' => array( 'consent_banner' => $fact, 'artifact_provenance' => array( 'source_url' => 'https://www.jccollaborative.com/' ) ),
+		'ordered_pages' => array( array( 'source_path' => 'privacy.html', 'route' => array( 'path' => '/privacy' ), 'skip_materialization' => true ) ),
+		'source_ids' => array( 'privacy.html' => 149 ),
+	);
+	Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state );
+	echo $state['resolved']['consent_banner_markup'];
+} elseif ( 'legacy-markup' === ( $argv[1] ?? '' ) ) {
 	$fact = $args['consent_banner'];
 	foreach ( array( 'border_width', 'border_style', 'border_color' ) as $key ) {
 		unset( $fact['presentation']['button'][ $key ] );
