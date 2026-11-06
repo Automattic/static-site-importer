@@ -80,13 +80,17 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
-	 * Aggregate only an exact labelled-fieldset radio topology that Jetpack can
-	 * represent as one field. The generic topology supplies membership and its
-	 * canonical binding supplies the source legend; no provider semantics are inferred.
+	 * Aggregate only an exact labelled radio-group topology that Jetpack can
+	 * represent as one field: a wrapper whose children are each a label
+	 * wrapping one radio, holding every radio of that name in the form. The
+	 * generic topology supplies membership; the group's label is its fieldset
+	 * legend, its ARIA group name, or else the nearest preceding label in the
+	 * wrapper that wraps no control. No provider semantics are inferred.
 	 *
 	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
 	 */
 	public static function labelled_radio_groups( array $form, array $controls ): array {
+		/** @var array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>} $result */
 		$result = array(
 			'groups'                     => array(),
 			'suppressed_controls'        => array(),
@@ -111,9 +115,6 @@ final class Static_Site_Importer_Form_Field_Markup {
 		unset( $siblings );
 
 		$legends = self::labelled_fieldset_legends( $form, $nodes );
-		if ( empty( $legends ) ) {
-			return $result;
-		}
 
 		$all_radio_names = array();
 		foreach ( $controls as $control_index => $control ) {
@@ -126,14 +127,14 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 
-		foreach ( $nodes as $fieldset ) {
-			if ( ! is_array( $fieldset ) || 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'labelled_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || ! isset( $legends[ $fieldset['id'] ] ) ) {
+		foreach ( $nodes as $group ) {
+			if ( ! is_array( $group ) || 'wrapper' !== ( $group['kind'] ?? null ) || 'label' === ( $group['tag'] ?? null ) || ! is_string( $group['id'] ?? null ) ) {
 				continue;
 			}
 			$members           = array();
-			$semantic_nodes    = array( $fieldset['id'] );
+			$semantic_nodes    = array( $group['id'] );
 			$unambiguous_shape = true;
-			$labels            = $children[ $fieldset['id'] ] ?? array();
+			$labels            = $children[ $group['id'] ] ?? array();
 			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) ) {
 				$labels = $children[ $labels[0]['id'] ];
 			}
@@ -146,7 +147,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$members[]        = $label_children[0]['control'];
 				$semantic_nodes[] = $label['id'];
 			}
-			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) ) {
+			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) || isset( $result['groups'][ $members[0] ] ) || isset( $result['suppressed_controls'][ $members[0] ] ) ) {
 				continue;
 			}
 			$first          = $controls[ $members[0] ] ?? null;
@@ -174,10 +175,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( ! $unambiguous_shape || '' === $name || count( $all_radio_names[ $name ] ?? array() ) !== count( $members ) ) {
 				continue;
 			}
+			$is_fieldset = isset( $legends[ $group['id'] ] );
+			$group_label = $is_fieldset ? $legends[ $group['id'] ] : self::radio_group_label( $form, $group, (string) ( $first['selector'] ?? '' ) );
+			if ( '' === $group_label ) {
+				continue;
+			}
 
 			$group_control            = $first;
-			$group_control['text']    = $legends[ $fieldset['id'] ];
-			$group_control['label']   = $legends[ $fieldset['id'] ];
+			$group_control['text']    = $group_label;
+			$group_control['label']   = $group_label;
 			$group_control['options'] = $options;
 			// The one choice the source shows selected is the group's default; more
 			// than one is not a radio state, so it is not carried as one.
@@ -194,14 +200,58 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$result['represented_semantic_nodes'] = array_merge( $result['represented_semantic_nodes'], $semantic_nodes );
 			$result['operations'][]               = array(
 				'dimension'     => 'semantic',
-				'strategy'      => 'provider_radio_fieldset_equivalent',
-				'target_hash'   => hash( 'sha256', $fieldset['id'] ),
+				'strategy'      => $is_fieldset ? 'provider_radio_fieldset_equivalent' : 'provider_radio_group_equivalent',
+				'target_hash'   => hash( 'sha256', $group['id'] ),
 				'control_count' => count( $members ),
 				'required'      => $required,
 			);
 		}
 
 		return $result;
+	}
+
+	/**
+	 * The label naming a radio group that has no fieldset legend: the wrapper's
+	 * ARIA group name, or else the nearest label before the first radio's label
+	 * within the same wrapper that wraps no control. Such a label holds no
+	 * control, so it reaches the producer as unrepresented context addressed by
+	 * its source selector, a sibling of the radios' wrapping labels.
+	 *
+	 * @param array<string,mixed> $form           Producer form.
+	 * @param array<string,mixed> $wrapper        Group wrapper topology node.
+	 * @param string              $first_selector Source selector of the group's first radio.
+	 */
+	private static function radio_group_label( array $form, array $wrapper, string $first_selector ): string {
+		$label = is_string( $wrapper['group_label'] ?? null ) ? preg_replace( '/\s+/', ' ', trim( $wrapper['group_label'] ) ) : '';
+		if ( is_string( $label ) && '' !== $label && 200 >= strlen( $label ) ) {
+			return $label;
+		}
+		// The first radio sits in its label, which sits in the group wrapper.
+		$steps = explode( ' > ', trim( $first_selector ) );
+		if ( count( $steps ) < 3 || 1 !== preg_match( '/^label(?::nth-of-type\(([0-9]+)\))?$/D', $steps[ count( $steps ) - 2 ], $first_label ) ) {
+			return '';
+		}
+		$wrapper_selector = implode( ' > ', array_slice( $steps, 0, -2 ) );
+		$first_position   = (int) ( $first_label[1] ?? 1 );
+		$nearest          = 0;
+		$label            = '';
+		$context          = $form['form']['unrepresented_context'] ?? ( $form['unrepresented_context'] ?? array() );
+		foreach ( is_array( $context ) ? $context : array() as $item ) {
+			$selector = is_array( $item ) && is_string( $item['source_selector'] ?? null ) ? trim( $item['source_selector'] ) : '';
+			$text     = is_array( $item ) && is_string( $item['text'] ?? null ) ? preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) : '';
+			if ( '' === $selector || ! is_string( $text ) || '' === $text || 200 < strlen( $text ) || ! str_starts_with( $selector, $wrapper_selector . ' > ' ) ) {
+				continue;
+			}
+			if ( 1 !== preg_match( '/^label(?::nth-of-type\(([0-9]+)\))?$/D', substr( $selector, strlen( $wrapper_selector ) + 3 ), $match ) ) {
+				continue;
+			}
+			$position = (int) ( $match[1] ?? 1 );
+			if ( $position < $first_position && $position > $nearest ) {
+				$nearest = $position;
+				$label   = $text;
+			}
+		}
+		return $label;
 	}
 
 	/**

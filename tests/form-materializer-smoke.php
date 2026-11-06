@@ -71,6 +71,36 @@ update_option( $key, array() );
 $checks['missing or corrupt references leave provider HTML untouched'] = $html === Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_values( $html );
 update_option( $key, $stored );
 
+// Radios sharing a name are one provider radio field with one option per
+// input, named by the group's label: its fieldset legend, its ARIA group
+// name, or a preceding label that wraps no control.
+$radio_groups = array(
+	'fieldset legend'       => '<fieldset><legend>Pick an area</legend>%s</fieldset>',
+	'aria group name'       => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
+	'plain preceding label' => '<div><label>Pick an area</label>%s</div>',
+);
+foreach ( $radio_groups as $case => $group ) {
+	$radios = '<label><input type="radio" name="area" value="north"> North</label><label><input type="radio" name="area" value="south"> South</label>';
+	$html   = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Radio group</title></head><body><main><form action="/submit" method="post"><div><label for="email">Email</label><input type="email" id="email" name="email"></div>' . sprintf( $group, $radios ) . '<button type="submit">Send</button></form></main></body></html>';
+	$plan   = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray()['source_reports']['wordpress_site_plan'];
+	$decl   = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
+	$radio  = Static_Site_Importer_Form_Seeder::seed( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $decl['payload']['entities'], $plan ) ) ) )['forms'][0];
+	$find   = static function ( array $blocks ) use ( &$find ): array {
+		$found = array();
+		foreach ( $blocks as $block ) {
+			if ( 'jetpack/field-radio' === ( $block['blockName'] ?? null ) ) {
+				$found[] = $block;
+			}
+			$found = array_merge( $found, $find( $block['innerBlocks'] ?? array() ) );
+		}
+		return $found;
+	};
+	$fields = $find( parse_blocks( (string) $radio['block_markup'] ) );
+	$checks[ $case . ' radio group maps to one radio field' ] = 'mapped' === $radio['status'] && 1 === count( $fields );
+	$checks[ $case . ' radio field carries one option per input' ] = array( 'North', 'South' ) === ( $fields[0]['attrs']['options'] ?? null ) && array( 'North', 'South' ) === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
+	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => 'Pick an area' ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
+}
+
 // A donation-intent form materializes as the Jetpack Donations block and its
 // form fallback resolves through the provider binding receipt.
 foreach ( array( 'import-report', 'diagnostic-projection', 'quality-gates' ) as $class_file ) {
