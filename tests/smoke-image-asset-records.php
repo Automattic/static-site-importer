@@ -5,6 +5,11 @@
  * @package StaticSiteImporter
  */
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once __DIR__ . '/fixtures/core-html-api.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
@@ -35,6 +40,18 @@ $artifact = array(
 	),
 );
 $extracted = Static_Site_Importer_Image_Assets::extract( $artifact );
+$document_cases = array(
+	'.txt citation'       => array( "A citation from a source document.\n", 'https://example.org/citation.txt', 'text/plain' ),
+	'same bytes as .pdf'  => array( "A citation from a source document.\n", 'https://example.org/citation.pdf', null ),
+	'HTML at .txt'        => array( '<!doctype html><html>content</html>', 'https://example.org/error.txt', null ),
+	'NUL at .txt'         => array( "citation\0text", 'https://example.org/citation.txt', null ),
+	'empty .txt'          => array( '', 'https://example.org/empty.txt', null ),
+);
+$document_type = new ReflectionMethod( Static_Site_Importer_Image_Assets::class, 'document_content_type' );
+$document_type->setAccessible( true );
+foreach ( $document_cases as $label => $case ) {
+	$assert( $case[2] === $document_type->invoke( null, $case[0], $case[1] ), "Document verification must handle {$label}." );
+}
 $assert( is_array( $extracted ), 'Valid record must be consumed.' );
 $assert( 2 === count( $extracted['artifact']['files'] ), 'Evidence must not become a theme asset.' );
 $assert( $record === $extracted['records']['website/photo.png'], 'Source aliases and provenance must survive.' );

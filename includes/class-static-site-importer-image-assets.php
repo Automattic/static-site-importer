@@ -22,6 +22,7 @@ final class Static_Site_Importer_Image_Assets {
 		'application/gzip',
 		'application/x-7z-compressed',
 		'application/rtf',
+		'text/plain',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -262,7 +263,7 @@ final class Static_Site_Importer_Image_Assets {
 		}
 		$sniffed = match ( self::kind( $record ) ) {
 			'font'     => self::font_content_type( $bytes ),
-			'document' => self::document_content_type( $bytes ),
+			'document' => self::document_content_type( $bytes, (string) ( $original['source_url'] ?? '' ) ),
 			'video'    => self::video_content_type( $bytes ),
 			default    => null,
 		};
@@ -298,7 +299,7 @@ final class Static_Site_Importer_Image_Assets {
 	}
 
 	/** Signature of document and archive bytes; unknown downloads stay unresolved. */
-	private static function document_content_type( string $bytes ): ?string {
+	private static function document_content_type( string $bytes, string $source_url = '' ): ?string {
 		if ( str_starts_with( $bytes, '%PDF-' ) && str_contains( substr( $bytes, -1024 ), '%%EOF' ) ) {
 			return 'application/pdf';
 		}
@@ -325,6 +326,13 @@ final class Static_Site_Importer_Image_Assets {
 		}
 		if ( str_starts_with( $bytes, '{\\rtf' ) ) {
 			return 'application/rtf';
+		}
+		$path = (string) wp_parse_url( $source_url, PHP_URL_PATH );
+		if ( preg_match( '/\\.(?:txt|csv)$/i', $path ) ) {
+			$text = str_starts_with( $bytes, "\xef\xbb\xbf" ) ? substr( $bytes, 3 ) : $bytes;
+			if ( '' !== $text && 1 === preg_match( '//u', $text ) && ! preg_match( '/[\\x00-\\x08\\x0b\\x0e-\\x1f]/', $text ) && ! preg_match( '/^\\s*<(?:!doctype\\s+html|html)(?:\\s|>)/i', $text ) ) {
+				return 'text/plain';
+			}
 		}
 		return null;
 	}
