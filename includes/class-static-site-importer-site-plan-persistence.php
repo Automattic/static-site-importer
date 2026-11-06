@@ -366,6 +366,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
 		}
 
+		self::prune_replaced_product_photos( $state );
 		self::append_handoff_template_aliases( $state );
 		$short_write_attempt = 0;
 		// A prepared state from before this boundary existed described a
@@ -1186,7 +1187,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return new WP_Error( 'whole_page_template_target_invalid' );
 		}
 		if ( 'product' === $post_type && ! empty( $page['product_data'] ) ) {
-			$markup = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'] );
+			$presentations = array();
+			$identities    = Static_Site_Importer_Product_Field_Blocks::image_identities( $state );
+			$original      = $markup;
+			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities );
+			if ( $original !== $markup && str_contains( $markup, 'wp:woocommerce/product-image-gallery' ) ) {
+				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+					$identity = '/' . ltrim( $asset['source_path'], '/' );
+					foreach ( $identities as $url => $resource ) {
+						if ( $identity === $resource && str_contains( $original, $url ) && ! str_contains( $markup, $url ) ) {
+							$state['replaced_product_photo_targets'][ $asset['target_path'] ] = true;
+						}
+					}
+				}
+			}
 		}
 		// Use the route's planned shell, not a newly invented provider shell.
 		$route_slug = (string) ( $page['slug'] ?? $slug );
@@ -1267,6 +1281,57 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$page['served_template']     = $target;
 		$persisted                   = self::served_document( $state, $page );
 		return is_string( $persisted ) && hash_equals( hash( 'sha256', $markup ), hash( 'sha256', $persisted ) ) ? $persisted : new WP_Error( 'whole_page_template_unproven' );
+	}
+
+	/** Withhold replaced photos only when an attachment owns them and no served document needs the theme copy. */
+	public static function prune_replaced_product_photos( array &$state ): void {
+		$aliases = Static_Site_Importer_Product_Field_Blocks::image_identities( $state );
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			$target = $asset['target_path'];
+			if ( empty( $state['replaced_product_photo_targets'][ $target ] ) ) {
+				continue;
+			}
+			$attachment = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ]['id'] ?? 0;
+			$identity   = '/' . ltrim( $asset['source_path'], '/' );
+			$references = array_keys( array_filter( $aliases, static fn( string $value ): bool => $identity === $value ) );
+			foreach ( $references as $url ) {
+				if ( function_exists( 'get_posts' ) && ! $attachment ) {
+					$ids        = get_posts( array(
+						'post_type'      => 'attachment',
+						'post_status'    => 'inherit',
+						'fields'         => 'ids',
+						'posts_per_page' => 1,
+						'meta_key'       => '_static_site_importer_source_image',
+						'meta_value'     => $url,
+					) );
+					$attachment = (int) ( $ids[0] ?? 0 );
+				}
+			}
+			if ( ! $attachment ) {
+				continue;
+			}
+			$documents = array();
+			foreach ( $state['ordered_pages'] ?? array() as $page ) {
+				$documents[] = self::served_document( $state, $page ) ?? '';
+			}
+			foreach ( $state['resolved']['writes'] ?? array() as $write ) {
+				if ( 'utf8' === ( $write['payload']['encoding'] ?? '' ) ) {
+					$documents[] = $write['payload']['data'];
+				}
+			}
+			foreach ( $documents as $document ) {
+				foreach ( $references as $url ) {
+					if ( str_contains( $document, $url ) ) {
+						continue 3;
+					}
+				}
+			}
+			foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+				if ( $target === $write['target_path'] && 'theme_asset' === ( $write['kind'] ?? '' ) ) {
+					unset( $state['resolved']['writes'][ $index ] );
+				}
+			}
+		}
 	}
 
 	/**
