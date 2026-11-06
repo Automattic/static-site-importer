@@ -72,8 +72,17 @@ final class Static_Site_Importer_Product_Field_Blocks {
 
 	/** Exact resource aliases from the producer plan and its attachment projection. */
 	public static function image_identities( array $state ): array {
-		$aliases = array();
-		$root    = '';
+		$aliases     = array();
+		$attachments = array();
+		/** @var array<string,string> $parents */
+		$parents   = array();
+		$canonical = static function ( string $identity ) use ( &$parents ): string {
+			while ( isset( $parents[ $identity ] ) ) {
+				$identity = $parents[ $identity ];
+			}
+			return $identity;
+		};
+		$root      = '';
 		foreach ( $state['plan']['pages'] ?? array() as $page ) {
 			if ( ! empty( $page['entrypoint'] ) ) {
 				$directory = dirname( $page['source_path'] );
@@ -92,14 +101,31 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				$urls[] = '/' . substr( $source, strlen( $root ) );
 			}
 			$attachment = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] ?? array();
+			$id         = (int) ( $attachment['id'] ?? 0 );
+			if ( $id ) {
+				if ( isset( $attachments[ $id ] ) ) {
+					$parents[ $identity ] = $canonical( $attachments[ $id ] );
+				}
+				$attachments[ $id ] = $identity;
+			}
 			if ( ! empty( $attachment['url'] ) ) {
 				$urls[] = $attachment['url'];
 			}
 			foreach ( $urls as $url ) {
-				$aliases[ html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ) ] = $identity;
+				$url = html_entity_decode( $url, ENT_QUOTES, 'UTF-8' );
+				// Exact aliases (notably shared attachment URLs) are equivalence
+				// edges. Last-write-wins leaves earlier tokens and paths stranded.
+				if ( isset( $aliases[ $url ] ) ) {
+					$left  = $canonical( $identity );
+					$right = $canonical( $aliases[ $url ] );
+					if ( $left !== $right ) {
+						$parents[ $left ] = $right;
+					}
+				}
+				$aliases[ $url ] = $identity;
 			}
 		}
-		return $aliases;
+		return array_map( $canonical, $aliases );
 	}
 
 	/** Bind only fields backed by the admitted producer row. */
@@ -144,7 +170,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				$html = serialize_block( $node );
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $html, $sources );
 				$sources  = array_unique( array_map( $identity, $sources[1] ) );
-				$captured = ! empty( Static_Site_Importer_Product_Presentation::gallery_attrs( $node )['thumbnail'] );
+				$captured = ! empty( $node['attrs']['thumbnails'] ) || ! empty( Static_Site_Importer_Product_Presentation::gallery_attrs( $node )['thumbnail'] );
 				if ( null !== $node['blockName'] && $images && ! array_diff( $images, $sources ) && ! array_diff( $sources, $images ) && ( ( $captured && ! $gallery_capture ) || ( $captured === $gallery_capture && strlen( $html ) < $gallery_size ) ) ) {
 					$gallery_path    = $path;
 					$gallery_size    = strlen( $html );

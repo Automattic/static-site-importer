@@ -1,0 +1,69 @@
+{
+ "entities": {
+  "beach-b-bubble-free-stickers": {
+   "image": "/media/kiss-cut-stickers-white-4x4-front-6a17582c06a71.webp",
+   "images": [
+    {
+     "alt": "Beach (B) Bubble-free stickers",
+     "src": "/media/kiss-cut-stickers-white-4x4-front-6a17582c06a71.webp"
+    },
+    {
+     "alt": "Beach (B) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914806777-CFZ3G96RR5T1S3MFFT1I/kiss-cut-stickers-white-3x3-front-6a17582c07ae1.jpg"
+    },
+    {
+     "alt": "Beach (B) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914808939-DCY1BEU5BFPYRQRKPI0W/kiss-cut-stickers-white-5.5x5.5-front-6a17582c07c83.jpg"
+    }
+   ],
+   "slug": "beach-b-bubble-free-stickers",
+   "source_path": "website/accessories/p/beach-b-bubble-free-stickers/index.html"
+  },
+  "beach-bubble-free-stickers": {
+   "image": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp",
+   "images": [
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914059658-TUIORKP41CLL1VAR1DJ7/kiss-cut-stickers-white-3x3-lifestyle-1-6a175542677f8.jpg"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914063354-052A0QEB09HF90WWXT7F/kiss-cut-stickers-white-3x3-lifestyle-3-6a175542678f5.jpg"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914065583-9CC2F9QG3XZ4FBT44JUP/kiss-cut-stickers-white-4x4-lifestyle-1-6a175542679dc.jpg"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914071162-F0LEDLQ39NCEPPYRKR6J/kiss-cut-stickers-white-4x4-lifestyle-3-6a17554267a82.jpg"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp"
+    },
+    {
+     "alt": "Beach (A) Bubble-free stickers",
+     "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914077207-CV6YIGV8ZGU55V5UUGPF/kiss-cut-stickers-white-5.5x5.5-lifestyle-3-6a17554267bb0.jpg"
+    }
+   ],
+   "slug": "beach-bubble-free-stickers",
+   "source_path": "website/accessories/p/beach-bubble-free-stickers/index.html"
+  }
+ },
+ "entry_page": [
+  "website/index.html"
+ ]
+}
