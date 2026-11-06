@@ -17,6 +17,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * is self-closing and valid as saved. Source choices the block has no slot for
  * are reported as diagnostics on the provider row instead of keeping the form a
  * fallback.
+ *
+ * @phpstan-type DonationPlan array{amounts:array<int,float|int>,default_amount:?int,custom:bool,custom_text:string,currency:string,intervals:array<string,bool>,default_interval:string,submit_text:string,diagnostics:array<int,array<string,mixed>>}
  */
 final class Static_Site_Importer_Jetpack_Donations {
 	public const BLOCK_NAME = 'jetpack/donations';
@@ -126,7 +128,7 @@ final class Static_Site_Importer_Jetpack_Donations {
 	 * Read amounts, intervals, custom choice, currency and submit text from controls.
 	 *
 	 * @param array<int,array<string,mixed>> $controls Producer controls.
-	 * @return array{amounts:array<int,float|int>,default_amount:?int,custom:bool,custom_text:string,currency:string,intervals:array<string,bool>,default_interval:string,submit_text:string,diagnostics:array<int,array<string,mixed>>}
+	 * @return DonationPlan
 	 */
 	public static function plan( array $controls ): array {
 		$plan        = array(
@@ -250,7 +252,7 @@ final class Static_Site_Importer_Jetpack_Donations {
 	/**
 	 * Record a frequency control's intervals when every choice names one.
 	 *
-	 * @param array<string,mixed>                                       $plan    Plan being built.
+	 * @param DonationPlan                                       $plan    Plan being built.
 	 * @param array<int,array{label:string,value:string,selected:bool}> $choices Control choices.
 	 */
 	private static function record_intervals( array &$plan, array $choices ): bool {
@@ -296,7 +298,7 @@ final class Static_Site_Importer_Jetpack_Donations {
 	/**
 	 * Record one amount choice: a money label, a numeric value, or the custom choice.
 	 *
-	 * @param array<string,mixed>                               $plan   Plan being built.
+	 * @param DonationPlan                               $plan   Plan being built.
 	 * @param array{label?:string,value?:string,selected?:bool} $choice Amount choice.
 	 */
 	private static function record_amount( array &$plan, array $choice ): void {
@@ -348,7 +350,7 @@ final class Static_Site_Importer_Jetpack_Donations {
 	/**
 	 * Block attributes for a recognized donation plan.
 	 *
-	 * @param array<string,mixed> $plan Donation plan.
+	 * @param DonationPlan $plan Donation plan.
 	 * @return array<string,mixed>
 	 */
 	private static function attributes( array $plan ): array {
