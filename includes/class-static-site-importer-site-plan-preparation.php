@@ -719,6 +719,20 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'unsupported_operation' );
 			}
 		}
+		// Capture before native gallery replacement, while stylesheet composition is
+		// still pending. Keep the same validated artifacts as product binding receipts.
+		$claims = Static_Site_Importer_Whole_Page_Handoff::admit( $state['ordered_pages'], $state['args']['whole_page_provider_results'] ?? array() );
+		foreach ( $claims['claims'] as $claim ) {
+			if ( 'product' !== ( $claim['result']['post_type'] ?? '' ) || empty( $claim['result']['product_data'] ) ) {
+				continue;
+			}
+			$presentations = array();
+			$page          = $claim['page'];
+			Static_Site_Importer_Product_Field_Blocks::bind_document( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' ), $claim['result']['product_data'], $presentations );
+			foreach ( $presentations as $presentation ) {
+				$state['args']['provider_layout_overlays'][] = $presentation;
+			}
+		}
 		$overlay_writes = Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes( $state, $state['args']['provider_layout_overlays'] ?? array() );
 		if ( is_wp_error( $overlay_writes ) ) {
 			// ssi-error-class: integrity
