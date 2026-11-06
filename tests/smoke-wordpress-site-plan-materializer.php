@@ -255,7 +255,7 @@ function delete_post_meta( int $id, string $key ): void {
 function get_posts( array $args ): array {
 	foreach ( $GLOBALS['ssi_plan_meta'] as $id => $meta ) {
 		if ( isset( $meta[ $args['meta_key'] ] ) && ( ! isset( $args['meta_value'] ) || $meta[ $args['meta_key'] ] === $args['meta_value'] ) ) {
-			$matches[] = new WP_Post( $id ); }
+			$matches[] = 'ids' === ( $args['fields'] ?? '' ) ? $id : new WP_Post( $id ); }
 	}
 	return $matches ?? array();
 }

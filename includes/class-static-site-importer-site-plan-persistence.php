@@ -1284,6 +1284,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $written ) ) {
 			return $written;
 		}
+		// The handoff now owns this template. Retire the producer's pending
+		// snapshot so the later journaled theme writer cannot restore the
+		// unbound page document (or keep its replaced photos referenced).
+		foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+			if ( ( $write['target_path'] ?? '' ) === $target ) {
+				unset( $state['resolved']['writes'][ $index ] );
+			}
+		}
+		unset( $state['composed_theme_writes'][ $state['theme_dir'] . '/' . $target ] );
 		$state['applied']['files'][] = $written;
 		$page['served_template']     = $target;
 		$persisted                   = self::served_document( $state, $page );

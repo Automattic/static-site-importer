@@ -255,20 +255,12 @@ $preflight_args = array( &$real_preflight );
 $capture_presentations->invokeArgs( null, $preflight_args );
 $assert( ! empty( $real_preflight['args']['provider_layout_overlays'] ), 'Real carousel preflight captures supported geometry before replacement.' );
 
-// Drive the actual template replacement and packaging decision for the capture.
-$real_state['theme_dir'] = $state['theme_dir'];
-$real_state['ordered_pages'] = array();
-$real_page['materialized_block_markup'] = $real_markup;
-$real_page['product_data'] = $real['product'];
-$real_args = array( &$real_state, $id, $row['source_path'], &$real_page );
-$real_template = $write_template->invokeArgs( null, $real_args );
-$assert( 1 === substr_count( $real_template, 'wp:woocommerce/product-image-gallery' ) && ! str_contains( $real_template, '<img ' ), 'Real template replaces the whole carousel once.' );
-foreach ( $real['plan_assets'] as $index => $asset ) {
-	$real_state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] = array( 'id' => 6000 + $index );
-	$real_state['resolved']['writes'][] = array( 'kind' => 'theme_asset', 'target_path' => $asset['target_path'], 'payload' => array( 'encoding' => 'base64', 'data' => 'photo bytes' ) );
-}
-Static_Site_Importer_Site_Plan_Persistence::prune_replaced_product_photos( $real_state );
-$assert( empty( $real_state['resolved']['writes'] ), 'Real replaced photos are withheld from theme packaging.' );
+// Isolate the full WordPress persistence harness from this file's small stubs.
+// Assert on disk after all canonical writes, not write_whole_page_template's return.
+$real_output = array();
+$real_status = 0;
+exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/smoke-woo-product-real-materialization.php' ) . ' 2>&1', $real_output, $real_status );
+$assert( 0 === $real_status, 'Real fixture end-to-end materialization: ' . implode( "\n", $real_output ) );
 
 // Replaced photos are attachment-owned, not unused theme payloads. A shared
 // design reference still keeps its theme copy.
