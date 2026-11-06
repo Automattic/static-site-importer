@@ -48,6 +48,15 @@ foreach ( $extracted['records'] as $source => $record ) {
 	$assert( is_array( $asset ), 'The plan must declare every recorded resource: ' . $source );
 	$assert( Static_Site_Importer_Image_Assets::plan_destination( $record, $asset ) === ( $asset['destination'] ?? '' ), 'The compiler must honor the capture-owned destination: ' . $source );
 }
+$image = current( array_filter( $extracted['records'], static fn( array $record ): bool => 'image' === Static_Site_Importer_Image_Assets::kind( $record ) ) );
+$font  = current( $fonts );
+foreach ( array(
+	array( $image, array( 'destination' => 'none', 'consumers' => array() ), 'none' ),
+	array( $image, array( 'destination' => 'none', 'consumers' => array( array( 'kind' => 'stylesheet' ) ) ), 'theme' ),
+	array( $font, array( 'destination' => 'none', 'consumers' => array() ), 'theme' ),
+) as [ $record, $asset, $expected ] ) {
+	$assert( $expected === Static_Site_Importer_Image_Assets::plan_destination( $record, $asset ), 'Only an unconsumed non-font resource accepts the compiler-proven unwritten destination: ' . json_encode( $asset ) );
+}
 $theme_json_write = null;
 foreach ( $plan['writes'] as $write ) {
 	if ( 'theme.json' === $write['target_path'] ) {
