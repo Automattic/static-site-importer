@@ -361,6 +361,50 @@ $report_request = static_site_importer_cli_import_input( array(), array( 'reques
 $report_result = $drive_apply( $report_request );
 $assert( ! empty( $report_result['success'] ) && empty( $report_result['continuation'] ), 'declared 11 MiB interaction-states.json must import through the public request-bundle path: ' . wp_json_encode( $report_result ) );
 echo "PASS: declared 11 MiB interaction-states.json imports\n";
+// The asset-record reader must use the same declared-report budget.
+$asset_root = $test_root . '/asset-capture';
+wp_mkdir_p( $asset_root . '/website' );
+copy( $report_root . '/website/index.html', $asset_root . '/website/index.html' );
+$asset_fixture = json_decode( file_get_contents( __DIR__ . '/fixtures/image-asset-capture/artifact.json' ), true );
+$asset_receipt = json_decode( $asset_fixture['files'][3]['content'], true );
+$asset_record = $asset_receipt['assets'][0];
+$asset_path = preg_replace( '#^website/#', '', $asset_record['path'] );
+foreach ( $asset_fixture['files'] as $asset_file ) {
+	if ( $asset_file['path'] === 'website/' . $asset_path || $asset_file['path'] === $asset_path ) {
+		wp_mkdir_p( dirname( $asset_root . '/website/' . $asset_path ) );
+		file_put_contents( $asset_root . '/website/' . $asset_path, base64_decode( $asset_file['content_base64'] ) );
+	}
+}
+file_put_contents( $asset_root . '/capture-receipt.json', wp_json_encode( array(
+	'schema' => 'blocks-engine-capture/capture-receipt/v1',
+	'websiteRoot' => 'website',
+	'reports' => array( 'capture-receipt.json' ),
+	'assets' => array( $asset_record ),
+	'padding' => str_repeat( 'x', 11 * 1024 * 1024 ),
+) ) );
+$asset_request_path = $test_root . '/asset-report-request.json';
+file_put_contents( $asset_request_path, wp_json_encode( array(
+	'operation' => 'apply',
+	'slug' => 'asset-report-budget-regression',
+	'source' => array( 'type' => 'files', 'ref' => 'request-bundle:asset-capture' ),
+) ) );
+$asset_request = static_site_importer_cli_import_input( array(), array( 'request' => $asset_request_path ) );
+$assert( is_array( $asset_request ), 'asset receipt request must resolve: ' . wp_json_encode( $asset_request ) );
+$asset_result = $drive_apply( $asset_request );
+$assert( ! empty( $asset_result['success'] ) && empty( $asset_result['continuation'] ), 'declared 11 MiB capture-receipt.json with a valid asset record must import: ' . wp_json_encode( $asset_result ) );
+echo "PASS: declared 11 MiB capture-receipt.json with an asset record imports\n";
+// Report read failures retain the underlying code and bounded-reference evidence.
+foreach ( array( 'capture-receipt.json', 'image-assets.json' ) as $report_path ) {
+	foreach ( array( 33 * 1024 * 1024, null ) as $report_bytes ) {
+		$unreadable = Static_Site_Importer_Image_Assets::extract( array( 'files' => array( array(
+			'path' => $report_path,
+			'payload_reference' => array( 'schema' => 'blocks-engine/payload-reference/v1', 'id' => 'report', 'sha256' => str_repeat( 'a', 64 ), 'bytes' => $report_bytes ),
+		) ) ) );
+		$expected_code = null === $report_bytes ? 'static_site_importer_payload_reference_invalid' : 'static_site_importer_payload_file_too_large';
+		$assert( is_wp_error( $unreadable ) && $expected_code === $unreadable->get_error_code(), 'report read failure must retain its error code' );
+		$assert( array( 'path' => $report_path, 'bytes' => $report_bytes, 'max_bytes' => 32 * 1024 * 1024 ) === $unreadable->get_error_data(), 'report read failure must retain path, size and report budget' );
+	}
+}
 // Keep the exact bytes and remove only the receipt declaration.
 file_put_contents( $report_root . '/capture-receipt.json', wp_json_encode( array(
 	'schema' => 'blocks-engine-capture/capture-receipt/v1',

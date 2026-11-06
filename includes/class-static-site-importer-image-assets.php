@@ -39,7 +39,10 @@ final class Static_Site_Importer_Image_Assets {
 				$files[] = $file;
 				continue;
 			}
-			$bytes = Static_Site_Importer_Content_Policy::file_bytes( $file, $reader );
+			$bytes = Static_Site_Importer_Content_Policy::file_bytes( $file, $reader, true );
+			if ( $bytes instanceof WP_Error ) {
+				return $bytes;
+			}
 			if ( ! is_string( $bytes ) || strlen( $bytes ) > 32 * 1024 * 1024 ) {
 				return self::invalid();
 			}
