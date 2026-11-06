@@ -1190,7 +1190,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$presentations = array();
 			$identities    = Static_Site_Importer_Product_Field_Blocks::image_identities( $state );
 			$original      = $markup;
-			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities );
+			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities, Static_Site_Importer_Product_Field_Blocks::undisplayed_image_identities( $state, $identities ) );
 			if ( $original !== $markup && str_contains( $markup, 'wp:woocommerce/product-image-gallery' ) ) {
 				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
 					$identity          = $identities[ $asset['source_path'] ] ?? '/' . ltrim( $asset['source_path'], '/' );

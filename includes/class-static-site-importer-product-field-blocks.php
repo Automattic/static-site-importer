@@ -172,9 +172,31 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		return array_map( $canonical, $aliases );
 	}
 
+	/** Known resources without display evidence are not expected gallery slides. */
+	public static function undisplayed_image_identities( array $state, array $aliases ): array {
+		$known     = array();
+		$displayed = array();
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			$identity = $aliases[ $asset['source_path'] ] ?? null;
+			if ( null === $identity ) {
+				continue;
+			}
+			$known[] = $identity;
+			foreach ( $asset['references'] ?? array() as $reference ) {
+				if ( in_array( $reference['element'] ?? '', array( 'img', 'picture', 'source' ), true ) ) {
+					$displayed[] = $identity;
+					break;
+				}
+			}
+		}
+		// Evaluate after alias/rendition joining: any displayed member makes
+		// the whole photo expected, even if another member is only a link.
+		return array_values( array_diff( array_unique( $known ), $displayed ) );
+	}
+
 	/** Bind only fields backed by the admitted producer row. */
-	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array() ): string {
-		$identity        = static function ( string $url ) use ( $image_identities ): string {
+	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array(), array $undisplayed_images = array() ): string {
+		$identity = static function ( string $url ) use ( $image_identities ): string {
 			$url = html_entity_decode( $url, ENT_QUOTES, 'UTF-8' );
 			if ( isset( $image_identities[ $url ] ) ) {
 				return $image_identities[ $url ];
@@ -196,14 +218,18 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 			return $url;
 		};
-		$blocks          = parse_blocks( $markup );
-		$images          = array_column( $product['images'] ?? array(), 'src' );
-		$images[]        = $product['image'] ?? '';
-		$images          = array_unique( array_filter( array_map( $identity, $images ) ) );
-		$gallery_path    = null;
-		$gallery_size    = PHP_INT_MAX;
-		$has_gallery     = false;
-		$gallery_capture = false;
+		$blocks   = parse_blocks( $markup );
+		$images   = array_column( $product['images'] ?? array(), 'src' );
+		$images[] = $product['image'] ?? '';
+		// Rendered markup is also positive display evidence (older plans may
+		// omit references). Check the whole document, not just the carousel.
+		preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $markup, $displayed_sources );
+		$undisplayed_images = array_diff( $undisplayed_images, array_map( $identity, $displayed_sources[1] ) );
+		$images             = array_diff( array_unique( array_filter( array_map( $identity, $images ) ) ), $undisplayed_images );
+		$gallery_path       = null;
+		$gallery_size       = PHP_INT_MAX;
+		$has_gallery        = false;
+		$gallery_capture    = false;
 		// Select before rewriting: a slide containing only one product image is
 		// not a gallery. Prefer the smallest complete set, including custom groups.
 		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, $identity, &$gallery_path, &$gallery_size, &$has_gallery, &$gallery_capture ): void {
