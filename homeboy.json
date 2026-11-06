@@ -309,6 +309,7 @@
           "tests/smoke-post-meta-rollback.php",
           "tests/smoke-producer-neutrality.php",
           "tests/smoke-product-form-binding-placement.php",
+          "tests/smoke-product-presentation.php",
           "tests/smoke-formless-purchase-reconciliation.php",
           "tests/smoke-product-grid-quality-reconciliation.php",
           "tests/smoke-commerce-device-variants.php",

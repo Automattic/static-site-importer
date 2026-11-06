@@ -72,6 +72,69 @@ foreach ( $cases as $role => $expected ) {
 		}
 	}
 }
+// The real-import fixture has input paint, not quantity-wrapper or row geometry.
+// Assert the supported layout without treating the 42px input as a 144px stepper.
+$layout_cases = array(
+	'table.variations'                     => 'display:block',
+	'table.variations th'                  => 'display:block',
+	'table.variations td'                  => 'display:block',
+	'table.variations select'              => 'box-sizing:border-box',
+	'.woocommerce-variation-add-to-cart'   => 'grid-template-columns:minmax(0,1fr) minmax(0,479px)',
+	'form.cart:not(.variations_form)'      => 'grid-template-columns:minmax(0,1fr) minmax(0,479px)',
+	'form.cart .quantity'                  => 'margin:0',
+	'form.cart .single_add_to_cart_button' => 'margin:0',
+);
+foreach ( $writes as $path => $css ) {
+	foreach ( $layout_cases as $selector => $declaration ) {
+		$selector = '.' . $capture['className'] . '.' . $capture['className'] . ' ' . $selector;
+		if ( ! preg_match( '/' . preg_quote( $selector, '/' ) . '\\{([^}]+)\\}/', $css, $match ) || ! str_contains( $match[1], 'width:100% !important;' ) || ! str_contains( $match[1], $declaration . ' !important;' ) ) {
+			throw new RuntimeException( $path . ': missing scoped full-width layout for ' . $selector );
+		}
+	}
+}
+if ( $capture !== Static_Site_Importer_Product_Presentation::validate_overlay( $capture ) ) {
+	throw new RuntimeException( 'Purchase layout receipt failed validation.' );
+}
+$changed = $fixture;
+$changed['presentation_graph']['controls'][1]['control']['styles']['width'] = '321px';
+$changed_capture = Static_Site_Importer_Product_Presentation::capture( $changed );
+if ( ! str_contains( $changed_capture['css'], 'minmax(0,321px)' ) || str_contains( $changed_capture['css'], 'minmax(0,479px)' ) ) {
+	throw new RuntimeException( 'Purchase track did not follow captured button geometry.' );
+}
+$simple = $fixture;
+unset( $simple['controls'][0] );
+$simple_capture = Static_Site_Importer_Product_Presentation::capture( $simple );
+if ( str_contains( $simple_capture['css'], 'table.variations' ) || ! str_contains( $simple_capture['css'], 'form.cart:not(.variations_form){width:100%' ) ) {
+	throw new RuntimeException( 'Simple product must fill its row without inventing variation fields.' );
+}
+$unknown_width = $fixture;
+unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'] );
+if ( ! str_contains( Static_Site_Importer_Product_Presentation::capture( $unknown_width )['css'], 'grid-template-columns:auto minmax(0,1fr)' ) ) {
+	throw new RuntimeException( 'Missing button geometry must use intrinsic quantity and a flexible button.' );
+}
+$bad_layout = $capture;
+$bad_layout['rules']['layout:purchase-row'] .= 'position:fixed !important;';
+if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad_layout ) ) {
+	throw new RuntimeException( 'Purchase layout accepted an unsupported declaration.' );
+}
+$bare = Static_Site_Importer_Product_Presentation::capture( array() );
+if ( $bare || str_contains( $capture['css'], 'gap:10px' ) || str_contains( $capture['css'], 'minmax(0,42px)' ) ) {
+	throw new RuntimeException( 'Purchase layout invented missing geometry.' );
+}
+$legacy          = $capture;
+$legacy['rules'] = array_filter( $legacy['rules'], static fn( $slot ) => ! str_starts_with( $slot, 'layout:' ), ARRAY_FILTER_USE_KEY );
+// Legacy receipts are still accepted by rebuilding their original artifact.
+$hash                = substr( hash( 'sha256', json_encode( $legacy['rules'] ) ), 0, 12 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Deterministic receipt contract.
+$legacy['className'] = 'ssi-product-' . $hash;
+$legacy['css']       = '';
+foreach ( explode( '}', $capture['css'] ) as $rule ) {
+	if ( str_contains( $rule, '{' ) && ! preg_match( '/ (?:form\\.cart|table\\.variations|\\.single_variation_wrap|\\.woocommerce-variation-add-to-cart)/', $rule ) ) {
+		$legacy['css'] .= str_replace( $capture['className'], $legacy['className'], $rule ) . '}';
+	}
+}
+if ( $legacy !== Static_Site_Importer_Product_Presentation::validate_overlay( $legacy ) ) {
+	throw new RuntimeException( 'Legacy paint-only receipt rejected.' );
+}
 if ( ! str_contains( $markup, $capture['className'] ) || str_contains( $markup, 'wp:html' ) ) {
 	throw new RuntimeException( 'Native form must carry capture scope with zero fallback blocks.' );
 }
