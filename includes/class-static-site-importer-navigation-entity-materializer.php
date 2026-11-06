@@ -96,6 +96,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			$state['applied']['navigation_entities'][] = array(
 				'id'                      => $id,
 				'token'                   => $menu['token'],
+				'source_path'             => $menu['source_path'],
 				'reconciliation_identity' => $menu['reconciliation_identity'],
 			);
 		}

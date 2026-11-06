@@ -85,7 +85,6 @@ class Static_Site_Importer_Report_Diagnostics {
 				),
 				'skipped_mdx_count'          => 0,
 				'unresolved_links'           => array(),
-				'unresolved_link_count'      => 0,
 				'markdown_parse_error_count' => 0,
 			),
 			'conversion_fragments'    => array(),

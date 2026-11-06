@@ -132,7 +132,7 @@ $stored = $GLOBALS['entity_link_content'];
 $assert( 2 === substr_count( $stored, 'href="/entity/42/"' ), 'Scoped card and bare nav resolve to the seeded product.' );
 $assert( str_contains( $stored, 'href="/entity/10/"' ), 'Category listing retains its imported page identity.' );
 $assert( str_contains( $stored, 'https://source.example/journal/missing' ), 'Unimported route stays unchanged.' );
-$assert( array( 'journal' => 1 ) === $state['applied']['unresolved_same_origin_links'], 'Receipt counts unresolved links by first segment.' );
+$assert( array( '/journal/missing' ) === array_keys( $state['applied']['unresolved_link_targets'] ), 'Receipt records distinct unresolved targets, including navigation.' );
 $assert( str_contains( $stored, 'https://elsewhere.example/products/field-kit' ), 'Cross-origin URL stays unchanged.' );
 $assert( 2 === substr_count( $stored, '/entity/42/' ), 'Both references store the product permalink.' );
 $assert( str_contains( $stored, '/entity/88/' ), 'Cart stores the Woo page permalink at import.' );
@@ -146,4 +146,24 @@ $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative
 $assert( '/?p=42' === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/groups/tools/items/field-kit', array( '/items/field-kit' => '/?p=42' ) ), 'Scoped matching keys on the product route resource segment, not a platform.' );
 $assert( ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( 'https://source.example:444/products/field-kit', 'https://source.example/' ), 'Other ports are cross-origin.' );
 $assert( ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( 'http://source.example/products/field-kit', 'https://source.example/' ), 'Other schemes are cross-origin.' );
+$GLOBALS['entity_link_content'] = '<!-- wp:navigation-link {"url":"/nav-missing"} /-->';
+$navigation_state = $state;
+$navigation_state['ordered_pages'] = array();
+$navigation_state['resolved']['writes'] = array();
+$navigation_state['applied']['navigation_entities'] = array( array( 'id' => 99, 'source_path' => 'website/index.html' ) );
+$assert( true === Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $navigation_state ), 'Navigation-only rewrite completes.' );
+$assert( 'website/index.html' === $navigation_state['applied']['unresolved_link_targets']['/nav-missing']['source_path'], 'A link owned only by wp_navigation contributes a distinct target with its linking source.' );
+$fragment_targets = array();
+$missing_routes = array();
+Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references(
+	'<a href="#contact">Contact</a><a href="#top">Top</a><a href="#">Empty</a><a href="about.html#team">Team</a><a href="about.html#team">Again</a>',
+	array( '/' => '/?page_id=1', '/about.html' => '/?page_id=2' ),
+	$missing_routes,
+	'',
+	array(),
+	'/index.html',
+	array( '/?page_id=1' => array( 'route' => '/', 'ids' => array( 'contact' => true ) ), '/?page_id=2' => array( 'route' => '/about', 'ids' => array() ) ),
+	$fragment_targets
+);
+$assert( array() === $missing_routes && 2 === count( $fragment_targets ) && 'team' === $fragment_targets[0]['fragment'], 'Fragment validation checks the target page, skips resolved and special anchors, and retains observations for distinct-target aggregation.' );
 echo "Materialized entity links smoke passed.\n";

@@ -4,6 +4,7 @@
     "tests/acceptance/outcome-interactive-config.mjs": "Shared neutral source capture and candidate bindings for outcome tests.",
     "tests/fixtures/**": "Fixture inputs are data, not executable tests.",
     "tests/smoke-cli-receipt-verdict.mjs": "Driven by tests/smoke-cli-receipt-verdict.php.",
+    "tests/smoke-cli-unresolved-links.mjs": "Driven by tests/smoke-cli-unresolved-links.php.",
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php.",
     "tests/acceptance/blocks-engine-source-autoloader.php": "Retired prototype source-overlay acceptance helper; final external-metric acceptance uses the normal Composer vendor package.",
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
@@ -114,6 +115,7 @@
     { "path": "tests/smoke-cli-import-continuation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-cli-receipt-quality-and-capture-reports.php", "environment": "standalone-php" },
     { "path": "tests/smoke-cli-receipt-verdict.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-cli-unresolved-links.php", "environment": "standalone-php" },
     { "path": "tests/smoke-client-script-policy.php", "environment": "standalone-php" },
     { "path": "tests/smoke-content-only-policy.php", "environment": "standalone-php" },
     { "path": "tests/smoke-companion-plugin-js.php", "environment": "standalone-php" },
