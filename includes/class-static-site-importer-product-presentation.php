@@ -19,9 +19,25 @@ final class Static_Site_Importer_Product_Presentation {
 		'thumbimg'  => '.flex-control-thumbs img',
 	);
 
+	private const LAYOUT_SELECTORS = array(
+		'form'             => 'form.cart',
+		'variation-table'  => 'table.variations',
+		'variation-body'   => 'table.variations tbody',
+		'variation-row'    => 'table.variations tr',
+		'variation-label'  => 'table.variations th',
+		'variation-value'  => 'table.variations td',
+		'variation-select' => 'table.variations select',
+		'variation-wrap'   => '.single_variation_wrap',
+		'purchase-row'     => '.woocommerce-variation-add-to-cart',
+		'simple-row'       => 'form.cart:not(.variations_form)',
+		'quantity-box'     => 'form.cart .quantity',
+		'purchase-button'  => 'form.cart .single_add_to_cart_button',
+	);
+
 	/** Project only presentation, never source selectors or purchase behavior. */
 	public static function capture( array $entity ): array {
-		$rules = array();
+		$rules    = array();
+		$purchase = array();
 		foreach ( $entity['controls'] ?? array() as $index => $control ) {
 			$tag  = strtolower( (string) ( $control['tag'] ?? '' ) );
 			$type = strtolower( (string) ( $control['type'] ?? '' ) );
@@ -37,7 +53,8 @@ final class Static_Site_Importer_Product_Presentation {
 					break;
 				}
 			}
-			$declarations = self::declarations( $styles );
+			$purchase[ $role ] = $styles;
+			$declarations      = self::declarations( $styles );
 			if ( $declarations ) {
 				// Each variation may have its own captured design; do not flatten
 				// several source selects onto the last control's presentation.
@@ -45,7 +62,7 @@ final class Static_Site_Importer_Product_Presentation {
 				$rules[ $slot ] = $declarations;
 			}
 		}
-		return self::artifact( array_merge( $rules, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		return self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 	}
 
 	/** One deterministic scope and stylesheet artifact for all captured product rules. */
@@ -58,7 +75,7 @@ final class Static_Site_Importer_Product_Presentation {
 		$css   = '';
 		foreach ( $rules as $slot => $declarations ) {
 			$parts    = explode( ':', $slot );
-			$selector = self::SELECTORS[ $parts[0] ];
+			$selector = 'layout' === $parts[0] ? self::LAYOUT_SELECTORS[ $parts[1] ] : self::SELECTORS[ $parts[0] ];
 			if ( 'variation' === $parts[0] ) {
 				$selector = '.variations tr:nth-child(' . ( (int) $parts[1] + 1 ) . ') select';
 			}
@@ -71,6 +88,68 @@ final class Static_Site_Importer_Product_Presentation {
 			'rules'     => $rules,
 			'css'       => $css,
 		);
+	}
+
+	/**
+	 * Remove native table/intrinsic track constraints before applying control paint.
+	 *
+	 * The entity currently carries control CSS, not the shared row's geometry.
+	 * In particular, input width is NOT quantity-wrapper width. Keep the painted
+	 * input inside a flexible quantity track; preserve the captured button width
+	 * where available, allowing it to shrink on narrower columns. Do not invent
+	 * a source gap or quantity-stepper width from the remaining column space.
+	 */
+	private static function purchase_layout( array $controls ): array {
+		$styles = array();
+		$full   = array(
+			'width'      => '100%',
+			'min-width'  => '0',
+			'box-sizing' => 'border-box',
+		);
+		if ( isset( $controls['variation'] ) ) {
+			foreach ( array( 'form', 'variation-table', 'variation-body', 'variation-row', 'variation-label', 'variation-value', 'variation-wrap' ) as $slot ) {
+				$styles[ 'layout:' . $slot ] = array_merge( $full, array( 'display' => 'block' ) );
+			}
+			foreach ( array( 'variation-label', 'variation-value' ) as $slot ) {
+				$styles[ 'layout:' . $slot ]['padding'] = '0';
+			}
+			$styles['layout:variation-select'] = $full;
+		}
+		if ( isset( $controls['submit'], $controls['quantity'] ) ) {
+			$width                            = self::length( $controls['submit']['width'] ?? '' );
+			$row                              = array_merge(
+				$full,
+				array(
+					'display'               => 'grid',
+					'grid-template-columns' => $width ? 'minmax(0,1fr) minmax(0,' . $width . ')' : 'auto minmax(0,1fr)',
+				)
+			);
+			$styles['layout:purchase-row']    = $row;
+			$styles['layout:simple-row']      = $row;
+			$styles['layout:quantity-box']    = array_merge( $full, array( 'margin' => '0' ) );
+			$styles['layout:purchase-button'] = array_merge( $full, array( 'margin' => '0' ) );
+		}
+		return array_map( array( self::class, 'layout_declarations' ), $styles );
+	}
+
+	/** Small layout-only vocabulary, also used to verify serialized receipts. */
+	private static function layout_declarations( array $styles ): string {
+		$css = '';
+		foreach ( $styles as $property => $value ) {
+			$allowed = array(
+				'width'      => array( '100%' ),
+				'min-width'  => array( '0' ),
+				'box-sizing' => array( 'border-box' ),
+				'display'    => array( 'block', 'grid' ),
+				'padding'    => array( '0' ),
+				'margin'     => array( '0' ),
+			);
+			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^minmax\\(0,1fr\\) minmax\\(0,((?:0|\\d+(?:\\.\\d+)?(?:px|rem|em|%|vw|vh)))\\)$/D', $value ) );
+			if ( $track || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
+				$css .= $property . ':' . $value . ' !important;';
+			}
+		}
+		return $css;
 	}
 
 	/** Read serialized inline presentation, not source-platform selectors. */
@@ -296,9 +375,11 @@ final class Static_Site_Importer_Product_Presentation {
 		}
 		$controls = array();
 		$gallery  = array();
+		$layout   = array();
 		foreach ( $overlay['rules'] as $slot => $css ) {
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
-			if ( ! is_string( $css ) || ( ! $is_gallery && ! preg_match( '/^(?:variation:\d+|quantity|submit)$/D', $slot ) ) ) {
+			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $slot, 7 ) ] );
+			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|submit)$/D', $slot ) ) ) {
 				return null;
 			}
 			$styles = array();
@@ -312,6 +393,10 @@ final class Static_Site_Importer_Product_Presentation {
 				}
 				$styles[ $pair[0] ] = substr( $pair[1], 0, -11 );
 			}
+			if ( $is_layout ) {
+				$layout[ $slot ] = self::layout_declarations( $styles );
+				continue;
+			}
 			if ( $is_gallery ) {
 				$gallery[ $slot ] = self::gallery_declarations( $styles );
 				continue;
@@ -323,7 +408,8 @@ final class Static_Site_Importer_Product_Presentation {
 			);
 		}
 		$expected = self::capture( array( 'controls' => $controls ) );
-		$expected = self::artifact( array_merge( $expected['rules'] ?? array(), $gallery ) );
+		$rules    = array_filter( $expected['rules'] ?? array(), static fn( $slot ) => ! str_starts_with( $slot, 'layout:' ), ARRAY_FILTER_USE_KEY );
+		$expected = self::artifact( array_merge( $rules, $layout, $gallery ) );
 		return $expected === $overlay ? $expected : null;
 	}
 }
