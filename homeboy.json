@@ -200,9 +200,6 @@
             "command": "wordpress.browser-probe"
           }
         ],
-        "wordpress_test_paths": [
-          "tests/unresolved-links-wordpress-smoke.php"
-        ],
         "standalone_php_test_paths": [
           "tests/smoke-raw-html-companion-quality.php",
           "tests/smoke-plan-content-loss-quality.php",
@@ -241,6 +238,7 @@
           "tests/smoke-cli-import-continuation.php",
           "tests/smoke-cli-receipt-quality-and-capture-reports.php",
           "tests/smoke-cli-receipt-verdict.php",
+          "tests/smoke-cli-unresolved-links.php",
           "tests/smoke-client-script-policy.php",
           "tests/smoke-companion-inventory-readme.php",
           "tests/smoke-companion-plugin-js.php",
