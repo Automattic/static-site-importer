@@ -1718,13 +1718,32 @@ $svg_paint = array_merge(
 		'stroke-miterlimit' => true, 'stroke-opacity' => true, 'stroke-width' => true, 'transform' => true, 'vector-effect' => true,
 	)
 );
+// Match Blocks Engine's passive filter vocabulary, excluding feImage: it can
+// fetch external resources. No URL-bearing attributes are added here.
+$svg_filter_attributes = array_merge( $svg_global, array_fill_keys( array(
+	'amplitude', 'azimuth', 'basefrequency', 'bias', 'color-interpolation-filters',
+	'diffuseconstant', 'divisor', 'dx', 'dy', 'edgemode', 'elevation', 'exponent',
+	'flood-color', 'flood-opacity', 'height', 'in', 'in2', 'intercept', 'k1', 'k2', 'k3', 'k4',
+	'kernelmatrix', 'kernelunitlength', 'lighting-color', 'limitingconeangle', 'mode',
+	'numoctaves', 'offset', 'operator', 'order', 'pointsatx', 'pointsaty', 'pointsatz',
+	'preservealpha', 'radius', 'result', 'scale', 'seed', 'slope', 'specularconstant',
+	'specularexponent', 'stddeviation', 'stitchtiles', 'surfacescale', 'tablevalues',
+	'targetx', 'targety', 'type', 'values', 'width', 'x', 'xchannelselector', 'y', 'ychannelselector',
+), true ) );
+$svg_filter_names = array(
+	'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix',
+	'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight', 'feDropShadow', 'feFlood',
+	'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR', 'feGaussianBlur', 'feMerge', 'feMergeNode',
+	'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence',
+);
+$svg_filters = array_fill_keys( array_map( 'strtolower', $svg_filter_names ), $svg_filter_attributes );
 $safe_style_css = static function ( array $properties ): array {
 	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'inset', 'overflow-x', 'overflow-y', 'text-shadow', 'transition' ) ) ) );
 };
 add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(
 	$content,
-	array(
+	array_merge( $svg_filters, array(
 		'main' => $flow, 'article' => $flow, 'aside' => $flow, 'section' => $flow, 'header' => $flow,
 		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
 		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
@@ -1747,10 +1766,7 @@ $output = wp_kses(
 		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
 		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
 		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => array_merge( $svg_global, array( 'clippathunits' => true, 'transform' => true ) ), 'mask' => array_merge( $svg_global, array( 'height' => true, 'maskcontentunits' => true, 'maskunits' => true, 'width' => true, 'x' => true, 'y' => true ) ), 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
-		'filter' => array_merge( $svg_global, array( 'filterunits' => true, 'height' => true, 'primitiveunits' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'fegaussianblur' => array_merge( $svg_global, array( 'height' => true, 'in' => true, 'result' => true, 'stddeviation' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'femerge' => array_merge( $svg_global, array( 'height' => true, 'result' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'femergenode' => array_merge( $svg_global, array( 'in' => true ) ),
+		'filter' => array_merge( $svg_global, array( 'color-interpolation-filters' => true, 'filterunits' => true, 'height' => true, 'primitiveunits' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'g' => array_merge( $svg_paint, array( 'clip-path' => true ) ),
 		'path' => array_merge( $svg_paint, array( 'd' => true ) ),
 		'circle' => array_merge( $svg_paint, array( 'cx' => true, 'cy' => true, 'r' => true ) ),
@@ -1761,7 +1777,7 @@ $output = wp_kses(
 		'rect' => array_merge( $svg_paint, array( 'height' => true, 'rx' => true, 'ry' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'letter-spacing' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
-	)
+	) )
 );
 remove_filter( 'safe_style_css', $safe_style_css );
 // The tokens carried validated var()-driven color notations through the
@@ -1780,12 +1796,24 @@ foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
 }
+// Restore SVG's case-sensitive names after KSES (including closing tags),
+// without rewriting attribute values that happen to contain the same words.
+$svg_case_names = array_merge( $svg_filter_names, array(
+	'viewBox', 'preserveAspectRatio', 'filterUnits', 'primitiveUnits', 'stdDeviation',
+	'baseFrequency', 'diffuseConstant', 'edgeMode', 'kernelMatrix', 'kernelUnitLength',
+	'limitingConeAngle', 'numOctaves', 'pointsAtX', 'pointsAtY', 'pointsAtZ', 'preserveAlpha',
+	'specularConstant', 'specularExponent', 'stitchTiles', 'surfaceScale', 'tableValues',
+	'targetX', 'targetY', 'xChannelSelector', 'yChannelSelector',
+) );
+$svg_case_map = array_combine( array_map( 'strtolower', $svg_case_names ), $svg_case_names );
 $output = preg_replace_callback(
-	'#<(?:svg|filter|fegaussianblur|femerge|femergenode)\b[^>]*>#i',
-	static function ( array $match ): string {
-		return preg_replace(
-			array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i', '/\bfilterunits\b/i', '/\bprimitiveunits\b/i', '/\bstddeviation\b/i', '/<fegaussianblur\b/i', '/<femerge(?=\s|>)/i', '/<femergenode\b/i' ),
-			array( 'viewBox', 'preserveAspectRatio', 'filterUnits', 'primitiveUnits', 'stdDeviation', '<feGaussianBlur', '<feMerge', '<feMergeNode' ),
+	'#</?(?:svg|filter|fe[a-z]+)\b[^>]*>#i',
+	static function ( array $match ) use ( $svg_case_map ): string {
+		return preg_replace_callback(
+			'/([<\/\s])([a-z][a-z0-9-]*)(?=[\s\/>]|\s*=)|"[^"]*"|\'[^\']*\'/i',
+			static function ( array $name ) use ( $svg_case_map ): string {
+				return isset( $name[2] ) ? $name[1] . ( $svg_case_map[ strtolower( $name[2] ) ] ?? $name[2] ) : $name[0];
+			},
 			$match[0]
 		) ?? $match[0];
 	},
