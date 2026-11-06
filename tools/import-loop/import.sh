@@ -9,6 +9,12 @@ mkdir -p "$(dirname "$site")"
 runs=$(cd "$(dirname "$site")" && pwd)
 studio site list --format json 2>/dev/null | jq -r --arg runs "$runs/" '.[] | select(.running and (.path | startswith($runs))) | .path' |
   while read -r old; do studio site stop --path "$old" > /dev/null 2>&1 || echo "could not stop $old" >&2; done
+# A retried import starts clean: an earlier attempt may have left this pass's
+# site half-created. An import fails for a while when the environment is full
+# or an upstream release regressed; the step retries hourly until it recovers.
+studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$site")" '.[] | select(.path == $site)' > /dev/null &&
+  studio site delete "$runs/$(basename "$site")" > /dev/null 2>&1
+rm -rf "$site" "$site-source"
 studio create --path "$site" --from "$url" --keep-source --skip-browser 2>&1 | tee "$site.log"
 site_url=$(grep -oE 'Site URL: +http://[^ ]+' "$site.log" | tail -1 | awk '{print $NF}')
 [ -n "$site_url" ] || { echo "import produced no site URL" >&2; exit 1; }

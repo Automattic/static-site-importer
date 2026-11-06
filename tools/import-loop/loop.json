@@ -48,12 +48,12 @@
       "id": "import",
       "timeout": "60m",
       "retry": {
-        "max": 1,
+        "max": 8,
         "on": [
           "failed",
           "timed_out"
         ],
-        "backoff": "5m"
+        "backoff": "1h"
       },
       "exec": {
         "program": "bash",
