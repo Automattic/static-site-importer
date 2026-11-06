@@ -90,6 +90,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
 	 */
 	public static function labelled_radio_groups( array $form, array $controls ): array {
+		/** @var array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>} $result */
 		$result = array(
 			'groups'                     => array(),
 			'suppressed_controls'        => array(),
