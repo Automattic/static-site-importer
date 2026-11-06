@@ -1719,7 +1719,7 @@ $svg_paint = array_merge(
 	)
 );
 $safe_style_css = static function ( array $properties ): array {
-	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'inset', 'overflow-x', 'overflow-y', 'text-shadow', 'transition' ) ) ) );
+	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'font-kerning', 'inset', 'overflow-x', 'overflow-y', 'text-decoration-line', 'text-decoration-style', 'text-decoration-thickness', 'text-shadow', 'transition' ) ) ) );
 };
 add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(
