@@ -51,5 +51,17 @@ for (const item of triage.tracked) {
     console.error(`[merge] merged ${pr.url} ${sha}`);
   }
 }
+// A confirmed PR someone merged before this step ran is shipped work all the
+// same, provided it merged at the head confirm checked.
+for (const checked of confirm.confirmed) {
+  if (merged.some((m) => m.pr === checked.pr)) continue;
+  const pr = JSON.parse(gh('pr', 'view', checked.pr, '--json', 'state,headRefOid,mergeCommit'));
+  if (pr.state !== 'MERGED') continue;
+  if (pr.headRefOid !== checked.head) { held.push({ pr: checked.pr, reason: `merged at ${pr.headRefOid.slice(0, 8)}, not the confirmed head ${checked.head.slice(0, 8)}` }); continue; }
+  const item = triage.tracked.find((t) => t.open_pr === checked.pr);
+  const github = checked.pr.replace('https://github.com/', '').split('/pull/')[0];
+  merged.push({ repo: item?.repo || github.split('/')[1], github, pr: checked.pr, sha: pr.mergeCommit?.oid });
+  console.error(`[merge] already merged ${checked.pr} ${pr.mergeCommit?.oid}`);
+}
 const output = { merged, merged_count: merged.length, held };
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));

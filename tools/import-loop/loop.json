@@ -264,8 +264,8 @@
           },
           {
             "step": "triage",
-            "output": "/next_iteration",
-            "lt": 13
+            "output": "/continue",
+            "exists": true
           }
         ]
       },
