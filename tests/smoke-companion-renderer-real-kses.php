@@ -39,6 +39,9 @@ $cases = array(
 	'calc-color-is-dropped'              => array( '<div style="color: rgb(calc(1 + 2), 0, 0)">x</div>', 'style=', false ),
 	'url-bearing-color-is-dropped'       => array( '<div style="color: rgb(var(--a)) url(x)">x</div>', 'style=', false ),
 	'literal-rgb-is-lowered-to-hex'      => array( '<div style="color: rgb(255, 255, 255)">x</div>', '#ffffff', true ),
+	// Capture runtimes store HTML in JSON data attributes; style= inside that
+	// value is text, not an attribute, and must pass through byte-for-byte.
+	'json-data-attribute-survives'       => array( '<div data-state="{&quot;html&quot;:&quot;&lt;ul style=\\&quot;left: auto;\\&quot;&gt;&quot;}" style="color: rgb(255, 255, 255)">x</div>', 'data-state="{&quot;html&quot;:&quot;&lt;ul style=\\&quot;left: auto;\\&quot;&gt;&quot;}" style="color: #ffffff"', true ),
 	'non-scaling-svg-stroke-survives'    => array( '<svg viewBox="0 0 1 1" preserveAspectRatio="none"><path d="M0,1 L1,1" vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"></path></svg>', 'vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"', true ),
 );
 foreach ( $cases as $label => [ $markup, $expected, $present ] ) {
