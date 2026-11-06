@@ -320,11 +320,17 @@ $plan         = array(
 	'pages'                => array(
 		array(
 			'source_path'            => 'shop.html',
+			'metadata'               => array( 'post_meta' => array( '_wp_page_template' => 'shop-shell' ) ),
 			'resolved_block_markup'  => $listing_page,
 			'canonical_block_markup' => $listing_page,
 		),
 	),
 	'writes'               => array(
+		array(
+			'kind'        => 'theme_template',
+			'target_path' => 'templates/shop-shell.html',
+			'payload'     => array( 'encoding' => 'utf8', 'data' => '<!-- wp:post-content /-->' ),
+		),
 		array(
 			'kind'        => 'theme_template',
 			'target_path' => 'templates/page.html',
@@ -524,7 +530,7 @@ $diagnostics = array();
 Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, $bindings, $reports, $diagnostics );
 $archive = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
 $data    = (string) ( $archive[0]['payload']['data'] ?? '' );
-$assert( 1 === count( $archive ) && str_contains( $data, '<!-- wp:template-part {"slug":"header"} /--><!-- wp:heading -->' ) && str_contains( $data, '<!-- wp:woocommerce/product-collection' ) && str_ends_with( $data, '<!-- wp:template-part {"slug":"footer"} /-->' ) && ! str_contains( $data, 'wp:post-content' ) && hash( 'sha256', $data ) === $archive[0]['payload_hash'], 'listing-page-is-written-as-the-archive-product-template', $data );
+$assert( 1 === count( $archive ) && ! str_contains( $data, 'wp:template-part' ) && str_contains( $data, '<!-- wp:heading -->' ) && str_contains( $data, '<!-- wp:woocommerce/product-collection' ) && ! str_contains( $data, 'wp:post-content' ) && hash( 'sha256', $data ) === $archive[0]['payload_hash'], 'listing-page-is-written-as-the-archive-product-template', $data );
 
 // --- 6. The archive lists every product with the shop page's styles.
 $assert( 12 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ), 'theme-without-an-archive-design-keeps-woocommerce-defaults' );
