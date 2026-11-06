@@ -15,7 +15,10 @@ SSI does not infer those from product titles or submit-button text.
 A completed purchase receipt may reconcile a form-family finding at the same
 page and selector, using that finding's own identity and real fallback hash.
 This includes a form and controls finding sharing one placement. Unknown runtime
-forms elsewhere remain unresolved. Fragment and persisted-page hash checks still
+forms elsewhere remain unresolved. Explicit contact/newsletter findings do not
+attach to or recover purchase bindings. Unprojected legacy bindings retain their
+page-and-occurrence matching contract; projected anchors additionally require the
+original source-region hash. Fragment and persisted-page hash checks still
 apply; placement matching does not make stale persistence valid.
 
 The reduced commerce device fixture models two unknown subscription purchase

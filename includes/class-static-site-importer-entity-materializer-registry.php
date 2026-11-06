@@ -1134,7 +1134,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// anchor with identical region bytes on the same product page. A title or
 		// button label is never evidence of product ownership.
 		foreach ( $fallbacks as $fallback ) {
-			if ( ! is_array( $fallback ) || 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
+			if ( ! is_array( $fallback ) || 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) || ! in_array( Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ), array( 'unknown', 'commerce_add_to_cart' ), true ) ) {
 				continue;
 			}
 			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
@@ -1177,7 +1177,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 				}
 			}
-			if ( ! is_array( $fallback ) || ( ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) && 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) ) {
+			if ( ! is_array( $fallback ) || ( ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) && ( 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) || 'unknown' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) ) ) {
 				continue;
 			}
 			$source                  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
@@ -1319,8 +1319,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( '' !== $selector && in_array( $selector, $binding['superseded_runtime_selectors'] ?? array(), true ) ) {
 			return true;
 		}
-		$hash = $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
-		if ( ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) ) {
+		// Legacy, unprojected bindings match by page and occurrence: their
+		// canonical markup can differ from the diagnostic's source markup.
+		$hash = $binding['projected_anchor']['source_block_hash'] ?? '';
+		if ( '' !== $hash && ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) ) {
 			return false;
 		}
 		$anchors = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array( $fallback['binding'] ?? array() );

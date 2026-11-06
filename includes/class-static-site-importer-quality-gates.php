@@ -764,6 +764,11 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
+			// Identity/hash matching alone must not let a purchase receipt consume
+			// an unrelated contact form with the same form metadata.
+			if ( 'commerce_add_to_cart_form' === ( $receipt['role'] ?? '' ) && ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) && ( '' === ( $diagnostic['selector'] ?? '' ) || ( $receipt['selector'] ?? '' ) !== $diagnostic['selector'] ) ) {
+				$receipt = array();
+			}
 			// A purchase replacement owns all fallback families at its exact
 			// source placement, including unknown subscription forms. Rebind the
 			// proof to this finding's real hash; persistence checks still apply.
