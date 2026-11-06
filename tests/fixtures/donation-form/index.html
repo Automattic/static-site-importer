@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Donation form</title>
+<style>
+body{margin:0;font-family:sans-serif}
+main{max-width:30rem;margin:2rem auto;padding:1.5rem;border:1px solid #000;border-radius:20px}
+fieldset{border:0;padding:0;display:flex;flex-wrap:wrap;gap:.5rem}
+.amount input{position:absolute;opacity:0}.amount span{display:inline-block;border:1px solid #000;border-radius:99px;padding:.2rem .7rem}
+.amount input:checked+span{background:#000;color:#fff}
+.total{display:flex;justify-content:space-between;font-weight:700}
+button{background:#f08e80;color:#fff;border:0;border-radius:8px;padding:.8rem 1.5rem}
+button .loading{display:none}
+</style></head>
+<body><main>
+<h2>Make a donation.</h2>
+<form>
+  <label for="fund">Contribute to</label>
+  <select id="fund"><option value="general">General Operating</option><option value="homes">Support Homes</option></select>
+  <fieldset><legend>Amount</legend>
+    <label class="amount"><input name="amount" type="radio" value="5000" checked><span>$50.00</span></label>
+    <label class="amount"><input name="amount" type="radio" value="10000"><span>$100.00</span></label>
+    <label class="amount"><input name="amount" type="radio" value="custom"><span>Custom Amount</span></label>
+  </fieldset>
+  <select id="cadence" aria-label="Donation Frequency"><option value="ONE_TIME">One-Time Donation</option><option value="MONTHLY">Monthly Donation</option></select>
+  <div class="total"><label>Total</label><span>$50.00</span></div>
+  <button type="submit"><span>Donate</span><span class="loading" aria-hidden="true">Donate</span></button>
+</form>
+<template class="suggested-contribution-template"><label class="amount"><input name="amount" type="radio"><span class="radio-label"></span></label></template>
+<p>For donations by check, please send to 1 Example Street.</p>
+</main></body></html>

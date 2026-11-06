@@ -27,6 +27,7 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Presentation' ) ) {
 require_once __DIR__ . '/class-static-site-importer-form-mapping-plan.php';
 require_once __DIR__ . '/class-static-site-importer-form-plan-state.php';
 require_once __DIR__ . '/class-static-site-importer-form-readable-substitution.php';
+require_once __DIR__ . '/class-static-site-importer-jetpack-donations.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -121,6 +122,7 @@ class Static_Site_Importer_Form_Seeder {
 						'jetpack/input',
 						'jetpack/options',
 						'jetpack/option',
+						Static_Site_Importer_Jetpack_Donations::BLOCK_NAME,
 					),
 				),
 			),
@@ -250,6 +252,9 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_form( array $form, bool $available ): array {
+		if ( 'donation' === Static_Site_Importer_Form_Fallback_Contract::intent( $form ) ) {
+			return Static_Site_Importer_Jetpack_Donations::seed_form( $form, $available );
+		}
 		return self::plan_form( $form, $available )->to_report();
 	}
 
