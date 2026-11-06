@@ -527,14 +527,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				// (Jetpack substitutes its post/page default only when the key is missing),
 				// and `disabled_likes` is the site-wide Like toggle. Plain options, so no
 				// Jetpack dependency; other sharing settings are kept.
-				$sharing_options = get_option( 'sharing-options' );
-				$sharing_options = is_array( $sharing_options ) ? $sharing_options : array();
-				$global          = isset( $sharing_options['global'] ) && is_array( $sharing_options['global'] ) ? $sharing_options['global'] : array(
+				$jetpack_defaults = array(
 					'button_style'  => 'icon-text',
 					'sharing_label' => 'Share this:',
 					'open_links'    => 'same',
 					'custom'        => array(),
 				);
+				$stored_sharing   = get_option( 'sharing-options' );
+				$sharing_options  = is_array( $stored_sharing ) ? $stored_sharing : array();
+				$global           = is_array( $sharing_options['global'] ?? null ) ? $sharing_options['global'] : $jetpack_defaults;
+
 				$global['show']            = array();
 				$sharing_options['global'] = $global;
 				if ( ! self::write_option( 'sharing-options', $sharing_options ) || ! self::write_option( 'disabled_likes', 1 ) ) {
