@@ -1193,7 +1193,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities );
 			if ( $original !== $markup && str_contains( $markup, 'wp:woocommerce/product-image-gallery' ) ) {
 				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
-					$identity          = '/' . ltrim( $asset['source_path'], '/' );
+					$identity          = $identities[ $asset['source_path'] ] ?? '/' . ltrim( $asset['source_path'], '/' );
 					$product_sources   = array_column( $page['product_data']['images'] ?? array(), 'src' );
 					$product_sources[] = $page['product_data']['image'] ?? '';
 					foreach ( $product_sources as $source_url ) {
@@ -1308,7 +1308,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$attachment = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ]['id'] ?? 0;
-			$identity   = '/' . ltrim( $asset['source_path'], '/' );
+			$identity   = $aliases[ $asset['source_path'] ] ?? '/' . ltrim( $asset['source_path'], '/' );
 			$references = array_keys( array_filter( $aliases, static fn( string $value ): bool => $identity === $value ) );
 			foreach ( $references as $url ) {
 				if ( function_exists( 'get_posts' ) && ! $attachment ) {
