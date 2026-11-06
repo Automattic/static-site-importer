@@ -793,6 +793,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** Persist unbounded success payloads and replace them with durable references. */
 	public static function bound_success_result( array $result, array $additional_payloads = array(), array $plan_artifact = array() ): array {
+		if ( isset( $result['fixture_diagnostics'] ) ) {
+			$result['fixture_diagnostics'] = self::success_diagnostics_contract( $result );
+		}
 		$details  = $result;
 		$payloads = array_filter(
 			array(
@@ -968,8 +971,25 @@ class Static_Site_Importer_Canonical_Import_Service {
 		}
 		foreach ( $inline_keys as $key ) {
 			if ( array_key_exists( $key, $result ) ) {
-				$bounded[ $key ] = self::bounded_inline_value( $result[ $key ], $remaining );
+				$value   = $result[ $key ];
+				$verdict = array();
+				if ( 'import_validation_result' === $key && is_array( $value ) ) {
+					// Verdict fields are fixed-size evidence, not site-sized detail lists.
+					foreach ( $value as $field => $item ) {
+						if ( is_scalar( $item ) || null === $item || in_array( $field, array( 'failure_reasons', 'counts', 'diagnostic_summary' ), true ) ) {
+							$verdict[ $field ] = $item;
+							unset( $value[ $field ] );
+						}
+					}
+				}
+				$bounded[ $key ] = self::bounded_inline_value( $value, $remaining );
+				if ( array() !== $verdict ) {
+					$bounded[ $key ] = array_merge( $verdict, is_array( $bounded[ $key ] ) ? $bounded[ $key ] : array() );
+				}
 			}
+		}
+		if ( isset( $result['fixture_diagnostics']['quality_counts']['block_count'] ) ) {
+			$bounded['fixture_diagnostics']['quality_counts']['block_count'] = $result['fixture_diagnostics']['quality_counts']['block_count'];
 		}
 		$result = $bounded;
 
@@ -1109,7 +1129,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
 			$validation = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 			if ( self::fixture_diagnostics_match_validation_counts( $result['fixture_diagnostics'], $validation ) ) {
-				return $result['fixture_diagnostics'];
+				$fixture = $result['fixture_diagnostics'];
+				// Cached compiler diagnostics predate materialization. Validation counts
+				// do not include blocks, so matching them cannot validate this count.
+				if ( isset( $result['quality']['block_count'] ) ) {
+					$fixture['quality_counts']['block_count']               = $result['quality']['block_count'];
+					$fixture['import_report_quality_counts']['block_count'] = $result['quality']['block_count'];
+				}
+				return $fixture;
 			}
 		}
 		$validation  = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
@@ -1122,7 +1149,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'diagnostics' => $diagnostics,
 			);
 		}
-		$input = array(
+		$input   = array(
 			'success'                  => empty( $validation['fail_import'] ),
 			'status'                   => isset( $result['import_report_summary']['status'] ) && is_scalar( $result['import_report_summary']['status'] ) ? (string) $result['import_report_summary']['status'] : 'completed',
 			'slug'                     => isset( $result['theme_slug'] ) ? (string) $result['theme_slug'] : '',
@@ -1131,7 +1158,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'import_report'            => $report,
 			'materialization_receipt'  => isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array(),
 		);
-		return class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build( $input ) : array( 'diagnostics' => $diagnostics );
+		$fixture = class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build( $input ) : array( 'diagnostics' => $diagnostics );
+		if ( isset( $quality['block_count'] ) ) {
+			$fixture['quality_counts']['block_count']               = $quality['block_count'];
+			$fixture['import_report_quality_counts']['block_count'] = $quality['block_count'];
+		} elseif ( isset( $result['fixture_diagnostics']['quality_counts']['block_count'] ) ) {
+			$fixture['quality_counts']['block_count'] = $result['fixture_diagnostics']['quality_counts']['block_count'];
+		}
+		return $fixture;
 	}
 
 	/** Keep cached fixture projections only when they agree with final validation counts. */
