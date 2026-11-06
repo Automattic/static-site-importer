@@ -1287,9 +1287,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @throws InvalidArgumentException When archive assets cannot be resolved.
 	 */
 	private static function write_product_archive_template( array &$plan, int|string $index, array $patches ): void {
+		// The plan assigns a template slug; its shell is the `templates/<slug>.html` write.
 		$page            = $plan['pages'][ $index ];
 		$assigned        = (string) ( $page['metadata']['post_meta']['_wp_page_template'] ?? '' );
-		// The plan assigns a template slug; its shell is the `templates/<slug>.html` write.
 		$template_target = 1 === preg_match( '/^[a-z0-9][a-z0-9_-]*$/', $assigned ) && 'default' !== $assigned ? 'templates/' . $assigned . '.html' : 'templates/page.html';
 		$template        = null;
 		$existing        = null;
