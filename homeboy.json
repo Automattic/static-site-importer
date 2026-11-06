@@ -372,6 +372,7 @@
           "tests/smoke-woo-order-lookup-binding.php",
           "tests/smoke-region-binding-row-degradation.php",
           "tests/source-local-post-date.php",
+          "tests/smoke-block-theme-scorecard.php",
           "tests/smoke-wordpress-site-plan-materializer.php",
           "tests/smoke-comment-entities.php"
         ]

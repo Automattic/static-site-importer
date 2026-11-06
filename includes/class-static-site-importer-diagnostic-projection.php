@@ -175,7 +175,32 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
+		require_once __DIR__ . '/class-static-site-importer-block-theme-scorecard.php';
+		$receipt = $report['materialization_receipt'] ?? array();
+		$context = $receipt['scorecard_context'] ?? array();
+		$context['design_system'] = $report['design_system'] ?? $receipt['design_system'] ?? array();
+		$context['source_css_bytes'] = $context['design_system']['metrics']['unique_source_css_bytes'] ?? $context['source_css_bytes'] ?? null;
+		$routes = array();
+		$documents = array_column( $context['editability_report']['documents'] ?? array(), null, 'source_path' );
+		foreach ( $receipt['wordpress'] ?? array() as $row ) {
+			$id = (int) ( $row['id'] ?? 0 );
+			if ( ! $id || ! function_exists( 'get_post' ) ) { continue; }
+			$post = get_post( $id );
+			if ( ! $post || ! in_array( $post->post_type ?? 'page', array( 'page', 'post' ), true ) ) { continue; }
+			$routes[] = array( 'route' => $row['source_path'] ?? (string) $id, 'page_type' => 'post' === ( $post->post_type ?? 'page' ) ? 'single' : 'page', 'post_content' => (string) $post->post_content, 'editability_report' => $documents[ $row['source_path'] ?? '' ] ?? array() );
+		}
+		$context['distinct_menus'] = $context['distinct_menus'] ?? null;
+		$dir = (string) ( $receipt['theme']['dir'] ?? '' );
+		$report['block_theme_scorecard'] = function_exists( 'parse_blocks' ) && is_dir( $dir )
+			? Static_Site_Importer_Block_Theme_Scorecard::measure( $dir, $routes, $context )
+			: array( 'schema' => 'static-site-importer/block-theme-scorecard/v1', 'gating' => false, 'status' => 'not_measured', 'reason' => 'materialized_theme_or_block_parser_unavailable', 'checks' => array() );
 		$report['owner_handoff_evidence']   = Static_Site_Importer_Owner_Handoff_Evidence::compose_from_import( $report, $quality );
+		$handoff = $report['owner_handoff_evidence'];
+		$handoff['report_card'] .= "\n\n## Block theme scorecard (signals only)\n\n| Check | Status | Measured | Pass threshold |\n| --- | --- | --- | --- |\n";
+		foreach ( $report['block_theme_scorecard']['checks'] as $name => $check ) {
+			$handoff['report_card'] .= '| ' . $name . ' | ' . $check['status'] . ' | ' . str_replace( '|', '\\|', json_encode( $check['measured'] ) ) . ' | ' . str_replace( '|', '\\|', json_encode( $check['pass_threshold'] ) ) . " |\n";
+		}
+		$report['owner_handoff_evidence'] = $handoff;
 
 		if ( $build_fixture && class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
 			return Static_Site_Importer_Diagnostic_Contract::build(
