@@ -1119,7 +1119,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/**
-	 * Attach producer add-to-cart form anchors to an already seeded product.
+	 * Attach producer grid and add-to-cart fallback evidence to seeded products.
 	 * Matching is deliberately independent of labels, titles and button text.
 	 *
 	 * @param array<string,mixed> $lifecycle Validated entity lifecycle.
@@ -1130,14 +1130,59 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function with_product_form_bindings( array $lifecycle, array &$reports, array $fallbacks, array $resolved ): array {
 		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $resolved );
+		// Recover omitted device placements only from a producer-owned purchase
+		// anchor with identical region bytes on the same product page. A title or
+		// button label is never evidence of product ownership.
 		foreach ( $fallbacks as $fallback ) {
-			if ( ! is_array( $fallback ) || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
+			if ( ! is_array( $fallback ) || 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) || ! in_array( Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ), array( 'unknown', 'commerce_add_to_cart' ), true ) ) {
+				continue;
+			}
+			foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+				foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
+					foreach ( $product['bindings'] ?? array() as $binding ) {
+						$hash = $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
+						if ( 'commerce_add_to_cart_form' !== ( $binding['role'] ?? '' ) || ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) || self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) !== self::product_page_key( (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) ) ) {
+							continue;
+						}
+						$anchors = $fallback['bindings'] ?? array( $fallback['binding'] ?? array() );
+						foreach ( $anchors as $anchor ) {
+							$anchor['source_path'] = $fallback['source_path'] ?? $fallback['source'] ?? '';
+							$exists                = false;
+							foreach ( $product['bindings'] ?? array() as $existing ) {
+								if ( 'commerce_add_to_cart_form' === ( $existing['role'] ?? '' ) && self::binding_matches_fallback( $existing, $fallback ) ) {
+									$exists = true;
+								}
+							}
+							$document = $documents[ $anchor['source_path'] ?? '' ] ?? null;
+							$markup   = null === $document ? '' : (string) ( $resolved[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ?? '' );
+							if ( ! $exists && ! empty( $anchor['search_block_markup'] ) && (int) ( $anchor['occurrence'] ?? 0 ) > 0 && substr_count( $markup, $anchor['search_block_markup'] ) >= $anchor['occurrence'] ) {
+								$anchor['role'] = 'commerce_add_to_cart_form';
+								$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][] = $anchor;
+							}
+						}
+						break;
+					}
+				}
+			}
+		}
+		foreach ( $fallbacks as $fallback ) {
+			if ( is_array( $fallback ) && 'html_product_grid_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
+				foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
+					foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
+						foreach ( $product['bindings'] ?? array() as $binding_index => $binding ) {
+							if ( 'commerce_collection' === ( $binding['role'] ?? '' ) && in_array( $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ), self::fallback_anchor_hashes( $fallback ), true ) && self::binding_matches_fallback( $binding, $fallback ) ) {
+								$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_grid_fallback'] = $fallback;
+							}
+						}
+					}
+				}
+			}
+			if ( ! is_array( $fallback ) || ( ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) && ( 'html_form_fallback' !== ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) || 'unknown' !== Static_Site_Importer_Form_Fallback_Contract::intent( $fallback ) ) ) ) {
 				continue;
 			}
 			$source                  = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
 			$fallback['source_path'] = $source;
 			$declared                = false;
-			$anchor_hashes           = self::fallback_anchor_hashes( $fallback );
 			// Canonical producer anchors own this page region. Carry the form
 			// diagnostic with each binding so its receipt joins the same fallback.
 			// A binding naming its own pre-projection anchor hash joins only the
@@ -1153,16 +1198,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						if ( 'commerce_add_to_cart_form' !== ( $binding['role'] ?? '' ) || '' === $source || self::product_page_key( $source ) !== self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
 							continue;
 						}
-						$projected_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
-						if ( is_string( $projected_hash ) && ! in_array( $projected_hash, $anchor_hashes, true ) ) {
+						if ( ! self::binding_matches_fallback( $binding, $fallback ) ) {
 							continue;
 						}
-						$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+						$current = $binding['product_form_fallback'] ?? array();
+						if ( 'html_form_fallback' !== ( $current['diagnostic_code'] ?? $current['code'] ?? '' ) ) {
+							$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_form_fallback'] = $fallback;
+						}
 						$declared = true;
 					}
 				}
 			}
-			if ( $declared ) {
+			if ( $declared || ! Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $fallback ) ) {
 				continue;
 			}
 			$matches = array( array(), array() );
@@ -1260,6 +1307,26 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $id ]               = array( 'products' => array( $result ) );
 		}
 		return $lifecycle;
+	}
+
+	/** Match a source placement, not merely bytes shared by device copies. */
+	private static function binding_matches_fallback( array $binding, array $fallback ): bool {
+		$source = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' );
+		if ( '' === $source || self::product_page_key( $source ) !== self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) ) {
+			return false;
+		}
+		$selector = $fallback['selector'] ?? '';
+		if ( '' !== $selector && in_array( $selector, $binding['superseded_runtime_selectors'] ?? array(), true ) ) {
+			return true;
+		}
+		// Legacy, unprojected bindings match by page and occurrence: their
+		// canonical markup can differ from the diagnostic's source markup.
+		$hash = $binding['projected_anchor']['source_block_hash'] ?? '';
+		if ( '' !== $hash && ! in_array( $hash, self::fallback_anchor_hashes( $fallback ), true ) ) {
+			return false;
+		}
+		$anchors = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array( $fallback['binding'] ?? array() );
+		return in_array( $binding['projected_anchor']['source_occurrence'] ?? $binding['occurrence'] ?? null, array_column( $anchors, 'occurrence' ), true );
 	}
 
 	/**
@@ -1371,6 +1438,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 							$entity                = array_merge( $entity, $member['binding']['product_form_fallback'] ?? array() );
 							$entity['entity_kind'] = 'add_to_cart_form';
 						}
+						if ( 'commerce_collection' === ( $member['binding']['role'] ?? '' ) ) {
+							$entity = array_merge( $entity, $member['binding']['product_grid_fallback'] ?? array() );
+						}
 						$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $member['result'] );
 						if ( '' === $replacement ) {
 							return new WP_Error(
@@ -1407,6 +1477,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'entity_kind' => 'product_grid',
 					'product_ids' => $product_ids,
 				);
+				$grid_entity    = array_merge( $grid_entity, $anchor_binding['product_grid_fallback'] ?? array() );
 				$replacement    = self::binding_block_markup( $prepared['adapter'], $grid_entity, array() );
 				if ( '' === $replacement ) {
 					return new WP_Error(
@@ -1439,7 +1510,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// with_adopted_product_regions()), so its receipt answers for the grid.
 		// A cart or checkout binding replaces its whole commerce view the same way
 		// and joins its finding by the view's own selector.
-		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart', 'commerce_checkout' ), true ) ? $entity : ( 'commerce_listing' === $binding['role'] ? ( is_array( $entity['grid'] ?? null ) ? $entity['grid'] : ( ! empty( $entity['empty_listing'] ) ? array( 'selector' => $entity['grid_selector'] ?? '' ) : array() ) ) : array() );
+		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart', 'commerce_checkout' ), true ) ? $entity : ( 'commerce_collection' === $binding['role'] ? ( $binding['product_grid_fallback'] ?? array() ) : ( 'commerce_listing' === $binding['role'] ? ( is_array( $entity['grid'] ?? null ) ? $entity['grid'] : ( ! empty( $entity['empty_listing'] ) ? array( 'selector' => $entity['grid_selector'] ?? '' ) : array() ) ) : array() ) );
 		$grid_selector                     = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
 		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::page_region_fallback_identity( self::fallback_region( $binding['role'] ), (string) $binding['source_path'], $grid_selector );
 		return array(
@@ -2899,6 +2970,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$source_block_hash = $binding['projected_anchor']['source_block_hash'] ?? null;
 		if ( is_string( $source_block_hash ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $source_block_hash ) ) {
 			$normalized['projected_anchor'] = array( 'source_block_hash' => $source_block_hash );
+			$source_occurrence              = $binding['projected_anchor']['source_occurrence'] ?? null;
+			if ( is_int( $source_occurrence ) && $source_occurrence > 0 ) {
+				$normalized['projected_anchor']['source_occurrence'] = $source_occurrence;
+			}
 			// Its span in the source document places the control inside its form.
 			$source_span = self::source_span( $binding['projected_anchor']['source_position'] ?? null );
 			if ( null !== $source_span ) {
