@@ -296,12 +296,25 @@ final class Static_Site_Importer_Quality_Gates {
 	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
 	 */
 	private static function choice_submission_form_count( array $diagnostics ): int {
-		return count(
-			array_filter(
-				$diagnostics,
-				static fn( mixed $diagnostic ): bool => is_array( $diagnostic ) && 'choice_submission' === ( $diagnostic['form_intent'] ?? '' )
-			)
-		);
+		$preserved = array();
+		$blocked   = array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || 'choice_submission' !== ( $diagnostic['form_intent'] ?? '' ) ) {
+				continue;
+			}
+			$source   = $diagnostic['source_path'] ?? '';
+			$selector = $diagnostic['selector'] ?? '';
+			if ( ! is_string( $source ) || '' === $source || ! is_string( $selector ) || '' === $selector ) {
+				continue;
+			}
+			$identity = wp_json_encode( array( $source, $selector ) );
+			if ( 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) ) {
+				$blocked[ $identity ] = true;
+			} elseif ( 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) ) {
+				$preserved[ $identity ] = true;
+			}
+		}
+		return count( array_diff_key( $preserved, $blocked ) );
 	}
 
 	/**
