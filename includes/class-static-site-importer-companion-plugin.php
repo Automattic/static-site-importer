@@ -1707,6 +1707,17 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 		$svg_global[ strtolower( $aria_name ) ] = true;
 	}
 }
+// SVG presentation attributes shared by every painted shape. `vector-effect`
+// and the dash attributes carry geometry: dropping them rescales or reshapes
+// a non-scaling stroke drawn in a stretched viewBox.
+$svg_paint = array_merge(
+	$svg_global,
+	array(
+		'fill' => true, 'fill-opacity' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true,
+		'stroke-dasharray' => true, 'stroke-dashoffset' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true,
+		'stroke-miterlimit' => true, 'stroke-opacity' => true, 'stroke-width' => true, 'transform' => true, 'vector-effect' => true,
+	)
+);
 $safe_style_css = static function ( array $properties ): array {
 	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'inset', 'overflow-x', 'overflow-y', 'transition' ) ) ) );
 };
@@ -1740,14 +1751,14 @@ $output = wp_kses(
 		'fegaussianblur' => array_merge( $svg_global, array( 'height' => true, 'in' => true, 'result' => true, 'stddeviation' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'femerge' => array_merge( $svg_global, array( 'height' => true, 'result' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'femergenode' => array_merge( $svg_global, array( 'in' => true ) ),
-		'g' => array_merge( $svg_global, array( 'clip-path' => true, 'fill' => true, 'fill-opacity' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
-		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
-		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
-		'ellipse' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true ) ),
-		'line' => array_merge( $svg_global, array( 'fill' => true, 'opacity' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
-		'polygon' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
-		'polyline' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
-		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'g' => array_merge( $svg_paint, array( 'clip-path' => true ) ),
+		'path' => array_merge( $svg_paint, array( 'd' => true ) ),
+		'circle' => array_merge( $svg_paint, array( 'cx' => true, 'cy' => true, 'r' => true ) ),
+		'ellipse' => array_merge( $svg_paint, array( 'cx' => true, 'cy' => true, 'rx' => true, 'ry' => true ) ),
+		'line' => array_merge( $svg_paint, array( 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
+		'polygon' => array_merge( $svg_paint, array( 'points' => true ) ),
+		'polyline' => array_merge( $svg_paint, array( 'points' => true ) ),
+		'rect' => array_merge( $svg_paint, array( 'height' => true, 'rx' => true, 'ry' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'letter-spacing' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
 	)
