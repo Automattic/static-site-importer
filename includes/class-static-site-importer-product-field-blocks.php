@@ -125,6 +125,50 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				$aliases[ $url ] = $identity;
 			}
 		}
+		// References retain the full candidate list and the source element's
+		// selector. Only co-membership in an img srcset proves that distinct
+		// captured resources are renditions of one photo.
+		$elements = array();
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			foreach ( $asset['references'] ?? array() as $reference ) {
+				if ( 'img' !== ( $reference['element'] ?? '' ) || ! in_array( $reference['attribute'] ?? '', array( 'src', 'srcset' ), true ) ) {
+					continue;
+				}
+				$key = ( $reference['source_path'] ?? '' ) . "\n" . ( $reference['selector'] ?? '' );
+				// Without an element locator, candidate lists still prove their
+				// own membership, but cannot be paired with another img's src.
+				if ( empty( $reference['selector'] ) ) {
+					$key .= "\n" . ( $reference['value'] ?? '' );
+				}
+				$elements[ $key ][ $reference['attribute'] ][] = $reference['value'] ?? '';
+			}
+		}
+		foreach ( $elements as $attributes ) {
+			if ( empty( $attributes['srcset'] ) ) {
+				continue;
+			}
+			$urls = $attributes['src'] ?? array();
+			foreach ( array_unique( $attributes['srcset'] ) as $srcset ) {
+				foreach ( explode( ',', html_entity_decode( $srcset, ENT_QUOTES, 'UTF-8' ) ) as $candidate ) {
+					$parts = preg_split( '/\s+/', trim( $candidate ) );
+					if ( false !== $parts ) {
+						$urls[] = $parts[0];
+					}
+				}
+			}
+			$identity = null;
+			foreach ( $urls as $url ) {
+				$url = html_entity_decode( $url, ENT_QUOTES, 'UTF-8' );
+				if ( ! isset( $aliases[ $url ] ) ) {
+					continue;
+				}
+				$right = $canonical( $aliases[ $url ] );
+				if ( null !== $identity && $identity !== $right ) {
+					$parents[ $right ] = $identity;
+				}
+				$identity = $identity ?? $right;
+			}
+		}
 		return array_map( $canonical, $aliases );
 	}
 
