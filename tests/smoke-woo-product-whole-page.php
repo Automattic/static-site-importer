@@ -33,6 +33,7 @@ function get_post_type( $id ) { return get_post( $id )->post_type; }
 function wp_update_post( $fields, $error = false ) { foreach ( $fields as $key => $value ) { $GLOBALS['posts'][ $fields['ID'] ]->$key = $value; } return $fields['ID']; }
 function is_wp_error( $value ) { return $value instanceof WP_Error; }
 function get_post_meta( $id, $key = '', $single = false ) { $values = $GLOBALS['meta'][ $id ][ $key ] ?? array(); return $single ? ( $values[0] ?? '' ) : $values; }
+function attachment_url_to_postid( $url ) { return $GLOBALS['attachment_urls'][ $url ] ?? 0; }
 function metadata_exists( $type, $id, $key ) { return isset( $GLOBALS['meta'][ $id ][ $key ] ); }
 function delete_post_meta( $id, $key ) { unset( $GLOBALS['meta'][ $id ][ $key ] ); return true; }
 function add_post_meta( $id, $key, $value, $unique = false ) { $GLOBALS['meta'][ $id ][ $key ][] = $value; return true; }
@@ -193,6 +194,33 @@ $identity_state = array(
 	'resolved' => array( 'resolution' => array( 'attachment_resolutions' => array( 'front' => array( 'id' => 42, 'url' => 'https://import.test/wp-content/uploads/2026/11/front.webp' ) ) ) ),
 );
 $identities = Static_Site_Importer_Product_Field_Blocks::image_identities( $identity_state );
+// Real v1.33.380 capture from gist 8ad039acdce7ace3e53a0bbd710cb841.
+$real = json_decode( file_get_contents( __DIR__ . '/fixtures/product-gallery-real/fixture.json' ), true );
+$real_markup = file_get_contents( __DIR__ . '/fixtures/product-gallery-real/carousel.html' );
+$real_state = array( 'plan' => array( 'assets' => $real['plan_assets'], 'pages' => array( array( 'entrypoint' => true, 'source_path' => 'website/index.html' ) ) ) );
+foreach ( $real['attachment_sources'] as $url => $source ) {
+	$attachment_id = 5000 + count( $GLOBALS['attachment_urls'] ?? array() );
+	$GLOBALS['attachment_urls'][ $url ] = $attachment_id;
+	update_post_meta( $attachment_id, '_static_site_importer_source_image', $source );
+}
+$real_identities = Static_Site_Importer_Product_Field_Blocks::image_identities( $real_state );
+$real_tokens = $real_markup;
+foreach ( $real['attachment_sources'] as $url => $source ) {
+	foreach ( $real['plan_assets'] as $asset ) {
+		if ( $real_identities[ $source ] === '/' . $asset['source_path'] ) {
+			$real_tokens = str_replace( $url, '{{wordpress-site-plan:asset:' . $asset['token'] . '}}', $real_tokens );
+		}
+	}
+}
+// Model duplicate page-media attachments with their recorded source aliases,
+// distinct from product-seeder attachments. Their filenames are not evidence.
+foreach ( $real['attachment_sources'] as $url => $source ) {
+	if ( str_contains( $url, '-bc73450fb5f2-1' ) ) {
+		$attachment_id = $GLOBALS['attachment_urls'][ $url ];
+		delete_post_meta( $attachment_id, '_static_site_importer_source_image' );
+		update_post_meta( $attachment_id, '_static_site_importer_asset_record', array( 'source_urls' => array( $source ) ) );
+	}
+}
 $gallery_data = $row + array( 'images' => array( array( 'src' => 'https://example.org/front.jpg' ), array( 'src' => 'https://example.org/back.jpg' ) ) );
 foreach ( array(
 	'slides and thumbnails' => array( $group( $slides . $slides ), 1, 2 ),
@@ -200,15 +228,48 @@ foreach ( array(
 	'unrelated image' => array( $group( $front . $back . $image( 'https://example.org/logo.jpg' ) ), 0, 3 ),
 	'nested complete set' => array( $group( $slides . $image( 'https://example.org/logo.jpg' ) ), 1, 1 ),
 	'mixed rewritten resource identities' => array( $group( $image( 'https://import.test/wp-content/uploads/2026/11/front.webp' ) . $image( '{{wordpress-site-plan:asset:back}}' ) . $back ), 1, 0, $row + array( 'images' => array( array( 'src' => '/media/front.webp' ), array( 'src' => 'https://example.org/back.jpg' ) ) ) ),
+	'real token-stage carousel' => array( $real_tokens, 1, 0, $real['product'], $real_identities ),
+	'real imported carousel' => array( $real_markup, 1, 0, $real['product'], $real_identities ),
 	'existing live gallery' => array( '<!-- wp:woocommerce/product-image-gallery /-->' . $slides, 1, 2 ),
 ) as $case => $fixture ) {
 	$presentations = array();
 	$data = $fixture[3] ?? $gallery_data;
-	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $data, $presentations, $identities );
+	$converted = Static_Site_Importer_Product_Field_Blocks::bind_document( $fixture[0], $data, $presentations, $fixture[4] ?? $identities );
 	$assert( $fixture[1] === substr_count( $converted, 'wp:woocommerce/product-image-gallery' ), $case . ': at most one complete gallery' );
 	$assert( $fixture[2] === substr_count( $converted, '<img ' ), $case . ': only the smallest complete block is replaced' );
 	$assert( $converted === Static_Site_Importer_Product_Field_Blocks::bind_document( $converted, $gallery_data ), $case . ': binding is idempotent' );
 }
+// Exercise preflight with token-stage markup too. The capture has no fixed
+// pixel geometry, so no overlay is appropriate; a sized variant proves capture.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-preparation.php';
+$capture_presentations = new ReflectionMethod( Static_Site_Importer_Site_Plan_Preparation::class, 'capture_product_presentations' );
+$real_preflight = $real_state;
+$real_page = $pages[0];
+$real_page['resolved_block_markup'] = $real_markup;
+$real_page['materialized_block_markup'] = str_replace( 'width:100%;height:100%', 'width:600px;height:400px', $real_markup );
+$real_claim = $report['whole_page_results'][0];
+$real_claim['product_data'] = $real['product'];
+$real_preflight['ordered_pages'] = array( $real_page );
+$real_preflight['args']['whole_page_provider_results'] = array( $real_claim );
+$preflight_args = array( &$real_preflight );
+$capture_presentations->invokeArgs( null, $preflight_args );
+$assert( ! empty( $real_preflight['args']['provider_layout_overlays'] ), 'Real carousel preflight captures supported geometry before replacement.' );
+
+// Drive the actual template replacement and packaging decision for the capture.
+$real_state['theme_dir'] = $state['theme_dir'];
+$real_state['ordered_pages'] = array();
+$real_page['materialized_block_markup'] = $real_markup;
+$real_page['product_data'] = $real['product'];
+$real_args = array( &$real_state, $id, $row['source_path'], &$real_page );
+$real_template = $write_template->invokeArgs( null, $real_args );
+$assert( 1 === substr_count( $real_template, 'wp:woocommerce/product-image-gallery' ) && ! str_contains( $real_template, '<img ' ), 'Real template replaces the whole carousel once.' );
+foreach ( $real['plan_assets'] as $index => $asset ) {
+	$real_state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] = array( 'id' => 6000 + $index );
+	$real_state['resolved']['writes'][] = array( 'kind' => 'theme_asset', 'target_path' => $asset['target_path'], 'payload' => array( 'encoding' => 'base64', 'data' => 'photo bytes' ) );
+}
+Static_Site_Importer_Site_Plan_Persistence::prune_replaced_product_photos( $real_state );
+$assert( empty( $real_state['resolved']['writes'] ), 'Real replaced photos are withheld from theme packaging.' );
+
 // Replaced photos are attachment-owned, not unused theme payloads. A shared
 // design reference still keeps its theme copy.
 foreach ( array( 'gallery only' => false, 'shared design reference' => true ) as $case => $shared ) {
