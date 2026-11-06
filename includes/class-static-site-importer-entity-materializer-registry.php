@@ -2518,10 +2518,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 			// Older producers carry a URL or a slug, but not a canonical route.
+			// A URL at the site root (`/#pricing`) points into the home page,
+			// not at a product of its own, so it keeps the slug route.
 			$route = self::manifest_string( $product, 'source_route', false );
 			if ( '' === $route ) {
 				$url_path = parse_url( self::manifest_string( $product, 'url', false ), PHP_URL_PATH ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Manifest validation also runs before WordPress loads.
-				$route    = is_string( $url_path ) && '' !== $url_path ? $url_path : '/products/' . $slug;
+				$route    = is_string( $url_path ) && '' !== trim( $url_path, '/' ) ? $url_path : '/products/' . $slug;
 			}
 			if ( ! preg_match( '~^/(?!/)[^?#\s]+$~', $route ) ) {
 				$errors[] = array(
