@@ -1,0 +1,13 @@
+{
+  "source_path": "products/stickers.html",
+  "entity_kind": "add_to_cart_form",
+  "controls": [
+    {"tag":"select","name":"size","presentation":{"style":{"color":{"text":"rgb(48,54,54)","background":"transparent"},"typography":{"fontSize":"16px"},"border":{"radius":"23.84px","width":"1px","style":"solid","color":"rgb(48,54,54)"},"dimensions":{"width":"634px","height":"55px"}}}},
+    {"tag":"input","type":"number","name":"quantity"},
+    {"tag":"button","type":"submit"}
+  ],
+  "presentation_graph": {"controls": [
+    {"index":1,"control":{"styles":{"width":"42px","height":"27px","border_radius":"23.84px","border":"1px solid rgb(48,54,54)","color":"rgb(48,54,54)","font_size":"16px","background":"transparent"}}},
+    {"index":2,"control":{"styles":{"width":"479px","height":"55px","border_radius":"23.84px","border":"1px solid rgb(212,150,125)","color":"rgb(212,150,125)","font_size":"16px","background":"transparent","text_transform":"uppercase"}}}
+  ]}
+}

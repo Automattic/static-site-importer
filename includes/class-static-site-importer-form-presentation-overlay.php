@@ -799,6 +799,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 
 	/** Validate a compiler-produced overlay before it is admitted to a stylesheet. */
 	public static function validate_overlay( mixed $overlay ): ?array {
+		if ( is_array( $overlay ) && 'static-site-importer/product-presentation/v1' === ( $overlay['schema'] ?? '' ) ) {
+			require_once __DIR__ . '/class-static-site-importer-product-presentation.php';
+			return Static_Site_Importer_Product_Presentation::validate_overlay( $overlay );
+		}
 		if ( ! is_array( $overlay ) ) {
 			return null;
 		}

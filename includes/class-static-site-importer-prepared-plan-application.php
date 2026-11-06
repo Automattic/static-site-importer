@@ -173,7 +173,12 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
-		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
+		$prepared['args']['provider_layout_overlays'] = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
+		foreach ( $bindings as $binding ) {
+			if ( ! empty( $binding['product_presentation'] ) ) {
+				$prepared['args']['provider_layout_overlays'][] = $binding['product_presentation'];
+			}
+		}
 		$prepared['args']['whole_page_provider_results']  = $page_ready ? array() : self::whole_page_provider_results( $entities );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
