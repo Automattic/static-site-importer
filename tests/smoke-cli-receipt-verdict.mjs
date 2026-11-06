@@ -69,6 +69,8 @@ try {
     }
     assert.ok(report.quality.block_count > 0);
     assert.equal(result.fixture_diagnostics.quality_counts.block_count, report.quality.block_count);
+    // The copy beside `result` is the one hosts read for the block count.
+    assert.equal(receipt.response.fixture_diagnostics.quality_counts.block_count, report.quality.block_count);
     if (name === 'large') {
       assert.ok(validation.counts.diagnostics > 200, `fixture must yield well over 200 diagnostics: ${JSON.stringify(validation.counts)}`);
       for (const key of ['diagnostics', 'diagnostic_refs', 'quality_gates', 'visual_parity_artifacts']) {
