@@ -1533,6 +1533,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( '' !== $route && $post_id > 0 ) {
 				$reference        = wp_make_link_relative( (string) get_permalink( $post_id ) );
 				$routes[ $route ] = $reference;
+				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
 				}
@@ -1560,9 +1561,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		// Products own their canonical identity even when a captured page shares it.
-		$routes     = array_replace( $routes, $product_routes );
-		$source_url = self::source_origin_url( $state );
-		$state['applied']['unresolved_same_origin_links'] = array();
+		$routes                                      = array_replace( $routes, $product_routes );
+		$source_url                                  = self::source_origin_url( $state );
+		$state['applied']['unresolved_link_targets'] = array();
+		$anchors                                     = array();
+		foreach ( $state['ordered_pages'] as $page ) {
+			$route = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
+			if ( ! isset( $routes[ $route ] ) ) {
+				continue;
+			}
+			$content = self::served_document( $state, $page );
+			preg_match_all( '/\b(?:id|name)\s*=\s*["\']([^"\']*)["\']/i', (string) $content, $matches );
+			$anchors[ $routes[ $route ] ] = array(
+				'route' => $route,
+				'ids'   => array_fill_keys( array_map( static fn( string $id ): string => html_entity_decode( $id, ENT_QUOTES, 'UTF-8' ), $matches[1] ), true ),
+			);
+		}
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
@@ -1574,16 +1588,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
 			}
 			$unresolved = array();
-			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . $source_path );
-			self::count_unresolved_routes( $state, $unresolved );
-			foreach ( array_unique( $unresolved ) as $route ) {
-				$state['diagnostics'][] = array(
-					'type'        => 'unresolved_internal_link',
-					'reason_code' => 'unresolved_internal_link',
-					'source_path' => $source_path,
-					'route'       => $route,
-				);
-			}
+			$fragments  = array();
+			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . $source_path, $anchors, $fragments );
+			self::record_unresolved_targets( $state, $unresolved, $fragments, $source_path );
 			if ( $rewritten !== $content ) {
 				$updated = self::write_served_document( $state, $page, $rewritten, 'route_link_rewrite_failed' );
 				if ( is_wp_error( $updated ) ) {
@@ -1614,8 +1621,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$path       = $state['theme_dir'] . '/' . $write['target_path'];
 			$source     = is_string( $state['composed_theme_writes'][ $path ] ?? null ) ? $state['composed_theme_writes'][ $path ] : $write['payload']['data'];
 			$unresolved = array();
-			$rewritten  = self::rewrite_route_references( $source, $routes, $unresolved, $source_url, $product_routes );
-			self::count_unresolved_routes( $state, $unresolved );
+			$fragments  = array();
+			$rewritten  = self::rewrite_route_references( $source, $routes, $unresolved, $source_url, $product_routes, '/', $anchors, $fragments );
+			self::record_unresolved_targets( $state, $unresolved, $fragments, (string) $write['target_path'] );
 			if ( $rewritten === $source ) {
 				continue;
 			}
@@ -1633,7 +1641,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return new WP_Error( 'route_link_rewrite_failed', 'Navigation content could not be read.' );
 			}
 			$unresolved = array();
-			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes );
+			$fragments  = array();
+			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/', $anchors, $fragments );
+			self::record_unresolved_targets( $state, $unresolved, $fragments, (string) $navigation['source_path'] );
 			if ( $content !== $rewritten ) {
 				$updated = wp_update_post(
 					array(
@@ -1651,8 +1661,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
 			$content    = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
 			$unresolved = array();
-			$rewrite    = is_string( $content ) ? self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . (string) $pattern['source_path'] ) : null;
-			self::count_unresolved_routes( $state, $unresolved );
+			$fragments  = array();
+			$rewrite    = is_string( $content ) ? self::rewrite_route_references( $content, $routes, $unresolved, $source_url, $product_routes, '/' . (string) $pattern['source_path'], $anchors, $fragments ) : null;
+			self::record_unresolved_targets( $state, $unresolved, $fragments, (string) $pattern['source_path'] );
 			if ( null === $rewrite || $rewrite === $content ) {
 				continue;
 			}
@@ -1700,11 +1711,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param array<string,string>   $product_routes Canonical product references.
 	 * @param string                 $document_path Current document path.
 	 */
-	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/' ): string {
-		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path ): string {
+	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
+		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): string {
 			$value = html_entity_decode( str_replace( '\\/', '/', (string) $matches[2] ), ENT_QUOTES, 'UTF-8' );
-			if ( '' === $value || preg_match( '~^(?:#|\?)~', $value ) ) {
+			if ( '' === $value ) {
 				return $matches[0];
+			}
+			if ( preg_match( '~^[#?]~', $value ) ) {
+				$value = $document_path . $value;
 			}
 			if ( preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//)~i', $value ) ) {
 				if ( ! self::same_source_origin( $value, $source_url ) ) {
@@ -1722,6 +1736,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$route  = self::normalized_route_path( $value );
 			$target = $routes[ $route ] ?? self::scoped_product_reference( $route, $product_routes );
 			if ( null !== $target ) {
+				$fragment = rawurldecode( (string) ( wp_parse_url( $suffix )['fragment'] ?? '' ) );
+				if ( is_array( $fragments ) && '' !== $fragment && 'top' !== $fragment && isset( $anchors[ $target ] ) && ! isset( $anchors[ $target ]['ids'][ $fragment ] ) ) {
+					$fragments[] = array(
+						'route'    => $anchors[ $target ]['route'],
+						'fragment' => $fragment,
+					);
+				}
+				if ( preg_match( '~^[#?]~', html_entity_decode( (string) $matches[2], ENT_QUOTES, 'UTF-8' ) ) ) {
+					return $matches[0];
+				}
 				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
 			}
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
@@ -1801,16 +1825,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return strtolower( $source['host'] ) === strtolower( $target['host'] ) && ( $source['scheme'] ?? '' ) === ( $target['scheme'] ?? '' ) && $port( $source ) === $port( $target );
 	}
 
-	/**
-	 * Count occurrences, not unique targets, for measurable receipt coverage.
-	 *
-	 * @param array<string,mixed> $state Import state.
-	 * @param array<int,string>   $routes Unresolved paths.
-	 */
-	private static function count_unresolved_routes( array &$state, array $routes ): void {
-		foreach ( $routes as $route ) {
-			$class = explode( '/', trim( $route, '/' ) )[0];
-			$state['applied']['unresolved_same_origin_links'][ $class ] = (int) ( $state['applied']['unresolved_same_origin_links'][ $class ] ?? 0 ) + 1;
+	/** Record one repair location per distinct unresolved target. */
+	private static function record_unresolved_targets( array &$state, array $routes, array $fragments, string $source_path ): void {
+		$targets = array_merge( array_map( static fn( string $route ): array => array( 'route' => $route ), $routes ), $fragments );
+		foreach ( $targets as $target ) {
+			$key = $target['route'] . ( isset( $target['fragment'] ) ? '#' . $target['fragment'] : '' );
+			if ( isset( $state['applied']['unresolved_link_targets'][ $key ] ) ) {
+				continue;
+			}
+			$type = isset( $target['fragment'] ) ? 'unresolved_fragment_link' : 'unresolved_internal_link';
+			$state['applied']['unresolved_link_targets'][ $key ] = array_merge( $target, array(
+				'type'        => $type,
+				'reason_code' => $type,
+				'source_path' => $source_path,
+			) );
 		}
 	}
 

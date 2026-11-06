@@ -33,7 +33,6 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 				),
 				'source_documents'        => array(
 					'total_count'           => 2,
-					'unresolved_link_count' => 1,
 				),
 				'diagnostics'             => array(
 					array(
@@ -72,7 +71,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'success', $result['compiler']['status'] ?? '' );
 		$this->assertSame( 1, $result['diagnostic_count'] ?? 0 );
 		$this->assertSame( 2, $result['source_document_count'] ?? 0 );
-		$this->assertSame( 1, $result['unresolved_link_count'] ?? 0 );
+		$this->assertSame( 0, $result['unresolved_link_count'] ?? -1 );
 		$this->assertSame( 1, $result['diagnostic_summary']['warning'] ?? 0 );
 		$this->assertCount( 1, $result['warning_summaries'] ?? array() );
 		$this->assertSame( 'core_html_block', $result['warning_summaries'][0]['type'] ?? '' );

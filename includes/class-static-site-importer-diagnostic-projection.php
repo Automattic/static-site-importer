@@ -39,6 +39,18 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		foreach ( Static_Site_Importer_Quality_Count_Keys::MAP as $name => $key ) {
 			$counts[ $name ] = 'diagnostics' === $name ? count( $diagnostics ) : (int) ( $quality[ $key ] ?? 0 );
 		}
+		foreach ( array(
+			'unresolved_internal_links' => 'unresolved_internal_link',
+			'unresolved_fragment_links' => 'unresolved_fragment_link',
+		) as $name => $type ) {
+			$targets = array();
+			foreach ( $diagnostics as $diagnostic ) {
+				if ( is_array( $diagnostic ) && ( $diagnostic['reason_code'] ?? $diagnostic['type'] ?? '' ) === $type ) {
+					$targets[ (string) ( $diagnostic['route'] ?? '' ) . '#' . (string) ( $diagnostic['fragment'] ?? '' ) ] = true;
+				}
+			}
+			$counts[ $name ] = count( $targets );
+		}
 		$counts['omitted_artifact_files'] = (int) ( $quality['omitted_file_count'] ?? 0 );
 		$counts['visual_parity_failures'] = (int) ( $quality['visual_parity_failure_count'] ?? 0 );
 		return $counts;
@@ -1447,7 +1459,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'omitted_file_count'                      => (int) ( $quality['omitted_file_count'] ?? 0 ),
 			'visual_parity_failure_count'             => (int) ( $quality['visual_parity_failure_count'] ?? 0 ),
 			'source_document_count'                   => (int) ( $source_documents['total_count'] ?? 0 ),
-			'unresolved_link_count'                   => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
+			'unresolved_link_count'                   => array_sum( array_intersect_key( self::validation_counts( $quality, $diagnostics, $source_documents ), array_flip( array( 'unresolved_internal_links', 'unresolved_fragment_links' ) ) ) ),
 			'commerce'                                => $commerce,
 			'commerce_context'                        => $commerce_context,
 			'plugin_materialization'                  => $plugin_materialization,
