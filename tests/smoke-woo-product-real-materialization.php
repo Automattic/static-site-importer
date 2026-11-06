@@ -39,6 +39,24 @@ foreach ( $fixture['plan_assets'] as $asset ) {
 foreach ( $unrelated_tokens as $token ) {
 	$files[ 'media/' . $token . '.webp' ] = 'unrelated photo ' . $token;
 }
+// Real missed-import shape: entity uses 750w, slides and thumbnails use
+// 100w, and each rendition has independent bytes, token and attachment.
+$responsive_photo = 'media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879';
+$responsive_paths = array();
+foreach ( array( 'bc73450fb5f2' => 100, 'd5187b50c927' => 300, '9e4e87d17282' => 750 ) as $suffix => $width ) {
+	$path = $responsive_photo . '-' . $suffix . '.webp';
+	$responsive_paths[ $width ] = $path;
+	$files[ $path ] = 'independent rendition bytes ' . $width;
+}
+$responsive_paths[1000] = $responsive_photo . '.webp';
+$srcset = implode( ', ', array_map( static fn ( $width, $path ) => '/' . $path . ' ' . $width . 'w', array_keys( $responsive_paths ), $responsive_paths ) );
+$files[ $source ] .= '<img src="/' . $responsive_paths[100] . '" srcset="' . $srcset . '">';
+foreach ( $product['images'] as &$image ) {
+	if ( '/' . $responsive_paths[1000] === $image['src'] ) {
+		$image['src'] = '/' . $responsive_paths[750];
+	}
+}
+unset( $image );
 $files['media/shared-lifestyle.webp'] = 'captured photo bytes';
 foreach ( array_keys( $files ) as $path ) {
 	if ( str_ends_with( $path, '.webp' ) ) {
@@ -50,6 +68,16 @@ $plan = ( new ArtifactCompiler() )->compile( array(
 	'files' => $files,
 	'runtime_declarations' => array( array( 'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html', 'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( $product, array_replace( $product, array( 'id' => 'other-product', 'slug' => 'other', 'source_path' => 'products/other.html', 'source_route' => '/products/other' ) ) ) ) ) ),
 ) )->toArray()['source_reports']['wordpress_site_plan'];
+// Restore the capture evidence carried by the real import's asset records.
+foreach ( $plan['assets'] as &$asset ) {
+	if ( in_array( $asset['source_path'], $responsive_paths, true ) ) {
+		$asset['references'][] = array( 'source_path' => $source, 'selector' => 'img.product-photo', 'element' => 'img', 'attribute' => 'srcset', 'value' => $srcset );
+		if ( $asset['source_path'] === $responsive_paths[100] ) {
+			$asset['references'][] = array( 'source_path' => $source, 'selector' => 'img.product-photo', 'element' => 'img', 'attribute' => 'src', 'value' => '/' . $responsive_paths[100] );
+		}
+	}
+}
+unset( $asset );
 // Only token IDs change to those issued by this plan; uploads and CDN URLs
 // remain exactly as captured, including duplicate attachment suffixes.
 foreach ( $fixture['plan_assets'] as $asset ) {
@@ -61,6 +89,10 @@ foreach ( $unrelated_tokens as $token ) {
 	$asset_index = array_search( 'media/' . $token . '.webp', array_column( $plan['assets'], 'source_path' ), true );
 	$markup = str_replace( '{{wordpress-site-plan:asset:' . $token . '}}', '{{wordpress-site-plan:asset:' . $plan['assets'][ $asset_index ]['token'] . '}}', $markup );
 }
+$responsive_original = $plan['assets'][ array_search( $responsive_paths[1000], array_column( $plan['assets'], 'source_path' ), true ) ];
+$responsive_small = $plan['assets'][ array_search( $responsive_paths[100], array_column( $plan['assets'], 'source_path' ), true ) ];
+$markup = str_replace( '{{wordpress-site-plan:asset:' . $responsive_original['token'] . '}}', '{{wordpress-site-plan:asset:' . $responsive_small['token'] . '}}', $markup );
+$assert( str_contains( $markup, '{{wordpress-site-plan:asset:' . $responsive_small['token'] . '}}' ), 'Carousel slides and thumbnails use the 100w rendition.' );
 $index = array_search( $source, array_column( $plan['pages'], 'source_path' ), true );
 $plan['pages'][ $index ]['canonical_block_markup'] = $markup;
 $plan['pages'][ $index ]['content_hash'] = hash( 'sha256', $markup );
@@ -103,6 +135,13 @@ foreach ( $plan['assets'] as $asset ) {
 		}
 	}
 }
+foreach ( $plan['assets'] as $asset ) {
+	if ( in_array( $asset['source_path'], $responsive_paths, true ) && ! isset( $resolutions[ $asset['token'] ] ) ) {
+		$attachment = wp_insert_post( array( 'post_type' => 'attachment', 'post_name' => 'rendition', 'post_status' => 'inherit', 'post_content' => '' ), true );
+		$url = 'https://example.test/uploads/' . $asset['token'] . '.webp';
+		$resolutions[ $asset['token'] ] = array( 'id' => $attachment, 'url' => $url );
+	}
+}
 $shared_index = array_search( 'media/shared-lifestyle.webp', array_column( $plan['assets'], 'source_path' ), true );
 $duplicate = $plan['assets'][ $shared_index ];
 $resolutions[ $duplicate['token'] ] = reset( $resolutions );
@@ -114,6 +153,29 @@ $plan['plan_identity'] = WordPressSitePlan::planIdentity( $plan );
 $prepared = Static_Site_Importer_Site_Plan_Preparation::prepare( $plan, array( 'slug' => 'real-gallery', 'whole_page_provider_results' => array( $claim, $other_claim ) ), $resolutions );
 $assert( 'prepared' === $prepared['status'], 'Preparation: ' . json_encode( $prepared ) );
 $identities = Static_Site_Importer_Product_Field_Blocks::image_identities( $prepared );
+$assert( $identities[ '/' . $responsive_paths[100] ] === $identities[ '/' . $responsive_paths[750] ], 'Plan srcset co-membership joins independently captured responsive renditions.' );
+// Browser-root references map through the entry directory, not basenames.
+$rooted_state = $prepared;
+$rooted_state['plan']['pages'] = array( array( 'entrypoint' => true, 'source_path' => 'website/index.html' ) );
+foreach ( $rooted_state['plan']['assets'] as &$asset ) {
+	$asset['source_path'] = 'website/' . $asset['source_path'];
+	if ( in_array( substr( $asset['source_path'], 8 ), $responsive_paths, true ) ) {
+		foreach ( $asset['references'] as &$reference ) {
+			if ( 'srcset' === $reference['attribute'] ) {
+				// The element's src need not appear in its candidate list.
+				$reference['value'] = '/' . $responsive_paths[300] . ' 300w, /' . $responsive_paths[750] . ' 750w, /' . $responsive_paths[1000] . ' 1000w';
+			}
+		}
+		unset( $reference );
+	}
+}
+unset( $asset );
+$rooted_aliases = Static_Site_Importer_Product_Field_Blocks::image_identities( $rooted_state );
+foreach ( $responsive_paths as $path ) {
+	$assert( $rooted_aliases[ '/' . $responsive_paths[750] ] === $rooted_aliases[ 'website/' . $path ], 'Entry-root srcset mapping joins every rendition, including the separate img src.' );
+}
+$unrelated_token = reset( $unrelated_tokens );
+$assert( $rooted_aliases[ 'website/media/' . $unrelated_token . '.webp' ] !== $rooted_aliases[ '/' . $responsive_paths[750] ], 'Unrelated photos are not joined by a filename or width convention.' );
 // Identity is stable for transitive capture aliases and distinct responsive
 // URLs of the same attachment; URL query strings are never stripped/guessed.
 $identity_state = $prepared;
