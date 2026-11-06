@@ -203,9 +203,9 @@ class Static_Site_Importer_Receipt_Projection {
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
 		}
-		$receipt['scorecard_context'] = array(
-			'source_css_bytes' => $receipt['design_system']['metrics']['unique_source_css_bytes'] ?? null,
-			'distinct_menus' => count( $plan['menus'] ?? array() ),
+		$receipt['scorecard_context']      = array(
+			'source_css_bytes'   => $receipt['design_system']['metrics']['unique_source_css_bytes'] ?? null,
+			'distinct_menus'     => count( $plan['menus'] ?? array() ),
 			'editability_report' => $args['source_reports']['editability_report'] ?? array(),
 		);
 		$report['materialization_receipt'] = self::report_receipt( $receipt );
@@ -439,7 +439,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$receipt['quality_budget_admission']                      = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
 		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
 		$report['quality_budget_admission']                       = $receipt['quality_budget_admission'];
-		$receipt['scorecard_context'] = $report['materialization_receipt']['scorecard_context'] ?? array();
+		$receipt['scorecard_context']                             = $report['materialization_receipt']['scorecard_context'] ?? array();
 		$report['materialization_receipt']                        = self::report_receipt( $receipt );
 
 		return array(
