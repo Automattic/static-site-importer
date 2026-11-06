@@ -199,6 +199,29 @@ namespace {
 		)
 	);
 	$assert( array( '$.products[0].attributes' ) === array_column( $malformed['errors'], 'path' ), 'malformed-product-attributes-are-rejected', wp_json_encode( $malformed['errors'] ) );
+	// A product URL names its route only when it has a path of its own; a
+	// home-page section (`/#pricing`) keeps the slug route instead of failing.
+	foreach ( array(
+		'/#pricing'                    => '/products/plan',
+		'https://example.com/#pricing' => '/products/plan',
+		'https://example.com'          => '/products/plan',
+		'/shop/plan/'                  => '/shop/plan',
+	) as $url => $route ) {
+		$routed = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+			array(
+				'schema_version' => 1,
+				'products'       => array(
+					array(
+						'name'          => 'Plan',
+						'slug'          => 'plan',
+						'regular_price' => '10',
+						'url'           => $url,
+					),
+				),
+			)
+		);
+		$assert( empty( $routed['errors'] ) && $route === ( $routed['products'][0]['source_route'] ?? null ), 'product-url-route:' . $url, wp_json_encode( $routed ) );
+	}
 	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(
 		array(
 			'forms' => array(
