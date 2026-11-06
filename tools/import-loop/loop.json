@@ -96,7 +96,7 @@
       "needs": [
         "evaluate"
       ],
-      "timeout": "6h",
+      "timeout": "12h",
       "when": {
         "step": "evaluate",
         "output": "/blocker_count",

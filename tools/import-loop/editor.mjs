@@ -1,7 +1,8 @@
 // What an editor gets: every imported page opened in the block editor, as the
 // editor parsed it. Each page lists its blocks with name, nesting depth, and
-// whether the editor validated it (an invalid block shows "This block contains
-// unexpected or invalid content" and cannot be edited until recovered).
+// whether the editor validated it, plus the wrapper tags and attribute names a
+// generated block keeps (see shape.mjs). An invalid block shows "This block contains
+// unexpected or invalid content" and cannot be edited until recovered.
 //
 // The site is a disposable import: its first administrator gets a fresh
 // password for the session. `wpCli` runs WP-CLI against `site` by path.
@@ -30,7 +31,7 @@ export async function editorPages(wpUrl, site, wpCli) {
       await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getEditorBlocks().length > 0, null, { timeout: 120_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
-        const walk = (list, depth) => list.forEach((b) => { all.push({ name: b.name, valid: b.isValid, depth }); walk(b.innerBlocks, depth + 1); });
+        const walk = (list, depth) => list.forEach((b) => { all.push({ name: b.name, valid: b.isValid, depth, wrappers: Array.isArray(b.attributes?.wrappers) ? b.attributes.wrappers.map((w) => ({ tagName: w?.tagName, attributes: Object.fromEntries(Object.keys(w?.attributes || {}).map((n) => [n, ''])) })) : undefined }); walk(b.innerBlocks, depth + 1); });
         walk(window.wp.data.select('core/editor').getEditorBlocks(), 1);
         return all;
       });

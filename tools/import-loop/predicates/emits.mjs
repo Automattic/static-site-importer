@@ -7,7 +7,9 @@
 // Usage: node <predicate>.mjs <php-transformer dir> <candidate.html>
 // PREDICATE_TARGET.subject is the block slug, for example "layout-shell"; a
 // slug stem also matches the hashed slugs it names (block → block-<sha256>).
+// A subject `<slug>@<shape>` matches only blocks of that source shape.
 import { spawnSync } from 'node:child_process';
+import { blockShape, parseBlockSubject } from '../shape.mjs';
 
 export function exitWhileEmitted() {
   const [transformer, candidate] = process.argv.slice(2);
@@ -18,7 +20,9 @@ export function exitWhileEmitted() {
   if (out.status !== 0) process.exit(2);
   let result;
   try { result = JSON.parse(out.stdout); } catch { process.exit(2); }
-  const emitted = [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return slug === subject || slug.replace(/-[0-9a-f]{64}$/, '') === subject; });
+  const { slug: target, shape } = parseBlockSubject(subject);
+  const attrs = (m) => { try { return JSON.parse(m[2] || '{}'); } catch { return {}; } };
+  const emitted = [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return (slug === target || slug.replace(/-[0-9a-f]{64}$/, '') === target) && (shape === null || blockShape(attrs(m)) === shape); });
   // What still reproduces: each remaining block's attributes, so a fix can
   // tell which source structures it has not reached yet.
   if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ subject, emitted: emitted.length, remaining: emitted.slice(0, 8).map((m) => (m[2] || '').trim().slice(0, 300)) }));

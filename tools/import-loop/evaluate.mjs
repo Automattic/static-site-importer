@@ -26,6 +26,7 @@ for (const required of ['url', 'wp-url', 'site', 'source', 'out']) if (!args[req
 import { chromium } from 'playwright';
 import { fitViewport, measure } from './measure.mjs';
 import { editorPages } from './editor.mjs';
+import { blockShape, blockSubject } from './shape.mjs';
 
 const stageOwners = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(new URL('./repos.json', import.meta.url), 'utf8'))).map(([id, repo]) => [repo.stage, id]));
 
@@ -235,8 +236,9 @@ if (args['wp-cli']) {
   for (const { route, blocks } of pages) {
     const cell = routes.includes(route) ? { route, width: 1440 } : { route: null };
     for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { route, count }, ...cell });
-    for (const [slug, count] of tally(blocks.filter((b) => !b.name.startsWith('core/')), (b) => slugStem(b.name.split('/').pop()))) {
-      if (!rawSlugs.has(slug)) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject: slug, evidence: { route, count, of: blocks.length }, ...cell });
+    // One finding per generated block slug and source shape (shape.mjs).
+    for (const [subject, count] of tally(blocks.filter((b) => !b.name.startsWith('core/') && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) {
+      report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { route, count, of: blocks.length }, ...cell });
     }
     const depth = Math.max(0, ...blocks.map((b) => b.depth));
     if (depth > THRESHOLDS.block_depth) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { route, depth, threshold: THRESHOLDS.block_depth }, ...cell });
