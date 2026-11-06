@@ -1287,12 +1287,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @throws InvalidArgumentException When archive assets cannot be resolved.
 	 */
 	private static function write_product_archive_template( array &$plan, int|string $index, array $patches ): void {
-		$page     = $plan['pages'][ $index ];
-		$template = null;
-		$existing = null;
+		$page            = $plan['pages'][ $index ];
+		$assigned        = (string) ( $page['metadata']['post_meta']['_wp_page_template'] ?? '' );
+		// The plan assigns a template slug; its shell is the `templates/<slug>.html` write.
+		$template_target = 1 === preg_match( '/^[a-z0-9][a-z0-9_-]*$/', $assigned ) && 'default' !== $assigned ? 'templates/' . $assigned . '.html' : 'templates/page.html';
+		$template        = null;
+		$existing        = null;
 		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
 			$target = is_array( $candidate ) ? ( $candidate['target_path'] ?? null ) : null;
-			if ( 'templates/page.html' === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
+			if ( $template_target === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
 				$template = $candidate['payload']['data'];
 			}
 			if ( Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE === $target ) {
