@@ -40,8 +40,9 @@ export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
 }
 
 // The acceptance cells of a tracked finding, checked on a pull request's head:
-// a worktree of `clone` at the head (dependencies installed under
-// `work`/heads), re-imported once per head. Returns [{route, width, exit}];
+// a worktree of `clone` at the head under `work`/heads, re-imported once per
+// head. The re-import loads only the transformer's sources (gates/reimport.sh);
+// its runtime libraries come with the release, so no install runs here. Returns [{route, width, exit}];
 // exit 1 on every cell means the defect is gone.
 const heads = new Map();
 export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
@@ -51,7 +52,6 @@ export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
     if (!fs.existsSync(dir)) {
       execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', `pull/${pr.number}/head`]);
       execFileSync('git', ['-C', clone, 'worktree', 'add', '-q', '--detach', dir, pr.headRefOid]);
-      execFileSync('composer', ['install', '--no-interaction', '--no-progress', '--quiet'], { cwd: transformer, stdio: ['ignore', 'ignore', 'inherit'] });
     }
     heads.set(dir, reimportSite(transformer, reimport, `${dir}-site`));
   }
