@@ -1,0 +1,166 @@
+#!/usr/bin/env node
+// Scope gate: a fix may change the imported site only inside the finding's
+// subject. Compares the computed visual style of every element on every route
+// and width of two imports of the same capture, the candidate's base and the
+// candidate, and lists each element outside the subject whose style changed.
+// Computed styles do not move when layout shifts, so a restored image pushing
+// content down is not a change; a rule that restyles an unrelated button is.
+//
+// The scope is the finding's subject and evidence keys: `group:<label>` is
+// the element labelled <label>, `link:<host>` the links to <host>, `img:<name>`
+// that image and its parent. A source group label need not survive the import,
+// so a group finding also names its members' keys. Findings without element
+// keys have no style scope and skip the style comparison.
+//
+// Images are checked whatever the scope: every rendered image outside the
+// subject is still rendered at its size (2px tolerance), matched by size
+// because imports may rename or reorder images. A fix
+// that changes how media is emitted (a carrier block lowered to core/image,
+// a new wrapper) must not resize, crop, or drop the images it touches.
+//
+// With `pixels`, the whole rendered page must also stay the same: the full-page
+// screenshots of base and candidate are compared, and any route and width where
+// more than PIXEL_LIMIT pixels differ (channel tolerance PIXEL_DELTA) is a
+// change. Editability fixes change how a page is built, never how it looks,
+// so they are held to it, subject included.
+//
+// Usage: node collateral.mjs <base url> <candidate url> <key,...> <route,...> [pixels]
+// Exit 0: no change outside the subject. 1: changes outside it (on stderr).
+// 2: the comparison failed.
+import { chromium } from 'playwright';
+
+process.on('uncaughtException', (error) => { console.error(`collateral: ${error.message || error}`); process.exit(2); });
+process.on('unhandledRejection', (error) => { console.error(`collateral: ${error?.message || error}`); process.exit(2); });
+
+const [baseUrl, candidateUrl, keyList, routeList, mode] = process.argv.slice(2);
+const PIXEL_DELTA = 24, PIXEL_LIMIT = Number(process.env.COLLATERAL_PIXEL_LIMIT ?? 0);
+if (!baseUrl || !candidateUrl || !keyList || !routeList) process.exit(2);
+const keys = keyList.split(',').map((key) => { const at = key.indexOf(':'); return [key.slice(0, at), key.slice(at + 1)]; })
+  .filter(([kind]) => ['group', 'link', 'img'].includes(kind));
+if (!keys.length) console.error(`collateral: ${keyList} has no element scope; style comparison skipped, image geometry checked`);
+
+const WIDTHS = [390, 768, 1440];
+const PROPERTIES = [
+  'display', 'visibility', 'opacity', 'position', 'float', 'z-index', 'overflow-x', 'overflow-y', 'box-sizing',
+  'min-width', 'min-height', 'max-width', 'max-height',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+  'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color', 'border-top-left-radius',
+  'background-color', 'background-image', 'background-size', 'background-position', 'background-repeat',
+  'color', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing',
+  'text-align', 'text-transform', 'text-decoration-line', 'object-fit',
+  'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'column-gap', 'row-gap',
+];
+
+// Every element of the body: its tag:nth-of-type path, its scope keys, and its
+// computed style. Paths ignore classes, which carry content hashes.
+const snapshot = ({ properties }) => {
+  const path = (el) => {
+    const parts = [];
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      const same = [...(node.parentElement?.children || [])].filter((c) => c.tagName === node.tagName);
+      parts.unshift(`${node.tagName.toLowerCase()}:${same.indexOf(node) + 1}`);
+    }
+    return parts.join('>');
+  };
+  const host = (a) => a.hostname.split('.').slice(-2).join('.');
+  const file = (el) => {
+    const src = el.currentSrc || el.src || /url\(["']?([^"')]+)/.exec(getComputedStyle(el).backgroundImage)?.[1] || '';
+    if (!src || src.startsWith('data:')) return null;
+    return decodeURIComponent(new URL(src, location.href).pathname.split('/').pop() || '').toLowerCase().replace(/\.[a-z0-9]+$/, '').replace(/-(?:\d+x\d+|scaled)$/, '').replace(/[^a-z0-9]/g, '') || null;
+  };
+  return [...document.body.querySelectorAll('*')].filter((el) => !el.closest('script,style,noscript,template')).map((el) => {
+    const style = getComputedStyle(el);
+    return {
+      path: path(el),
+      label: el.getAttribute('aria-label')?.trim().toLowerCase() || null,
+      link: el.tagName === 'A' && el.getAttribute('href') && !el.getAttribute('href').startsWith('#') ? host(el) : null,
+      img: file(el),
+      box: el.tagName === 'IMG' ? (({ width, height }) => [Math.round(width), Math.round(height)])(el.getBoundingClientRect()) : null,
+      style: Object.fromEntries(properties.map((p) => [p, p === 'background-image' ? style.getPropertyValue(p).slice(0, 200) : style.getPropertyValue(p)])),
+    };
+  });
+};
+
+// Paths an element may change under: the subject's own elements.
+const scopes = (elements) => elements.flatMap((el) => keys.flatMap(([kind, name]) => {
+  if (kind === 'group' && el.label === name) return [el.path];
+  if (kind === 'link' && el.link === name) return [el.path];
+  if (kind === 'img' && el.img === name) return [el.path, el.path.split('>').slice(0, -1).join('>')];
+  return [];
+}));
+const inside = (path, roots) => roots.some((root) => root && (path === root || path.startsWith(`${root}>`)));
+
+// Differing pixels of two PNG screenshots, decoded and compared in the page.
+async function pixelDiff(page, a, b) {
+  return page.evaluate(async ([a, b, delta]) => {
+    const load = (data) => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = `data:image/png;base64,${data}`; });
+    const [x, y] = await Promise.all([load(a), load(b)]);
+    if (x.width !== y.width || x.height !== y.height) return { size: [[x.width, x.height], [y.width, y.height]] };
+    const pixels = (img) => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+    const [p, q] = [pixels(x), pixels(y)];
+    let count = 0, top = Infinity, bottom = -1;
+    for (let i = 0; i < p.length; i += 4) {
+      if (Math.abs(p[i] - q[i]) > delta || Math.abs(p[i + 1] - q[i + 1]) > delta || Math.abs(p[i + 2] - q[i + 2]) > delta) {
+        count++; const row = Math.floor(i / 4 / x.width); top = Math.min(top, row); bottom = Math.max(bottom, row);
+      }
+    }
+    return { count, rows: count ? [top, bottom] : null };
+  }, [a, b, PIXEL_DELTA]);
+}
+
+const browser = await chromium.launch();
+const page = await browser.newPage();
+const changes = [];
+for (const route of routeList.split(',')) {
+  for (const width of WIDTHS) {
+    const sides = [];
+    for (const base of [baseUrl, candidateUrl]) {
+      await page.setViewportSize({ width, height: 900 });
+      // Imported pages may keep requests open; settle on load plus a bounded idle wait.
+      await page.goto(new URL(route, base).href, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      // Scroll the page through so lazy images load as they would for a reader.
+      for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 600) {
+        await page.evaluate((top) => window.scrollTo(0, top), y);
+        await page.waitForTimeout(100);
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const state = await page.evaluate(snapshot, { properties: PROPERTIES });
+      if (mode === 'pixels') state.shot = (await page.screenshot({ fullPage: true })).toString('base64');
+      sides.push(state);
+    }
+    if (mode === 'pixels') {
+      const diff = await pixelDiff(page, sides[0].shot, sides[1].shot);
+      if (process.env.COLLATERAL_DEBUG) console.error(JSON.stringify({ route, width, pixels: diff }));
+      if (diff.size || diff.count > PIXEL_LIMIT) changes.push({ route, width, pixels: diff });
+    }
+    const [before, after] = sides;
+    const roots = [...scopes(before), ...scopes(after)];
+    const previous = new Map(before.map((el) => [el.path, el]));
+    // Imports may rename or reorder images, so compare the multiset of
+    // visible image sizes: each one before must still be rendered after.
+    const visible = (els) => els.filter((el) => el.box && el.box[0] > 0 && el.box[1] > 0 && !keys.some(([k, n]) => k === 'img' && n === el.img));
+    const pool = visible(after).map((el) => el.box);
+    for (const was of visible(before)) {
+      const at = pool.findIndex((box) => Math.abs(box[0] - was.box[0]) <= 2 && Math.abs(box[1] - was.box[1]) <= 2);
+      if (at >= 0) pool.splice(at, 1);
+      else changes.push({ route, width, image: was.img || was.path, box: was.box, after: 'no visible image of this size' });
+    }
+    if (!keys.length) continue;
+    for (const el of after) {
+      const was = previous.get(el.path);
+      if (!was || inside(el.path, roots)) continue;
+      const changed = PROPERTIES.filter((p) => was.style[p] !== el.style[p]);
+      if (changed.length) changes.push({ route, width, path: el.path, changed: Object.fromEntries(changed.map((p) => [p, [was.style[p], el.style[p]]])) });
+    }
+  }
+}
+await browser.close();
+for (const change of changes.slice(0, 20)) console.error(JSON.stringify(change));
+if (changes.length > 20) console.error(`... ${changes.length - 20} more`);
+console.error(`collateral: ${changes.length} change(s) outside ${keyList}`);
+process.exit(changes.length ? 1 : 0);
