@@ -6,6 +6,8 @@
  */
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-static-site-importer-product-presentation.php';
+
 final class Static_Site_Importer_Product_Field_Blocks {
 	/** Carry only presentation supports to a replacement block. */
 	public static function presentation_attrs( array $attrs, array $own ): array {
@@ -53,7 +55,8 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			default:
 				return null;
 		}
-		return self::dynamic_block( $name, self::presentation_attrs( $node['attrs'] ?? array(), $own ) );
+		$attrs = 'image' === $role ? Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) : Static_Site_Importer_Product_Presentation::attrs( $node );
+		return self::dynamic_block( $name, array_merge( $attrs, $own ) );
 	}
 
 	/** Compare rendered text rather than source-platform selectors. */
@@ -64,26 +67,29 @@ final class Static_Site_Importer_Product_Field_Blocks {
 
 	/** Bind only fields backed by the admitted producer row. */
 	public static function bind_document( string $markup, array $product ): string {
-		$blocks       = parse_blocks( $markup );
-		$images       = array_column( $product['images'] ?? array(), 'src' );
-		$images[]     = $product['image'] ?? '';
-		$images       = array_unique( array_filter( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $images ) ) );
-		$gallery_path = null;
-		$gallery_size = PHP_INT_MAX;
-		$has_gallery  = false;
+		$blocks          = parse_blocks( $markup );
+		$images          = array_column( $product['images'] ?? array(), 'src' );
+		$images[]        = $product['image'] ?? '';
+		$images          = array_unique( array_filter( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $images ) ) );
+		$gallery_path    = null;
+		$gallery_size    = PHP_INT_MAX;
+		$gallery_capture = false;
+		$has_gallery     = false;
 		// Select before rewriting: a slide containing only one product image is
 		// not a gallery. Prefer the smallest complete set, including custom groups.
-		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, &$gallery_path, &$gallery_size, &$has_gallery ): void {
+		$select = static function ( array $nodes, string $parent_path = '' ) use ( &$select, $images, &$gallery_path, &$gallery_size, &$gallery_capture, &$has_gallery ): void {
 			foreach ( $nodes as $index => $node ) {
 				$path        = $parent_path . '/' . $index;
 				$has_gallery = $has_gallery || 'woocommerce/product-image-gallery' === $node['blockName'];
 				$select( $node['innerBlocks'] ?? array(), $path );
 				$html = serialize_block( $node );
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $html, $sources );
-				$sources = array_unique( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $sources[1] ) );
-				if ( null !== $node['blockName'] && $images && ! array_diff( $images, $sources ) && ! array_diff( $sources, $images ) && strlen( $html ) < $gallery_size ) {
-					$gallery_path = $path;
-					$gallery_size = strlen( $html );
+				$sources  = array_unique( array_map( static fn( $url ) => html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), $sources[1] ) );
+				$captured = ! empty( Static_Site_Importer_Product_Presentation::gallery_attrs( $node )['metadata']['ssiPresentation']['gallery'] );
+				if ( null !== $node['blockName'] && $images && ! array_diff( $images, $sources ) && ! array_diff( $sources, $images ) && ( ( $captured && ! $gallery_capture ) || ( $captured === $gallery_capture && strlen( $html ) < $gallery_size ) ) ) {
+					$gallery_path    = $path;
+					$gallery_size    = strlen( $html );
+					$gallery_capture = $captured;
 				}
 			}
 		};

@@ -1442,6 +1442,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 							$entity = array_merge( $entity, $member['binding']['product_grid_fallback'] ?? array() );
 						}
 						$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $member['result'] );
+						if ( 'commerce_add_to_cart_form' === ( $member['binding']['role'] ?? '' ) ) {
+							require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+							$source = $member['binding']['search_block_markup'];
+							preg_match( '/^<!-- wp:[^ ]+(?: (\{.*?\}))? -->/s', $source, $opening );
+							$attrs = Static_Site_Importer_Product_Presentation::attrs(
+								array(
+									'attrs'     => (array) json_decode( $opening[1] ?? '{}', true ),
+									'innerHTML' => preg_replace( '/^<!--.*?-->/s', '', $source ),
+								)
+							);
+							if ( $attrs ) {
+								// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Also runs in standalone materialization consumers.
+								$replacement = str_replace( '<!-- wp:woocommerce/add-to-cart-form /-->', '<!-- wp:woocommerce/add-to-cart-form ' . json_encode( $attrs ) . ' /-->', $replacement );
+							}
+						}
 						if ( '' === $replacement ) {
 							return new WP_Error(
 								'static_site_importer_runtime_binding_unresolved',

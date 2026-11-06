@@ -174,6 +174,7 @@ Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
 Static_Site_Importer_Layout_Release::register();
 Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Product_Grid_Runtime::register();
+Static_Site_Importer_Product_Presentation::register();
 Static_Site_Importer_Woo_Product_Listing_Materializer::register();
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-comment-avatar.php';
 Static_Site_Importer_Comment_Avatar::register();
