@@ -1578,6 +1578,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			);
 		}
 
+		// The site-wide banner uses the same final route identities as page links.
+		if ( is_array( $state['args']['consent_banner'] ?? null ) ) {
+			$unresolved                                 = array();
+			$state['resolved']['consent_banner_markup'] = self::rewrite_route_references( Static_Site_Importer_Consent_Banner::markup( $state['args']['consent_banner'] ), $routes, $unresolved, $source_url, $product_routes );
+			self::count_unresolved_routes( $state, $unresolved );
+		}
+
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
 				continue;
