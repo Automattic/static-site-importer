@@ -64,6 +64,7 @@ final class Static_Site_Importer_Quality_Gates {
 			(int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			self::interaction_candidate_count( $report['diagnostics'] ?? array() )
 		);
+		$quality['choice_submission_form_count']            = self::choice_submission_form_count( $report['diagnostics'] ?? array() );
 		// Reviewed exception: raw-HTML companions are reported, not gated, until structured editors ship.
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
@@ -176,6 +177,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'commerce_dependency_failures'            => 0,
 			'companion_plugin_dependency_failures'    => 0,
 			'interaction_candidate_count'             => 0,
+			'choice_submission_form_count'            => 0,
 			'runtime_dependency_parity_issue_count'   => 0,
 			'semantic_parity_failure_count'           => 0,
 			'unsafe_layout_constraint_count'          => 0,
@@ -285,6 +287,34 @@ final class Static_Site_Importer_Quality_Gates {
 			'accepted'    => $accepted,
 			'unsupported' => max( 0, $fallback_count - $accepted ),
 		);
+	}
+
+	/**
+	 * Count imported forms of bounded choices whose submit control needs a handler
+	 * the source site owned, such as a poll. They stay editable but save no answers.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 */
+	private static function choice_submission_form_count( array $diagnostics ): int {
+		$preserved = array();
+		$blocked   = array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || 'choice_submission' !== ( $diagnostic['form_intent'] ?? '' ) ) {
+				continue;
+			}
+			$source   = $diagnostic['source_path'] ?? '';
+			$selector = $diagnostic['selector'] ?? '';
+			if ( ! is_string( $source ) || '' === $source || ! is_string( $selector ) || '' === $selector ) {
+				continue;
+			}
+			$identity = wp_json_encode( array( $source, $selector ) );
+			if ( 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) ) {
+				$blocked[ $identity ] = true;
+			} elseif ( 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) ) {
+				$preserved[ $identity ] = true;
+			}
+		}
+		return count( array_diff_key( $preserved, $blocked ) );
 	}
 
 	/**
