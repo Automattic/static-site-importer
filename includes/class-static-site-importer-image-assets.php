@@ -218,6 +218,10 @@ final class Static_Site_Importer_Image_Assets {
 				return 'media_library';
 			}
 		}
+		// The compiler proves a resource no plan member references; it has no write.
+		if ( 'none' === ( $asset['destination'] ?? '' ) && empty( $asset['consumers'] ) ) {
+			return 'none';
+		}
 		return 'theme';
 	}
 
