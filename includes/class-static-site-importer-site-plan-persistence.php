@@ -1520,7 +1520,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * Resolve internal routes once, after WordPress has assigned every destination.
 	 * Links are stored root-relative so they survive a change of host.
 	 */
-	public static function rewrite_materialized_route_links( array &$state ) {
+	/** Build final imported route identities shared by pages and site-wide markup. */
+	public static function materialized_route_map( array $state ): array {
 		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
 			$source_path = (string) ( $page['source_path'] ?? '' );
@@ -1561,7 +1562,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		// Products own their canonical identity even when a captured page shares it.
-		$routes                                      = array_replace( $routes, $product_routes );
+		$routes = array_replace( $routes, $product_routes );
+		return array( $routes, $product_routes );
+	}
+
+	/** Resolve the banner before its single option write, regardless of lifecycle order. */
+	public static function resolve_consent_banner( array &$state ): void {
+		list( $routes, $product_routes )            = self::materialized_route_map( $state );
+		$unresolved                                 = array();
+		$state['resolved']['consent_banner_markup'] = self::rewrite_route_references( Static_Site_Importer_Consent_Banner::markup( $state['args']['consent_banner'] ), $routes, $unresolved, self::source_origin_url( $state ), $product_routes );
+	}
+
+	public static function rewrite_materialized_route_links( array &$state ) {
+		list( $routes, $product_routes )             = self::materialized_route_map( $state );
 		$source_url                                  = self::source_origin_url( $state );
 		$state['applied']['unresolved_link_targets'] = array();
 		$anchors                                     = array();

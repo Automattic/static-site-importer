@@ -75,6 +75,12 @@ test('policy links render inline or standalone and use imported routes only for 
    const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'policy-link', JSON.stringify(fact)], { encoding: 'utf8' });
    assert.ok(markup.includes(`<p>${paragraph(`<a href="${target}">Privacy Policy</a>`)}</p>`), markup);
    assert.equal((markup.match(/>Privacy Policy<\/a>/g) || []).length, 1);
+   for (const mode of ['full-lifecycle', 'before-resolution']) {
+    const stored = execFileSync('php', ['tests/fixtures/consent-banner/persistence.php', JSON.stringify(fact), mode], { encoding: 'utf8' });
+    const localTarget = href.startsWith('https://www.jccollaborative.com/') ? '/privacy/' : href;
+    assert.ok(stored.includes(`<p>${paragraph(`<a href="${localTarget}">Privacy Policy</a>`)}</p>`), stored);
+    assert.equal((stored.match(/>Privacy Policy<\/a>/g) || []).length, 1);
+   }
    const result = validateMarkup(markup);
    assert.equal(result.ok, true, JSON.stringify(result.failures));
   }

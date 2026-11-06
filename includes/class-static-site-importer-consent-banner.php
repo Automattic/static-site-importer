@@ -90,8 +90,11 @@ class Static_Site_Importer_Consent_Banner {
 		if ( ! self::available() ) {
 			return array( 'findings' => array( self::finding( 'consent_banner_not_materialized', 'The jetpack/cookie-consent block runtime is unavailable.' ) ) );
 		}
+		if ( ! isset( $state['resolved']['consent_banner_markup'] ) ) {
+			Static_Site_Importer_Site_Plan_Persistence::resolve_consent_banner( $state );
+		}
 		Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'cookie_consent_template' );
-		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'cookie_consent_template', $state['resolved']['consent_banner_markup'] ?? self::markup( $fact ) ) ) {
+		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'cookie_consent_template', $state['resolved']['consent_banner_markup'] ) ) {
 			return array( 'findings' => array( self::finding( 'consent_banner_not_materialized', 'The cookie_consent_template option could not be written.' ) ) );
 		}
 		return array(
