@@ -1513,7 +1513,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart', 'commerce_checkout' ), true ) ? $entity : ( 'commerce_collection' === $binding['role'] ? ( $binding['product_grid_fallback'] ?? array() ) : ( 'commerce_listing' === $binding['role'] ? ( is_array( $entity['grid'] ?? null ) ? $entity['grid'] : ( ! empty( $entity['empty_listing'] ) ? array( 'selector' => $entity['grid_selector'] ?? '' ) : array() ) ) : array() ) );
 		$grid_selector                     = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
 		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::page_region_fallback_identity( self::fallback_region( $binding['role'] ), (string) $binding['source_path'], $grid_selector );
+		require_once __DIR__ . '/class-static-site-importer-product-presentation.php';
+		$presentation = 'commerce_add_to_cart_form' === $binding['role'] ? Static_Site_Importer_Product_Presentation::capture( $entity ) : array();
 		return array(
+			'product_presentation'             => $presentation,
 			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
 			'source_path'                      => $binding['source_path'],
 			'search_block_markup'              => $binding['search_block_markup'],
