@@ -30,7 +30,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	/** The owning provider boundary for a form fallback or its declared entity. */
 	public static function route( array $finding ): string {
 		return match ( self::intent( $finding ) ) {
-			'contact', 'newsletter' => 'form',
+			'contact', 'newsletter', 'donation' => 'form',
 			'unknown' => self::has_contact_evidence( $finding ) ? 'form' : 'runtime',
 			'commerce_add_to_cart' => 'commerce',
 			default => 'runtime',

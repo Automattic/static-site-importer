@@ -70,6 +70,61 @@ $checks['durable data is stored once as validated triples'] = count( $stored ) =
 update_option( $key, array() );
 $checks['missing or corrupt references leave provider HTML untouched'] = $html === Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_values( $html );
 update_option( $key, $stored );
+
+// A donation-intent form materializes as the Jetpack Donations block and its
+// form fallback resolves through the provider binding receipt.
+foreach ( array( 'import-report', 'diagnostic-projection', 'quality-gates' ) as $class_file ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-' . $class_file . '.php';
+}
+$donation_html = file_get_contents( __DIR__ . '/fixtures/donation-form/index.html' );
+$donation_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $donation_html ) ) )->toArray()['source_reports']['wordpress_site_plan'];
+$donation_fallbacks  = array_values( array_filter( $donation_plan['quality']['fallbacks'] ?? array(), static fn( array $row ): bool => 'html_form_fallback' === ( $row['diagnostic_code'] ?? '' ) ) );
+$donation_decl       = current( array_filter( $donation_plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
+$donation_entities   = array_map( array( Static_Site_Importer_Entity_Materializer_Registry::class, 'prepare_form_entity' ), Static_Site_Importer_Entity_Materializer_Registry::with_form_source_html( $donation_decl['payload']['entities'] ?? array(), $donation_plan ) );
+$donation_validated  = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $donation_entities ) );
+$donation_report     = Static_Site_Importer_Form_Seeder::seed( $donation_validated );
+$donation_row        = $donation_report['forms'][0] ?? array();
+$donation_markup     = (string) ( $donation_row['block_markup'] ?? '' );
+$donation_block      = parse_blocks( $donation_markup )[0] ?? array();
+$checks['producer classifies the form as donation'] = 1 === count( $donation_fallbacks ) && 'donation' === ( $donation_fallbacks[0]['form_intent'] ?? '' );
+$checks['donation form maps to jetpack/donations'] = 'mapped' === ( $donation_row['status'] ?? '' ) && str_starts_with( $donation_markup, '<!-- wp:jetpack/donations ' ) && 'jetpack/donations' === ( $donation_block['blockName'] ?? '' ) && $donation_markup === serialize_blocks( parse_blocks( $donation_markup ) );
+$checks['donation block carries both amounts and custom amount'] = array( 50, 100 ) === ( $donation_block['attrs']['oneTimeDonation']['amounts'] ?? null ) && true === ( $donation_block['attrs']['showCustomAmount'] ?? null ) && 'USD' === ( $donation_block['attrs']['currency'] ?? '' );
+$checks['donation block shows one-time and monthly only'] = true === ( $donation_block['attrs']['monthlyDonation']['show'] ?? null ) && false === ( $donation_block['attrs']['annualDonation']['show'] ?? null ) && 'Donate' === ( $donation_block['attrs']['oneTimeDonation']['buttonText'] ?? '' );
+$checks['fund select is a diagnostic, not a field'] = in_array( 'fund', array_column( $donation_row['diagnostics'] ?? array(), 'name' ), true ) && ! str_contains( $donation_markup, 'jetpack/contact-form' );
+$donation_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+	array( 'entities' => array( 'forms' => array( 'adapter' => Static_Site_Importer_Form_Seeder::adapter(), 'manifest' => $donation_validated ) ) ),
+	array( 'forms' => $donation_report )
+);
+$donation_binding = $donation_bindings[0] ?? array();
+// Persist the binding into the compiled page and record its proof, as the import does.
+$donation_page    = current( array_filter( $donation_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), (string) ( $donation_binding['search_block_markup'] ?? "\0" ) ) ) );
+$donation_content = str_replace( (string) ( $donation_binding['search_block_markup'] ?? '' ), $donation_markup, (string) ( $donation_page['canonical_block_markup'] ?? '' ) );
+$donation_gate    = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 1 ),
+		'diagnostics'             => $donation_fallbacks,
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages'   => array( 'index.html' => array( 'content_hash' => hash( 'sha256', $donation_content ) ) ),
+				'runtime_declarations' => array(
+					'entity_bindings' => array(
+						array_merge(
+							$donation_binding,
+							array(
+								'status'                    => 'completed',
+								'persisted_fragment_hash'   => hash( 'sha256', $donation_markup ),
+								'materialized_content_hash' => hash( 'sha256', $donation_content ),
+							)
+						),
+					),
+				),
+			),
+		),
+	)
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $donation_gate );
+$checks['donation binding replaces the fallback with the block'] = $donation_markup === ( $donation_binding['replacement_block_markup'] ?? null ) && str_contains( $donation_content, $donation_markup ) && ! str_contains( $donation_content, '<form' );
+$checks['no html_form_fallback remains unresolved'] = 0 === ( $donation_gate['quality']['fallback_count'] ?? -1 ) && 'resolved_by_provider' === ( $donation_gate['quality_resolutions']['resolutions'][0]['state'] ?? '' );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
