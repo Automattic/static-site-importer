@@ -394,13 +394,31 @@ final class Static_Site_Importer_Jetpack_Donations {
 				}
 			}
 		}
-		$ready = $available && array() === $unregistered;
+		$reason = ! $available ? 'provider_unavailable' : ( array() !== $unregistered ? 'provider_blocks_not_registered' : ( self::editor_available() ? '' : 'provider_editor_unavailable' ) );
 		return array(
-			'status'                   => $ready ? 'ready' : 'missing_capability',
-			'reason_code'              => $ready ? '' : ( $available ? 'provider_blocks_not_registered' : 'provider_unavailable' ),
+			'status'                   => '' === $reason ? 'ready' : 'missing_capability',
+			'reason_code'              => $reason,
 			'required_block_types'     => self::required_block_types(),
 			'unregistered_block_types' => $unregistered,
 		);
+	}
+
+	/**
+	 * Whether Jetpack offers the block in the editor.
+	 *
+	 * The block registers on every front-end and CLI request, but Jetpack keeps
+	 * monetize blocks out of the editor on offline-mode sites that are not
+	 * WordPress.com Simple sites (`Jetpack_Memberships::should_enable_monetize_blocks_in_editor()`),
+	 * where the imported block opens as an unsupported block.
+	 */
+	private static function editor_available(): bool {
+		if ( ! class_exists( \Automattic\Jetpack\Status::class ) ) {
+			return true;
+		}
+		if ( class_exists( \Automattic\Jetpack\Status\Host::class ) && ( new \Automattic\Jetpack\Status\Host() )->is_wpcom_simple() ) {
+			return true;
+		}
+		return ! ( new \Automattic\Jetpack\Status() )->is_offline_mode();
 	}
 
 	/**
