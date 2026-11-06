@@ -36,8 +36,8 @@ class Static_Site_Importer_Site_Identity {
 	 */
 	public const DEFAULT_NAME = 'Generated WordPress Website';
 
-	/** Separators shared by site-name and tagline derivation. */
-	private const TITLE_SEPARATORS = array( '-', '–', '—', '|', '·', '•' );
+	/** Separators shared by site-name and tagline derivation, with whitespace on both sides. */
+	private const TITLE_SEPARATORS = array( '-', '–', '—', '|', '·', '•', ':' );
 
 	/**
 	 * Resolve a canonical site identity from an import context.
@@ -407,7 +407,7 @@ class Static_Site_Importer_Site_Identity {
 	 */
 	public static function compose_title_separator( array &$state ): void {
 		$separator = $state['args']['native_site_identity_evidence']['title_separator'] ?? '';
-		if ( ! in_array( $separator, array( '-', '—', '|', '·', '•' ), true ) ) {
+		if ( ! in_array( $separator, array( '-', '—', '|', '·', '•', ':' ), true ) ) {
 			return;
 		}
 		$marker = '/* Static Site Importer document title separator. */';

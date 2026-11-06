@@ -29,9 +29,12 @@ require_once ABSPATH . 'includes/class-static-site-importer-site-plan-persistenc
 require_once ABSPATH . 'includes/class-static-site-importer-media-library-materializer.php';
 
 $cases = array();
-foreach ( array( '-', '–', '—', '|', '·', '•' ) as $separator ) {
+foreach ( array( '-', '–', '—', '|', '·', '•', ':' ) as $separator ) {
 	$cases[] = array( 'Name ' . $separator . ' Tagline', '', '', 'Tagline', $separator );
 }
+$cases[] = array( 'Atelier Exemple : céramique à Lyon', '', '', 'céramique à Lyon', ':', 'Atelier Exemple' );
+$cases[] = array( 'Name: subtitle', '', '', '', '' );
+$cases[] = array( 'Name :subtitle', '', '', '', '' );
 $cases[] = array( 'Name - Tagline', 'Explicit', 'Slogan', 'Explicit', '-' );
 $cases[] = array( 'Name - Tagline', '', 'Slogan', 'Slogan', '-' );
 $cases[] = array( 'Name', '', '', '', '' );
@@ -52,10 +55,12 @@ foreach ( $cases as $index => $case ) {
 		'entrypoint' => 'index.html',
 		'files'      => array( array(
 			'path'    => 'index.html',
-			'content' => '<title>' . $title . '</title><script type="application/ld+json">' . json_encode( array( '@type' => 'WebSite', 'slogan' => $slogan ) ) . '</script>',
+			'content' => '<title>' . $title . '</title><meta property="og:site_name" content="' . ( $case[5] ?? 'Name' ) . '"><meta name="description" content="Une longue description du site."><script type="application/ld+json">' . json_encode( array( '@type' => 'WebSite', 'slogan' => $slogan ) ) . '</script>',
 		) ),
 	);
-	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, $explicit, $case[5] ?? 'Name' );
+	$site_title = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
+	$assert( ( $case[5] ?? 'Name' ) === $site_title, "$index site title" );
+	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, $explicit, $site_title );
 	$assert( $expected === $evidence['tagline'], "$index tagline" );
 	$assert( $separator === ( $evidence['title_separator'] ?? '' ), "$index separator evidence" );
 	$GLOBALS['title_options'] = array();
@@ -78,7 +83,7 @@ foreach ( $cases as $index => $case ) {
 		$bootstrap = $run['composed_theme_writes']['/theme/functions.php'] ?? '';
 		$needed    = '' !== $separator && '–' !== $separator;
 		$assert( $needed === str_contains( $bootstrap, "add_filter( 'document_title_separator'" ), "$index filter presence" );
-		if ( $needed ) {
+		if ( $needed && str_contains( $bootstrap, "add_filter( 'document_title_separator'" ) ) {
 			$assert( str_contains( $bootstrap, $composed ? '// Prior overlay.' : '// Plan bootstrap.' ), "$index bootstrap preserved" );
 			$assert( $composed || $bootstrap === $run['resolved']['writes'][0]['payload']['data'], "$index plan write carries the filter" );
 			$before = $bootstrap;
@@ -91,6 +96,9 @@ foreach ( $cases as $index => $case ) {
 		}
 	}
 }
+// Without branding metadata, an English colon title must also remain whole.
+$artifact = array( 'entrypoint' => 'index.html', 'files' => array( array( 'path' => 'index.html', 'content' => '<title>Name: subtitle</title>' ) ) );
+$assert( 'Name: subtitle' === Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact ), 'unspaced colon majority route title' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
