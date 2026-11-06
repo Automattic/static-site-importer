@@ -1975,8 +1975,13 @@ $declared_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_ru
 $assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
 $entity_artifact                         = $artifact;
-$entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"style":{"border":{"radius":"0px"}},"tagName":"button"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button" style="border-radius:0px">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 $entity_artifact['files']['index.html']  = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';
+// Anchor on the block the compiler actually emits for this source, so the
+// smoke follows compiler presentation changes instead of pinning them.
+$entity_compiled                         = ( new ArtifactCompiler() )->compile( $entity_artifact )->toArray();
+preg_match( '#<!-- wp:buttons -->.*?<!-- /wp:buttons -->#s', (string) ( $entity_compiled['serialized_blocks'] ?? '' ), $entity_match );
+$entity_search                           = $entity_match[0] ?? '';
+$assert( '' !== $entity_search && str_contains( $entity_search, '"tagName":"button"' ), 'the entity fixture anchors on the emitted native button block' );
 $entity_artifact['runtime_declarations'] = array(
 	array(
 		'kind'         => 'dependency',
