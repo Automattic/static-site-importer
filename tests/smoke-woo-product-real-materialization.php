@@ -63,6 +63,13 @@ foreach ( array_keys( $files ) as $path ) {
 		$files[ $source ] .= '<img src="/' . $path . '">';
 	}
 }
+// The JSON-LD lead is a separate capture, referenced only by a link.
+$lead_path = 'media/lead-full-size.webp';
+$files[ $lead_path ] = 'independent lead image bytes';
+$files[ $source ] .= '<link rel="preload" as="image" href="/' . $lead_path . '">';
+array_unshift( $product['images'], array( 'src' => '/' . $lead_path ) );
+$product['image'] = '/' . $lead_path;
+$entity_images = $product['images'];
 $plan = ( new ArtifactCompiler() )->compile( array(
 	'entrypoint' => 'index.html',
 	'files' => $files,
@@ -70,6 +77,12 @@ $plan = ( new ArtifactCompiler() )->compile( array(
 ) )->toArray()['source_reports']['wordpress_site_plan'];
 // Restore the capture evidence carried by the real import's asset records.
 foreach ( $plan['assets'] as &$asset ) {
+	if ( isset( $files[ $asset['source_path'] ] ) && str_ends_with( $asset['source_path'], '.webp' ) && $lead_path !== $asset['source_path'] ) {
+		$asset['references'][] = array( 'source_path' => $source, 'selector' => 'img[src="/' . $asset['source_path'] . '"]', 'element' => 'img', 'attribute' => 'src', 'value' => '/' . $asset['source_path'] );
+	}
+	if ( $lead_path === $asset['source_path'] ) {
+		$asset['references'] = array( array( 'source_path' => $source, 'selector' => 'link.preload', 'element' => 'link', 'attribute' => 'href', 'value' => '/' . $lead_path ) );
+	}
 	if ( in_array( $asset['source_path'], $responsive_paths, true ) ) {
 		$asset['references'][] = array( 'source_path' => $source, 'selector' => 'img.product-photo', 'element' => 'img', 'attribute' => 'srcset', 'value' => $srcset );
 		if ( $asset['source_path'] === $responsive_paths[100] ) {
@@ -190,6 +203,18 @@ $assert( ! isset( $aliases['https://unrelated.example.test/photo.webp?format=750
 $identity_state['plan']['assets'] = array_reverse( $identity_state['plan']['assets'] );
 $reverse = Static_Site_Importer_Product_Field_Blocks::image_identities( $identity_state );
 $assert( $reverse[ $cdn ] === $reverse[ $duplicate['source_path'] ], 'Equivalence survives reversed product/asset order.' );
+// A displayed lead outside the carousel must still block replacement.
+$displayed_state = $prepared;
+$lead_index = array_search( $lead_path, array_column( $displayed_state['plan']['assets'], 'source_path' ), true );
+$lead_asset = $displayed_state['plan']['assets'][ $lead_index ];
+$assert( array( 'link' ) === array_unique( array_column( $lead_asset['references'], 'element' ) ), 'Lead capture has only link references, not img/srcset evidence.' );
+$displayed_state['plan']['assets'][ $lead_index ]['references'][] = array( 'source_path' => $source, 'selector' => 'img.lead', 'element' => 'img', 'attribute' => 'src', 'value' => '/' . $lead_path );
+$displayed_markup = $markup . '<!-- wp:image --><figure class="wp-block-image"><img src="{{wordpress-site-plan:asset:' . $lead_asset['token'] . '}}"></figure><!-- /wp:image -->';
+$displayed_presentations = array();
+$displayed_aliases = Static_Site_Importer_Product_Field_Blocks::image_identities( $displayed_state );
+$displayed_bound = Static_Site_Importer_Product_Field_Blocks::bind_document( $displayed_markup, $product, $displayed_presentations, $displayed_aliases, Static_Site_Importer_Product_Field_Blocks::undisplayed_image_identities( $displayed_state, $displayed_aliases ) );
+$assert( 0 === substr_count( $displayed_bound, 'wp:woocommerce/product-image-gallery' ) && preg_match( '~<!-- wp:[^\s]+/authored-carousel\b~', $displayed_bound ), 'An img-displayed lead outside the carousel keeps the authored carousel.' );
+$assert( $entity_images === $claim['product_data']['images'], 'The handoff preserves every entity image, including the link-only lead.' );
 $prepared = Static_Site_Importer_Site_Plan_Preparation::admit_prepared( $prepared );
 $receipt = Static_Site_Importer_Site_Plan_Persistence::materialize_prepared( $prepared );
 $assert( 'completed' === $receipt['status'], 'Real materialization completes: ' . json_encode( $receipt['errors'] ?? $receipt ) );
@@ -206,6 +231,9 @@ foreach ( $plan['assets'] as $asset ) {
 	if ( str_starts_with( $asset['source_path'], 'media/asset-' ) ) {
 		$assert( is_file( $GLOBALS['ssi_plan_root'] . '/real-gallery/' . $asset['target_path'] ), 'Unrelated photos remain packaged.' );
 		continue;
+	}
+	if ( $lead_path === $asset['source_path'] ) {
+		continue; // Link-only lead was never an authored carousel photo.
 	}
 	if ( ! str_ends_with( $asset['source_path'], '.webp' ) ) {
 		continue;
