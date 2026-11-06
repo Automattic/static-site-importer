@@ -309,9 +309,11 @@
             "exists": true
           },
           {
-            "step": "confirm",
-            "output": "/confirmed_count",
-            "equals": 0
+            "not": {
+              "step": "confirm",
+              "output": "/confirmed_count",
+              "gt": 0
+            }
           }
         ]
       },

@@ -33,7 +33,16 @@ export const predicateEnv = (subject, cell, site) => ({
 // stops when this process exits.
 export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
   const gate = new URL('./gates/reimport.sh', import.meta.url).pathname;
-  const url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp }, stdio: ['ignore', 'pipe', 'inherit'] }).trim().split('\n').pop();
+  let url;
+  try {
+    url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', maxBuffer: 256 << 20, env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp }, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').pop();
+  } catch (error) {
+    // The importer refused the site: name its reasons, keep its output in the log.
+    const stderr = String(error.stderr || '');
+    process.stderr.write(stderr);
+    const reasons = [...new Set([...stderr.matchAll(/"(?:reason_code|code)":"([a-z0-9_]+)"/g)].map((m) => m[1]))];
+    throw Object.assign(new Error(`import_failed: ${reasons.join(', ') || stderr.trim().split('\n').pop()?.slice(0, 200) || `exit ${error.status}`}`), { import_failed: true });
+  }
   const pid = Number(fs.readFileSync(`${dir}/.server.pid`, 'utf8'));
   process.on('exit', () => { try { process.kill(pid); } catch {} });
   return url;
@@ -43,7 +52,8 @@ export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
 // a worktree of `clone` at the head under `work`/heads, re-imported once per
 // head. The re-import loads only the transformer's sources (gates/reimport.sh);
 // its runtime libraries come with the release, so no install runs here. Returns [{route, width, exit}];
-// exit 1 on every cell means the defect is gone.
+// exit 1 on every cell means the defect is gone; exit 'import_failed' (with a
+// reason) means the importer refused the whole site at that head.
 const heads = new Map();
 export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
   const dir = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}`;
@@ -53,10 +63,18 @@ export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
       execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', `pull/${pr.number}/head`]);
       execFileSync('git', ['-C', clone, 'worktree', 'add', '-q', '--detach', dir, pr.headRefOid]);
     }
-    heads.set(dir, reimportSite(transformer, reimport, `${dir}-site`));
+    try {
+      heads.set(dir, reimportSite(transformer, reimport, `${dir}-site`));
+    } catch (error) {
+      if (!error.import_failed) throw error;
+      heads.set(dir, error);
+    }
   }
+  // A head the importer refuses fixes nothing: every cell fails with its reason.
+  const served = heads.get(dir);
+  if (served instanceof Error) return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: 'import_failed', reason: served.message }));
   const predicate = new URL(`./predicates/${item.check}.mjs`, import.meta.url).pathname;
-  return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: predicateExit(predicate, transformer, cell.page, { ...predicateEnv(item.subject, cell, site), PREDICATE_SITE_URL: heads.get(dir) }) }));
+  return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: predicateExit(predicate, transformer, cell.page, { ...predicateEnv(item.subject, cell, site), PREDICATE_SITE_URL: served }) }));
 }
 
 // The elements a fix of `item` may restyle (gates/collateral.mjs): its subject
@@ -73,6 +91,7 @@ export const collateralMode = (item) => (item.stage === 'editability' ? 'pixels'
 export function collateralAtHead(item, pr, { clone, root, work, reimport, routes }) {
   const head = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}`;
   if (!heads.has(head)) throw new Error('collateral_requires_cellsAtHead_first');
+  if (heads.get(head) instanceof Error) return { exit: 2, report: [heads.get(head).message] };
   execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', 'trunk']);
   const sha = execFileSync('git', ['-C', clone, 'merge-base', pr.headRefOid, 'FETCH_HEAD'], { encoding: 'utf8' }).trim();
   const base = `${work}/bases/${item.repo}-${sha.slice(0, 8)}`;
