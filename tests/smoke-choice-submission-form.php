@@ -56,6 +56,11 @@ $no_submit = str_replace( '<input type="submit" class="btn" value="Submit">', ''
 $assert( true === ( $no_submit_quality['pass'] ?? false ), 'no-submit-passes-quality-gate' );
 $assert( 0 === ( $no_submit_quality['choice_submission_form_count'] ?? -1 ), 'no-submit-form-is-not-counted' );
 
+$payment = str_replace( '<input type="submit" class="btn" value="Submit">', '<input type="image" src="pay.png" alt="PayPal - The safer, easier way to pay online!">', $fixture );
+[ , , $payment_quality ] = $finalize( $payment );
+$assert( false === ( $payment_quality['pass'] ?? true ), 'payment-form-still-fails-quality-gate' );
+$assert( 0 === ( $payment_quality['choice_submission_form_count'] ?? -1 ), 'payment-form-is-not-counted-as-poll' );
+
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
 }
