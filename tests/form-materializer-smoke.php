@@ -121,6 +121,14 @@ $checks['donation form maps to jetpack/donations'] = 'mapped' === ( $donation_ro
 $checks['donation block carries both amounts and custom amount'] = array( 50, 100 ) === ( $donation_block['attrs']['oneTimeDonation']['amounts'] ?? null ) && true === ( $donation_block['attrs']['showCustomAmount'] ?? null ) && 'USD' === ( $donation_block['attrs']['currency'] ?? '' );
 $checks['donation block shows one-time and monthly only'] = true === ( $donation_block['attrs']['monthlyDonation']['show'] ?? null ) && false === ( $donation_block['attrs']['annualDonation']['show'] ?? null ) && 'Donate' === ( $donation_block['attrs']['oneTimeDonation']['buttonText'] ?? '' );
 $checks['fund select is a diagnostic, not a field'] = in_array( 'fund', array_column( $donation_row['diagnostics'] ?? array(), 'name' ), true ) && ! str_contains( $donation_markup, 'jetpack/contact-form' );
+// Jetpack keeps the block out of the editor on an offline-mode site, so the
+// mapped block is not complete there even though it registers.
+$GLOBALS['ssi_jetpack_registered_form_blocks'][] = 'jetpack/donations';
+$online_row = Static_Site_Importer_Form_Seeder::seed( $donation_validated )['forms'][0] ?? array();
+eval( 'namespace Automattic\\Jetpack; class Status { public function is_offline_mode(): bool { return true; } }' );
+$offline_row = Static_Site_Importer_Form_Seeder::seed( $donation_validated )['forms'][0] ?? array();
+$checks['offline Jetpack editor leaves the donation block incomplete'] = true === ( $online_row['complete'] ?? false ) && 'mapped' === ( $offline_row['status'] ?? '' ) && 'provider_editor_unavailable' === ( $offline_row['runtime_readiness']['reason_code'] ?? '' ) && false === ( $offline_row['complete'] ?? true );
+array_pop( $GLOBALS['ssi_jetpack_registered_form_blocks'] );
 $donation_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
 	array( 'entities' => array( 'forms' => array( 'adapter' => Static_Site_Importer_Form_Seeder::adapter(), 'manifest' => $donation_validated ) ) ),
 	array( 'forms' => $donation_report )
