@@ -164,15 +164,15 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				),
 				'companion_asset_loading'      => $state['applied']['companion_asset_loading'] ?? array( 'status' => 'not_requested' ),
 				'runtime_policy'               => array(
-					'disable_smilies'                 => array(
+					'disable_smilies'            => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
 						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
 					),
-					'disable_page_engagement_buttons' => array(
-						'requested' => isset( $state['args']['disable_page_engagement_buttons'] ) ? (bool) $state['args']['disable_page_engagement_buttons'] : true,
-						'applied'   => ! empty( $state['applied']['runtime_policy']['disable_page_engagement_buttons'] ),
+					'disable_engagement_buttons' => array(
+						'requested' => isset( $state['args']['disable_engagement_buttons'] ) ? (bool) $state['args']['disable_engagement_buttons'] : true,
+						'applied'   => ! empty( $state['applied']['runtime_policy']['disable_engagement_buttons'] ),
 					),
-					'remove_default_content'          => array(
+					'remove_default_content'     => array(
 						'requested' => isset( $state['args']['remove_default_content'] ) ? (bool) $state['args']['remove_default_content'] : true,
 						'report'    => $state['applied']['runtime_policy']['remove_default_content'] ?? array( 'status' => 'not_applied' ),
 					),

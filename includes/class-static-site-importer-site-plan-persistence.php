@@ -522,26 +522,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return self::failed_receipt( $state, 'injected_after_use_smilies_failure' );
 				}
 			}
-			if ( ! isset( $args['disable_page_engagement_buttons'] ) || false !== (bool) $args['disable_page_engagement_buttons'] ) {
-				$sharing_options = get_option( 'sharing-options' );
-				if ( is_array( $sharing_options ) && isset( $sharing_options['global'] ) && is_array( $sharing_options['global'] ) && isset( $sharing_options['global']['show'] ) && is_array( $sharing_options['global']['show'] ) ) {
-					$sharing_options['global']['show'] = array_values( array_diff( $sharing_options['global']['show'], array( 'page' ) ) );
-				} else {
-					// Jetpack defaults minus pages, even when Jetpack is not installed yet.
-					$sharing_options = array(
-						'global' => array(
-							'button_style'  => 'icon-text',
-							'sharing_label' => 'Share this:',
-							'open_links'    => 'same',
-							'show'          => array( 'post' ),
-							'custom'        => array(),
-						),
-					);
+			if ( ! isset( $args['disable_engagement_buttons'] ) || false !== (bool) $args['disable_engagement_buttons'] ) {
+				// Jetpack Sharing and Likes: an empty `show` list hides both everywhere
+				// (Jetpack substitutes its post/page default only when the key is missing),
+				// and `disabled_likes` is the site-wide Like toggle. Plain options, so no
+				// Jetpack dependency; other sharing settings are kept.
+				$jetpack_defaults = array(
+					'button_style'  => 'icon-text',
+					'sharing_label' => 'Share this:',
+					'open_links'    => 'same',
+					'custom'        => array(),
+				);
+				$stored_sharing   = get_option( 'sharing-options' );
+				$sharing_options  = is_array( $stored_sharing ) ? $stored_sharing : array();
+				$global           = is_array( $sharing_options['global'] ?? null ) ? $sharing_options['global'] : $jetpack_defaults;
+
+				$global['show']            = array();
+				$sharing_options['global'] = $global;
+				if ( ! self::write_option( 'sharing-options', $sharing_options ) || ! self::write_option( 'disabled_likes', 1 ) ) {
+					return self::failed_receipt( $state, 'disable_engagement_buttons_not_applied' );
 				}
-				if ( ! self::write_option( 'sharing-options', $sharing_options ) ) {
-					return self::failed_receipt( $state, 'disable_page_engagement_buttons_not_applied' );
-				}
-				$state['applied']['runtime_policy']['disable_page_engagement_buttons'] = true;
+				$state['applied']['runtime_policy']['disable_engagement_buttons'] = true;
 			}
 			if ( '' !== trim( (string) ( $args['site_title'] ?? '' ) ) ) {
 				$title = sanitize_text_field( (string) $args['site_title'] );
@@ -2827,7 +2828,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' !== $stylesheet ) {
 			self::journal_option( $state, 'theme_mods_' . $stylesheet );
 		}
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'sharing-options', 'blogname', 'blogdescription', 'site_icon', 'site_logo', 'WPLANG' ) as $option ) {
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'sharing-options', 'disabled_likes', 'blogname', 'blogdescription', 'site_icon', 'site_logo', 'WPLANG' ) as $option ) {
 			self::journal_option( $state, $option );
 		}
 	}
