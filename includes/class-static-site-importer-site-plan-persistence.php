@@ -1193,7 +1193,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities );
 			if ( $original !== $markup && str_contains( $markup, 'wp:woocommerce/product-image-gallery' ) ) {
 				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
-					$identity = '/' . ltrim( $asset['source_path'], '/' );
+					$identity          = '/' . ltrim( $asset['source_path'], '/' );
+					$product_sources   = array_column( $page['product_data']['images'] ?? array(), 'src' );
+					$product_sources[] = $page['product_data']['image'] ?? '';
+					foreach ( $product_sources as $source_url ) {
+						if ( ( $identities[ $source_url ] ?? $source_url ) === $identity ) {
+							$state['replaced_product_photo_targets'][ $asset['target_path'] ] = true;
+						}
+					}
 					foreach ( $identities as $url => $resource ) {
 						if ( $identity === $resource && str_contains( $original, $url ) && ! str_contains( $markup, $url ) ) {
 							$state['replaced_product_photo_targets'][ $asset['target_path'] ] = true;

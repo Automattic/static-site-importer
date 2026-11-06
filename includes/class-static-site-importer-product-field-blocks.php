@@ -73,11 +73,24 @@ final class Static_Site_Importer_Product_Field_Blocks {
 	/** Exact resource aliases from the producer plan and its attachment projection. */
 	public static function image_identities( array $state ): array {
 		$aliases = array();
+		$root    = '';
+		foreach ( $state['plan']['pages'] ?? array() as $page ) {
+			if ( ! empty( $page['entrypoint'] ) ) {
+				$directory = dirname( $page['source_path'] );
+				$root      = '.' === $directory ? '' : trim( $directory, '/' ) . '/';
+				break;
+			}
+		}
 		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
-			$source     = (string) $asset['source_path'];
-			$identity   = '/' . ltrim( $source, '/' );
-			$record     = $state['args']['image_asset_records'][ $source ] ?? array();
-			$urls       = array_merge( $record['source_urls'] ?? array(), array( $source, $identity, '{{wordpress-site-plan:asset:' . $asset['token'] . '}}', rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) . '/' . $asset['target_path'] ) );
+			$source   = (string) $asset['source_path'];
+			$identity = '/' . ltrim( $source, '/' );
+			$record   = $state['args']['image_asset_records'][ $source ] ?? array();
+			$urls     = array_merge( $record['source_urls'] ?? array(), array( $source, $identity, '{{wordpress-site-plan:asset:' . $asset['token'] . '}}', rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ) . '/' . $asset['target_path'] ) );
+			// Browser-root paths are rooted at the declared entry document, not
+			// the artifact wrapper. Never infer identity from a basename or suffix.
+			if ( '' !== $root && str_starts_with( $source, $root ) ) {
+				$urls[] = '/' . substr( $source, strlen( $root ) );
+			}
 			$attachment = $state['resolved']['resolution']['attachment_resolutions'][ $asset['token'] ] ?? array();
 			if ( ! empty( $attachment['url'] ) ) {
 				$urls[] = $attachment['url'];
@@ -101,6 +114,14 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				$source = (string) get_post_meta( $id, '_static_site_importer_source_image', true );
 				if ( '' !== $source ) {
 					return $image_identities[ $source ] ?? $source;
+				}
+				// Page-media attachments carry capture aliases rather than the
+				// product seeder's source-image meta (including duplicate uploads).
+				$record = get_post_meta( $id, '_static_site_importer_asset_record', true );
+				foreach ( is_array( $record ) ? ( $record['source_urls'] ?? array() ) : array() as $alias ) {
+					if ( isset( $image_identities[ $alias ] ) ) {
+						return $image_identities[ $alias ];
+					}
 				}
 			}
 			return $url;

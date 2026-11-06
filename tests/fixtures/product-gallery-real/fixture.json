@@ -1,0 +1,77 @@
+{
+  "product": {
+    "slug": "beach-bubble-free-stickers",
+    "image": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp",
+    "images": [
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914059658-TUIORKP41CLL1VAR1DJ7/kiss-cut-stickers-white-3x3-lifestyle-1-6a175542677f8.jpg"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914063354-052A0QEB09HF90WWXT7F/kiss-cut-stickers-white-3x3-lifestyle-3-6a175542678f5.jpg"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914065583-9CC2F9QG3XZ4FBT44JUP/kiss-cut-stickers-white-4x4-lifestyle-1-6a175542679dc.jpg"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914071162-F0LEDLQ39NCEPPYRKR6J/kiss-cut-stickers-white-4x4-lifestyle-3-6a17554267a82.jpg"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp"
+      },
+      {
+        "alt": "Beach (A) Bubble-free stickers",
+        "src": "https://images.squarespace-cdn.com/content/v1/672f989b7138e16f52d9c875/1779914077207-CV6YIGV8ZGU55V5UUGPF/kiss-cut-stickers-white-5.5x5.5-lifestyle-3-6a17554267bb0.jpg"
+      }
+    ],
+    "source_path": "website/accessories/p/beach-bubble-free-stickers/index.html",
+    "source_route": "/accessories/p/beach-bubble-free-stickers"
+  },
+  "plan_assets": [
+    {
+      "source_path": "website/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp",
+      "target_path": "assets/website/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp",
+      "token": "asset-8f68a3c4c21d0fcf"
+    },
+    {
+      "source_path": "website/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp",
+      "target_path": "assets/website/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp",
+      "token": "asset-5a8dc69e90d847ab"
+    },
+    {
+      "source_path": "website/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp",
+      "target_path": "assets/website/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp",
+      "token": "asset-834d48e45971716f"
+    },
+    {
+      "source_path": "website/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp",
+      "target_path": "assets/website/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp",
+      "token": "asset-874cb1efc1873faa"
+    }
+  ],
+  "attachment_sources": {
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-5-5x5-5-lifestyle-1-6a17554267128.webp": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-1-6a17554267128.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879-1.webp": "/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879-bc73450fb5f2-1.webp": "/media/kiss-cut-stickers-white-3x3-lifestyle-2-6a17554267879.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35-1.webp": "/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35-bc73450fb5f2-1.webp": "/media/kiss-cut-stickers-white-4x4-lifestyle-2-6a17554267a35.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-5-5x5-5-lifestyle-2-6a17554267b48.webp": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp",
+    "http://localhost:9078/wp-content/uploads/2026/11/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48-bc73450fb5f2-1.webp": "/media/kiss-cut-stickers-white-5.5x5.5-lifestyle-2-6a17554267b48.webp"
+  }
+}
