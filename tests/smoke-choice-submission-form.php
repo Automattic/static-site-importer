@@ -61,6 +61,40 @@ $payment = str_replace( '<input type="submit" class="btn" value="Submit">', '<in
 $assert( false === ( $payment_quality['pass'] ?? true ), 'payment-form-still-fails-quality-gate' );
 $assert( 0 === ( $payment_quality['choice_submission_form_count'] ?? -1 ), 'payment-form-is-not-counted-as-poll' );
 
+$event_fixture = str_replace( 'type="radio"', 'onclick="void 0" type="radio"', $fixture );
+[ $event_compiled, , $event_quality ] = $finalize( $event_fixture );
+$assert( false === ( $event_quality['pass'] ?? true ), 'event-form-retains-quality-failure' );
+$assert( 2 === substr_count( $event_compiled['serialized_blocks'], 'type="radio"' ), 'event-form-retains-radios' );
+$assert( str_contains( $event_compiled['serialized_blocks'], 'Do you read the newsletter?' ), 'event-form-retains-question' );
+$assert( 0 === ( $event_quality['choice_submission_form_count'] ?? -1 ), 'blocked-form-is-not-counted-as-editable' );
+
+$donation = str_replace( '<input type="submit" class="btn" value="Submit">', '<input type="image" src="donate.png" alt="Donate">', $fixture );
+[ , , $donation_quality ] = $finalize( $donation );
+$assert( false === ( $donation_quality['pass'] ?? true ), 'donation-retains-quality-failure' );
+$assert( 0 === ( $donation_quality['choice_submission_form_count'] ?? -1 ), 'donation-is-not-counted' );
+
+preg_match( '~<form\b.*?</form>~s', $fixture, $form_match );
+$two_forms = str_replace( $form_match[0], $form_match[0] . $form_match[0], $fixture );
+[ , , $two_form_quality ] = $finalize( $two_forms );
+$assert( 2 === ( $two_form_quality['choice_submission_form_count'] ?? -1 ), 'same-class-forms-count-separately' );
+
+$runtime_diagnostic = array_values( array_filter( $report['diagnostics'], static fn( array $d ): bool => 'preserved_runtime_island' === ( $d['code'] ?? '' ) ) )[0];
+$count_diagnostics = static function ( array $diagnostics ): int {
+	$report = Static_Site_Importer_Import_Report::from_array( array( 'diagnostics' => $diagnostics ) );
+	$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array( 'fail_on_quality' => true ) );
+	return $quality['choice_submission_form_count'];
+};
+$echo = $runtime_diagnostic;
+$echo['id'] = 'echo';
+$echo['source_diagnostic']['id'] = 'producer-echo';
+$assert( 1 === $count_diagnostics( array( $runtime_diagnostic, $echo ) ), 'runtime-echo-counted-once' );
+$other_page = $runtime_diagnostic;
+$other_page['source_path'] = 'other.html';
+$assert( 2 === $count_diagnostics( array( $runtime_diagnostic, $other_page ) ), 'different-source-pages-count-separately' );
+$unrelated = $runtime_diagnostic;
+$unrelated['code'] = 'unrelated_diagnostic';
+$assert( 0 === $count_diagnostics( array( $unrelated ) ), 'intent-on-other-diagnostic-is-not-counted' );
+
 foreach ( $failures as $failure ) {
 	fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
 }
