@@ -114,13 +114,19 @@ class Static_Site_Importer_Consent_Banner {
 				$text = esc_html( substr( $fact['text'], 0, $position ) ) . $anchor . esc_html( substr( $fact['text'], $position + strlen( $link['label'] ) ) );
 			}
 		}
+		// A captured heading stays inside Jetpack's single RichText paragraph;
+		// the generated class gives it its own line and type.
+		if ( is_string( $fact['title'] ?? null ) && '' !== trim( $fact['title'] ) ) {
+			$text = '<strong class="ssi-consent-banner__title">' . esc_html( trim( $fact['title'] ) ) . '</strong> ' . $text;
+		}
 		$colors       = is_array( $fact['colors'] ?? null ) ? $fact['colors'] : array();
 		$banner       = self::color_style( $colors, 'text', 'background' );
 		$button       = self::color_style( $colors, 'button_text', 'button_background' );
 		$presentation = self::presentation( $fact );
 		$button_style = array( 'color' => $button );
 		$button_css   = '';
-		foreach ( $presentation['button'] ?? array() as $key => $value ) {
+		// Min height and margin are box rules in the generated stylesheet.
+		foreach ( array_diff_key( $presentation['button'] ?? array(), array_flip( array( 'min_height', 'margin' ) ) ) as $key => $value ) {
 			$mapping                                 = array(
 				'border_radius' => array( 'border', 'radius', 'border-radius' ),
 				'border_width'  => array( 'border', 'width', 'border-width' ),
@@ -130,6 +136,8 @@ class Static_Site_Importer_Consent_Banner {
 				'font_size'     => array( 'typography', 'fontSize', 'font-size' ),
 				'font_family'   => array( 'typography', 'fontFamily', 'font-family' ),
 				'line_height'   => array( 'typography', 'lineHeight', 'line-height' ),
+				'font_weight'   => array( 'typography', 'fontWeight', 'font-weight' ),
+				'letter_spacing' => array( 'typography', 'letterSpacing', 'letter-spacing' ),
 			);
 			list( $group, $property, $css_property ) = $mapping[ $key ];
 			$button_style[ $group ][ $property ]     = $value;
@@ -143,7 +151,7 @@ class Static_Site_Importer_Consent_Banner {
 		$banner_css   = '';
 		$custom_class = '';
 		if ( array() !== $presentation ) {
-			$align              = 'full' === ( $presentation['span'] ?? '' ) ? 'full' : 'wide';
+			$align              = self::align( $presentation );
 			$attrs['align']     = $align;
 			$attrs['className'] = 'ssi-consent-banner';
 			$custom_class       = ' ssi-consent-banner';
@@ -153,6 +161,20 @@ class Static_Site_Importer_Consent_Banner {
 			}
 		}
 		return '<!-- wp:jetpack/cookie-consent ' . wp_json_encode( $attrs ) . ' -->' . "\n" . '<div class="wp-block-jetpack-cookie-consent align' . $align . self::color_classes( $banner ) . $custom_class . '"' . self::style_attribute( $banner, $banner_css ) . ' role="dialog" aria-modal="true"><p>' . $text . '</p>' . $inner . '<span>365</span></div>' . "\n" . '<!-- /wp:jetpack/cookie-consent -->';
+	}
+
+	/** The widest captured layout is the block's editor alignment. */
+	private static function align( array $presentation ): string {
+		$widest = array_reverse( $presentation['layout'] ?? array() )[0] ?? array();
+		$span   = $widest['span'] ?? $presentation['span'] ?? '';
+		if ( 'full' === $span ) {
+			return 'full';
+		}
+		$inline = 'inset' === $span ? ( $widest['inline'] ?? '' ) : '';
+		return array(
+			'start' => 'left',
+			'end'   => 'right',
+		)[ $inline ] ?? 'wide';
 	}
 
 	/** Accept CSS colors only, never arbitrary source styles. */
@@ -194,9 +216,16 @@ class Static_Site_Importer_Consent_Banner {
 				$result[ $key ] = $value;
 			} elseif ( 'button' === $key && is_array( $value ) ) {
 				$result['button'] = array();
-				foreach ( array( 'border_radius', 'border_width', 'border_style', 'border_color', 'padding', 'font_size', 'font_family', 'line_height' ) as $property ) {
+				foreach ( array( 'border_radius', 'border_width', 'border_style', 'border_color', 'padding', 'font_size', 'font_family', 'line_height', 'font_weight', 'letter_spacing', 'min_height', 'margin' ) as $property ) {
 					if ( self::presentation_value( $property, $value[ $property ] ?? null ) ) {
 						$result['button'][ $property ] = trim( $value[ $property ] );
+					}
+				}
+			} elseif ( 'title' === $key && is_array( $value ) ) {
+				$result['title'] = array();
+				foreach ( array( 'font_size', 'line_height', 'font_weight', 'margin', 'padding' ) as $property ) {
+					if ( self::presentation_value( $property, $value[ $property ] ?? null ) ) {
+						$result['title'][ $property ] = trim( $value[ $property ] );
 					}
 				}
 			} elseif ( 'layout' === $key && is_array( $value ) && array_is_list( $value ) ) {
@@ -206,7 +235,7 @@ class Static_Site_Importer_Consent_Banner {
 						$result['layout'][] = $entry;
 					}
 				}
-			} elseif ( in_array( $key, array( 'edge_offset', 'padding', 'gap', 'font_family', 'font_size', 'line_height', 'text_margin' ), true ) && self::presentation_value( $key, $value ) ) {
+			} elseif ( in_array( $key, array( 'edge_offset', 'padding', 'gap', 'font_family', 'font_size', 'line_height', 'text_margin', 'box_shadow' ), true ) && self::presentation_value( $key, $value ) ) {
 				$result[ $key ] = trim( $value );
 			}
 		}
@@ -221,6 +250,23 @@ class Static_Site_Importer_Consent_Banner {
 		if ( 'border_style' === $key ) {
 			return in_array( $value, array( 'solid', 'dashed', 'dotted', 'double', 'none' ), true );
 		}
+		if ( 'font_weight' === $key ) {
+			return 1 === preg_match( '/^(?:normal|bold|[1-9][0-9]{0,2}|1000)$/D', $value );
+		}
+		if ( 'box_shadow' === $key ) {
+			// One computed shadow: color, two to four lengths, optional inset.
+			$parts = preg_split( '/\\s+(?![^(]*\\))/', $value );
+			$color = array_shift( $parts );
+			$inset = 'inset' === end( $parts ) ? array_pop( $parts ) : null;
+			$valid = array() !== self::color_style( array( 'shadow' => (string) $color ), 'shadow', 'unused' ) && count( $parts ) >= 2 && count( $parts ) <= 4;
+			foreach ( $parts as $index => $part ) {
+				$valid = $valid && ( 1 === preg_match( '/^-?(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)px)$/D', $part ) ) && ( $index < 2 || '-' !== $part[0] || 3 === $index );
+			}
+			return $valid && ( null === $inset || 'inset' === $inset );
+		}
+		if ( 'letter_spacing' === $key ) {
+			return 1 === preg_match( '/^-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|em|rem)$/D', $value );
+		}
 		if ( 'border_color' === $key ) {
 			return array() !== self::color_style( array( 'border' => $value ), 'border', 'unused' );
 		}
@@ -229,7 +275,7 @@ class Static_Site_Importer_Consent_Banner {
 			return 1 === preg_match( '/^' . $family . '(?:\\s*,\\s*' . $family . ')*$/D', $value );
 		}
 		$length = '(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|em|rem|%|vh|vw|vmin|vmax|pt|pc|in|cm|mm))';
-		$count  = 'gap' === $key ? '{0,1}' : ( in_array( $key, array( 'padding', 'border_radius', 'text_margin' ), true ) ? '{0,3}' : '{0}' );
+		$count  = 'gap' === $key ? '{0,1}' : ( in_array( $key, array( 'padding', 'border_radius', 'text_margin', 'margin' ), true ) ? '{0,3}' : '{0}' );
 		return 1 === preg_match( '/^' . $length . '(?:\\s+' . $length . ')' . $count . '$/D', $value );
 	}
 
@@ -238,7 +284,7 @@ class Static_Site_Importer_Consent_Banner {
 		if ( ! is_array( $entry ) || ! in_array( $entry['direction'] ?? null, array( 'row', 'column' ), true ) ) {
 			return false;
 		}
-		foreach ( array( 'min_width', 'max_width' ) as $key ) {
+		foreach ( array( 'min_width', 'max_width', 'width', 'inline_offset' ) as $key ) {
 			if ( array_key_exists( $key, $entry ) && ( ( ! is_int( $entry[ $key ] ) && ! is_float( $entry[ $key ] ) ) || ! is_finite( (float) $entry[ $key ] ) || $entry[ $key ] < 0 ) ) {
 				return false;
 			}
@@ -248,13 +294,20 @@ class Static_Site_Importer_Consent_Banner {
 		}
 		foreach ( array(
 			'align_items'  => array( 'center', 'flex-start', 'flex-end', 'stretch' ),
-			'button_align' => array( 'start', 'end' ),
+			'button_align' => array( 'start', 'end', 'stretch' ),
+			'span'         => array( 'full', 'inset' ),
+			'inline'       => array( 'start', 'end', 'center' ),
 		) as $key => $allowed ) {
 			if ( array_key_exists( $key, $entry ) && ! in_array( $entry[ $key ], $allowed, true ) ) {
 				return false;
 			}
 		}
-		return ! array_key_exists( 'text_margin', $entry ) || self::presentation_value( 'text_margin', $entry['text_margin'] );
+		foreach ( array( 'text_margin', 'edge_offset', 'border_radius' ) as $key ) {
+			if ( array_key_exists( $key, $entry ) && ! self::presentation_value( $key, $entry[ $key ] ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Generated theme rules outrank Jetpack's two-class-specificity edge rule. */
@@ -272,6 +325,7 @@ class Static_Site_Importer_Consent_Banner {
 			'font_size'   => 'font-size',
 			'line_height' => 'line-height',
 			'gap'         => 'gap',
+			'box_shadow'  => 'box-shadow',
 		) as $key => $property ) {
 			if ( isset( $presentation[ $key ] ) ) {
 				$css .= $property . ':' . $presentation[ $key ] . ';';
@@ -285,6 +339,27 @@ class Static_Site_Importer_Consent_Banner {
 		$output = '' === $css ? '' : "\n" . $selector . '{' . $css . "}\n";
 		if ( $flex ) {
 			$output .= $selector . ' > p{flex:1 1 auto;' . ( isset( $presentation['text_margin'] ) ? 'margin:' . $presentation['text_margin'] . ';' : '' ) . "}\n";
+		}
+		$title = '';
+		foreach ( array(
+			'font_size'   => 'font-size',
+			'line_height' => 'line-height',
+			'font_weight' => 'font-weight',
+			'margin'      => 'margin',
+			'padding'     => 'padding',
+		) as $key => $property ) {
+			if ( isset( $presentation['title'][ $key ] ) ) {
+				$title .= $property . ':' . $presentation['title'][ $key ] . ';';
+			}
+		}
+		if ( ! empty( $fact['title'] ) ) {
+			$output .= $selector . ' > p > .ssi-consent-banner__title{display:block;' . $title . "}\n";
+		}
+		if ( isset( $presentation['button']['margin'] ) ) {
+			$output .= $selector . ' > .wp-block-buttons{margin:' . $presentation['button']['margin'] . "}\n";
+		}
+		if ( isset( $presentation['button']['min_height'] ) ) {
+			$output .= $selector . ' .wp-block-button__link{display:inline-flex;align-items:center;justify-content:center;min-height:' . $presentation['button']['min_height'] . "}\n";
 		}
 		foreach ( $presentation['layout'] ?? array() as $entry ) {
 			$conditions = array();
@@ -300,13 +375,46 @@ class Static_Site_Importer_Consent_Banner {
 			if ( isset( $entry['text_margin'] ) ) {
 				$rules .= $selector . ' > p{margin:' . trim( $entry['text_margin'] ) . ';}';
 			}
-			if ( 'column' === $entry['direction'] && isset( $entry['button_align'] ) ) {
+			if ( isset( $entry['edge_offset'] ) && 'center' !== ( $fact['position'] ?? '' ) ) {
+				$rules .= $selector . '{' . ( 'top' === ( $fact['position'] ?? '' ) ? 'top' : 'bottom' ) . ':' . trim( $entry['edge_offset'] ) . ';}';
+			}
+			if ( isset( $entry['border_radius'] ) ) {
+				$rules .= $selector . '{border-radius:' . trim( $entry['border_radius'] ) . ';}';
+			}
+			$rules .= self::panel_geometry( $selector, $entry );
+			if ( 'column' === $entry['direction'] && 'stretch' === ( $entry['button_align'] ?? '' ) ) {
+				$rules .= $selector . ' > .wp-block-buttons{align-self:stretch;margin-left:0;margin-right:0;}' . $selector . ' > .wp-block-buttons > .wp-block-button{width:100%;}' . $selector . ' > .wp-block-buttons .wp-block-button__link{box-sizing:border-box;width:100%;}';
+			} elseif ( 'column' === $entry['direction'] && isset( $entry['button_align'] ) ) {
 				$end    = 'end' === $entry['button_align'];
 				$rules .= $selector . ' > .wp-block-buttons{align-self:flex-' . ( $end ? 'end' : 'start' ) . ';margin-left:' . ( $end ? 'auto' : '0' ) . ';margin-right:' . ( $end ? '0' : 'auto' ) . ';}';
 			}
 			$output .= ( $conditions ? '@media ' . implode( ' and ', $conditions ) . '{' . $rules . '}' : $rules ) . "\n";
 		}
 		return $output;
+	}
+
+	/**
+	 * Captured panel span and inline anchor at one layout's widths. Jetpack
+	 * sets alignment geometry with !important, so only !important overrides it.
+	 */
+	private static function panel_geometry( string $selector, array $entry ): string {
+		$span = $entry['span'] ?? null;
+		if ( 'full' === $span ) {
+			return $selector . '{left:0!important;right:0!important;width:auto!important;max-width:none!important;margin:0!important;}';
+		}
+		if ( 'inset' !== $span || ! isset( $entry['inline'] ) ) {
+			return '';
+		}
+		$offset = isset( $entry['inline_offset'] ) ? $entry['inline_offset'] . 'px' : null;
+		$css    = array(
+			'start'  => null === $offset ? '' : 'left:' . $offset . '!important;right:auto!important;margin:0!important;',
+			'end'    => null === $offset ? '' : 'right:' . $offset . '!important;left:auto!important;margin:0!important;',
+			'center' => 'left:0!important;right:0!important;margin:0 auto!important;',
+		)[ $entry['inline'] ];
+		if ( isset( $entry['width'] ) ) {
+			$css .= 'width:' . $entry['width'] . 'px!important;max-width:none!important;';
+		}
+		return '' === $css ? '' : $selector . '{' . $css . '}';
 	}
 
 	private static function finding( string $code, string $message ): array {

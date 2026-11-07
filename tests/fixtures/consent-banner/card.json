@@ -1,0 +1,61 @@
+{
+  "schema": "static-site-importer/consent-banner/v1",
+  "title": "This website uses cookies.",
+  "text": "We use cookies to analyze website traffic and optimize your website experience.",
+  "accept_label": "ACCEPT",
+  "position": "bottom",
+  "presentation": {
+    "span": "inset",
+    "gap": "0px",
+    "edge_offset": "24px",
+    "padding": "24px",
+    "font_size": "16px",
+    "line_height": "24px",
+    "text_margin": "0px",
+    "title": {
+      "font_size": "22px",
+      "line_height": "27.5px",
+      "font_weight": "400",
+      "margin": "0px",
+      "padding": "0px 0px 8px"
+    },
+    "layout": [
+      {
+        "max_width": 767,
+        "direction": "column",
+        "text_margin": "0px",
+        "button_align": "stretch",
+        "span": "full",
+        "edge_offset": "0px"
+      },
+      {
+        "min_width": 768,
+        "direction": "column",
+        "text_margin": "0px",
+        "button_align": "stretch",
+        "span": "inset",
+        "inline": "end",
+        "width": 400,
+        "inline_offset": 24,
+        "edge_offset": "24px",
+        "border_radius": "7px"
+      }
+    ],
+    "button": {
+      "border_radius": "4px",
+      "padding": "4px 16px",
+      "font_size": "12px",
+      "font_weight": "700",
+      "letter_spacing": "0.852px",
+      "min_height": "40px",
+      "margin": "24px 0px 4px"
+    },
+    "box_shadow": "rgba(0, 0, 0, 0.3) 0px 2px 6px 0px"
+  },
+  "colors": {
+    "background": "rgb(137, 137, 137)",
+    "text": "rgb(255, 255, 255)",
+    "button_background": "rgb(255, 255, 255)",
+    "button_text": "rgb(0, 0, 0)"
+  }
+}
