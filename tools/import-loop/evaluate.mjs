@@ -82,7 +82,11 @@ function cleanupExclusions() {
 // whole page so hit-testing covers every element, not only the first screen.
 async function settle(page, url, width) {
   await page.setViewportSize({ width, height: 900 });
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 90_000 }).catch(() => page.waitForLoadState('load'));
+  // Live sites with analytics or chat widgets never go network-idle: wait for
+  // load, then give late requests a bounded moment; the scroll below reveals
+  // lazy content.
+  await page.goto(url, { waitUntil: 'load', timeout: 90_000 });
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 600) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
     await page.waitForTimeout(150);
