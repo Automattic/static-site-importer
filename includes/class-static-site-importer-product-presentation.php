@@ -171,8 +171,31 @@ final class Static_Site_Importer_Product_Presentation {
 		return is_string( $value ) && preg_match( '/^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%|vw|vh))$/D', $value ) ? $value : '';
 	}
 
+	/** Admit only positive numeric ratios, including the cascade's spaced form. */
+	private static function aspect_ratio( mixed $value ): string {
+		if ( ! is_string( $value ) || ! preg_match( '/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/D', $value, $parts ) || (float) $parts[1] <= 0 || (float) $parts[2] <= 0 ) {
+			return '';
+		}
+		return $value;
+	}
+
 	/** Capture image boxes and strip arrangement before the source subtree is deleted. */
 	public static function gallery_attrs( array $node ): array {
+		$attrs = $node['attrs'] ?? array();
+		if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
+			return array(
+				'main'         => array( 'aspectRatio' => self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) ),
+				'thumbnail'    => empty( $attrs['thumbnails'] ) ? array() : array( 'width' => self::length( $attrs['thumbnailWidth'] ?? '' ) ),
+				'position'     => array(
+					'left'   => 'left',
+					'right'  => 'right',
+					'top'    => 'above',
+					'bottom' => 'below',
+				)[ $attrs['thumbnailPosition'] ?? '' ] ?? 'below',
+				'gap'          => self::length( $attrs['stageGap'] ?? '' ),
+				'thumbnailGap' => self::length( $attrs['thumbnailGap'] ?? '' ),
+			);
+		}
 		$boxes = array();
 		$gaps  = array();
 		$walk  = static function ( array $block ) use ( &$walk, &$boxes, &$gaps ): void {
@@ -237,10 +260,25 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Gallery-only property allowlist; shared by capture and receipt validation. */
 	private static function gallery_declarations( array $styles ): string {
-		$css = self::declarations( $styles );
-		foreach ( array( 'display', 'flex-direction', 'flex-shrink', 'flex-basis', 'float', 'gap', 'order', 'margin', 'object-fit' ) as $property ) {
-			$value = $styles[ $property ] ?? '';
-			if ( is_string( $value ) && ( self::length( $value ) || in_array( $value, array( 'flex', 'row', 'column', '0', '-1', 'none', 'contain' ), true ) ) ) {
+		$css     = self::declarations( $styles );
+		$allowed = array(
+			'display'        => array( 'flex' ),
+			'flex-direction' => array( 'row', 'column' ),
+			'flex-shrink'    => array( '0' ),
+			'flex'           => array( '1 1 0', '0 0 auto' ),
+			'float'          => array( 'none' ),
+			'order'          => array( '-1', '0' ),
+			'object-fit'     => array( 'contain', 'cover' ),
+			'flex-basis'     => array(),
+			'gap'            => array(),
+			'margin'         => array(),
+			'aspect-ratio'   => array(),
+		);
+		foreach ( $allowed as $property => $values ) {
+			$value  = $styles[ $property ] ?? '';
+			$length = in_array( $property, array( 'flex-basis', 'gap', 'margin' ), true ) && self::length( $value );
+			$ratio  = 'aspect-ratio' === $property && self::aspect_ratio( $value );
+			if ( is_string( $value ) && ( $length || $ratio || in_array( $value, $values, true ) ) ) {
 				$css .= $property . ':' . $value . ' !important;';
 			}
 		}
@@ -251,11 +289,12 @@ final class Static_Site_Importer_Product_Presentation {
 	private static function gallery_rules( array $gallery ): array {
 		$width  = self::length( $gallery['main']['width'] ?? '' );
 		$height = self::length( $gallery['main']['height'] ?? '' );
-		if ( ! $width || ! $height ) {
+		$ratio  = self::aspect_ratio( $gallery['main']['aspectRatio'] ?? '' );
+		if ( ( ! $width || ! $height ) && ! $ratio ) {
 			return array();
 		}
-		$side    = in_array( $gallery['position'] ?? '', array( 'left', 'right' ), true );
-		$styles  = array(
+		$side   = in_array( $gallery['position'] ?? '', array( 'left', 'right' ), true );
+		$styles = array(
 			'gallery'  => array(
 				'width'          => 'auto',
 				'display'        => 'flex',
@@ -275,24 +314,41 @@ final class Static_Site_Importer_Product_Presentation {
 				'object-fit' => 'contain',
 			),
 		);
+		if ( ! $height && $ratio ) {
+			$styles['viewport']            = array(
+				'width'        => $side ? 'auto' : '100%',
+				'flex'         => $side ? '1 1 0' : '0 0 auto',
+				'min-width'    => '0',
+				'aspect-ratio' => $ratio,
+			);
+			$styles['image']['height']     = '100%';
+			$styles['image']['object-fit'] = 'cover';
+		}
 		$thumb_w = self::length( $gallery['thumbnail']['width'] ?? '' );
 		$thumb_h = self::length( $gallery['thumbnail']['height'] ?? '' );
-		if ( $thumb_w && $thumb_h ) {
-			$styles['thumbs']   = array(
+		if ( $thumb_w && ( $thumb_h || $ratio ) ) {
+			$styles['thumbs'] = array(
 				'padding'        => '0',
 				'display'        => 'flex',
 				'flex-direction' => $side ? 'column' : 'row',
 				'flex-shrink'    => '0',
 				'gap'            => self::length( $gallery['thumbnailGap'] ?? '' ),
-				'order'          => 'left' === ( $gallery['position'] ?? '' ) ? '-1' : '0',
+				'order'          => in_array( $gallery['position'] ?? '', array( 'left', 'above' ), true ) ? '-1' : '0',
 				'margin'         => '0',
 			);
-			$styles['thumb']    = array(
+			$styles['thumb']  = array(
 				'width'  => $thumb_w,
 				'height' => $thumb_h,
 				'float'  => 'none',
 				'margin' => '0',
 			);
+			if ( ! $thumb_h ) {
+				$styles['thumb']['aspect-ratio'] = $ratio;
+				$styles['thumb']['flex-shrink']  = '0';
+				if ( $side ) {
+					$styles['thumbs']['width'] = $thumb_w;
+				}
+			}
 			$styles['thumbimg'] = array(
 				'width'      => '100%',
 				'height'     => '100%',
