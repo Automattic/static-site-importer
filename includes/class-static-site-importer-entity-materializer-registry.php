@@ -2136,7 +2136,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			// the catalog archive itself.
 			if ( 'pages' === $document['group'] ) {
 				$categories[ $source_path ] = array(
-					'name' => (string) ( $page['title'] ?? '' ),
+					// WordPress term names hold at most 200 characters.
+					'name' => trim( mb_substr( (string) ( $page['title'] ?? '' ), 0, 200 ) ),
 					'slug' => (string) ( $page['slug'] ?? '' ),
 				);
 			}
