@@ -40,11 +40,63 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			return;
 		}
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
+		add_filter( 'woocommerce_dropdown_variation_attribute_options_args', array( self::class, 'variation_placeholder' ) );
+		add_filter( 'woocommerce_attribute_label', array( self::class, 'variation_label' ), 10, 3 );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/** Read only validated plain text, including in generated companion runtimes. */
+	private static function variation_wording( mixed $product, string $attribute ): array {
+		if ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) ) {
+			return array();
+		}
+		$wording = get_post_meta( $product->get_id(), '_static_site_importer_variation_wording', true );
+		$key     = sanitize_title( $attribute );
+		// Woo prefixes global attribute taxonomies; source controls name the attribute.
+		$plain = str_starts_with( $key, 'pa_' ) ? substr( $key, 3 ) : $key;
+		$row   = is_array( $wording ) ? ( $wording[ $key ] ?? $wording[ $plain ] ?? array() ) : array();
+		if ( ! is_array( $row ) ) {
+			return array();
+		}
+		foreach ( $row as $key => $text ) {
+			if ( ! in_array( $key, array( 'label', 'placeholder' ), true ) || ! is_string( $text ) || '' === $text || trim( $text ) !== $text || preg_match( '/[<>\x00-\x1f\x7f]|\s{2,}/u', $text ) || html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $text ) {
+				return array();
+			}
+		}
+		return $row;
+	}
+
+	/** Woo owns option escaping and selection behavior. */
+	public static function variation_placeholder( array $args ): array {
+		$row = self::variation_wording( $args['product'] ?? null, (string) ( $args['attribute'] ?? '' ) );
+		if ( isset( $row['placeholder'] ) ) {
+			$args['show_option_none'] = $row['placeholder'];
+		}
+		return $args;
+	}
+
+	/** Only the product's native variable add-to-cart template may rename labels. */
+	public static function variation_label( string $label, string $attribute, mixed $label_product ): string {
+		global $product;
+		if ( $label_product && ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) || $label_product->get_id() !== $product->get_id() ) ) {
+			return $label;
+		}
+		$row = self::variation_wording( $product, $attribute );
+		if ( ! isset( $row['label'] ) ) {
+			return $label;
+		}
+		// Woo exposes no label-specific form filter. Its template call stack
+		// scopes the general attribute filter without actions or output rewriting.
+		foreach ( debug_backtrace( 0, 20 ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Native template scope, not logging.
+			if ( 'wc_get_template' === $frame['function'] && 'single-product/add-to-cart/variable.php' === ( $frame['args'][0] ?? '' ) ) {
+				return $row['label'];
+			}
+		}
+		return $label;
 	}
 
 	/** Restore inert source identity on the native gallery's outer block only. */

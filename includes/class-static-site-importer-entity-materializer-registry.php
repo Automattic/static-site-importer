@@ -1437,6 +1437,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						if ( 'products' === $entity_key && 'commerce_add_to_cart_form' === ( $member['binding']['role'] ?? '' ) ) {
 							$entity                = array_merge( $entity, $member['binding']['product_form_fallback'] ?? array() );
 							$entity['entity_kind'] = 'add_to_cart_form';
+							require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+							$entity['variation_wording'] = Static_Site_Importer_Product_Field_Blocks::variation_wording( $member['binding']['search_block_markup'] );
 						}
 						if ( 'commerce_collection' === ( $member['binding']['role'] ?? '' ) ) {
 							$entity = array_merge( $entity, $member['binding']['product_grid_fallback'] ?? array() );
