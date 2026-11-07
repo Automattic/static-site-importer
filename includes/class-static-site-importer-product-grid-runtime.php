@@ -45,10 +45,28 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_action( 'woocommerce_before_variations_form', array( self::class, 'open_variation_form' ) );
 		add_action( 'woocommerce_after_variations_form', array( self::class, 'close_variation_form' ) );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
+		add_filter( 'blocks_engine_served_route', array( self::class, 'served_route' ), 10, 2 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/** Supply source identity only for imported products without an existing route. */
+	public static function served_route( mixed $route, mixed $document ): mixed {
+		if ( null !== $route || ! is_int( $document ) || $document <= 0 || 'product' !== get_post_type( $document ) ) {
+			return $route;
+		}
+		$source = get_post_meta( $document, '_static_site_importer_source_route', true );
+		if ( ! is_string( $source ) || '' === trim( $source, '/' ) || preg_match( '/%(?![a-f0-9]{2})/i', $source ) ) {
+			return $route;
+		}
+		// Check decoded syntax too: escaped separators or traversal must not bypass validation.
+		$path = rawurldecode( $source );
+		if ( preg_match( '/[\x00-\x20\x7f\\\\:?#%]|\/\/|\.\./', $path ) ) {
+			return $route;
+		}
+		return '/' . trim( $source, '/' );
 	}
 
 	/** Read only validated plain text, including in generated companion runtimes. */

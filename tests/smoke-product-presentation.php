@@ -7,7 +7,18 @@
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 /** Standalone WordPress filter contract. */
 function apply_filters( $hook, $value, ...$args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed, Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core API.
+	foreach ( $GLOBALS['ssi_filters'][ $hook ] ?? array() as $callback ) {
+		$value = $callback( $value, ...$args );
+	}
 	return $value;
+}
+function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core signature.
+	$GLOBALS['ssi_filters'][ $hook ][] = $callback;
+}
+function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core signature.
+}
+function get_post_type( $id ) {
+	return $GLOBALS['ssi_post_types'][ $id ] ?? false;
 }
 /** Standalone block serialization contract. */
 function wp_json_encode( $value ) {
@@ -380,6 +391,19 @@ function sanitize_title( $text ) {
 	return strtolower( str_replace( ' ', '-', $text ) );
 }
 require_once ABSPATH . 'includes/class-static-site-importer-product-grid-runtime.php';
+Static_Site_Importer_Product_Grid_Runtime::register();
+// One table-driven served-route regression through the registered runtime hook.
+foreach ( array(
+	array( 'product', 'accessories/p/x', null, '/accessories/p/x' ),
+	array( 'page', 'accessories/p/x', '/about', '/about' ),
+	array( 'product', 'https://example.com/../x', null, null ),
+) as list( $post_type, $source_route, $incoming, $expected_route ) ) {
+	$GLOBALS['ssi_post_types'][42] = $post_type;
+	update_post_meta( 42, '_static_site_importer_source_route', $source_route );
+	if ( $expected_route !== apply_filters( 'blocks_engine_served_route', $incoming, 42 ) ) {
+		throw new RuntimeException( 'Imported product served-route contract failed: ' . $post_type . ' / ' . $source_route );
+	}
+}
 /** Exercise the same action scope as Woo's native variable form. */
 function render_variations_form( $rows ) {
 	$result = array();
