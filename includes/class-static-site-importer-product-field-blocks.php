@@ -101,12 +101,23 @@ final class Static_Site_Importer_Product_Field_Blocks {
 						$wording[ $key ] = $row;
 					}
 				}
-				$walk( $node['innerBlocks'] ?? array(), self::text( (string) ( $node['innerContent'][0] ?? '' ) ) );
-				$previous = empty( $node['innerBlocks'] ) ? self::text( $node['innerHTML'] ?? '' ) : '';
+				// A text-free wrapper does not interrupt adjacency to its first child.
+				// Controls and other non-text content do: their captions are not labels.
+				$leading = self::label_text( (string) ( $node['innerContent'][0] ?? '' ) );
+				$walk( $node['innerBlocks'] ?? array(), '' === $leading ? $previous : ( $leading ?? '' ) );
+				$previous = empty( $node['innerBlocks'] ) ? ( self::label_text( $node['innerHTML'] ?? '' ) ?? '' ) : '';
 			}
 		};
 		$walk( parse_blocks( $markup ) );
 		return $wording;
+	}
+
+	/** Only textual markup can supply a label; controls/media break adjacency. */
+	private static function label_text( string $html ): ?string {
+		if ( preg_match( '/<(?!\/?(?:p|div|section|article|main|aside|header|footer|fieldset|legend|span|label|h[1-6]|strong|em|b|i|u|s|small|sup|sub|br)\b)[^>]*>/i', $html ) ) {
+			return null;
+		}
+		return self::text( $html );
 	}
 
 	/** Compare rendered text rather than source-platform selectors. */
