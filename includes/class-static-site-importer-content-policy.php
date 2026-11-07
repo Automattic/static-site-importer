@@ -290,7 +290,8 @@ final class Static_Site_Importer_Content_Policy {
 		if ( self::path_contains_server_code( $path, $content ) ) {
 			return 'server_side_code';
 		}
-		if ( self::is_page_path( $path ) ) {
+		// Measured with core's HTML API, like the server-code check above.
+		if ( self::is_page_path( $path ) && class_exists( 'WP_HTML_Tag_Processor' ) ) {
 			$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $content );
 			if ( 'error' === ( $diagnostic['severity'] ?? '' ) ) {
 				$metrics = array_intersect_key( $diagnostic, array_flip( array( 'script_count', 'text_chars', 'markup_bytes', 'mount_id' ) ) );
