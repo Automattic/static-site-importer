@@ -117,6 +117,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-diagnostic-contract.php',
 	'class-static-site-importer-artifact-diagnostics-adapter.php',
 	'class-static-site-importer-validation-runtime.php',
+	'class-static-site-importer-block-theme-scorecard.php',
 	'class-static-site-importer-diagnostic-projection.php',
 	'class-static-site-importer-quality-gates.php',
 	'class-static-site-importer-visual-parity-oracle.php',

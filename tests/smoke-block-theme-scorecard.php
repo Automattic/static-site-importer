@@ -31,6 +31,8 @@ try {
 	scorecard_assert( 1 === $good['checks']['shared_shell']['measured']['header_variants'], 'Header variants' );
 	scorecard_assert( 0.8 === $good['checks']['design_tokens']['measured']['design_system_metrics']['preset_share'], 'Engine metrics reused' );
 	scorecard_assert( filesize( $root . '/good/style.css' ) === $good['checks']['proportionate_assets']['measured']['theme_css_bytes'], 'CSS bytes' );
+	$multi_route = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', array_merge( $routes, array( array( 'route' => '/nested', 'post_content' => '<!-- wp:group --><div><!-- wp:paragraph --><p>Nested</p><!-- /wp:paragraph --></div><!-- /wp:group -->' ) ) ), $context );
+	scorecard_assert( 2 === $multi_route['checks']['content_quality']['measured']['totals']['max_nesting_depth'], 'Total nesting depth is the maximum across routes, not the sum' );
 	file_put_contents( $root . '/bad/parts/footer-unused.html', $footer );
 	$repeated = '<!-- wp:group --><div><!-- wp:paragraph --><p>Sidebar</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
 	for ( $i = 1; $i <= 3; ++$i ) { file_put_contents( $root . '/bad/templates/page-' . $i . '.html', $template . $repeated . '<!-- wp:heading {"anchor":"id-' . $i . '"} --><h2>Page ' . $i . '</h2><!-- /wp:heading -->' ); }

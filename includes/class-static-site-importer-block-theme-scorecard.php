@@ -11,6 +11,53 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /** Read-only measurements of theme structure and content. */
 final class Static_Site_Importer_Block_Theme_Scorecard {
+	/** Build scorecard evidence from a finalized import report. */
+	public static function from_import( array $report ): array {
+		$receipt                     = $report['materialization_receipt'] ?? array();
+		$context                     = $receipt['scorecard_context'] ?? array();
+		$context['design_system']    = $report['design_system'] ?? $receipt['design_system'] ?? array();
+		$context['source_css_bytes'] = $context['design_system']['metrics']['unique_source_css_bytes'] ?? $context['source_css_bytes'] ?? null;
+		$routes                      = array();
+		$documents                   = array_column( $context['editability_report']['documents'] ?? array(), null, 'source_path' );
+		foreach ( $receipt['wordpress'] ?? array() as $row ) {
+			$id = (int) ( $row['id'] ?? 0 );
+			if ( ! $id || ! function_exists( 'get_post' ) ) {
+				continue;
+			}
+			$post = get_post( $id );
+			if ( ! $post || ! in_array( $post->post_type, array( 'page', 'post' ), true ) ) {
+				continue;
+			}
+			$routes[] = array(
+				'route'              => $row['source_path'] ?? (string) $id,
+				'page_type'          => 'post' === $post->post_type ? 'single' : 'page',
+				'post_content'       => (string) $post->post_content,
+				'editability_report' => $documents[ $row['source_path'] ?? '' ] ?? array(),
+			);
+		}
+		$context['distinct_menus'] = $context['distinct_menus'] ?? null;
+		$dir                       = (string) ( $receipt['theme']['dir'] ?? '' );
+		return function_exists( 'parse_blocks' ) && is_dir( $dir )
+			? self::measure( $dir, $routes, $context )
+			: array(
+				'schema' => 'static-site-importer/block-theme-scorecard/v1',
+				'gating' => false,
+				'status' => 'not_measured',
+				'reason' => 'materialized_theme_or_block_parser_unavailable',
+				'checks' => array(),
+			);
+	}
+
+	/** Render the signals-only report-card table without changing its encoding. */
+	public static function report_card_rows( array $scorecard ): string {
+		$rows = "\n\n## Block theme scorecard (signals only)\n\n| Check | Status | Measured | Pass threshold |\n| --- | --- | --- | --- |\n";
+		foreach ( $scorecard['checks'] as $name => $check ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Preserve the report card's existing JSON encoding.
+			$rows .= '| ' . $name . ' | ' . $check['status'] . ' | ' . str_replace( '|', '\\|', (string) json_encode( $check['measured'] ) ) . ' | ' . str_replace( '|', '\\|', (string) json_encode( $check['pass_threshold'] ) ) . " |\n";
+		}
+		return $rows;
+	}
+
 	/** Measure theme files and materialized routes without changing them. */
 	public static function measure( string $theme_dir, array $routes, array $source_css_bytes_context ): array {
 		$context   = $source_css_bytes_context;
@@ -269,7 +316,9 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 			}
 			$per_route[ $path ] = $metrics;
 			foreach ( $metrics as $name => $value ) {
-				$totals[ $name ] = ( $totals[ $name ] ?? 0 ) + $value;
+				$totals[ $name ] = 'max_nesting_depth' === $name
+					? max( $totals[ $name ] ?? 0, $value )
+					: ( $totals[ $name ] ?? 0 ) + $value;
 				if ( ! isset( $worst[ $name ] ) || $value > $worst[ $name ]['value'] ) {
 					$worst[ $name ] = array(
 						'route' => $path,
