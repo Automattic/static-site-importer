@@ -138,6 +138,7 @@ foreach ( array(
 	'supplies' => 'Garden Supplies',
 	'empty'    => 'Empty Collection',
 	'existing' => 'Existing Page',
+	'long'     => str_repeat( 'é', 300 ),
 ) as $slug => $title ) {
 	$source     = '/collections/' . $slug . '.html';
 	$pages[]    = array(
@@ -168,6 +169,7 @@ $assert(
 	'Category uses the planned page identity.'
 );
 $assert( 'Empty Collection' === $listings[1]['category']['name'], 'Empty listings receive a category.' );
+$assert( 200 >= mb_strlen( $listings[3]['category']['name'] ), 'Long listing titles are bounded to the WordPress term name limit.' );
 $grid                    = array( 'items' => array( array( 'product' => 'first-item' ), array( 'product' => 'second-item' ) ) );
 $listings[0]['grid']     = $grid;
 $listings[0]['bindings'] = array( array() );
@@ -176,7 +178,7 @@ $listings[2]['bindings'] = array( array() );
 $before                  = $GLOBALS['ssi_category_memberships'];
 $report                  = Static_Site_Importer_Woo_Product_Listing_Materializer::materialize( array( 'product_listings' => $listings ) );
 $rows                    = $report['product_listings'];
-$assert( 3 === count( $GLOBALS['ssi_category_terms'] ), 'One term per listing, reusing the existing slug.' );
+$assert( 4 === count( $GLOBALS['ssi_category_terms'] ), 'One term per listing, reusing the existing slug.' );
 $assert( 'Garden Supplies' === $GLOBALS['ssi_category_terms'][ $rows[0]['term_id'] ]->name && $rows[0]['term_created'], 'Creates the page-named term.' );
 $assert( array( 11, 12 ) === $rows[0]['assigned_product_ids'] && has_term( $rows[0]['term_id'], 'product_cat', 11 ) && has_term( $rows[0]['term_id'], 'product_cat', 12 ), 'Assigns both products.' );
 $assert( $rows[1]['term_created'] && array() === $rows[1]['assigned_product_ids'], 'Empty listing ensures a term without products.' );
