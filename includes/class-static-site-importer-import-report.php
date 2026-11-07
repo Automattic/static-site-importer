@@ -30,6 +30,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		'asset_map',
 		'assets',
 		'blocks_engine',
+		'block_theme_scorecard',
 		'client_script_policy',
 		'commerce',
 		'commerce_context',
