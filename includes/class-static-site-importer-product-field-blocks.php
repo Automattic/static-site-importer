@@ -56,12 +56,68 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		}
 		$attrs = self::presentation_attrs( $node['attrs'] ?? array(), $own );
 		if ( 'image' === $role ) {
+			if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) ) {
+				$source  = $node['attrs'] ?? array();
+				$classes = preg_split( '/\s+/', trim( ( $attrs['className'] ?? '' ) . ' ' . ( $source['sourcePresentationClasses'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
+				if ( is_array( $classes ) ) {
+					$attrs['className'] = implode( ' ', array_unique( $classes ) );
+				}
+				foreach ( $source['sourceIdentityAttributes'] ?? array() as $key => $value ) {
+					if ( preg_match( '/^data-(?!wp-)[a-z0-9_-]+$/D', $key ) && is_string( $value ) ) {
+						$attrs['metadata']['staticSiteImporterGalleryIdentity'][ $key ] = $value;
+					}
+				}
+			}
 			$capture = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) ) );
 			if ( $capture ) {
 				$attrs['className'] = trim( ( $attrs['className'] ?? '' ) . ' ' . $capture['className'] );
 			}
 		}
 		return self::dynamic_block( $name, $attrs );
+	}
+
+	/** Capture wording before the source purchase subtree is replaced. */
+	public static function variation_wording( string $markup ): array {
+		if ( ! str_contains( $markup, '/authored-select' ) ) {
+			return array();
+		}
+		$wording = array();
+		$walk    = static function ( array $nodes, string $previous = '' ) use ( &$walk, &$wording ): void {
+			foreach ( $nodes as $node ) {
+				$attrs = $node['attrs'] ?? array();
+				if ( str_ends_with( (string) $node['blockName'], '/authored-select' ) && preg_match( '/^(?:variant-option-(.+)-select|attribute_(.+))$/D', $attrs['name'] ?? '', $match ) ) {
+					$key = sanitize_title( '' !== $match[1] ? $match[1] : $match[2] );
+					$row = array();
+					if ( '' !== $previous ) {
+						$row['label'] = $previous;
+					}
+					foreach ( $attrs['options'] ?? array() as $option ) {
+						if ( '' === ( $option['value'] ?? null ) && ! empty( $option['valueDeclared'] ) ) {
+							$row['placeholder'] = self::text( (string) ( $option['label'] ?? '' ) );
+							break;
+						}
+					}
+					if ( $row ) {
+						$wording[ $key ] = $row;
+					}
+				}
+				// A text-free wrapper does not interrupt adjacency to its first child.
+				// Controls and other non-text content do: their captions are not labels.
+				$leading = self::label_text( (string) ( $node['innerContent'][0] ?? '' ) );
+				$walk( $node['innerBlocks'] ?? array(), '' === $leading ? $previous : ( $leading ?? '' ) );
+				$previous = empty( $node['innerBlocks'] ) ? ( self::label_text( $node['innerHTML'] ?? '' ) ?? '' ) : '';
+			}
+		};
+		$walk( parse_blocks( $markup ) );
+		return $wording;
+	}
+
+	/** Only textual markup can supply a label; controls/media break adjacency. */
+	private static function label_text( string $html ): ?string {
+		if ( preg_match( '/<(?!\/?(?:p|div|section|article|main|aside|header|footer|fieldset|legend|span|label|h[1-6]|strong|em|b|i|u|s|small|sup|sub|br)\b)[^>]*>/i', $html ) ) {
+			return null;
+		}
+		return self::text( $html );
 	}
 
 	/** Compare rendered text rather than source-platform selectors. */

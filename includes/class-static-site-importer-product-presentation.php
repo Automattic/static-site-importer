@@ -20,6 +20,7 @@ final class Static_Site_Importer_Product_Presentation {
 	);
 
 	private const LAYOUT_SELECTORS = array(
+		'gallery-block'    => '',
 		'form'             => 'form.cart',
 		'variation-table'  => 'table.variations',
 		'variation-body'   => 'table.variations tbody',
@@ -62,12 +63,18 @@ final class Static_Site_Importer_Product_Presentation {
 				$rules[ $slot ] = $declarations;
 			}
 		}
-		return self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$overlay = self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
+		if ( $wording ) {
+			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
+			$overlay['variation_wording'] = $wording;
+		}
+		return $overlay;
 	}
 
 	/** One deterministic scope and stylesheet artifact for all captured product rules. */
-	private static function artifact( array $rules ): array {
-		if ( ! $rules ) {
+	private static function artifact( array $rules, bool $allow_empty = false ): array {
+		if ( ! $rules && ! $allow_empty ) {
 			return array();
 		}
 		$hash  = substr( hash( 'sha256', (string) json_encode( $rules ) ), 0, 12 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Deterministic standalone contract.
@@ -80,7 +87,8 @@ final class Static_Site_Importer_Product_Presentation {
 				$selector = '.variations tr:nth-child(' . ( (int) $parts[1] + 1 ) . ') select';
 			}
 			$scope = '.' . $class . '.' . $class;
-			$css  .= ( 'gallery' === $slot ? $scope . $selector . ',' : '' ) . $scope . ' ' . $selector . '{' . $declarations . '}';
+			// Rebuild legacy auto-width receipts exactly; new galleries fill only the inner element.
+			$css .= ( 'gallery' === $slot && str_contains( $declarations, 'width:auto !important;' ) ? $scope . $selector . ',' : '' ) . $scope . ( '' === $selector ? '' : ' ' . $selector ) . '{' . $declarations . '}';
 		}
 		return array(
 			'schema'    => 'static-site-importer/product-presentation/v1',
@@ -95,9 +103,10 @@ final class Static_Site_Importer_Product_Presentation {
 	 *
 	 * The entity currently carries control CSS, not the shared row's geometry.
 	 * In particular, input width is NOT quantity-wrapper width. Keep the painted
-	 * input inside a flexible quantity track; preserve the captured button width
-	 * where available, allowing it to shrink on narrower columns. Do not invent
-	 * a source gap or quantity-stepper width from the remaining column space.
+	 * input inside a flexible quantity track when the button has an absolute width.
+	 * Container-relative button widths cannot size a row track: use the captured
+	 * absolute quantity width (or auto) and give the button the remaining space.
+	 * Never invent a source gap from the remaining column space.
 	 */
 	private static function purchase_layout( array $controls ): array {
 		$styles = array();
@@ -116,14 +125,19 @@ final class Static_Site_Importer_Product_Presentation {
 			$styles['layout:variation-select'] = $full;
 		}
 		if ( isset( $controls['submit'], $controls['quantity'] ) ) {
-			$width                            = self::length( $controls['submit']['width'] ?? '' );
-			$row                              = array_merge(
+			$width    = self::absolute_length( $controls['submit']['width'] ?? '' );
+			$quantity = self::absolute_length( $controls['quantity']['width'] ?? '' );
+			$row      = array_merge(
 				$full,
 				array(
 					'display'               => 'grid',
-					'grid-template-columns' => $width ? 'minmax(0,1fr) minmax(0,' . $width . ')' : 'auto minmax(0,1fr)',
+					'grid-template-columns' => $width ? 'minmax(0,1fr) minmax(0,' . $width . ')' : ( '' !== $quantity ? $quantity : 'auto' ) . ' minmax(0,1fr)',
 				)
 			);
+			$gap      = self::length( $controls['submit']['column_gap'] ?? $controls['submit']['gap'] ?? '' );
+			if ( '' !== $gap ) {
+				$row['column-gap'] = $gap;
+			}
 			$styles['layout:purchase-row']    = $row;
 			$styles['layout:simple-row']      = $row;
 			$styles['layout:quantity-box']    = array_merge( $full, array( 'margin' => '0' ) );
@@ -138,14 +152,17 @@ final class Static_Site_Importer_Product_Presentation {
 		foreach ( $styles as $property => $value ) {
 			$allowed = array(
 				'width'      => array( '100%' ),
+				'max-width'  => array( 'none' ),
 				'min-width'  => array( '0' ),
 				'box-sizing' => array( 'border-box' ),
 				'display'    => array( 'block', 'grid' ),
 				'padding'    => array( '0' ),
 				'margin'     => array( '0' ),
+				'overflow'   => array( 'visible' ),
 			);
-			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^minmax\\(0,1fr\\) minmax\\(0,((?:0|\\d+(?:\\.\\d+)?(?:px|rem|em|%|vw|vh)))\\)$/D', $value ) );
-			if ( $track || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
+			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^(?:minmax\\(0,1fr\\) minmax\\(0,(?:0|\\d+(?:\\.\\d+)?px)\\)|(?:0|\\d+(?:\\.\\d+)?px) minmax\\(0,1fr\\))$/D', $value ) );
+			$gap     = 'column-gap' === $property && '' !== self::length( $value );
+			if ( $track || $gap || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
 				$css .= $property . ':' . $value . ' !important;';
 			}
 		}
@@ -171,6 +188,11 @@ final class Static_Site_Importer_Product_Presentation {
 		return is_string( $value ) && preg_match( '/^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%|vw|vh))$/D', $value ) ? $value : '';
 	}
 
+	/** Only captured pixel lengths are independent of the container and font. */
+	private static function absolute_length( mixed $value ): string {
+		return is_string( $value ) && preg_match( '/^(?:0|\d+(?:\.\d+)?px)$/D', $value ) ? $value : '';
+	}
+
 	/** Admit only positive numeric ratios, including the cascade's spaced form. */
 	private static function aspect_ratio( mixed $value ): string {
 		if ( ! is_string( $value ) || ! preg_match( '/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/D', $value, $parts ) || (float) $parts[1] <= 0 || (float) $parts[2] <= 0 ) {
@@ -181,8 +203,9 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Capture image boxes and strip arrangement before the source subtree is deleted. */
 	public static function gallery_attrs( array $node ): array {
-		$attrs = $node['attrs'] ?? array();
-		if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
+		$attrs    = $node['attrs'] ?? array();
+		$authored = str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' );
+		if ( $authored && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
 			return array(
 				'main'         => array( 'aspectRatio' => self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) ),
 				'thumbnail'    => empty( $attrs['thumbnails'] ) ? array() : array( 'width' => self::length( $attrs['thumbnailWidth'] ?? '' ) ),
@@ -230,7 +253,7 @@ final class Static_Site_Importer_Product_Presentation {
 		};
 		$walk( $node );
 		if ( ! $boxes ) {
-			return array();
+			return $authored ? array( 'authored' => true ) : array();
 		}
 		$first = $boxes[0];
 		usort( $boxes, static fn( $a, $b ) => (float) $a['width'] <=> (float) $b['width'] );
@@ -290,13 +313,28 @@ final class Static_Site_Importer_Product_Presentation {
 		$width  = self::length( $gallery['main']['width'] ?? '' );
 		$height = self::length( $gallery['main']['height'] ?? '' );
 		$ratio  = self::aspect_ratio( $gallery['main']['aspectRatio'] ?? '' );
+		// Preserve the source width cascade, but not its carousel-only layout.
+		$wrapper = $gallery ? array(
+			'layout:gallery-block' => self::layout_declarations( array(
+				'display'    => 'block',
+				'max-width'  => 'none',
+				'min-width'  => '0',
+				'box-sizing' => 'border-box',
+				'overflow'   => 'visible',
+			) ),
+		) : array();
 		if ( ( ! $width || ! $height ) && ! $ratio ) {
-			return array();
+			return $wrapper ? array_merge( $wrapper, array(
+				'gallery' => self::gallery_declarations( array(
+					'width' => '100%',
+					'float' => 'none',
+				) ),
+			) ) : array();
 		}
 		$side   = in_array( $gallery['position'] ?? '', array( 'left', 'right' ), true );
 		$styles = array(
 			'gallery'  => array(
-				'width'          => 'auto',
+				'width'          => '100%',
 				'display'        => 'flex',
 				'flex-direction' => $side ? 'row' : 'column',
 				'float'          => 'none',
@@ -355,7 +393,7 @@ final class Static_Site_Importer_Product_Presentation {
 				'object-fit' => 'contain',
 			);
 		}
-		return array_map( array( self::class, 'gallery_declarations' ), $styles );
+		return array_merge( $wrapper, array_map( array( self::class, 'gallery_declarations' ), $styles ) );
 	}
 
 	/** Consume the producer's block-style presentation as well as graph facts. */
@@ -424,6 +462,24 @@ final class Static_Site_Importer_Product_Presentation {
 		return $css;
 	}
 
+	/** Stored wording is canonical plain text, never HTML or executable syntax. */
+	public static function validate_wording( mixed $wording ): ?array {
+		if ( ! is_array( $wording ) ) {
+			return null;
+		}
+		foreach ( $wording as $attribute => $row ) {
+			if ( ! is_string( $attribute ) || ! preg_match( '/^[a-z0-9_%\-]+$/D', $attribute ) || ! is_array( $row ) || ! $row ) {
+				return null;
+			}
+			foreach ( $row as $key => $text ) {
+				if ( ! in_array( $key, array( 'label', 'placeholder' ), true ) || ! is_string( $text ) || '' === $text || trim( $text ) !== $text || preg_match( '/[<>\x00-\x1f\x7f]|\s{2,}/u', $text ) || html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $text ) {
+					return null;
+				}
+			}
+		}
+		return $wording;
+	}
+
 	/** Rebuild a structured artifact before allowing stylesheet publication. */
 	public static function validate_overlay( mixed $overlay ): ?array {
 		if ( ! is_array( $overlay ) || 'static-site-importer/product-presentation/v1' !== ( $overlay['schema'] ?? '' ) || ! is_array( $overlay['rules'] ?? null ) ) {
@@ -466,6 +522,14 @@ final class Static_Site_Importer_Product_Presentation {
 		$expected = self::capture( array( 'controls' => $controls ) );
 		$rules    = array_filter( $expected['rules'] ?? array(), static fn( $slot ) => ! str_starts_with( $slot, 'layout:' ), ARRAY_FILTER_USE_KEY );
 		$expected = self::artifact( array_merge( $rules, $layout, $gallery ) );
+		if ( array_key_exists( 'variation_wording', $overlay ) ) {
+			$wording = self::validate_wording( $overlay['variation_wording'] );
+			if ( ! $wording ) {
+				return null;
+			}
+			$expected                      = $expected ? $expected : self::artifact( array(), true );
+			$expected['variation_wording'] = $wording;
+		}
 		return $expected === $overlay ? $expected : null;
 	}
 }

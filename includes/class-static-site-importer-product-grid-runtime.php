@@ -40,10 +40,82 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			return;
 		}
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
+		add_filter( 'woocommerce_dropdown_variation_attribute_options_args', array( self::class, 'variation_placeholder' ) );
+		add_filter( 'woocommerce_attribute_label', array( self::class, 'variation_label' ), 10, 3 );
+		add_action( 'woocommerce_before_variations_form', array( self::class, 'open_variation_form' ) );
+		add_action( 'woocommerce_after_variations_form', array( self::class, 'close_variation_form' ) );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
+		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/** Read only validated plain text, including in generated companion runtimes. */
+	private static function variation_wording( mixed $product, string $attribute ): array {
+		if ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) ) {
+			return array();
+		}
+		$wording = get_post_meta( $product->get_id(), '_static_site_importer_variation_wording', true );
+		$key     = sanitize_title( $attribute );
+		// Woo prefixes global attribute taxonomies; source controls name the attribute.
+		$plain = str_starts_with( $key, 'pa_' ) ? substr( $key, 3 ) : $key;
+		$row   = is_array( $wording ) ? ( $wording[ $key ] ?? $wording[ $plain ] ?? array() ) : array();
+		if ( ! is_array( $row ) ) {
+			return array();
+		}
+		foreach ( $row as $key => $text ) {
+			if ( ! in_array( $key, array( 'label', 'placeholder' ), true ) || ! is_string( $text ) || '' === $text || trim( $text ) !== $text || preg_match( '/[<>\x00-\x1f\x7f]|\s{2,}/u', $text ) || html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $text ) {
+				return array();
+			}
+		}
+		return $row;
+	}
+
+	/** Woo owns option escaping and selection behavior. */
+	public static function variation_placeholder( array $args ): array {
+		$row = self::variation_wording( $args['product'] ?? null, (string) ( $args['attribute'] ?? '' ) );
+		if ( isset( $row['placeholder'] ) ) {
+			$args['show_option_none'] = $row['placeholder'];
+		}
+		return $args;
+	}
+
+	/** True only while Woo renders the native variations form. */
+	private static bool $in_variation_form = false;
+
+	public static function open_variation_form(): void {
+		self::$in_variation_form = true;
+	}
+
+	public static function close_variation_form(): void {
+		self::$in_variation_form = false;
+	}
+
+	/** Only the product's own native variations form may rename labels. */
+	public static function variation_label( string $label, string $attribute, mixed $label_product ): string {
+		global $product;
+		if ( ! self::$in_variation_form || ( $label_product && ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) || $label_product->get_id() !== $product->get_id() ) ) ) {
+			return $label;
+		}
+		return self::variation_wording( $product, $attribute )['label'] ?? $label;
+	}
+
+	/** Restore inert source identity on the native gallery's outer block only. */
+	public static function gallery_identity( string $content, array $block ): string {
+		$identity = $block['attrs']['metadata']['staticSiteImporterGalleryIdentity'] ?? array();
+		if ( ! is_array( $identity ) || ! $identity ) {
+			return $content;
+		}
+		$tags = new WP_HTML_Tag_Processor( $content );
+		if ( $tags->next_tag() ) {
+			foreach ( $identity as $key => $value ) {
+				if ( preg_match( '/^data-(?!wp-)[a-z0-9_-]+$/D', $key ) && is_string( $value ) ) {
+					$tags->set_attribute( $key, $value );
+				}
+			}
+		}
+		return $tags->get_updated_html();
 	}
 
 	/**

@@ -107,8 +107,35 @@ $simple_capture = Static_Site_Importer_Product_Presentation::capture( $simple );
 if ( str_contains( $simple_capture['css'], 'table.variations' ) || ! str_contains( $simple_capture['css'], 'form.cart:not(.variations_form){width:100%' ) ) {
 	throw new RuntimeException( 'Simple product must fill its row without inventing variation fields.' );
 }
+$purchase_cases = array(
+	'percentage submit' => array( '100%', '144px', '144px minmax(0,1fr)' ),
+);
+foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tracks ) ) {
+	$entity = array(
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'number', 'styles' => array( 'width' => $quantity_width ) ),
+			array( 'tag' => 'button', 'type' => 'submit', 'styles' => array( 'width' => $submit_width, 'gap' => '10px' ) ),
+		),
+	);
+	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	foreach ( array( 'layout:purchase-row', 'layout:simple-row' ) as $slot ) {
+		if ( ! str_contains( $overlay['rules'][ $slot ], 'grid-template-columns:' . $tracks . ' !important;' ) || ! str_contains( $overlay['rules'][ $slot ], 'column-gap:10px !important;' ) ) {
+			throw new RuntimeException( $label . ': purchase proportions or gap lost.' );
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+		throw new RuntimeException( $label . ': purchase receipt rejected.' );
+	}
+	foreach ( array( '144% minmax(0,1fr)', '144px minmax(0,100%)', '144px minmax(0,1fr) junk', '144px minmax(0,1fr);position:fixed' ) as $invalid ) {
+		$bad = $overlay;
+		$bad['rules']['layout:purchase-row'] = str_replace( $tracks, $invalid, $bad['rules']['layout:purchase-row'] );
+		if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+			throw new RuntimeException( $label . ': invalid purchase tracks accepted.' );
+		}
+	}
+}
 $unknown_width = $fixture;
-unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'] );
+unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'], $unknown_width['presentation_graph']['controls'][0]['control']['styles']['width'] );
 if ( ! str_contains( Static_Site_Importer_Product_Presentation::capture( $unknown_width )['css'], 'grid-template-columns:auto minmax(0,1fr)' ) ) {
 	throw new RuntimeException( 'Missing button geometry must use intrinsic quantity and a flexible button.' );
 }
@@ -280,6 +307,134 @@ foreach ( $carousel_cases as $label => list( $placement, $position, $direction, 
 			if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
 				throw new RuntimeException( $label . ': unsafe carousel value accepted.' );
 			}
+		}
+	}
+}
+// Source width belongs to the outer block; conflicting source layout does not.
+$replacement_cases = array(
+	'source carousel width cascade' => array( 'product-gallery be-inline-geometry-x', 'scope-example' ),
+);
+foreach ( $replacement_cases as $label => list( $classes, $scope ) ) {
+	$node = array(
+		'blockName' => 'example/authored-carousel',
+		'attrs' => array(
+			'className' => 'existing',
+			'sourcePresentationClasses' => $classes,
+			'sourceIdentityAttributes' => array( 'data-be-source-scope' => $scope, 'onclick' => 'unsafe()' ),
+			'stageAspectRatio' => '3/4',
+			'thumbnailPosition' => 'left',
+			'thumbnailWidth' => '50px',
+			'thumbnails' => array( array( 'src' => 'one.jpg' ) ),
+		),
+	);
+	$node['innerBlocks'] = array();
+	$node['innerHTML'] = '<div><img src="one.jpg" style="width:100%;height:100%" /></div>';
+	$node['innerContent'] = array( $node['innerHTML'] );
+	$overlays = array();
+	$bound = Static_Site_Importer_Product_Field_Blocks::bind_document( serialize_block( $node ), array( 'image' => 'one.jpg' ), $overlays );
+	$block = parse_blocks( $bound )[0];
+	if ( 'woocommerce/product-image-gallery' !== $block['blockName'] || str_contains( $bound, '<img' ) || 1 !== count( $overlays ) ) {
+		throw new RuntimeException( $label . ': public replacement path lost the native gallery.' );
+	}
+	$overlay = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) ) );
+	foreach ( array_merge( array( 'existing', $overlay['className'] ), explode( ' ', $classes ) ) as $class ) {
+		if ( ! in_array( $class, explode( ' ', $block['attrs']['className'] ), true ) ) {
+			throw new RuntimeException( $label . ': missing replacement class ' . $class );
+		}
+	}
+	if ( array( 'data-be-source-scope' => $scope ) !== ( $block['attrs']['metadata']['staticSiteImporterGalleryIdentity'] ?? null ) ) {
+		throw new RuntimeException( $label . ': lost inert source identity.' );
+	}
+	$rules = array(
+		'layout:gallery-block' => array( 'display:block', 'overflow:visible', 'min-width:0', 'max-width:none' ),
+		'gallery' => array( 'width:100%', 'display:flex' ),
+	);
+	foreach ( $rules as $slot => $values ) {
+		foreach ( $values as $value ) {
+			if ( ! str_contains( $overlay['rules'][ $slot ] ?? '', $value . ' !important;' ) ) {
+				throw new RuntimeException( $label . ': missing wrapper isolation or inner fill ' . $value );
+			}
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) || str_contains( $overlay['rules']['layout:gallery-block'], 'width:' . '100%' ) ) {
+		throw new RuntimeException( $label . ': receipt invalid or source width overridden.' );
+	}
+	$inner_selector = '.' . $overlay['className'] . '.' . $overlay['className'] . ' .woocommerce-product-gallery{width:100% !important;';
+	if ( ! str_contains( $overlay['css'], $inner_selector ) || $overlays[0] !== $overlay ) {
+		throw new RuntimeException( $label . ': fill rule must target the inner gallery, not the source-width wrapper.' );
+	}
+	foreach ( array( 'overflow' => array( 'hidden' ), 'max-width' => array( '512px', '100%', '0', 'auto', 'initial', 'unset', 'none;display:none' ) ) as $property => $values ) {
+		foreach ( $values as $value ) {
+			$bad = $overlay;
+			$original = 'max-width' === $property ? 'none' : 'visible';
+			$bad['rules']['layout:gallery-block'] = str_replace( $property . ':' . $original . ' !important;', $property . ':' . $value . ' !important;', $bad['rules']['layout:gallery-block'] );
+			// Rebuild the receipt so rejection tests the vocabulary, not a stale hash or CSS.
+			$class = 'ssi-product-' . substr( hash( 'sha256', (string) json_encode( $bad['rules'] ) ), 0, 12 );
+			$bad['css'] = str_replace( $overlay['className'], $class, $bad['css'] );
+			$bad['css'] = str_replace( $overlay['rules']['layout:gallery-block'], $bad['rules']['layout:gallery-block'], $bad['css'] );
+			$bad['className'] = $class;
+			if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+				throw new RuntimeException( $label . ': unsupported wrapper receipt accepted: ' . $property . ':' . $value );
+			}
+		}
+	}
+}
+/** Minimal product meta persistence for the native Woo filter contract. */
+function update_post_meta( $id, $key, $value ) {
+	$GLOBALS['ssi_wording_meta'][ $id ][ $key ] = $value;
+}
+function get_post_meta( $id, $key, $single = true ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core signature.
+	return $GLOBALS['ssi_wording_meta'][ $id ][ $key ] ?? '';
+}
+function sanitize_title( $text ) {
+	return strtolower( str_replace( ' ', '-', $text ) );
+}
+require_once ABSPATH . 'includes/class-static-site-importer-product-grid-runtime.php';
+/** Exercise the same action scope as Woo's native variable form. */
+function render_variations_form( $rows ) {
+	$result = array();
+	Static_Site_Importer_Product_Grid_Runtime::open_variation_form();
+	foreach ( $rows as $attribute => $expected ) {
+		$label = Static_Site_Importer_Product_Grid_Runtime::variation_label( $attribute, $attribute, false );
+		$args = Static_Site_Importer_Product_Grid_Runtime::variation_placeholder( array( 'product' => $GLOBALS['product'], 'attribute' => $attribute, 'show_option_none' => 'Choose an option' ) );
+		$result[ $attribute ] = array( $label, $args['show_option_none'] );
+	}
+	Static_Site_Importer_Product_Grid_Runtime::close_variation_form();
+	return $result;
+}
+// Captured wording must survive both direct siblings and text-free wrappers.
+$select = '<!-- wp:ssi/authored-select {"name":"variant-option-Size-select","options":[{"label":"\\n Select Size \\n","value":"","valueDeclared":true}]} /-->';
+$wording_cases = array(
+	'direct sibling' => $select,
+	'wrapped select' => '<!-- wp:group {"className":"variant-select-wrapper"} --><div class="variant-select-wrapper">' . $select . '</div><!-- /wp:group -->',
+);
+foreach ( $wording_cases as $case => $control ) {
+	$binding['search_block_markup'] = '<!-- wp:group --><div><!-- wp:paragraph --><p class="variant-option-title">Size:</p><!-- /wp:paragraph -->' . $control . '</div><!-- /wp:group -->';
+	$product_row = array( 'slug' => 'stickers', 'bindings' => array( $binding ) );
+	$records = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+		array( 'entities' => array( 'catalog' => array( 'adapter' => Static_Site_Importer_Woo_Product_Seeder::adapter(), 'manifest' => array( 'products' => array( $product_row ) ) ) ) ),
+		array( 'catalog' => array( 'products' => array( array( 'slug' => 'stickers', 'id' => 42, 'status' => 'created' ) ) ) )
+	);
+	$entity = array_merge( $fixture, array( 'variation_wording' => $records[0]['product_presentation']['variation_wording'] ?? array() ) );
+	if ( array( 'size' => array( 'label' => 'Size:', 'placeholder' => 'Select Size' ) ) !== $entity['variation_wording'] ) {
+		throw new RuntimeException( $case . ': source wording was not captured exactly.' );
+	}
+	$GLOBALS['product'] = new class {
+		public function get_id() { return 42; }
+	};
+	$rows = array( 'Size' => array( 'Size:', 'Select Size' ), 'Color' => array( 'Color', 'Choose an option' ) );
+	if ( render_variations_form( $rows ) !== $rows || 'Size' !== Static_Site_Importer_Product_Grid_Runtime::variation_label( 'Size', 'Size', false ) ) {
+		throw new RuntimeException( $case . ': native variation form lost source wording or leaked labels outside the form.' );
+	}
+	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+		throw new RuntimeException( 'Wording receipt did not round trip.' );
+	}
+	foreach ( array( '<b>Size:</b>', 'Size:&#10;', "Size:\n" ) as $unsafe_text ) {
+		$bad = $overlay;
+		$bad['variation_wording']['size']['label'] = $unsafe_text;
+		if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+			throw new RuntimeException( 'Non-plain wording accepted.' );
 		}
 	}
 }
