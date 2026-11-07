@@ -695,11 +695,6 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, upload file(s), or paste HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
-	$source_quality = static_site_importer_rest_validate_static_html_sources( $files );
-	if ( is_wp_error( $source_quality ) ) {
-		return $source_quality;
-	}
-
 	$entrypoint = isset( $source['entrypoint'] ) ? static_site_importer_rest_artifact_path( (string) $source['entrypoint'] ) : '';
 	if ( '' === $entrypoint || ! in_array( $entrypoint, array_column( $files, 'path' ), true ) ) {
 		$entrypoint = static_site_importer_rest_entrypoint( $files, isset( $source['archive'] ) );
@@ -724,50 +719,6 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		'source_metadata' => array() === $archive_skipped ? array() : array( 'intake_findings' => $archive_skipped ),
 		'provider'        => 'rest-source',
 	);
-}
-
-/**
- * Validate imported HTML files before building an artifact.
- *
- * @param array<int,array<string,mixed>> $files Artifact files.
- * @return true|WP_Error
- */
-function static_site_importer_rest_validate_static_html_sources( array $files ) {
-	foreach ( $files as $file ) {
-		$path = isset( $file['path'] ) ? (string) $file['path'] : '';
-		if ( ! preg_match( '/\.html?$/i', $path ) ) {
-			continue;
-		}
-
-		$content = '';
-		if ( isset( $file['content'] ) ) {
-			$content = (string) $file['content'];
-		} elseif ( isset( $file['content_base64'] ) ) {
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded HTML artifact content for source-quality validation.
-			$decoded = base64_decode( (string) $file['content_base64'], true );
-			if ( false === $decoded ) {
-				continue;
-			}
-			$content = $decoded;
-		}
-
-		$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $content );
-		if ( ! empty( $diagnostic ) && 'error' === ( $diagnostic['severity'] ?? '' ) ) {
-			$diagnostic['source_path'] = $path;
-
-			return new WP_Error(
-				'static_site_importer_client_rendered_app_shell',
-				__( 'This source appears to be a JavaScript-rendered application shell. Static Site Importer can import server-rendered HTML, but this source needs a browser-rendered capture before it can produce WordPress blocks.', 'static-site-importer' ),
-				array(
-					'status'      => 422,
-					'source_path' => $path,
-					'diagnostic'  => $diagnostic,
-				)
-			);
-		}
-	}
-
-	return true;
 }
 
 /**

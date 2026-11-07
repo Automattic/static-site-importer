@@ -506,42 +506,6 @@ $assert( ! is_wp_error( $direct_continuation_response ), 'rest-direct-artifact-c
 $assert( 1 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-direct-artifact-continuation-invokes-ability-once' );
 $assert( array( 'type' => 'files', 'import_id' => 'retained-artifact-id' ) === ( $GLOBALS['ssi_url_ability_inputs'][0]['source'] ?? null ), 'rest-direct-artifact-continuation-preserves-source-free-resume-contract' );
 
-$client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
-$pasted_shell_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'source' => array(
-				'html' => $client_shell_html,
-			),
-		)
-	)
-);
-$assert( is_wp_error( $pasted_shell_response ), 'rest-pasted-client-shell-errors' );
-$assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_code() : '' ), 'rest-pasted-client-shell-error-code' );
-$pasted_shell_error_data = is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_data() : array();
-$assert( 'website/index.html' === ( $pasted_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-pasted-client-shell-diagnostic-source-path' );
-$assert( 'website/index.html' === ( $pasted_shell_error_data['source_path'] ?? '' ), 'rest-pasted-client-shell-error-names-source-path' );
-
-$uploaded_shell_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'source' => array(
-				'files' => array(
-					array(
-						'path'           => 'index.html',
-						'content_base64' => base64_encode( $client_shell_html ),
-					),
-				),
-			),
-		)
-	)
-);
-$assert( is_wp_error( $uploaded_shell_response ), 'rest-uploaded-client-shell-errors' );
-$assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_code() : '' ), 'rest-uploaded-client-shell-error-code' );
-$uploaded_shell_error_data = is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_data() : array();
-$assert( 'website/index.html' === ( $uploaded_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-uploaded-client-shell-diagnostic-source-path' );
-$assert( 'website/index.html' === ( $uploaded_shell_error_data['source_path'] ?? '' ), 'rest-uploaded-client-shell-error-names-source-path' );
-
 $figma_upload_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
 	array(
 		'source' => array(

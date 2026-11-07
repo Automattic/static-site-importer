@@ -695,7 +695,7 @@ class Static_Site_Importer_URL_Fetcher {
 	public static function html_source_diagnostic( string $html ): array {
 		$markup_bytes     = strlen( $html );
 		$script_count     = 0;
-		$app_shell        = false;
+		$mount_id         = '';
 		$content_elements = 0;
 		$text             = '';
 		$template_depth   = 0;
@@ -712,7 +712,8 @@ class Static_Site_Importer_URL_Fetcher {
 					continue;
 				}
 				$script_count += 'SCRIPT' === $tag ? 1 : 0;
-				$app_shell     = $app_shell || in_array( $processor->get_attribute( 'id' ), array( 'root', 'app', '__next', 'gatsby-focus-wrapper', 'mount' ), true );
+				$id            = $processor->get_attribute( 'id' );
+				$mount_id      = '' === $mount_id && in_array( $id, array( 'root', 'app', '__next', 'gatsby-focus-wrapper', 'mount' ), true ) ? $id : $mount_id;
 				if ( 0 === $template_depth && in_array( $tag, array( 'MAIN', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'FIGURE', 'PICTURE', 'IMG', 'VIDEO' ), true ) ) {
 					++$content_elements;
 				}
@@ -725,12 +726,13 @@ class Static_Site_Importer_URL_Fetcher {
 		$text_chars = strlen( $text );
 		$text_ratio = $markup_bytes > 0 ? $text_chars / $markup_bytes : 0;
 
-		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 && 0 === $content_elements ) || ( $script_count >= 3 && $text_chars < 200 && $app_shell ) ) {
+		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 && 0 === $content_elements ) || ( $script_count >= 3 && $text_chars < 200 && '' !== $mount_id ) ) {
 			return array(
 				'type'          => 'client_rendered_app_shell',
 				'severity'      => 'error',
 				'message'       => 'Fetched HTML is dominated by JavaScript with little server-visible page content.',
 				'script_count'  => $script_count,
+				'mount_id'      => $mount_id,
 				'text_chars'    => $text_chars,
 				'markup_bytes'  => $markup_bytes,
 				'text_ratio'    => $text_ratio,

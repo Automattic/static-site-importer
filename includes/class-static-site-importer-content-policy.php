@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 if ( ! class_exists( 'Static_Site_Importer_Runtime_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-runtime-capabilities.php';
+	require_once __DIR__ . '/class-static-site-importer-url-fetcher.php';
 }
 
 final class Static_Site_Importer_Content_Policy {
@@ -118,6 +119,9 @@ final class Static_Site_Importer_Content_Policy {
 	/** Finding for a non-entry page left out of the import because it is not static content. */
 	public const PAGE_DROPPED = 'static_site_importer_non_static_page_dropped';
 
+	/** Exclusion reason for a page that only mounts a JavaScript app. */
+	private const APP_SHELL = 'client_rendered_app_shell';
+
 	/**
 	 * Admit an untrusted website artifact: the one static-content decision.
 	 *
@@ -129,7 +133,9 @@ final class Static_Site_Importer_Content_Policy {
 	 * - an asset is skipped with a {@see FILE_SKIPPED} finding, so references to
 	 *   it resolve like any other missing asset;
 	 * - a non-entry page is dropped with a {@see PAGE_DROPPED} finding, and the
-	 *   remaining pages import;
+	 *   remaining pages import. A page that only mounts a JavaScript app is
+	 *   not static content either: it has no page content until a browser
+	 *   runs its scripts;
 	 * - the entrypoint (the declared one, or a root index/default/home
 	 *   document) and the root `_redirects` manifest fail closed, because
 	 *   the site cannot be imported without them.
@@ -166,13 +172,24 @@ final class Static_Site_Importer_Content_Policy {
 					)
 				);
 			}
-			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, static_site_importer_cli_request_bundle_is_declared_report( $path, $reports ) );
+			$metrics = array();
+			$reason  = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, static_site_importer_cli_request_bundle_is_declared_report( $path, $reports ), $metrics );
 			if ( $reason instanceof WP_Error ) {
 				return $reason;
 			}
 			if ( '' === $reason ) {
 				$admitted[] = $file;
 				continue;
+			}
+			if ( self::fails_closed( $path, $entrypoint ) && self::APP_SHELL === $reason ) {
+				return new WP_Error(
+					'static_site_importer_client_rendered_app_shell',
+					sprintf( '%s only mounts a JavaScript app, so it has no page content until a browser runs its scripts. Send it as HTML that contains the page content: prerender it to static HTML, or write it as plain HTML.', $path ),
+					array(
+						'path'    => $path,
+						'metrics' => $metrics,
+					)
+				);
 			}
 			if ( self::fails_closed( $path, $entrypoint ) ) {
 				return new WP_Error(
@@ -184,7 +201,7 @@ final class Static_Site_Importer_Content_Policy {
 					)
 				);
 			}
-			$findings[] = self::exclusion_finding( $path, $reason );
+			$findings[] = self::exclusion_finding( $path, $reason, $metrics );
 		}
 		$artifact['files'] = $admitted;
 
@@ -246,9 +263,10 @@ final class Static_Site_Importer_Content_Policy {
 	 * @param object|null         $payload_reader      Canonical source payload reader.
 	 * @param callable|null       $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
 	 * @param bool                $declared_report     Whether the artifact declares this path as a capture report.
+	 * @param array<string,mixed> $metrics             Set to the measurements behind an app-shell exclusion.
 	 * @return string|WP_Error
 	 */
-	private static function exclusion_reason( array $file, string $path, ?object $payload_reader, ?callable $retain_text_payload, bool $declared_report ) {
+	private static function exclusion_reason( array $file, string $path, ?object $payload_reader, ?callable $retain_text_payload, bool $declared_report, array &$metrics ) {
 		if ( ! self::is_static_path( $path ) ) {
 			return 'non_static_extension';
 		}
@@ -272,6 +290,13 @@ final class Static_Site_Importer_Content_Policy {
 		if ( self::path_contains_server_code( $path, $content ) ) {
 			return 'server_side_code';
 		}
+		if ( self::is_page_path( $path ) ) {
+			$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $content );
+			if ( 'error' === ( $diagnostic['severity'] ?? '' ) ) {
+				$metrics = array_intersect_key( $diagnostic, array_flip( array( 'script_count', 'text_chars', 'markup_bytes', 'mount_id' ) ) );
+				return self::APP_SHELL;
+			}
+		}
 		if ( null !== $retain_text_payload && ( isset( $file['payload_reference'] ) || isset( $file['payload']['reference'] ) ) ) {
 			$retained = $retain_text_payload( $file, $content );
 			if ( $retained instanceof WP_Error ) {
@@ -286,14 +311,18 @@ final class Static_Site_Importer_Content_Policy {
 	 * The finding for a file left out of the import.
 	 *
 	 * @param string $path   Artifact path.
-	 * @param string $reason Exclusion reason code.
-	 * @return array<string,string>
+	 * @param string $reason  Exclusion reason code.
+	 * @param array  $metrics Measurements behind the exclusion, when it has any.
+	 * @return array<string,mixed>
 	 */
-	private static function exclusion_finding( string $path, string $reason ): array {
-		$page   = self::is_page_path( $path );
-		$detail = 'server_side_code' === $reason ? 'its source contains server-side code' : 'it is not static content';
-
-		return array(
+	private static function exclusion_finding( string $path, string $reason, array $metrics = array() ): array {
+		$page    = self::is_page_path( $path );
+		$details = array(
+			'server_side_code' => 'its source contains server-side code',
+			self::APP_SHELL    => 'it only mounts a JavaScript app and has no page content until a browser runs its scripts',
+		);
+		$detail  = $details[ $reason ] ?? 'it is not static content';
+		$finding = array(
 			'code'        => $page ? self::PAGE_DROPPED : self::FILE_SKIPPED,
 			'type'        => 'static-site-importer',
 			'severity'    => 'warning',
@@ -305,6 +334,11 @@ final class Static_Site_Importer_Content_Policy {
 				? sprintf( 'Dropped page %1$s because %2$s; the remaining pages import.', $path, $detail )
 				: sprintf( 'Skipped %1$s because %2$s, so references to it are unresolved.', $path, $detail ),
 		);
+		if ( array() !== $metrics ) {
+			$finding['metrics'] = $metrics;
+		}
+
+		return $finding;
 	}
 
 	/**
