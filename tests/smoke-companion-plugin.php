@@ -1060,7 +1060,7 @@ if ( is_array( $layout_descriptor ) ) {
 			}
 		}
 	}
-	$attributes = array( 'content' => '<main onclick="alert(1)" data-wp-interactive data-wp-bind=> data-wp-context="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
+	$attributes = array( 'content' => '<main onclick="alert(1)" style="background:url(javascript:alert(0))" data-wp-interactive data-wp-context="bad" data-wp-bind=><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$unsafe_layout_output = strtolower( (string) ob_get_clean() );

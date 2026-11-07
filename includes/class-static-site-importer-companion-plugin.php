@@ -1358,14 +1358,39 @@ $sanitize_srcset = static function ( string $srcset ) use ( $safe_url ): string 
 	}
 	return implode( ', ', $candidates );
 };
-$content = preg_replace_callback(
-	'/\bsrcset\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
-	static function ( array $match ) use ( $sanitize_srcset ): string {
-		$srcset = $sanitize_srcset( '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' ) );
+// Attribute rewrites touch only real attributes on real start tags. Capture
+// runtimes keep HTML inside JSON data-* values, and a bare /style=/ match
+// there inserts literal quotes that end the attribute and corrupt the JSON.
+// Quoted values are consumed whole, so text inside them is never a name.
+$rewrite_attribute = static function ( string $html, string $name, callable $rewrite, string $tags = '[a-z][a-z0-9-]*' ): string {
+	return preg_replace_callback(
+		'#<(?:' . $tags . ')\b(?:"[^"]*"|\'[^\']*\'|=>|[^>])*>#i',
+		static function ( array $element ) use ( $name, $rewrite ): string {
+			return preg_replace_callback(
+				'/(\s+)([^\s"\'>\/=]+)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+))?/',
+				static function ( array $attribute ) use ( $name, $rewrite ): string {
+					if ( 0 !== strcasecmp( $attribute[2], $name ) || ! isset( $attribute[3] ) ) {
+						return $attribute[0];
+					}
+					$quote       = in_array( $attribute[3][0], array( '"', "'" ), true ) ? $attribute[3][0] : '';
+					$value       = '' === $quote ? $attribute[3] : substr( $attribute[3], 1, -1 );
+					$replacement = $rewrite( $value, $quote );
+					return null === $replacement ? $attribute[0] : ( '' === $replacement ? '' : $attribute[1] . $replacement );
+				},
+				$element[0]
+			) ?? $element[0];
+		},
+		$html
+	) ?? $html;
+};
+$content = $rewrite_attribute(
+	$content,
+	'srcset',
+	static function ( string $value ) use ( $sanitize_srcset ): string {
+		$srcset = $sanitize_srcset( $value );
 		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
-	},
-	$content
-) ?? '';
+	}
+);
 $content = preg_match( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*<svg\b#is', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
 $content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
@@ -1638,10 +1663,10 @@ $lower_color_functions = static function ( string $value ) use ( $color_channel,
 		$value
 	) ?? $value;
 };
-$content = preg_replace_callback(
-	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
-	static function ( array $match ) use ( $safe_url, $lower_image_sets, $lower_color_functions, $tokenize_color_functions ): string {
-		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
+$content = $rewrite_attribute(
+	$content,
+	'style',
+	static function ( string $value ) use ( $safe_url, $lower_image_sets, $lower_color_functions, $tokenize_color_functions ): string {
 		$value = $tokenize_color_functions( $lower_color_functions( $lower_image_sets( $value ) ) );
 		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
 			foreach ( $urls[1] as $url ) {
@@ -1651,43 +1676,40 @@ $content = preg_replace_callback(
 			}
 		}
 		return 'style="' . esc_attr( $value ) . '"';
-	},
-	$content
-) ?? '';
+	}
+);
 
 // Preserve audited raster data URLs through KSES's protocol filter without
 // allowing the data scheme for links or other URL-bearing attributes.
 $data_images = array();
-$content     = preg_replace_callback(
-	'/\bsrc\s*=\s*(["\'])(data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+)\1/i',
-	static function ( array $match ) use ( &$data_images ): string {
-		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
-		$data_images[ $placeholder ] = $match[2];
-		return 'src=' . $match[1] . $placeholder . $match[1];
-	},
-	$content
-) ?? '';
+$content     = $rewrite_attribute(
+	$content,
+	'src',
+	static function ( string $value, string $quote ) use ( &$data_images ): ?string {
+		if ( '' === $quote || ! preg_match( '/^data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+$/i', $value ) ) {
+			return null;
+		}
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $value ) . '.invalid';
+		$data_images[ $placeholder ] = $value;
+		return 'src=' . $quote . $placeholder . $quote;
+	}
+);
 // SVG data URLs are only shielded for <img>/<source> src: browsers render SVG
 // in image context as a static document with scripts and external resources
 // disabled. Links, frames, objects, embeds and media src keep rejecting data:.
-$content = preg_replace_callback(
-	'#<(?:img|source)\b[^>]*>#i',
-	static function ( array $tag ) use ( &$data_images ): string {
-		return preg_replace_callback(
-			'/(?<=\s)src\s*=\s*(["\'])(data:image\/svg\+xml(?:;base64,[a-z0-9+\/=]+|;charset=utf-?8,[^\s"\'<>&\\\\]*|,[^\s"\'<>&\\\\]*))\1/i',
-			static function ( array $match ) use ( &$data_images ): string {
-				if ( strlen( $match[2] ) > 1048576 ) {
-					return $match[0];
-				}
-				$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
-				$data_images[ $placeholder ] = $match[2];
-				return 'src=' . $match[1] . $placeholder . $match[1];
-			},
-			$tag[0]
-		) ?? $tag[0];
+$content = $rewrite_attribute(
+	$content,
+	'src',
+	static function ( string $value, string $quote ) use ( &$data_images ): ?string {
+		if ( '' === $quote || strlen( $value ) > 1048576 || ! preg_match( '/^data:image\/svg\+xml(?:;base64,[a-z0-9+\/=]+|;charset=utf-?8,[^\s"\'<>&\\\\]*|,[^\s"\'<>&\\\\]*)$/i', $value ) ) {
+			return null;
+		}
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $value ) . '.invalid';
+		$data_images[ $placeholder ] = $value;
+		return 'src=' . $quote . $placeholder . $quote;
 	},
-	$content
-) ?? '';
+	'img|source'
+);
 
 $global = array(
 	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
@@ -1785,13 +1807,13 @@ remove_filter( 'safe_style_css', $safe_style_css );
 // character set (no quotes, ampersands, angle brackets, semicolons, or
 // backslashes), so put each notation back byte-for-byte in style attributes
 // now that KSES has judged the declarations the tokens rode in on.
-$output = preg_replace_callback(
-	'/\bstyle\s*=\s*(["\'])(.*?)\1/is',
-	static function ( array $match ) use ( $color_tokens ): string {
-		return 'style=' . $match[1] . strtr( $match[2], $color_tokens ) . $match[1];
-	},
-	$output
-) ?? $output;
+$output = $rewrite_attribute(
+	$output,
+	'style',
+	static function ( string $value, string $quote ) use ( $color_tokens ): string {
+		return 'style=' . $quote . strtr( $value, $color_tokens ) . $quote;
+	}
+);
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
