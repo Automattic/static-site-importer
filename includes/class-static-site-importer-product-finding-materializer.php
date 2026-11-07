@@ -568,7 +568,7 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 		}
 
 		$slug = isset( $product['slug'] ) && is_scalar( $product['slug'] ) ? trim( (string) $product['slug'] ) : '';
-		if ( '' === $slug || 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
+		if ( '' === $slug || 1 !== preg_match( Static_Site_Importer_Entity_Materializer_Registry::PRODUCT_SLUG_PATTERN, $slug ) ) {
 			return null;
 		}
 
