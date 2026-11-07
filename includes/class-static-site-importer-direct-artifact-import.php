@@ -638,10 +638,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					if ( in_array( $entry_id, $pending, true ) ) {
 						$pending = array_merge( array( $entry_id ), array_values( array_diff( $pending, array( $entry_id ) ) ) );
 					}
-					$batch_limit                 = 'fanout' === $policy['compile_mode']
+					$batch_limit = 'fanout' === $policy['compile_mode']
 					? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
 					: $policy['compile_in_process_pages'];
-					$batch_ids                   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
+					$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
 					if ( empty( $batch_ids ) ) {
 						break;
 					}
@@ -738,7 +738,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					++$batches;
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
-				$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
+				$remaining                = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
 				$compile_deadline_reached = self::deadline_reached( $deadline, $clock );
 				if ( 0 < $remaining && ! $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
 					return self::continuation( $run, 'pages_remaining' );
@@ -749,7 +749,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						return self::fail( $workspace, $run, 'compose', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The deadline prevented compilation of the entrypoint page.' ) );
 					}
 					$run['deadline_finalized'] = true;
-					$write = self::write_run( $workspace, $run );
+					$write                     = self::write_run( $workspace, $run );
 					if ( is_wp_error( $write ) ) {
 						return $write;
 					}
@@ -1125,21 +1125,32 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				);
 			}
 		}
-		$plan['artifact']['files'] = array();
-		$plan['receipt_schema'] = self::RECEIPT_SCHEMAS[0];
-		$plan['compiled_documents'] = array();
-		$plan['owned_document_paths'] = array();
+		$plan['artifact']['files']       = array();
+		$plan['receipt_schema']          = self::RECEIPT_SCHEMAS[0];
+		$plan['compiled_documents']      = array();
+		$plan['owned_document_paths']    = array();
 		$plan['shared_reduction_digest'] = $shared['shared_reduction_digest'];
-		$plan['terminal_reduction'] = array(
-			'normalization' => array( 'diagnostics' => array(), 'rejected_count' => 0, 'bytes' => 0 ),
-			'source_documents' => array( 'documents' => array(), 'components' => array(), 'diagnostics' => array() ),
+		$plan['terminal_reduction']      = array(
+			'normalization'             => array(
+				'diagnostics'    => array(),
+				'rejected_count' => 0,
+				'bytes'          => 0,
+			),
+			'source_documents'          => array(
+				'documents'   => array(),
+				'components'  => array(),
+				'diagnostics' => array(),
+			),
 			'owned_transformable_paths' => array(),
-			'component_facts' => array( 'components' => array(), 'classes' => array() ),
-			'block_types' => array(),
-			'omitted_pages' => $omitted,
+			'component_facts'           => array(
+				'components' => array(),
+				'classes'    => array(),
+			),
+			'block_types'               => array(),
+			'omitted_pages'             => $omitted,
 		);
 		// Match the public v3 receipt's digest input; never alter a compiled receipt.
-		$input = array_intersect_key( $plan, array_flip( array( 'shared_digest', 'page_id', 'artifact', 'layout_geometry_proof', 'receipt_schema', 'compiled_documents', 'owned_document_paths', 'shared_reduction_digest', 'terminal_reduction', 'compiler_options', 'output_schema' ) ) );
+		$input          = array_intersect_key( $plan, array_flip( array( 'shared_digest', 'page_id', 'artifact', 'layout_geometry_proof', 'receipt_schema', 'compiled_documents', 'owned_document_paths', 'shared_reduction_digest', 'terminal_reduction', 'compiler_options', 'output_schema' ) ) );
 		$plan['digest'] = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::hash( $input, 512 );
 		return $plan;
 	}
@@ -1163,7 +1174,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$receipts[ $page_id ] = self::deadline_receipt( $page['plan'], $shared );
 				continue;
 			}
-			$row  = self::read_checkpoint( $workspace, $run, $refs[ $page_id ], 'receipt' );
+			$row = self::read_checkpoint( $workspace, $run, $refs[ $page_id ], 'receipt' );
 			if ( is_wp_error( $page ) || is_wp_error( $row ) ) {
 				return is_wp_error( $page ) ? $page : $row;
 			}
