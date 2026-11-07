@@ -357,7 +357,7 @@ foreach ( $replacement_cases as $label => list( $classes, $scope ) ) {
 		throw new RuntimeException( $label . ': lost inert source identity.' );
 	}
 	$rules = array(
-		'layout:gallery-block' => array( 'display:block', 'overflow:visible', 'min-width:0' ),
+		'layout:gallery-block' => array( 'display:block', 'overflow:visible', 'min-width:0', 'max-width:none' ),
 		'gallery' => array( 'width:100%', 'display:flex' ),
 	);
 	foreach ( $rules as $slot => $values ) {
@@ -374,10 +374,20 @@ foreach ( $replacement_cases as $label => list( $classes, $scope ) ) {
 	if ( ! str_contains( $overlay['css'], $inner_selector ) || $overlays[0] !== $overlay ) {
 		throw new RuntimeException( $label . ': fill rule must target the inner gallery, not the source-width wrapper.' );
 	}
-	$bad = $overlay;
-	$bad['rules']['layout:gallery-block'] .= 'overflow:hidden !important;';
-	if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
-		throw new RuntimeException( $label . ': unsupported wrapper receipt accepted.' );
+	foreach ( array( 'overflow' => array( 'hidden' ), 'max-width' => array( '512px', '100%', '0', 'auto', 'initial', 'unset', 'none;display:none' ) ) as $property => $values ) {
+		foreach ( $values as $value ) {
+			$bad = $overlay;
+			$original = 'max-width' === $property ? 'none' : 'visible';
+			$bad['rules']['layout:gallery-block'] = str_replace( $property . ':' . $original . ' !important;', $property . ':' . $value . ' !important;', $bad['rules']['layout:gallery-block'] );
+			// Rebuild the receipt so rejection tests the vocabulary, not a stale hash or CSS.
+			$class = 'ssi-product-' . substr( hash( 'sha256', (string) json_encode( $bad['rules'] ) ), 0, 12 );
+			$bad['css'] = str_replace( $overlay['className'], $class, $bad['css'] );
+			$bad['css'] = str_replace( $overlay['rules']['layout:gallery-block'], $bad['rules']['layout:gallery-block'], $bad['css'] );
+			$bad['className'] = $class;
+			if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+				throw new RuntimeException( $label . ': unsupported wrapper receipt accepted: ' . $property . ':' . $value );
+			}
+		}
 	}
 }
 /** Minimal product meta persistence for the native Woo filter contract. */
