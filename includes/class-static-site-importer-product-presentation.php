@@ -20,6 +20,7 @@ final class Static_Site_Importer_Product_Presentation {
 	);
 
 	private const LAYOUT_SELECTORS = array(
+		'gallery-block'    => '',
 		'form'             => 'form.cart',
 		'variation-table'  => 'table.variations',
 		'variation-body'   => 'table.variations tbody',
@@ -80,7 +81,8 @@ final class Static_Site_Importer_Product_Presentation {
 				$selector = '.variations tr:nth-child(' . ( (int) $parts[1] + 1 ) . ') select';
 			}
 			$scope = '.' . $class . '.' . $class;
-			$css  .= ( 'gallery' === $slot ? $scope . $selector . ',' : '' ) . $scope . ' ' . $selector . '{' . $declarations . '}';
+			// Rebuild legacy auto-width receipts exactly; new galleries fill only the inner element.
+			$css .= ( 'gallery' === $slot && str_contains( $declarations, 'width:auto !important;' ) ? $scope . $selector . ',' : '' ) . $scope . ( '' === $selector ? '' : ' ' . $selector ) . '{' . $declarations . '}';
 		}
 		return array(
 			'schema'    => 'static-site-importer/product-presentation/v1',
@@ -143,6 +145,7 @@ final class Static_Site_Importer_Product_Presentation {
 				'display'    => array( 'block', 'grid' ),
 				'padding'    => array( '0' ),
 				'margin'     => array( '0' ),
+				'overflow'   => array( 'visible' ),
 			);
 			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^minmax\\(0,1fr\\) minmax\\(0,((?:0|\\d+(?:\\.\\d+)?(?:px|rem|em|%|vw|vh)))\\)$/D', $value ) );
 			if ( $track || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
@@ -181,8 +184,9 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Capture image boxes and strip arrangement before the source subtree is deleted. */
 	public static function gallery_attrs( array $node ): array {
-		$attrs = $node['attrs'] ?? array();
-		if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
+		$attrs    = $node['attrs'] ?? array();
+		$authored = str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' );
+		if ( $authored && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
 			return array(
 				'main'         => array( 'aspectRatio' => self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) ),
 				'thumbnail'    => empty( $attrs['thumbnails'] ) ? array() : array( 'width' => self::length( $attrs['thumbnailWidth'] ?? '' ) ),
@@ -230,7 +234,7 @@ final class Static_Site_Importer_Product_Presentation {
 		};
 		$walk( $node );
 		if ( ! $boxes ) {
-			return array();
+			return $authored ? array( 'authored' => true ) : array();
 		}
 		$first = $boxes[0];
 		usort( $boxes, static fn( $a, $b ) => (float) $a['width'] <=> (float) $b['width'] );
@@ -290,13 +294,27 @@ final class Static_Site_Importer_Product_Presentation {
 		$width  = self::length( $gallery['main']['width'] ?? '' );
 		$height = self::length( $gallery['main']['height'] ?? '' );
 		$ratio  = self::aspect_ratio( $gallery['main']['aspectRatio'] ?? '' );
+		// Preserve the source width cascade, but not its carousel-only layout.
+		$wrapper = $gallery ? array(
+			'layout:gallery-block' => self::layout_declarations( array(
+				'display'    => 'block',
+				'min-width'  => '0',
+				'box-sizing' => 'border-box',
+				'overflow'   => 'visible',
+			) ),
+		) : array();
 		if ( ( ! $width || ! $height ) && ! $ratio ) {
-			return array();
+			return $wrapper ? array_merge( $wrapper, array(
+				'gallery' => self::gallery_declarations( array(
+					'width' => '100%',
+					'float' => 'none',
+				) ),
+			) ) : array();
 		}
 		$side   = in_array( $gallery['position'] ?? '', array( 'left', 'right' ), true );
 		$styles = array(
 			'gallery'  => array(
-				'width'          => 'auto',
+				'width'          => '100%',
 				'display'        => 'flex',
 				'flex-direction' => $side ? 'row' : 'column',
 				'float'          => 'none',
@@ -355,7 +373,7 @@ final class Static_Site_Importer_Product_Presentation {
 				'object-fit' => 'contain',
 			);
 		}
-		return array_map( array( self::class, 'gallery_declarations' ), $styles );
+		return array_merge( $wrapper, array_map( array( self::class, 'gallery_declarations' ), $styles ) );
 	}
 
 	/** Consume the producer's block-style presentation as well as graph facts. */

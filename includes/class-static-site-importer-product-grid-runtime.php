@@ -42,8 +42,26 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
+		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/** Restore inert source identity on the native gallery's outer block only. */
+	public static function gallery_identity( string $content, array $block ): string {
+		$identity = $block['attrs']['metadata']['staticSiteImporterGalleryIdentity'] ?? array();
+		if ( ! is_array( $identity ) || ! $identity ) {
+			return $content;
+		}
+		$tags = new WP_HTML_Tag_Processor( $content );
+		if ( $tags->next_tag() ) {
+			foreach ( $identity as $key => $value ) {
+				if ( preg_match( '/^data-(?!wp-)[a-z0-9_-]+$/D', $key ) && is_string( $value ) ) {
+					$tags->set_attribute( $key, $value );
+				}
+			}
+		}
+		return $tags->get_updated_html();
 	}
 
 	/**
