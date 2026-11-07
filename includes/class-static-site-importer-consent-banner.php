@@ -128,15 +128,15 @@ class Static_Site_Importer_Consent_Banner {
 		// Min height and margin are box rules in the generated stylesheet.
 		foreach ( array_diff_key( $presentation['button'] ?? array(), array_flip( array( 'min_height', 'margin' ) ) ) as $key => $value ) {
 			$mapping                                 = array(
-				'border_radius' => array( 'border', 'radius', 'border-radius' ),
-				'border_width'  => array( 'border', 'width', 'border-width' ),
-				'border_style'  => array( 'border', 'style', 'border-style' ),
-				'border_color'  => array( 'border', 'color', 'border-color' ),
-				'padding'       => array( 'spacing', 'padding', 'padding' ),
-				'font_size'     => array( 'typography', 'fontSize', 'font-size' ),
-				'font_family'   => array( 'typography', 'fontFamily', 'font-family' ),
-				'line_height'   => array( 'typography', 'lineHeight', 'line-height' ),
-				'font_weight'   => array( 'typography', 'fontWeight', 'font-weight' ),
+				'border_radius'  => array( 'border', 'radius', 'border-radius' ),
+				'border_width'   => array( 'border', 'width', 'border-width' ),
+				'border_style'   => array( 'border', 'style', 'border-style' ),
+				'border_color'   => array( 'border', 'color', 'border-color' ),
+				'padding'        => array( 'spacing', 'padding', 'padding' ),
+				'font_size'      => array( 'typography', 'fontSize', 'font-size' ),
+				'font_family'    => array( 'typography', 'fontFamily', 'font-family' ),
+				'line_height'    => array( 'typography', 'lineHeight', 'line-height' ),
+				'font_weight'    => array( 'typography', 'fontWeight', 'font-weight' ),
 				'letter_spacing' => array( 'typography', 'letterSpacing', 'letter-spacing' ),
 			);
 			list( $group, $property, $css_property ) = $mapping[ $key ];
@@ -256,6 +256,7 @@ class Static_Site_Importer_Consent_Banner {
 		if ( 'box_shadow' === $key ) {
 			// One computed shadow: color, two to four lengths, optional inset.
 			$parts = preg_split( '/\\s+(?![^(]*\\))/', $value );
+			$parts = is_array( $parts ) ? $parts : array();
 			$color = array_shift( $parts );
 			$inset = 'inset' === end( $parts ) ? array_pop( $parts ) : null;
 			$valid = array() !== self::color_style( array( 'shadow' => (string) $color ), 'shadow', 'unused' ) && count( $parts ) >= 2 && count( $parts ) <= 4;
