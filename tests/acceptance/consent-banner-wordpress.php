@@ -34,7 +34,11 @@ $assert( str_contains( $css, '@media (min-width:768px)' ) && str_contains( $css,
 $top = $presentation_fact;
 $top['position'] = 'top';
 $top_css = Static_Site_Importer_Consent_Banner::stylesheet( $top );
-$assert( str_contains( $top_css, '{top:0px;' ) && ! str_contains( $top_css, 'bottom:' ), 'Top-positioned edge offset uses top.' );
+$assert( str_contains( $top_css, '{top:0px;bottom:auto;' ), 'Top-positioned edge offset resets Jetpack bottom default.' );
+$bottom = $presentation_fact;
+$bottom['position'] = 'bottom';
+$bottom_css = Static_Site_Importer_Consent_Banner::stylesheet( $bottom );
+$assert( str_contains( $bottom_css, '{bottom:' ) && str_contains( $bottom_css, 'top:auto;' ), 'Bottom-positioned edge offset resets the opposite edge.' );
 $hostile = $presentation_fact;
 $hostile['presentation']['edge_offset'] = '0px;}body{display:none';
 $assert( ! str_contains( Static_Site_Importer_Consent_Banner::stylesheet( $hostile ), 'display:none' ), 'Hostile CSS is rejected.' );

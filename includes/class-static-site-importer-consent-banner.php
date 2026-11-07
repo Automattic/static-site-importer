@@ -261,8 +261,13 @@ class Static_Site_Importer_Consent_Banner {
 	public static function stylesheet( array $fact ): string {
 		$presentation = self::presentation( $fact );
 		$css          = '';
+		// Jetpack anchors the banner with `bottom`; a top-anchored source must
+		// release that edge or the banner stretches across the viewport.
+		if ( isset( $presentation['edge_offset'] ) ) {
+			$top  = 'top' === ( $fact['position'] ?? '' );
+			$css .= ( $top ? 'top' : 'bottom' ) . ':' . $presentation['edge_offset'] . ';' . ( $top ? 'bottom' : 'top' ) . ':auto;';
+		}
 		foreach ( array(
-			'edge_offset' => 'top' === ( $fact['position'] ?? '' ) ? 'top' : 'bottom',
 			'font_family' => 'font-family',
 			'font_size'   => 'font-size',
 			'line_height' => 'line-height',
