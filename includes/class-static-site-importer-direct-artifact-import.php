@@ -121,7 +121,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$identity = self::hash( $artifact );
 		self::purge_prior_failed_runs( $identity, $import_id );
 
-		$run          = array(
+		$run = array(
 			'import_id'  => $import_id,
 			'binding'    => array(
 				'source_type'       => $source_type,
