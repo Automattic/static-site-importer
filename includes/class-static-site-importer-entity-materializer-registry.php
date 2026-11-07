@@ -2861,7 +2861,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			)
 		);
 		$roles      = array_merge( $roles, $candidate['control_containers'] ?? array() );
-		$styles     = array_merge( array_column( $roles, 'styles' ), array_column( $candidate['variants'], 'style_patch' ) );
+		// Control-row facts describe shared row geometry for native layouts (for
+		// example product purchase rows); the provider overlay never paints them.
+		$variants   = array_filter( $candidate['variants'], static fn( array $variant ): bool => ! in_array( $variant['role'] ?? null, array( 'control_row', 'control_row_item' ), true ) );
+		$styles     = array_merge( array_column( $roles, 'styles' ), array_column( $variants, 'style_patch' ) );
 		foreach ( $styles as $role_styles ) {
 			foreach ( array_keys( $role_styles ) as $key ) {
 				if ( ! isset( $properties[ $key ] ) ) {
