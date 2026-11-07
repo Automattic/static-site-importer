@@ -615,28 +615,57 @@ $slow_compiler = static function ( object $compiler ) use ( &$slow_clock ): obje
 };
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = $slow_compiler;
 
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
-	static function ( array $policy ) use ( &$slow_clock ): array {
-		return array_merge(
-			$policy,
-			array(
-				'compile_fanout_pages'     => 20,
-				'compile_in_process_pages' => 1,
-				'max_invocation_seconds'   => 10.0,
-				'clock'                    => static function () use ( &$slow_clock ): float { return $slow_clock; },
-			)
-		);
-	},
-);
+$slow_policy = static function ( ?float $import_deadline ) use ( &$slow_clock ): array {
+	return array(
+		static function ( array $policy ) use ( &$slow_clock, $import_deadline ): array {
+			return array_merge(
+				$policy,
+				array(
+					'compile_fanout_pages'     => 20,
+					'compile_in_process_pages' => 1,
+					'max_invocation_seconds'   => 10.0,
+					'import_deadline_seconds'  => $import_deadline,
+					'clock'                    => static function () use ( &$slow_clock ): float { return $slow_clock; },
+				)
+			);
+		},
+	);
+};
+$drive_slow = static function ( array $first ) use ( $resume ): array {
+	$terminal = $first;
+	$request  = $resume( (string) $first['import_id'], 'plan' );
+	for ( $attempt = 0; $attempt < 10 && ! empty( $terminal['continuation'] ); ++$attempt ) {
+		$terminal = Static_Site_Importer_Canonical_Import_Service::import( $request );
+	}
+	return $terminal;
+};
+
+// The invocation budget only bounds one step: a host that relaunches
+// continuations compiles every page, whichever phase overran the budget.
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = $slow_policy( null );
+$step_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( 'deadline_exhausted' === ( $step_first['continuation_reason'] ?? '' ) && 1 === ( $step_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'a slow compiler checkpoints one bounded unit near the invocation deadline and continues' );
+$step_terminal = $drive_slow( $step_first );
+$assert( ! empty( $step_terminal['success'] ) && array() === Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $step_terminal['plan']['diagnostics'] ?? array() ) && $canonical_compiled( $baseline_plan['plan'] ) === $canonical_compiled( $step_terminal['plan'] ), 'continuations past the invocation budget compile every page and the same plan' );
+$slow_clock = 0.0;
+$slow_prepare = static function ( string $phase ) use ( &$slow_clock ): void {
+	if ( 'prepare_pages' === $phase ) {
+		$slow_clock += 11.0;
+	}
+};
+$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = $slow_prepare;
+$prepare_overrun = $drive_slow( Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) ) );
+array_pop( $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'] );
+$assert( ! empty( $prepare_overrun['success'] ) && array() === Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $prepare_overrun['plan']['diagnostics'] ?? array() ), 'page preparation that overruns the invocation budget continues into compilation' );
+
+// The host's import deadline ends the import with the pages it compiled.
+$slow_clock = 0.0;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = $slow_policy( 10.0 );
 $slow_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $slow_work = $slow_first['artifact_run']['work'] ?? array();
 $assert( ! empty( $slow_first['success'] ) && empty( $slow_first['continuation'] ) && 11.0 === $slow_clock && 1 === ( $slow_work['compile_batches'] ?? 0 ) && 1 === ( $slow_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'a slow compiler must finalize its compiled front page when the deadline expires' );
 $slow_first_receipt = $slow_first['artifact_run']['receipt_identities'][0] ?? '';
-$slow_terminal = $slow_first;
-$slow_request = $resume( (string) $slow_first['import_id'], 'plan' );
-for ( $attempt = 0; $attempt < 10 && ! empty( $slow_terminal['continuation'] ); ++$attempt ) {
-	$slow_terminal = Static_Site_Importer_Canonical_Import_Service::import( $slow_request );
-}
+$slow_terminal = $drive_slow( $slow_first );
 $assert( ! empty( $slow_terminal['success'] ) && empty( $slow_terminal['continuation'] ) && in_array( $slow_first_receipt, $slow_terminal['artifact_run']['receipt_identities'] ?? array(), true ), 'deadline completion preserves its compiled receipt' );
 $skipped = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $slow_terminal['plan']['diagnostics'] ?? array() );
 $assert( 2 === count( $skipped ) && array( 'deadline' ) === array_values( array_unique( array_column( $skipped, 'reason_code' ) ) ), 'the plan names every skipped page with the deadline reason' );

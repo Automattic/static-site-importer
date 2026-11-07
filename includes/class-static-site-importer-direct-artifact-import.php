@@ -121,7 +121,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$identity = self::hash( $artifact );
 		self::purge_prior_failed_runs( $identity, $import_id );
 
-		$run          = array(
+		$run = array(
 			'import_id'  => $import_id,
 			'binding'    => array(
 				'source_type'       => $source_type,
@@ -139,6 +139,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'page_ids'   => array(),
 			'failures'   => array(),
 			'timings'    => array( 'freeze_seconds' => microtime( true ) - $freeze_started ),
+			// Anchors the host's import deadline across continuation steps.
+			'started_at' => (float) call_user_func( self::run_policy()['clock'] ),
 			'work'       => array(
 				'content_policy_applications'       => 1,
 				'client_script_policy_applications' => 1,
@@ -739,9 +741,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
 				$remaining                = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
-				$compile_deadline_reached = self::deadline_reached( $deadline, $clock );
+				$compile_deadline_reached = null !== $policy['import_deadline_seconds'] && isset( $run['started_at'] )
+					&& self::deadline_reached( (float) $run['started_at'] + $policy['import_deadline_seconds'], $clock );
 				if ( 0 < $remaining && ! $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
-					return self::continuation( $run, 'pages_remaining' );
+					return self::continuation( $run, self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining' );
 				}
 				if ( $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
 					$run['deadline_skipped_pages'] = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
@@ -1874,7 +1877,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'compile_fanout'                 => null,
 			// Compile batches one invocation may run before yielding a continuation.
 			'compile_batches_per_invocation' => 1,
+			// One step's budget: reaching it yields a resumable continuation.
 			'max_invocation_seconds'         => 20.0,
+			// The whole import's budget, measured from the run's start. A host
+			// that stops relaunching continuations at a wall-clock limit sets it;
+			// past it, the import finishes with the pages it has compiled. Null
+			// means continuations run until every page is compiled.
+			'import_deadline_seconds'        => null,
 			// Keep browser-originated artifacts below the Playground worker deadline by
 			// releasing the source request before compiler and materializer work begins.
 			'freeze_continuation_bytes'      => 64 * 1024,
@@ -1897,6 +1906,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$policy['compile_fanout']                 = is_callable( $policy['compile_fanout'] ) ? $policy['compile_fanout'] : null;
 		$policy['compile_mode']                   = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
 		$policy['max_invocation_seconds']         = max( 0.001, (float) $policy['max_invocation_seconds'] );
+		$policy['import_deadline_seconds']        = null === $policy['import_deadline_seconds'] ? null : max( 0.001, (float) $policy['import_deadline_seconds'] );
 		$policy['freeze_continuation_bytes']      = max( 1, (int) $policy['freeze_continuation_bytes'] );
 		$policy['yield_after_compose']            = ! empty( $policy['yield_after_compose'] );
 		$policy['clock']                          = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
