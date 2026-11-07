@@ -107,8 +107,35 @@ $simple_capture = Static_Site_Importer_Product_Presentation::capture( $simple );
 if ( str_contains( $simple_capture['css'], 'table.variations' ) || ! str_contains( $simple_capture['css'], 'form.cart:not(.variations_form){width:100%' ) ) {
 	throw new RuntimeException( 'Simple product must fill its row without inventing variation fields.' );
 }
+$purchase_cases = array(
+	'percentage submit' => array( '100%', '144px', '144px minmax(0,1fr)' ),
+);
+foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tracks ) ) {
+	$entity = array(
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'number', 'styles' => array( 'width' => $quantity_width ) ),
+			array( 'tag' => 'button', 'type' => 'submit', 'styles' => array( 'width' => $submit_width, 'gap' => '10px' ) ),
+		),
+	);
+	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	foreach ( array( 'layout:purchase-row', 'layout:simple-row' ) as $slot ) {
+		if ( ! str_contains( $overlay['rules'][ $slot ], 'grid-template-columns:' . $tracks . ' !important;' ) || ! str_contains( $overlay['rules'][ $slot ], 'column-gap:10px !important;' ) ) {
+			throw new RuntimeException( $label . ': purchase proportions or gap lost.' );
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+		throw new RuntimeException( $label . ': purchase receipt rejected.' );
+	}
+	foreach ( array( '144% minmax(0,1fr)', '144px minmax(0,100%)', '144px minmax(0,1fr) junk', '144px minmax(0,1fr);position:fixed' ) as $invalid ) {
+		$bad = $overlay;
+		$bad['rules']['layout:purchase-row'] = str_replace( $tracks, $invalid, $bad['rules']['layout:purchase-row'] );
+		if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+			throw new RuntimeException( $label . ': invalid purchase tracks accepted.' );
+		}
+	}
+}
 $unknown_width = $fixture;
-unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'] );
+unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'], $unknown_width['presentation_graph']['controls'][0]['control']['styles']['width'] );
 if ( ! str_contains( Static_Site_Importer_Product_Presentation::capture( $unknown_width )['css'], 'grid-template-columns:auto minmax(0,1fr)' ) ) {
 	throw new RuntimeException( 'Missing button geometry must use intrinsic quantity and a flexible button.' );
 }
