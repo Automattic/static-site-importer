@@ -97,9 +97,10 @@ final class Static_Site_Importer_Product_Presentation {
 	 *
 	 * The entity currently carries control CSS, not the shared row's geometry.
 	 * In particular, input width is NOT quantity-wrapper width. Keep the painted
-	 * input inside a flexible quantity track; preserve the captured button width
-	 * where available, allowing it to shrink on narrower columns. Do not invent
-	 * a source gap or quantity-stepper width from the remaining column space.
+	 * input inside a flexible quantity track when the button has an absolute width.
+	 * Container-relative button widths cannot size a row track: use the captured
+	 * absolute quantity width (or auto) and give the button the remaining space.
+	 * Never invent a source gap from the remaining column space.
 	 */
 	private static function purchase_layout( array $controls ): array {
 		$styles = array();
@@ -118,14 +119,19 @@ final class Static_Site_Importer_Product_Presentation {
 			$styles['layout:variation-select'] = $full;
 		}
 		if ( isset( $controls['submit'], $controls['quantity'] ) ) {
-			$width                            = self::length( $controls['submit']['width'] ?? '' );
-			$row                              = array_merge(
+			$width    = self::absolute_length( $controls['submit']['width'] ?? '' );
+			$quantity = self::absolute_length( $controls['quantity']['width'] ?? '' );
+			$row      = array_merge(
 				$full,
 				array(
 					'display'               => 'grid',
-					'grid-template-columns' => $width ? 'minmax(0,1fr) minmax(0,' . $width . ')' : 'auto minmax(0,1fr)',
+					'grid-template-columns' => $width ? 'minmax(0,1fr) minmax(0,' . $width . ')' : ( '' !== $quantity ? $quantity : 'auto' ) . ' minmax(0,1fr)',
 				)
 			);
+			$gap      = self::length( $controls['submit']['column_gap'] ?? $controls['submit']['gap'] ?? '' );
+			if ( '' !== $gap ) {
+				$row['column-gap'] = $gap;
+			}
 			$styles['layout:purchase-row']    = $row;
 			$styles['layout:simple-row']      = $row;
 			$styles['layout:quantity-box']    = array_merge( $full, array( 'margin' => '0' ) );
@@ -147,8 +153,9 @@ final class Static_Site_Importer_Product_Presentation {
 				'margin'     => array( '0' ),
 				'overflow'   => array( 'visible' ),
 			);
-			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^minmax\\(0,1fr\\) minmax\\(0,((?:0|\\d+(?:\\.\\d+)?(?:px|rem|em|%|vw|vh)))\\)$/D', $value ) );
-			if ( $track || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
+			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^(?:minmax\\(0,1fr\\) minmax\\(0,(?:0|\\d+(?:\\.\\d+)?px)\\)|(?:0|\\d+(?:\\.\\d+)?px) minmax\\(0,1fr\\))$/D', $value ) );
+			$gap     = 'column-gap' === $property && '' !== self::length( $value );
+			if ( $track || $gap || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
 				$css .= $property . ':' . $value . ' !important;';
 			}
 		}
@@ -172,6 +179,11 @@ final class Static_Site_Importer_Product_Presentation {
 	/** Admit only captured lengths, never arbitrary CSS syntax. */
 	private static function length( mixed $value ): string {
 		return is_string( $value ) && preg_match( '/^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%|vw|vh))$/D', $value ) ? $value : '';
+	}
+
+	/** Only captured pixel lengths are independent of the container and font. */
+	private static function absolute_length( mixed $value ): string {
+		return is_string( $value ) && preg_match( '/^(?:0|\d+(?:\.\d+)?px)$/D', $value ) ? $value : '';
 	}
 
 	/** Admit only positive numeric ratios, including the cascade's spaced form. */
