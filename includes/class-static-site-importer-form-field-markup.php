@@ -490,8 +490,8 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			// The provider owns the input's id, so source rules the compiler
 			// anchored to that id reach it through the id's editor-anchor class.
-			$source_id    = isset( $control['id'] ) && is_string( $control['id'] ) && 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/D', $control['id'] ) ? 'blocks-engine-editor-anchor-' . $control['id'] : '';
-			$input_class  = trim( $source_class . ' ' . $source_id . ' ' . $control_class );
+			$source_id   = isset( $control['id'] ) && is_string( $control['id'] ) && 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/D', $control['id'] ) ? 'blocks-engine-editor-anchor-' . $control['id'] : '';
+			$input_class = trim( $source_class . ' ' . $source_id . ' ' . $control_class );
 			if ( '' !== $input_class ) {
 				$input_attrs['className'] = $input_class;
 			}
