@@ -33,14 +33,14 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.match(markup, /line-height:16\.2px/);
  const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
  const css = run('css');
- assert.ok(css.includes(`${selector}{bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
+ assert.ok(css.includes(`${selector}{bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
  assert.ok(css.includes(`${selector} > p{flex:1 1 auto;margin:0px;}`));
  assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > p{margin:0 0 15px;}${selector} > .wp-block-buttons{align-self:flex-end;margin-left:auto;margin-right:0;}}`));
  assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:row;align-items:center;}${selector} > p{margin:0 15px 0 0;}}`));
- assert.ok(run('top').includes(`${selector}{top:0px;`));
- assert.doesNotMatch(run('top'), /bottom:/);
+ assert.ok(run('top').includes(`${selector}{top:0px;bottom:auto;`));
+ assert.doesNotMatch(run('top'), /bottom:0px/);
  assert.doesNotMatch(run('hostile'), /flex-direction|flex-wrap|margin:|line-height:/);
- assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
+ assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
  assert.doesNotMatch(run('hostile'), /display:none|body\{|has-border-color|border-width:|border-style:|border-color:/);
  assert.ok(css.indexOf(' > p{flex:1 1 auto;margin:0px;}') < css.indexOf('@media'));
 });
