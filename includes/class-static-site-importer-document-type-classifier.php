@@ -186,11 +186,10 @@ final class Static_Site_Importer_Document_Type_Classifier {
 			if ( ! in_array( strtolower( $key ), self::PUBLISH_DATE_META_KEYS, true ) ) {
 				continue;
 			}
-			$timestamp = strtotime( (string) ( $row['content'] ?? '' ) );
-			if ( false === $timestamp ) {
-				continue;
+			$date = self::normalize_date( (string) ( $row['content'] ?? '' ) );
+			if ( null !== $date ) {
+				return $date;
 			}
-			return gmdate( 'Y-m-d H:i:s', $timestamp );
 		}
 		return null;
 	}
@@ -202,6 +201,16 @@ final class Static_Site_Importer_Document_Type_Classifier {
 	 * @return string|null
 	 */
 	private static function normalize_date( string $value ): ?string {
+		// PHP supplies day 1 for the ISO year-month form, even in date_parse().
+		if ( 1 === preg_match( '/^\s*\d{4}-\d{2}\s*$/', $value ) ) {
+			return null;
+		}
+		$parsed = date_parse( $value );
+		// Require a complete date; strtotime otherwise supplies today's missing parts.
+		// Do not reject relative data: RFC 2822 weekday names also populate it.
+		if ( 0 !== $parsed['error_count'] || ! is_int( $parsed['year'] ) || ! is_int( $parsed['month'] ) || ! is_int( $parsed['day'] ) ) {
+			return null;
+		}
 		$timestamp = strtotime( $value );
 		if ( false === $timestamp ) {
 			return null;
