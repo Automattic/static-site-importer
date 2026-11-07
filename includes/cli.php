@@ -630,43 +630,57 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	}
 
 	/**
-	 * Count bounded HTML assets that Blocks Engine will expand into generated files.
+	 * Address the bounded HTML assets Blocks Engine will expand into generated files.
 	 *
 	 * This reserves budget against what Blocks Engine actually emits, so it
-	 * mirrors the skip rules in ArtifactNormalizer: an inline style needs CSS
-	 * content and a CSS `type`, and an inline script needs an executable `type`
-	 * and its own body rather than a `src`. Counting every `<style>`/`<script>`
-	 * element instead reserves slots for blocks that expand into nothing, which
-	 * rejects captures that fit the compiler.
+	 * mirrors ArtifactNormalizer: an inline style needs CSS content and a CSS
+	 * `type`, an inline script needs an executable `type` and its own body
+	 * rather than a `src`, and expansions are content-addressed, so a body
+	 * repeated across pages is one generated file. Each key names one file; the
+	 * caller reserves a slot per distinct key.
+	 *
+	 * @return list<string>
 	 */
-	function static_site_importer_cli_inline_expansion_count( string $path ): int {
+	function static_site_importer_cli_inline_expansion_keys( string $path ): array {
 		$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified, bounded CLI request-bundle file.
 		if ( false === $content ) {
 			// ssi-error-class: operational
 			throw new RuntimeException( 'The request-bundle HTML payload is unavailable.' );
 		}
-		return static_site_importer_cli_inline_style_expansion_count( $content )
-			+ static_site_importer_cli_inline_script_expansion_count( $content );
+		return array_merge(
+			static_site_importer_cli_inline_style_expansion_keys( $content, $path ),
+			static_site_importer_cli_inline_script_expansion_keys( $content )
+		);
 	}
 
-	/** Count the inline stylesheets Blocks Engine will expand out of an HTML payload. */
-	function static_site_importer_cli_inline_style_expansion_count( string $content ): int {
-		$styles = 0;
+	/** Content address of one generated file, as Blocks Engine addresses it. */
+	function static_site_importer_cli_inline_expansion_key( string $intent, string $type, string $body ): string {
+		return hash( 'sha256', $intent . "\0" . $type . "\0" . str_replace( array( "\r\n", "\r" ), "\n", $body ) );
+	}
+
+	/**
+	 * Address the inline stylesheets Blocks Engine will expand out of an HTML payload.
+	 *
+	 * @return list<string>
+	 */
+	function static_site_importer_cli_inline_style_expansion_keys( string $content, string $path ): array {
+		$keys = array();
 		foreach ( StyleTagScanner::scan( $content ) as $style ) {
-			$css = trim( (string) $style['content'] );
-			if ( '' === $css || ! StyleTagScanner::isCssType( StyleTagScanner::attribute( (string) $style['attributes'], 'type' ) ) ) {
+			$css  = trim( (string) $style['content'] );
+			$type = StyleTagScanner::attribute( (string) $style['attributes'], 'type' );
+			if ( '' === $css || ! StyleTagScanner::isCssType( $type ) ) {
 				continue;
 			}
-			++$styles;
+			$keys[] = static_site_importer_cli_inline_expansion_key( 'style', $type, $css );
 		}
 
-		// Spacing authored inline on <body> is carried as generated CSS. It merges
-		// into the last inline stylesheet when the document has one, so it only
-		// adds a file to a document that has none.
-		if ( 0 === $styles && static_site_importer_cli_inline_body_spacing_present( $content ) ) {
-			return 1;
+		// Spacing authored inline on <body> is carried as generated CSS: its own
+		// file when the document has no inline stylesheet, otherwise merged into
+		// the last one. Either way that file is specific to this page.
+		if ( static_site_importer_cli_inline_body_spacing_present( $content ) ) {
+			$keys[ max( 0, count( $keys ) - 1 ) ] = 'page-body-style:' . $path;
 		}
-		return $styles;
+		return $keys;
 	}
 
 	/** Does inline `<body>` spacing exist that Blocks Engine carries as generated CSS? */
@@ -690,22 +704,28 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return false;
 	}
 
-	/** Count the inline scripts Blocks Engine will expand out of an HTML payload. */
-	function static_site_importer_cli_inline_script_expansion_count( string $content ): int {
+	/**
+	 * Address the inline scripts Blocks Engine will expand out of an HTML payload.
+	 *
+	 * @return list<string>
+	 */
+	function static_site_importer_cli_inline_script_expansion_keys( string $content ): array {
 		if ( ! preg_match_all( '@<script\b([^>]*)>(.*?)</script>@is', $content, $matches, PREG_SET_ORDER ) ) {
-			return 0;
+			return array();
 		}
-		$scripts = 0;
+		$keys = array();
 		foreach ( $matches as $match ) {
 			$attributes = (string) $match[1];
-			if ( '' === trim( (string) $match[2] )
+			$body       = trim( (string) $match[2] );
+			$type       = StyleTagScanner::attribute( $attributes, 'type' );
+			if ( '' === $body
 				|| '' !== StyleTagScanner::attribute( $attributes, 'src' )
-				|| ! static_site_importer_cli_is_executable_script_type( StyleTagScanner::attribute( $attributes, 'type' ) ) ) {
+				|| ! static_site_importer_cli_is_executable_script_type( $type ) ) {
 				continue;
 			}
-			++$scripts;
+			$keys[] = static_site_importer_cli_inline_expansion_key( 'behavior', $type, $body );
 		}
-		return $scripts;
+		return $keys;
 	}
 
 	/** Does a `<script>`'s `type` mark a body Blocks Engine expands into a file? */
@@ -749,7 +769,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$total_bytes     = 0;
 		$media_bytes     = 0;
 		$report_bytes    = 0;
-		$generated_files = 0;
+		$generated_files = array();
 		try {
 			$items = static function () use ( $walk ): Generator {
 				foreach ( $walk as list( $root, $selection ) ) {
@@ -812,8 +832,8 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
 				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
-				$inline_expansions = $is_html ? static_site_importer_cli_inline_expansion_count( $absolute ) : 0;
-				if ( count( $files ) + 1 + $generated_files + $inline_expansions > $limits['max_files'] ) {
+				$inline_expansions = $is_html ? array_diff_key( array_flip( static_site_importer_cli_inline_expansion_keys( $absolute ) ), $generated_files ) : array();
+				if ( count( $files ) + 1 + count( $generated_files ) + count( $inline_expansions ) > $limits['max_files'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_file_limit_exceeded', 'Request-bundle source files and reserved inline expansion files exceed the 5,000-file compiler limit.' );
 				}
 				$digest = hash_file( 'sha256', $absolute );
@@ -850,7 +870,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'files'           => $files,
 			'compiler_limits' => array(
-				'max_files'              => count( $files ) + $generated_files,
+				'max_files'              => count( $files ) + count( $generated_files ),
 				'max_file_bytes'         => $limits['max_file_bytes'],
 				'max_total_bytes'        => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
 				'max_media_file_bytes'   => $limits['max_media_file_bytes'],
