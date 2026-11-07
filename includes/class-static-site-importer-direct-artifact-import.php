@@ -309,7 +309,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( self::owner() !== ( $run['binding']['owner'] ?? '' ) || self::implementation_binding() !== ( $run['binding']['implementation'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_worker_mismatch', 'The compile worker does not match the retained run owner or implementation.' );
 		}
-		if ( array_values( array_intersect( $run['page_ids'] ?? array(), $page_ids ) ) !== array_values( $page_ids ) || empty( $run['refs']['shared'] ) ) {
+		if ( count( array_intersect( $run['page_ids'] ?? array(), $page_ids ) ) !== count( $page_ids ) || empty( $run['refs']['shared'] ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_worker_pages_invalid', 'The compile worker page shard is not part of the retained run.' );
 		}
 
@@ -632,11 +632,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						static fn ( string $key ): bool => ! str_contains( $key, ':receipt:' ) && ! str_contains( $key, ':page_plan:' ),
 						ARRAY_FILTER_USE_KEY
 					);
-					$pending                     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
-					$batch_limit                 = 'fanout' === $policy['compile_mode']
+					$pending                     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ), $run['deadline_skipped_pages'] ?? array() ) );
+					// Build the entrypoint first so a short budget still produces a usable site.
+					$entry_id = (string) ( $shared['analysis']['entry_path'] ?? '' );
+					if ( in_array( $entry_id, $pending, true ) ) {
+						$pending = array_merge( array( $entry_id ), array_values( array_diff( $pending, array( $entry_id ) ) ) );
+					}
+					$batch_limit = 'fanout' === $policy['compile_mode']
 					? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
 					: $policy['compile_in_process_pages'];
-					$batch_ids                   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
+					$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
 					if ( empty( $batch_ids ) ) {
 						break;
 					}
@@ -659,7 +664,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						if ( is_wp_error( $adopted ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
 						}
-						if ( array_values( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== $batch_ids ) {
+						if ( count( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== count( $batch_ids ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Compile workers did not publish the exact requested receipt shards.' ), $batch_ids );
 						}
 						$run['refs']['receipts'] = $adopted;
@@ -733,13 +738,21 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					++$batches;
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
-				$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
-				if ( 0 < $remaining ) {
-					$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
-					return self::continuation( $run, $reason );
+				$remaining                = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
+				$compile_deadline_reached = self::deadline_reached( $deadline, $clock );
+				if ( 0 < $remaining && ! $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
+					return self::continuation( $run, 'pages_remaining' );
 				}
-				if ( self::deadline_reached( $deadline, $clock ) && empty( $run['refs']['composed'] ) ) {
-					return self::continuation( $run, 'deadline_exhausted' );
+				if ( $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
+					$run['deadline_skipped_pages'] = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
+					if ( in_array( (string) ( $shared['analysis']['entry_path'] ?? '' ), $run['deadline_skipped_pages'], true ) ) {
+						return self::fail( $workspace, $run, 'compose', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The deadline prevented compilation of the entrypoint page.' ) );
+					}
+					$run['deadline_finalized'] = true;
+					$write                     = self::write_run( $workspace, $run );
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
 				}
 			}
 
@@ -824,7 +837,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				// so composition's working set (the full result, and the receipts and
 				// page plans the read cache pins) unwinds before that checkpoint is
 				// read back into a clean runtime instead of on top of compose's peak.
-				if ( $policy['yield_after_compose'] ) {
+				if ( $policy['yield_after_compose'] && empty( $run['deadline_finalized'] ) ) {
 					self::$checkpoint_read_cache = array();
 					return self::continuation( $run, 'composed' );
 				}
@@ -853,7 +866,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					)
 				);
 			}
-			if ( self::deadline_reached( $deadline, $clock ) ) {
+			if ( self::deadline_reached( $deadline, $clock ) && empty( $run['deadline_finalized'] ) ) {
 				return self::continuation( $run, 'deadline_exhausted' );
 			}
 			$artifact_state = $load_artifact();
@@ -1100,22 +1113,68 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	/** @return array<string,mixed>|WP_Error */
+	/** Represent unstarted work using the compiler's existing omitted-page receipt contract. */
+	private static function deadline_receipt( array $plan, array $shared ): array {
+		$omitted = array();
+		foreach ( $plan['artifact']['files'] as $file ) {
+			if ( 'html' === ( $file['kind'] ?? '' ) ) {
+				$omitted[] = array(
+					'source_path' => $file['path'],
+					'reason_code' => 'deadline',
+					'message'     => 'Page skipped because the import compile deadline was exhausted.',
+				);
+			}
+		}
+		$plan['artifact']['files']       = array();
+		$plan['receipt_schema']          = self::RECEIPT_SCHEMAS[0];
+		$plan['compiled_documents']      = array();
+		$plan['owned_document_paths']    = array();
+		$plan['shared_reduction_digest'] = $shared['shared_reduction_digest'];
+		$plan['terminal_reduction']      = array(
+			'normalization'             => array(
+				'diagnostics'    => array(),
+				'rejected_count' => 0,
+				'bytes'          => 0,
+			),
+			'source_documents'          => array(
+				'documents'   => array(),
+				'components'  => array(),
+				'diagnostics' => array(),
+			),
+			'owned_transformable_paths' => array(),
+			'component_facts'           => array(
+				'components' => array(),
+				'classes'    => array(),
+			),
+			'block_types'               => array(),
+			'omitted_pages'             => $omitted,
+		);
+		// Match the public v3 receipt's digest input; never alter a compiled receipt.
+		$input          = array_intersect_key( $plan, array_flip( array( 'shared_digest', 'page_id', 'artifact', 'layout_geometry_proof', 'receipt_schema', 'compiled_documents', 'owned_document_paths', 'shared_reduction_digest', 'terminal_reduction', 'compiler_options', 'output_schema' ) ) );
+		$plan['digest'] = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::hash( $input, 512 );
+		return $plan;
+	}
+
 	private static function complete_receipts( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $shared ) {
 		$refs = $run['refs']['receipts'] ?? array();
 		if ( array_keys( $refs ) !== $run['page_ids'] ) {
 			$ordered = array();
 			foreach ( $run['page_ids'] as $page_id ) {
-				if ( ! isset( $refs[ $page_id ] ) ) {
+				if ( ! isset( $refs[ $page_id ] ) && ! in_array( $page_id, $run['deadline_skipped_pages'] ?? array(), true ) ) {
 					return new WP_Error( 'static_site_importer_direct_artifact_receipts_incomplete', 'Composition requires one receipt for every frozen page.' );
 				}
-				$ordered[ $page_id ] = $refs[ $page_id ];
+				$ordered[ $page_id ] = $refs[ $page_id ] ?? null;
 			}
 			$refs = $ordered;
 		}
 		$receipts = array();
 		foreach ( $run['page_ids'] as $page_id ) {
 			$page = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
-			$row  = self::read_checkpoint( $workspace, $run, $refs[ $page_id ], 'receipt' );
+			if ( ! is_wp_error( $page ) && in_array( $page_id, $run['deadline_skipped_pages'] ?? array(), true ) ) {
+				$receipts[ $page_id ] = self::deadline_receipt( $page['plan'], $shared );
+				continue;
+			}
+			$row = self::read_checkpoint( $workspace, $run, $refs[ $page_id ], 'receipt' );
 			if ( is_wp_error( $page ) || is_wp_error( $row ) ) {
 				return is_wp_error( $page ) ? $page : $row;
 			}
