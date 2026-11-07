@@ -228,4 +228,59 @@ foreach ( $gallery_cases as $label => list( $direction, $first, $has_thumbs, $po
 		throw new RuntimeException( 'Gallery receipt accepted an arbitrary selector.' );
 	}
 }
+// Cascade-resolved carousel geometry must survive percentage-sized images.
+$carousel_cases = array(
+	'left cascade strip' => array( 'left', 'left', 'row', 'column', '-1', '3/4' ),
+	'right cascade strip' => array( 'right', 'right', 'row', 'column', '0', '3 / 4' ),
+	'top cascade strip' => array( 'top', 'above', 'column', 'row', '-1', '3/4' ),
+	'bottom cascade strip' => array( 'bottom', 'below', 'column', 'row', '0', '3/4' ),
+);
+foreach ( $carousel_cases as $label => list( $placement, $position, $direction, $strip_direction, $order, $ratio ) ) {
+	$node = array(
+		'blockName' => 'blocks-engine/authored-carousel',
+		'attrs'     => array(
+			'thumbnails'        => array( array( 'src' => 'one.jpg' ), array( 'src' => 'two.jpg' ), array( 'src' => 'three.jpg' ) ),
+			'thumbnailPosition' => $placement,
+			'thumbnailWidth'    => '50px',
+			'thumbnailGap'      => '10px',
+			'stageGap'          => '10px',
+			'stageAspectRatio'  => $ratio,
+		),
+		'innerHTML' => '<img src="one.jpg" style="width:100%;height:100%" />',
+	);
+	$facts = Static_Site_Importer_Product_Presentation::gallery_attrs( $node );
+	if ( $position !== ( $facts['position'] ?? '' ) || '50px' !== ( $facts['thumbnail']['width'] ?? '' ) || '10px' !== ( $facts['thumbnailGap'] ?? '' ) || '10px' !== ( $facts['gap'] ?? '' ) || $ratio !== ( $facts['main']['aspectRatio'] ?? '' ) ) {
+		throw new RuntimeException( $label . ': carousel attributes lost.' );
+	}
+	$overlay = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => $facts ) );
+	$expected_rules = array(
+		'gallery'  => array( 'display:flex', 'flex-direction:' . $direction, 'gap:10px' ),
+		'viewport' => array( 'aspect-ratio:' . $ratio, 'min-width:0', 'flex:' . ( 'row' === $direction ? '1 1 0' : '0 0 auto' ) ),
+		'image'    => array( 'width:100%', 'height:100%', 'object-fit:cover' ),
+		'thumbs'   => array( 'flex-direction:' . $strip_direction, 'order:' . $order, 'gap:10px' ),
+		'thumb'    => array( 'width:50px', 'aspect-ratio:' . $ratio ),
+	);
+	if ( 'row' === $direction ) {
+		$expected_rules['thumbs'][] = 'width:50px';
+	}
+	foreach ( $expected_rules as $slot => $declarations ) {
+		foreach ( $declarations as $expected ) {
+			if ( ! str_contains( $overlay['rules'][ $slot ] ?? '', $expected . ' !important;' ) ) {
+				throw new RuntimeException( $label . ': missing ' . $slot . ' ' . $expected );
+			}
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+		throw new RuntimeException( $label . ': carousel receipt failed validation.' );
+	}
+	foreach ( array( 'aspect-ratio' => array( '3/0', '0/4', 'auto', '3/4;display:none', '3/4 junk' ), 'flex' => array( '1', '1 1 auto', '1 1 0;display:none' ) ) as $property => $values ) {
+		foreach ( $values as $value ) {
+			$bad = $overlay;
+			$bad['rules']['viewport'] .= $property . ':' . $value . ' !important;';
+			if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+				throw new RuntimeException( $label . ': unsafe carousel value accepted.' );
+			}
+		}
+	}
+}
 echo "Product presentation passed.\n";
