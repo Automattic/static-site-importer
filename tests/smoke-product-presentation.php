@@ -380,14 +380,16 @@ function sanitize_title( $text ) {
 	return strtolower( str_replace( ' ', '-', $text ) );
 }
 require_once ABSPATH . 'includes/class-static-site-importer-product-grid-runtime.php';
-/** Exercise the same template scope as Woo's native variable form. */
-function wc_get_template( $template, $rows ) {
+/** Exercise the same action scope as Woo's native variable form. */
+function render_variations_form( $rows ) {
 	$result = array();
+	Static_Site_Importer_Product_Grid_Runtime::open_variation_form();
 	foreach ( $rows as $attribute => $expected ) {
 		$label = Static_Site_Importer_Product_Grid_Runtime::variation_label( $attribute, $attribute, false );
 		$args = Static_Site_Importer_Product_Grid_Runtime::variation_placeholder( array( 'product' => $GLOBALS['product'], 'attribute' => $attribute, 'show_option_none' => 'Choose an option' ) );
 		$result[ $attribute ] = array( $label, $args['show_option_none'] );
 	}
+	Static_Site_Importer_Product_Grid_Runtime::close_variation_form();
 	return $result;
 }
 // One table-driven regression: captured wording and an uncaptured native control.
@@ -402,7 +404,7 @@ $GLOBALS['product'] = new class {
 	public function get_id() { return 42; }
 };
 $rows = array( 'Size' => array( 'Size:', 'Select Size' ), 'Color' => array( 'Color', 'Choose an option' ) );
-if ( wc_get_template( 'single-product/add-to-cart/variable.php', $rows ) !== $rows || 'Size' !== Static_Site_Importer_Product_Grid_Runtime::variation_label( 'Size', 'Size', false ) ) {
+if ( render_variations_form( $rows ) !== $rows || 'Size' !== Static_Site_Importer_Product_Grid_Runtime::variation_label( 'Size', 'Size', false ) ) {
 	throw new RuntimeException( 'Native variation form lost source wording or leaked labels outside the form.' );
 }
 $overlay = Static_Site_Importer_Product_Presentation::capture( $entity );

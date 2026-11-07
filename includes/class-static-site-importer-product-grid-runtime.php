@@ -42,6 +42,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
 		add_filter( 'woocommerce_dropdown_variation_attribute_options_args', array( self::class, 'variation_placeholder' ) );
 		add_filter( 'woocommerce_attribute_label', array( self::class, 'variation_label' ), 10, 3 );
+		add_action( 'woocommerce_before_variations_form', array( self::class, 'open_variation_form' ) );
+		add_action( 'woocommerce_after_variations_form', array( self::class, 'close_variation_form' ) );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
@@ -79,24 +81,24 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		return $args;
 	}
 
-	/** Only the product's native variable add-to-cart template may rename labels. */
+	/** True only while Woo renders the native variations form. */
+	private static bool $in_variation_form = false;
+
+	public static function open_variation_form(): void {
+		self::$in_variation_form = true;
+	}
+
+	public static function close_variation_form(): void {
+		self::$in_variation_form = false;
+	}
+
+	/** Only the product's own native variations form may rename labels. */
 	public static function variation_label( string $label, string $attribute, mixed $label_product ): string {
 		global $product;
-		if ( $label_product && ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) || $label_product->get_id() !== $product->get_id() ) ) {
+		if ( ! self::$in_variation_form || ( $label_product && ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) || $label_product->get_id() !== $product->get_id() ) ) ) {
 			return $label;
 		}
-		$row = self::variation_wording( $product, $attribute );
-		if ( ! isset( $row['label'] ) ) {
-			return $label;
-		}
-		// Woo exposes no label-specific form filter. Its template call stack
-		// scopes the general attribute filter without actions or output rewriting.
-		foreach ( debug_backtrace( 0, 20 ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Native template scope, not logging.
-			if ( 'wc_get_template' === $frame['function'] && 'single-product/add-to-cart/variable.php' === ( $frame['args'][0] ?? '' ) ) {
-				return $row['label'];
-			}
-		}
-		return $label;
+		return self::variation_wording( $product, $attribute )['label'] ?? $label;
 	}
 
 	/** Restore inert source identity on the native gallery's outer block only. */
