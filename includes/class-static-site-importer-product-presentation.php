@@ -179,13 +179,18 @@ final class Static_Site_Importer_Product_Presentation {
 		return array_map( array( self::class, 'layout_declarations' ), $styles );
 	}
 
-	/** Find a shared row by positional control identity, never by source selector. */
+	/**
+	 * Find the nearest shared horizontal row by positional control identity,
+	 * never by source selector. Outer stacks also contain both controls, so the
+	 * row with the fewest members wins and column rows never qualify.
+	 */
 	private static function purchase_row_fact( array $graph, array $indexes ): array {
 		if ( ! isset( $indexes['quantity'], $indexes['submit'] ) ) {
 			return array();
 		}
+		$nearest = array();
 		foreach ( $graph['control_rows'] ?? array() as $row ) {
-			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['styles'] ?? null ) ) {
+			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['styles'] ?? null ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
 				continue;
 			}
 			$items = array();
@@ -194,8 +199,8 @@ final class Static_Site_Importer_Product_Presentation {
 					$items[ $member['index'] ] = $member['styles'];
 				}
 			}
-			if ( isset( $items[ $indexes['quantity'] ], $items[ $indexes['submit'] ] ) ) {
-				return array(
+			if ( isset( $items[ $indexes['quantity'] ], $items[ $indexes['submit'] ] ) && ( ! $nearest || count( $items ) < count( $nearest['items'] ) ) ) {
+				$nearest = array(
 					'index'  => $row['index'],
 					'styles' => $row['styles'],
 					'items'  => $items,
@@ -203,7 +208,7 @@ final class Static_Site_Importer_Product_Presentation {
 				);
 			}
 		}
-		return array();
+		return $nearest;
 	}
 
 	/** Closed media syntax shared by capture and receipt reconstruction. */
@@ -211,7 +216,8 @@ final class Static_Site_Importer_Product_Presentation {
 		if ( ! is_array( $condition ) || array_diff( array_keys( $condition ), array( 'kind', 'query' ) ) || 'media' !== ( $condition['kind'] ?? '' ) || ! is_string( $condition['query'] ?? null ) ) {
 			return '';
 		}
-		return preg_match( '/^(?:all|(?:\\((?:min-|max-)?(?:width|height):\\s*\\d+(?:\\.\\d+)?(?:px|em|rem)\\)|\\(orientation:\\s*(?:portrait|landscape)\\))(?: and \\((?:min-|max-)?(?:width|height):\\s*\\d+(?:\\.\\d+)?(?:px|em|rem)\\))*)$/D', $condition['query'] ) ? $condition['query'] : '';
+		$feature = '\\((?:(?:min-|max-)?(?:width|height):\\s*\\d+(?:\\.\\d+)?(?:px|em|rem)|orientation:\\s*(?:portrait|landscape))\\)';
+		return preg_match( '/^(?:(?:only )?(?:all|screen|print)(?: and ' . $feature . ')*|' . $feature . '(?: and ' . $feature . ')*)$/D', $condition['query'] ) ? $condition['query'] : '';
 	}
 
 	/** Map supported flex distributions; unsupported or wrapped rows retain the fallback. */
