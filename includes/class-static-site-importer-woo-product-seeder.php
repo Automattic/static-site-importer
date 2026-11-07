@@ -74,7 +74,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		if ( 'add_to_cart_form' === ( $entity['entity_kind'] ?? '' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-product-presentation.php';
 			$capture = Static_Site_Importer_Product_Presentation::capture( $entity );
-			$attrs   = empty( $capture ) ? '' : ' ' . json_encode( array( 'className' => $capture['className'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone binding contract.
+			if ( $id > 0 && function_exists( 'update_post_meta' ) ) {
+				update_post_meta( $id, '_static_site_importer_variation_wording', $capture['variation_wording'] ?? array() );
+			}
+			$attrs = empty( $capture ) ? '' : ' ' . json_encode( array( 'className' => $capture['className'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone binding contract.
 			return $id > 0 ? '<!-- wp:woocommerce/single-product {"productId":' . $id . '} --><div class="wp-block-woocommerce-single-product"><!-- wp:woocommerce/add-to-cart-form' . $attrs . ' /--></div><!-- /wp:woocommerce/single-product -->' : '';
 		}
 		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->' : '';

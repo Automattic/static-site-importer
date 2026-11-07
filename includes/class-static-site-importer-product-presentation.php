@@ -63,12 +63,18 @@ final class Static_Site_Importer_Product_Presentation {
 				$rules[ $slot ] = $declarations;
 			}
 		}
-		return self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$overlay = self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
+		if ( $wording ) {
+			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
+			$overlay['variation_wording'] = $wording;
+		}
+		return $overlay;
 	}
 
 	/** One deterministic scope and stylesheet artifact for all captured product rules. */
-	private static function artifact( array $rules ): array {
-		if ( ! $rules ) {
+	private static function artifact( array $rules, bool $allow_empty = false ): array {
+		if ( ! $rules && ! $allow_empty ) {
 			return array();
 		}
 		$hash  = substr( hash( 'sha256', (string) json_encode( $rules ) ), 0, 12 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Deterministic standalone contract.
@@ -454,6 +460,24 @@ final class Static_Site_Importer_Product_Presentation {
 		return $css;
 	}
 
+	/** Stored wording is canonical plain text, never HTML or executable syntax. */
+	public static function validate_wording( mixed $wording ): ?array {
+		if ( ! is_array( $wording ) ) {
+			return null;
+		}
+		foreach ( $wording as $attribute => $row ) {
+			if ( ! is_string( $attribute ) || ! preg_match( '/^[a-z0-9_%\-]+$/D', $attribute ) || ! is_array( $row ) || ! $row ) {
+				return null;
+			}
+			foreach ( $row as $key => $text ) {
+				if ( ! in_array( $key, array( 'label', 'placeholder' ), true ) || ! is_string( $text ) || '' === $text || trim( $text ) !== $text || preg_match( '/[<>\x00-\x1f\x7f]|\s{2,}/u', $text ) || html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $text ) {
+					return null;
+				}
+			}
+		}
+		return $wording;
+	}
+
 	/** Rebuild a structured artifact before allowing stylesheet publication. */
 	public static function validate_overlay( mixed $overlay ): ?array {
 		if ( ! is_array( $overlay ) || 'static-site-importer/product-presentation/v1' !== ( $overlay['schema'] ?? '' ) || ! is_array( $overlay['rules'] ?? null ) ) {
@@ -496,6 +520,14 @@ final class Static_Site_Importer_Product_Presentation {
 		$expected = self::capture( array( 'controls' => $controls ) );
 		$rules    = array_filter( $expected['rules'] ?? array(), static fn( $slot ) => ! str_starts_with( $slot, 'layout:' ), ARRAY_FILTER_USE_KEY );
 		$expected = self::artifact( array_merge( $rules, $layout, $gallery ) );
+		if ( array_key_exists( 'variation_wording', $overlay ) ) {
+			$wording = self::validate_wording( $overlay['variation_wording'] );
+			if ( ! $wording ) {
+				return null;
+			}
+			$expected                      = $expected ? $expected : self::artifact( array(), true );
+			$expected['variation_wording'] = $wording;
+		}
 		return $expected === $overlay ? $expected : null;
 	}
 }

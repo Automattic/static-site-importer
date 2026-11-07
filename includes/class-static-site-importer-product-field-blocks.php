@@ -76,6 +76,39 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		return self::dynamic_block( $name, $attrs );
 	}
 
+	/** Capture wording before the source purchase subtree is replaced. */
+	public static function variation_wording( string $markup ): array {
+		if ( ! str_contains( $markup, '/authored-select' ) ) {
+			return array();
+		}
+		$wording = array();
+		$walk    = static function ( array $nodes, string $previous = '' ) use ( &$walk, &$wording ): void {
+			foreach ( $nodes as $node ) {
+				$attrs = $node['attrs'] ?? array();
+				if ( str_ends_with( (string) $node['blockName'], '/authored-select' ) && preg_match( '/^(?:variant-option-(.+)-select|attribute_(.+))$/D', $attrs['name'] ?? '', $match ) ) {
+					$key = sanitize_title( '' !== $match[1] ? $match[1] : $match[2] );
+					$row = array();
+					if ( '' !== $previous ) {
+						$row['label'] = $previous;
+					}
+					foreach ( $attrs['options'] ?? array() as $option ) {
+						if ( '' === ( $option['value'] ?? null ) && ! empty( $option['valueDeclared'] ) ) {
+							$row['placeholder'] = self::text( (string) ( $option['label'] ?? '' ) );
+							break;
+						}
+					}
+					if ( $row ) {
+						$wording[ $key ] = $row;
+					}
+				}
+				$walk( $node['innerBlocks'] ?? array(), self::text( (string) ( $node['innerContent'][0] ?? '' ) ) );
+				$previous = empty( $node['innerBlocks'] ) ? self::text( $node['innerHTML'] ?? '' ) : '';
+			}
+		};
+		$walk( parse_blocks( $markup ) );
+		return $wording;
+	}
+
 	/** Compare rendered text rather than source-platform selectors. */
 	private static function text( string $value ): string {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Compare text in standalone producer consumers too.

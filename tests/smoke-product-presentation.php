@@ -369,4 +369,53 @@ foreach ( $replacement_cases as $label => list( $classes, $scope ) ) {
 		throw new RuntimeException( $label . ': unsupported wrapper receipt accepted.' );
 	}
 }
+/** Minimal product meta persistence for the native Woo filter contract. */
+function update_post_meta( $id, $key, $value ) {
+	$GLOBALS['ssi_wording_meta'][ $id ][ $key ] = $value;
+}
+function get_post_meta( $id, $key, $single = true ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core signature.
+	return $GLOBALS['ssi_wording_meta'][ $id ][ $key ] ?? '';
+}
+function sanitize_title( $text ) {
+	return strtolower( str_replace( ' ', '-', $text ) );
+}
+require_once ABSPATH . 'includes/class-static-site-importer-product-grid-runtime.php';
+/** Exercise the same action scope as Woo's native variable form. */
+function render_variations_form( $rows ) {
+	$result = array();
+	Static_Site_Importer_Product_Grid_Runtime::open_variation_form();
+	foreach ( $rows as $attribute => $expected ) {
+		$label = Static_Site_Importer_Product_Grid_Runtime::variation_label( $attribute, $attribute, false );
+		$args = Static_Site_Importer_Product_Grid_Runtime::variation_placeholder( array( 'product' => $GLOBALS['product'], 'attribute' => $attribute, 'show_option_none' => 'Choose an option' ) );
+		$result[ $attribute ] = array( $label, $args['show_option_none'] );
+	}
+	Static_Site_Importer_Product_Grid_Runtime::close_variation_form();
+	return $result;
+}
+// One table-driven regression: captured wording and an uncaptured native control.
+$binding['search_block_markup'] = '<!-- wp:group --><div><!-- wp:paragraph --><p>Size:</p><!-- /wp:paragraph --><!-- wp:ssi/authored-select {"name":"variant-option-Size-select","options":[{"label":"\\n Select Size \\n","value":"","valueDeclared":true}]} /--></div><!-- /wp:group -->';
+$product_row = array( 'slug' => 'stickers', 'bindings' => array( $binding ) );
+$records = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+	array( 'entities' => array( 'catalog' => array( 'adapter' => Static_Site_Importer_Woo_Product_Seeder::adapter(), 'manifest' => array( 'products' => array( $product_row ) ) ) ) ),
+	array( 'catalog' => array( 'products' => array( array( 'slug' => 'stickers', 'id' => 42, 'status' => 'created' ) ) ) )
+);
+$entity = array_merge( $fixture, array( 'variation_wording' => $records[0]['product_presentation']['variation_wording'] ?? array() ) );
+$GLOBALS['product'] = new class {
+	public function get_id() { return 42; }
+};
+$rows = array( 'Size' => array( 'Size:', 'Select Size' ), 'Color' => array( 'Color', 'Choose an option' ) );
+if ( render_variations_form( $rows ) !== $rows || 'Size' !== Static_Site_Importer_Product_Grid_Runtime::variation_label( 'Size', 'Size', false ) ) {
+	throw new RuntimeException( 'Native variation form lost source wording or leaked labels outside the form.' );
+}
+$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+	throw new RuntimeException( 'Wording receipt did not round trip.' );
+}
+foreach ( array( '<b>Size:</b>', 'Size:&#10;', "Size:\n" ) as $unsafe_text ) {
+	$bad = $overlay;
+	$bad['variation_wording']['size']['label'] = $unsafe_text;
+	if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+		throw new RuntimeException( 'Non-plain wording accepted.' );
+	}
+}
 echo "Product presentation passed.\n";
