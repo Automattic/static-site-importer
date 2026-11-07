@@ -12,7 +12,7 @@ require ABSPATH . WPINC . '/formatting.php';
 require ABSPATH . WPINC . '/functions.php';
 require ABSPATH . WPINC . '/kses.php';
 require dirname( __DIR__, 3 ) . '/includes/class-static-site-importer-consent-banner.php';
-$bytes = file_get_contents( __DIR__ . ( isset( $argv[1] ) ? '/presentation.json' : '/consent-banner.json' ) );
+$bytes = file_get_contents( __DIR__ . ( 'card' === ( $argv[1] ?? '' ) ? '/card.json' : ( isset( $argv[1] ) ? '/presentation.json' : '/consent-banner.json' ) ) );
 $artifact = array( 'files' => array( array( 'path' => 'website/consent-banner.json', 'content_base64' => base64_encode( $bytes ) ), array( 'path' => 'website/index.html', 'content' => '<h1>Example</h1>' ) ) );
 $args = array();
 Static_Site_Importer_Consent_Banner::extract( $artifact, $args );
@@ -47,6 +47,8 @@ if ( 'policy-link' === ( $argv[1] ?? '' ) ) {
 	$fact = $args['consent_banner'];
 	$fact['presentation'] = array( 'gap' => json_decode( $argv[2], true ) );
 	echo Static_Site_Importer_Consent_Banner::markup( $fact ) . Static_Site_Importer_Consent_Banner::stylesheet( $fact );
+} elseif ( 'card' === ( $argv[1] ?? '' ) ) {
+	echo Static_Site_Importer_Consent_Banner::markup( $args['consent_banner'] ) . "\n---\n" . Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
 } elseif ( 'css' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
 } elseif ( 'top' === ( $argv[1] ?? '' ) ) {
@@ -59,7 +61,7 @@ if ( 'policy-link' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::stylesheet( $fact );
 } elseif ( 'hostile' === ( $argv[1] ?? '' ) ) {
 	$fact = $args['consent_banner'];
-	foreach ( array( 'edge_offset', 'padding', 'font_family', 'font_size', 'line_height', 'text_margin' ) as $key ) {
+	foreach ( array( 'edge_offset', 'padding', 'font_family', 'font_size', 'line_height', 'text_margin', 'box_shadow' ) as $key ) {
 		$fact['presentation'][ $key ] = '0px;}body{display:none';
 	}
 	$fact['presentation']['layout'] = array(

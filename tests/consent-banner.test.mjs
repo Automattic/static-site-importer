@@ -33,16 +33,31 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.match(markup, /line-height:16\.2px/);
  const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
  const css = run('css');
- assert.ok(css.includes(`${selector}{bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
+ assert.ok(css.includes(`${selector}{bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
  assert.ok(css.includes(`${selector} > p{flex:1 1 auto;margin:0px;}`));
  assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > p{margin:0 0 15px;}${selector} > .wp-block-buttons{align-self:flex-end;margin-left:auto;margin-right:0;}}`));
  assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:row;align-items:center;}${selector} > p{margin:0 15px 0 0;}}`));
  assert.ok(run('top').includes(`${selector}{top:0px;`));
- assert.doesNotMatch(run('top'), /bottom:/);
+ assert.doesNotMatch(run('top'), /bottom:[^a]/);
  assert.doesNotMatch(run('hostile'), /flex-direction|flex-wrap|margin:|line-height:/);
- assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
+ assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
  assert.doesNotMatch(run('hostile'), /display:none|body\{|has-border-color|border-width:|border-style:|border-color:/);
  assert.ok(css.indexOf(' > p{flex:1 1 auto;margin:0px;}') < css.indexOf('@media'));
+});
+test('an inset card keeps its title, edge, width and stretched control per breakpoint', () => {
+ const [markup, css] = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'card'], { encoding: 'utf8' }).split('\n---\n');
+ const result = validateMarkup(markup);
+ assert.equal(result.ok, true, JSON.stringify(result.failures));
+ assert.match(markup, /"align":"right"/);
+ assert.ok(markup.includes('<p><strong class="ssi-consent-banner__title">This website uses cookies.</strong> We use cookies'));
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ assert.ok(css.includes(`${selector} > p > .ssi-consent-banner__title{display:block;font-size:22px;line-height:27.5px;font-weight:400;margin:0px;padding:0px 0px 8px;}`));
+ assert.match(markup, /"typography":\{"fontSize":"12px","fontWeight":"700","letterSpacing":"0.852px"\}/);
+ assert.ok(css.includes('box-shadow:rgba(0, 0, 0, 0.3) 0px 2px 6px 0px;'));
+ assert.ok(css.includes(`${selector} > .wp-block-buttons{margin:24px 0px 4px}`) && css.includes('min-height:40px'));
+ const stretch = `${selector} > .wp-block-buttons{align-self:stretch;margin-left:0;margin-right:0;}`;
+ assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:0px;}${selector}{left:0!important;right:0!important;width:auto!important;max-width:none!important;margin:0!important;}${stretch}`));
+ assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:24px;}${selector}{border-radius:7px;}${selector}{right:24px!important;left:auto!important;margin:0!important;width:400px!important;max-width:none!important;}${stretch}`));
 });
 test('presentation gap accepts one or two typed lengths in row-column order', () => {
  const run = gap => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'gap', JSON.stringify(gap)], { encoding: 'utf8' });
