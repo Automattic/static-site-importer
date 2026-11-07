@@ -152,6 +152,7 @@ final class Static_Site_Importer_Product_Presentation {
 		foreach ( $styles as $property => $value ) {
 			$allowed = array(
 				'width'      => array( '100%' ),
+				'max-width'  => array( 'none' ),
 				'min-width'  => array( '0' ),
 				'box-sizing' => array( 'border-box' ),
 				'display'    => array( 'block', 'grid' ),
@@ -316,6 +317,7 @@ final class Static_Site_Importer_Product_Presentation {
 		$wrapper = $gallery ? array(
 			'layout:gallery-block' => self::layout_declarations( array(
 				'display'    => 'block',
+				'max-width'  => 'none',
 				'min-width'  => '0',
 				'box-sizing' => 'border-box',
 				'overflow'   => 'visible',
