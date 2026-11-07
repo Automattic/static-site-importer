@@ -237,7 +237,7 @@ $carousel_cases = array(
 );
 foreach ( $carousel_cases as $label => list( $placement, $position, $direction, $strip_direction, $order, $ratio ) ) {
 	$node = array(
-		'blockName' => 'blocks-engine/authored-carousel',
+		'blockName' => 'ssi-example-site/authored-carousel',
 		'attrs'     => array(
 			'thumbnails'        => array( array( 'src' => 'one.jpg' ), array( 'src' => 'two.jpg' ), array( 'src' => 'three.jpg' ) ),
 			'thumbnailPosition' => $placement,

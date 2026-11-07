@@ -182,7 +182,7 @@ final class Static_Site_Importer_Product_Presentation {
 	/** Capture image boxes and strip arrangement before the source subtree is deleted. */
 	public static function gallery_attrs( array $node ): array {
 		$attrs = $node['attrs'] ?? array();
-		if ( 'blocks-engine/authored-carousel' === ( $node['blockName'] ?? '' ) && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
+		if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) && ( self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) || self::length( $attrs['thumbnailWidth'] ?? '' ) ) ) {
 			return array(
 				'main'         => array( 'aspectRatio' => self::aspect_ratio( $attrs['stageAspectRatio'] ?? '' ) ),
 				'thumbnail'    => empty( $attrs['thumbnails'] ) ? array() : array( 'width' => self::length( $attrs['thumbnailWidth'] ?? '' ) ),
