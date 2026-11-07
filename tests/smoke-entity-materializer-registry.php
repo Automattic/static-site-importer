@@ -55,6 +55,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-finding-materializer.php';
 
 	$failures   = array();
 	$assertions = 0;
@@ -119,6 +120,35 @@ namespace {
 	);
 	$assert( is_wp_error( $failing ), 'failing-adapter-wp-error-is-preserved' );
 	$assert( 'adapter_failed' === $failing->get_error_code(), 'failing-adapter-error-code-is-preserved' );
+
+	// Product slugs share the producer's WordPress-compatible underscore grammar.
+	foreach ( array(
+		'underscores' => array( array( 'stand_up_model', 'tungsten-tunning_steels' ), true ),
+		'uppercase'   => array( array( 'Stand_Up' ), false ),
+		'double-dash' => array( array( 'a--b' ), false ),
+		'leading-dash' => array( array( '-a' ), false ),
+		'colon'       => array( array( 'a:b' ), false ),
+	) as $case => list( $slugs, $valid ) ) {
+		$products = array_map(
+			static fn( string $slug ): array => array(
+				'name'          => 'Product',
+				'slug'          => $slug,
+				'regular_price' => '12.00',
+			),
+			$slugs
+		);
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+			array(
+				'schema_version' => 1,
+				'products'       => $products,
+			)
+		);
+		$assert( $valid ? array() === $validated['errors'] && $slugs === array_column( $validated['products'], 'slug' ) : array( '$.products[0].slug' ) === array_column( $validated['errors'], 'path' ), 'product-slug-manifest:' . $case, wp_json_encode( $validated['errors'] ) );
+		foreach ( $products as $product ) {
+			$row = Static_Site_Importer_Product_Finding_Materializer::product_finding_manifest_row( $product, '' );
+			$assert( $valid ? $product['slug'] === ( $row['slug'] ?? null ) : null === $row, 'product-slug-finding:' . $product['slug'] );
+		}
+	}
 
 	$duplicate_products = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
 		array(

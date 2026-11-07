@@ -26,6 +26,11 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  * Registers import-time entity validators, dependency requirements, and writers.
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
+	/**
+	 * Product slug grammar; underscores are valid WordPress post slugs.
+	 */
+	public const PRODUCT_SLUG_PATTERN = '/^[a-z0-9_]+(?:-[a-z0-9_]+)*$/';
+
 
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
@@ -2327,7 +2332,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'name is required and must be a non-empty string.',
 				);
 			}
-			if ( '' === $slug || ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
+			if ( '' === $slug || ! preg_match( self::PRODUCT_SLUG_PATTERN, $slug ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.slug',
 					'message' => 'slug is required and must be a lowercase URL slug.',
