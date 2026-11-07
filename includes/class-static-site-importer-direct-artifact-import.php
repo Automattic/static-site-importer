@@ -122,6 +122,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		self::purge_prior_failed_runs( $identity, $import_id );
 
 		$run          = array(
+			'import_deadline_at' => (float) ( $args['import_deadline_at'] ?? 0 ),
 			'import_id'  => $import_id,
 			'binding'    => array(
 				'source_type'       => $source_type,
@@ -400,6 +401,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$policy       = self::run_policy();
 		$clock        = $policy['clock'];
+		// The host's overall deadline is independent of the renewable invocation budget.
+		// Retain it across source-free resumes, which need not resend transport options.
+		if ( 0 < (float) ( $request_args['import_deadline_at'] ?? 0 ) ) {
+			$run['import_deadline_at'] = (float) $request_args['import_deadline_at'];
+		}
+		$import_deadline = (float) ( $run['import_deadline_at'] ?? 0 );
+		$terminal_deadline_reached = static fn (): bool => 0 < $import_deadline && self::deadline_reached( $import_deadline, $clock );
 		$run['state'] = 'running';
 		$write        = self::write_run( $workspace, $run );
 		if ( is_wp_error( $write ) ) {
@@ -526,9 +534,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
 				$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
-				$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : $pending_plans;
+				$prepare_ids   = self::deadline_reached( $deadline, $clock ) && ! $terminal_deadline_reached() ? array() : $pending_plans;
 				if ( ! empty( $prepare_ids ) ) {
-					if ( self::deadline_reached( $deadline, $clock ) ) {
+					if ( self::deadline_reached( $deadline, $clock ) && ! $terminal_deadline_reached() ) {
 						return self::continuation( $run, 'deadline_exhausted' );
 					}
 					$started = microtime( true );
@@ -641,7 +649,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					$batch_limit = 'fanout' === $policy['compile_mode']
 					? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
 					: $policy['compile_in_process_pages'];
-					$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
+					$batch_ids   = self::deadline_reached( $deadline, $clock ) || $terminal_deadline_reached() ? array() : array_slice( $pending, 0, $batch_limit );
 					if ( empty( $batch_ids ) ) {
 						break;
 					}
@@ -739,11 +747,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
 				$remaining                = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
-				$compile_deadline_reached = self::deadline_reached( $deadline, $clock );
-				if ( 0 < $remaining && ! $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
-					return self::continuation( $run, 'pages_remaining' );
+				if ( 0 < $remaining && ! $terminal_deadline_reached() && empty( $run['deadline_finalized'] ) ) {
+					return self::continuation( $run, self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining' );
 				}
-				if ( $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
+				if ( $terminal_deadline_reached() && empty( $run['deadline_finalized'] ) ) {
 					$run['deadline_skipped_pages'] = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
 					if ( in_array( (string) ( $shared['analysis']['entry_path'] ?? '' ), $run['deadline_skipped_pages'], true ) ) {
 						return self::fail( $workspace, $run, 'compose', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The deadline prevented compilation of the entrypoint page.' ) );
@@ -1946,6 +1953,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				unset( $args['source_metadata']['collection'] );
 			}
 		}
+		// Deadline transport may be supplied on a resume without changing the import identity.
+		unset( $args['import_deadline_at'] );
 		// Intake findings are derived from the source bytes, which a resume does not resend.
 		unset( $args['source_metadata']['intake_findings'] );
 		if ( array() === ( $args['source_metadata'] ?? null ) ) {

@@ -630,7 +630,7 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 );
 $slow_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $slow_work = $slow_first['artifact_run']['work'] ?? array();
-$assert( ! empty( $slow_first['success'] ) && empty( $slow_first['continuation'] ) && 11.0 === $slow_clock && 1 === ( $slow_work['compile_batches'] ?? 0 ) && 1 === ( $slow_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'a slow compiler must finalize its compiled front page when the deadline expires' );
+$assert( ! empty( $slow_first['success'] ) && ! empty( $slow_first['continuation'] ) && 'deadline_exhausted' === ( $slow_first['continuation_reason'] ?? '' ) && 11.0 === $slow_clock && 1 === ( $slow_work['compile_batches'] ?? 0 ) && 1 === ( $slow_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'a slow compiler must yield a resumable continuation when the invocation deadline expires' );
 $slow_first_receipt = $slow_first['artifact_run']['receipt_identities'][0] ?? '';
 $slow_terminal = $slow_first;
 $slow_request = $resume( (string) $slow_first['import_id'], 'plan' );
@@ -638,6 +638,14 @@ for ( $attempt = 0; $attempt < 10 && ! empty( $slow_terminal['continuation'] ); 
 	$slow_terminal = Static_Site_Importer_Canonical_Import_Service::import( $slow_request );
 }
 $assert( ! empty( $slow_terminal['success'] ) && empty( $slow_terminal['continuation'] ) && in_array( $slow_first_receipt, $slow_terminal['artifact_run']['receipt_identities'] ?? array(), true ), 'deadline completion preserves its compiled receipt' );
+$assert( 3 === ( $slow_terminal['artifact_run']['work']['pages_compiled'] ?? 0 ) && 3 === count( $slow_terminal['plan']['pages'] ?? array() ) && array() === Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $slow_terminal['plan']['diagnostics'] ?? array() ), 'later invocations must compile all pages without deadline omissions' );
+
+// A host may terminate an already-yielded run using an absolute deadline.
+$slow_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$terminal_request = $resume( (string) $slow_first['import_id'], 'plan' );
+$terminal_request['import_deadline_at'] = $slow_clock;
+$slow_terminal = Static_Site_Importer_Canonical_Import_Service::import( $terminal_request );
+$assert( ! empty( $slow_terminal['success'] ) && empty( $slow_terminal['continuation'] ) && 1 === count( $slow_terminal['plan']['pages'] ?? array() ), 'a passed host deadline must finalize only the compiled entrypoint' );
 $skipped = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $slow_terminal['plan']['diagnostics'] ?? array() );
 $assert( 2 === count( $skipped ) && array( 'deadline' ) === array_values( array_unique( array_column( $skipped, 'reason_code' ) ) ), 'the plan names every skipped page with the deadline reason' );
 foreach ( array( 'product-handoff-contract', 'import-report', 'source-findings', 'diagnostic-contract', 'artifact-diagnostics-adapter', 'report-diagnostics', 'asset-reporter', 'document-metadata-reporter', 'block-document-reporter', 'receipt-projection' ) as $report_class ) {
@@ -655,13 +663,17 @@ Static_Site_Importer_Report_Diagnostics::finalize_report( $deadline_projection['
 $deadline_report = $deadline_projection['report']->to_array();
 $deadline_rows = array_values( array_filter( $deadline_report['diagnostics'] ?? array(), static fn ( array $row ): bool => 'page_compile_omitted' === ( $row['code'] ?? '' ) ) );
 $assert( 2 === count( $deadline_rows ) && array( 'deadline' ) === array_values( array_unique( array_column( $deadline_rows, 'reason_code' ) ) ), 'the import report loss ledger retains deadline omissions' );
+$deadline_locations = json_encode( array_column( $deadline_rows, 'location' ), JSON_UNESCAPED_SLASHES );
+$assert( str_contains( $deadline_locations, 'website/about.html' ) && str_contains( $deadline_locations, 'website/contact.html' ) && ! str_contains( $deadline_locations, 'website/index.html' ), 'the import report must name exactly the skipped source routes, not the compiled entrypoint' );
 foreach ( $deadline_rows as $row ) {
 	$assert( ! empty( $row['location'] ) && 'accepted_reported_loss' === ( $row['acceptability'] ?? '' ), 'each deadline loss names its route and is nonfatal' );
 }
 $mutations_before_deadline = $GLOBALS['ssi_direct_mutations'];
 $slow_clock = 0.0;
-$slow_apply = $drive_apply( $input() );
-$assert( ! empty( $slow_apply['success'] ) && empty( $slow_apply['continuation'] ) && 1 === ( $slow_apply['artifact_run']['work']['materializations'] ?? 0 ), 'deadline imports materialize their compiled pages exactly once' );
+$deadline_input = $input();
+$deadline_input['import_deadline_at'] = 10.0;
+$slow_apply = $drive_apply( $deadline_input );
+$assert( ! empty( $slow_apply['success'] ) && empty( $slow_apply['continuation'] ) && 1 === ( $slow_apply['artifact_run']['work']['materializations'] ?? 0 ) && 1 === ( $slow_apply['artifact_run']['work']['pages_compiled'] ?? 0 ), 'deadline imports materialize their compiled pages exactly once' );
 $slow_clock = 0.0;
 $deadline_before_compile = static function ( string $phase ) use ( &$slow_clock ): void {
 	if ( 'prepare_pages' === $phase ) {
@@ -669,7 +681,9 @@ $deadline_before_compile = static function ( string $phase ) use ( &$slow_clock 
 	}
 };
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = $deadline_before_compile;
-$missing_front = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$deadline_plan_input = $input( 'plan' );
+$deadline_plan_input['import_deadline_at'] = 10.0;
+$missing_front = Static_Site_Importer_Canonical_Import_Service::import( $deadline_plan_input );
 $assert( empty( $missing_front['success'] ) && 'static_site_importer_omitted_entrypoint' === ( $missing_front['error']['code'] ?? '' ), 'a deadline that prevents building the front page remains fatal' );
 array_pop( $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'] );
 $GLOBALS['ssi_direct_mutations'] = $mutations_before_deadline;

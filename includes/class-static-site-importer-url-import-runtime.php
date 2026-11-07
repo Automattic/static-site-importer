@@ -176,7 +176,9 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || ( $record['identity'] ?? '' ) !== $identity || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) ) {
 			return new WP_Error( 'static_site_importer_url_import_run_not_found', 'The URL import run was not found.' );
 		}
-		if ( self::canonical( self::batch_contract( $url, $input ) ) !== self::canonical( $record['contract'] ?? array() ) ) {
+		// Compare in the persisted JSON domain: whole-number floats such as the
+		// default deadline (0.0) decode as integers without changing the options.
+		if ( wp_json_encode( self::canonical( self::batch_contract( $url, $input ) ) ) !== wp_json_encode( self::canonical( $record['contract'] ?? array() ) ) ) {
 			return new WP_Error( 'static_site_importer_url_import_run_mismatch', 'The URL import identity does not match this URL, import options, or user.' );
 		}
 

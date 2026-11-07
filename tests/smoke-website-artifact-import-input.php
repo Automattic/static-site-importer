@@ -127,6 +127,7 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 };
 
 $input  = array(
+	'import_deadline_at'                   => 2000000000.5,
 	'slug'                                 => 'contract-theme',
 	'name'                                 => 'Contract Theme',
 	'site_title'                           => 'Contract Site',
@@ -163,6 +164,11 @@ $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input 
 
 // disable_smilies (issue #780) defaults on so ordinary imports keep literal text.
 $default_input = Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'slug' => 'default-theme' ) );
+$assert( 0.0 === $default_input['import_deadline_at'], 'import-deadline-defaults-unbounded' );
+$assert( 2000000000.5 === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'import_deadline_at' => '2000000000.5' ) )['import_deadline_at'], 'import-deadline-coerces-numeric-string' );
+foreach ( array( -1, 'invalid', null, false ) as $invalid_deadline ) {
+	$assert( 0.0 === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'import_deadline_at' => $invalid_deadline ) )['import_deadline_at'], 'import-deadline-normalizes-invalid-or-negative-to-unbounded' );
+}
 $assert( 'report_only' === $default_input['stale_page_action'], 'stale-page-action-defaults-report-only' );
 $assert( '' === $default_input['runtime_lifecycle_phase'], 'runtime-lifecycle-phase-defaults-direct-apply' );
 $assert( 'copy_to_theme' === $default_input['asset_materialization_policy'], 'asset-materialization-policy-defaults-copy-to-theme' );

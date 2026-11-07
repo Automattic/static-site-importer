@@ -16,6 +16,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 
 	/** @var array<string,array<string,mixed>> */
 	public const SCHEMA_PROPERTIES = array(
+		'import_deadline_at'                   => array( 'type' => 'number', 'minimum' => 0 ),
 		'slug'                                 => array( 'type' => 'string' ),
 		'name'                                 => array( 'type' => 'string' ),
 		'site_title'                           => array( 'type' => 'string' ),
@@ -74,6 +75,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 	public static function normalize( array $input, array $defaults = array() ): array {
 		$values = array_merge(
 			array(
+				'import_deadline_at'                   => 0,
 				'slug'                                 => '',
 				'name'                                 => '',
 				'site_title'                           => '',
@@ -124,6 +126,8 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'quality_budget', 'client_script_provenance' ) as $field ) {
 			$values[ $field ] = is_array( $values[ $field ] ) ? $values[ $field ] : array();
 		}
+
+		$values['import_deadline_at'] = is_numeric( $values['import_deadline_at'] ) ? max( 0.0, (float) $values['import_deadline_at'] ) : 0.0;
 
 		return $values;
 	}
