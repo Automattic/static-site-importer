@@ -26,6 +26,11 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  * Registers import-time entity validators, dependency requirements, and writers.
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
+	/**
+	 * Product slug grammar; underscores are valid WordPress post slugs.
+	 */
+	public const PRODUCT_SLUG_PATTERN = '/^[a-z0-9_]+(?:-[a-z0-9_]+)*$/';
+
 
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
@@ -2327,7 +2332,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'name is required and must be a non-empty string.',
 				);
 			}
-			if ( '' === $slug || ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
+			if ( '' === $slug || ! preg_match( self::PRODUCT_SLUG_PATTERN, $slug ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.slug',
 					'message' => 'slug is required and must be a lowercase URL slug.',
@@ -2861,7 +2866,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			)
 		);
 		$roles      = array_merge( $roles, $candidate['control_containers'] ?? array() );
-		$styles     = array_merge( array_column( $roles, 'styles' ), array_column( $candidate['variants'], 'style_patch' ) );
+		// Control-row facts describe shared row geometry for native layouts (for
+		// example product purchase rows); the provider overlay never paints them.
+		$variants = array_filter( $candidate['variants'], static fn( array $variant ): bool => ! in_array( $variant['role'] ?? null, array( 'control_row', 'control_row_item' ), true ) );
+		$styles   = array_merge( array_column( $roles, 'styles' ), array_column( $variants, 'style_patch' ) );
 		foreach ( $styles as $role_styles ) {
 			foreach ( array_keys( $role_styles ) as $key ) {
 				if ( ! isset( $properties[ $key ] ) ) {

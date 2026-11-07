@@ -39,6 +39,7 @@ final class Static_Site_Importer_Product_Presentation {
 	public static function capture( array $entity ): array {
 		$rules    = array();
 		$purchase = array();
+		$indexes  = array();
 		foreach ( $entity['controls'] ?? array() as $index => $control ) {
 			$tag  = strtolower( (string) ( $control['tag'] ?? '' ) );
 			$type = strtolower( (string) ( $control['type'] ?? '' ) );
@@ -55,6 +56,7 @@ final class Static_Site_Importer_Product_Presentation {
 				}
 			}
 			$purchase[ $role ] = $styles;
+			$indexes[ $role ]  = $index;
 			$declarations      = self::declarations( $styles );
 			if ( $declarations ) {
 				// Each variation may have its own captured design; do not flatten
@@ -63,7 +65,7 @@ final class Static_Site_Importer_Product_Presentation {
 				$rules[ $slot ] = $declarations;
 			}
 		}
-		$overlay = self::artifact( array_merge( $rules, self::purchase_layout( $purchase ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$overlay = self::artifact( array_merge( $rules, self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
 		if ( $wording ) {
 			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
@@ -81,14 +83,16 @@ final class Static_Site_Importer_Product_Presentation {
 		$class = 'ssi-product-' . $hash;
 		$css   = '';
 		foreach ( $rules as $slot => $declarations ) {
-			$parts    = explode( ':', $slot );
-			$selector = 'layout' === $parts[0] ? self::LAYOUT_SELECTORS[ $parts[1] ] : self::SELECTORS[ $parts[0] ];
+			list( $slot, $media ) = array_pad( explode( '@', $slot, 2 ), 2, '' );
+			$parts                = explode( ':', $slot );
+			$selector             = 'layout' === $parts[0] ? self::LAYOUT_SELECTORS[ $parts[1] ] : self::SELECTORS[ $parts[0] ];
 			if ( 'variation' === $parts[0] ) {
 				$selector = '.variations tr:nth-child(' . ( (int) $parts[1] + 1 ) . ') select';
 			}
 			$scope = '.' . $class . '.' . $class;
 			// Rebuild legacy auto-width receipts exactly; new galleries fill only the inner element.
-			$css .= ( 'gallery' === $slot && str_contains( $declarations, 'width:auto !important;' ) ? $scope . $selector . ',' : '' ) . $scope . ( '' === $selector ? '' : ' ' . $selector ) . '{' . $declarations . '}';
+			$rule = ( 'gallery' === $slot && str_contains( $declarations, 'width:auto !important;' ) ? $scope . $selector . ',' : '' ) . $scope . ( '' === $selector ? '' : ' ' . $selector ) . '{' . $declarations . '}';
+			$css .= '' === $media ? $rule : '@media ' . $media . '{' . $rule . '}';
 		}
 		return array(
 			'schema'    => 'static-site-importer/product-presentation/v1',
@@ -101,14 +105,14 @@ final class Static_Site_Importer_Product_Presentation {
 	/**
 	 * Remove native table/intrinsic track constraints before applying control paint.
 	 *
-	 * The entity currently carries control CSS, not the shared row's geometry.
+	 * Without a shared row fact, the entity carries only control CSS.
 	 * In particular, input width is NOT quantity-wrapper width. Keep the painted
 	 * input inside a flexible quantity track when the button has an absolute width.
 	 * Container-relative button widths cannot size a row track: use the captured
 	 * absolute quantity width (or auto) and give the button the remaining space.
 	 * Never invent a source gap from the remaining column space.
 	 */
-	private static function purchase_layout( array $controls ): array {
+	private static function purchase_layout( array $controls, array $graph = array(), array $indexes = array() ): array {
 		$styles = array();
 		$full   = array(
 			'width'      => '100%',
@@ -138,12 +142,100 @@ final class Static_Site_Importer_Product_Presentation {
 			if ( '' !== $gap ) {
 				$row['column-gap'] = $gap;
 			}
-			$styles['layout:purchase-row']    = $row;
-			$styles['layout:simple-row']      = $row;
+			$fallback = $row;
+			$fact     = self::purchase_row_fact( $graph, $indexes );
+			if ( $fact ) {
+				$row = self::row_geometry( $fact, $fallback );
+			}
+			$styles['layout:purchase-row'] = $row;
+			$styles['layout:simple-row']   = $row;
+			if ( $fact ) {
+				$conditions = array();
+				foreach ( $graph['variants'] ?? array() as $variant ) {
+					if ( ( $variant['index'] ?? null ) !== $fact['index'] || ! in_array( $variant['role'] ?? '', array( 'control_row', 'control_row_item' ), true ) ) {
+						continue;
+					}
+					$query = self::media_query( $variant['condition'] ?? null );
+					if ( '' === $query || ! is_array( $variant['style_patch'] ?? null ) ) {
+						continue;
+					}
+					$conditions[ $query ] ??= $fact;
+					if ( 'control_row' === $variant['role'] ) {
+						$conditions[ $query ]['styles'] = array_merge( $conditions[ $query ]['styles'], $variant['style_patch'] );
+					} elseif ( isset( $conditions[ $query ]['items'][ $variant['member_index'] ?? '' ] ) ) {
+						$member                                   = $variant['member_index'];
+						$conditions[ $query ]['items'][ $member ] = array_merge( $conditions[ $query ]['items'][ $member ], $variant['style_patch'] );
+					}
+				}
+				foreach ( $conditions as $query => $conditional ) {
+					foreach ( array( 'purchase-row', 'simple-row' ) as $slot ) {
+						$styles[ 'layout:' . $slot . '@' . $query ] = self::row_geometry( $conditional, $fallback );
+					}
+				}
+			}
 			$styles['layout:quantity-box']    = array_merge( $full, array( 'margin' => '0' ) );
 			$styles['layout:purchase-button'] = array_merge( $full, array( 'margin' => '0' ) );
 		}
 		return array_map( array( self::class, 'layout_declarations' ), $styles );
+	}
+
+	/** Find a shared row by positional control identity, never by source selector. */
+	private static function purchase_row_fact( array $graph, array $indexes ): array {
+		if ( ! isset( $indexes['quantity'], $indexes['submit'] ) ) {
+			return array();
+		}
+		foreach ( $graph['control_rows'] ?? array() as $row ) {
+			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['styles'] ?? null ) ) {
+				continue;
+			}
+			$items = array();
+			foreach ( $row['members'] ?? array() as $member ) {
+				if ( is_int( $member['index'] ?? null ) && is_array( $member['styles'] ?? null ) ) {
+					$items[ $member['index'] ] = $member['styles'];
+				}
+			}
+			if ( isset( $items[ $indexes['quantity'] ], $items[ $indexes['submit'] ] ) ) {
+				return array(
+					'index'  => $row['index'],
+					'styles' => $row['styles'],
+					'items'  => $items,
+					'order'  => array( $indexes['quantity'], $indexes['submit'] ),
+				);
+			}
+		}
+		return array();
+	}
+
+	/** Closed media syntax shared by capture and receipt reconstruction. */
+	private static function media_query( mixed $condition ): string {
+		if ( ! is_array( $condition ) || array_diff( array_keys( $condition ), array( 'kind', 'query' ) ) || 'media' !== ( $condition['kind'] ?? '' ) || ! is_string( $condition['query'] ?? null ) ) {
+			return '';
+		}
+		return preg_match( '/^(?:all|(?:\\((?:min-|max-)?(?:width|height):\\s*\\d+(?:\\.\\d+)?(?:px|em|rem)\\)|\\(orientation:\\s*(?:portrait|landscape)\\))(?: and \\((?:min-|max-)?(?:width|height):\\s*\\d+(?:\\.\\d+)?(?:px|em|rem)\\))*)$/D', $condition['query'] ) ? $condition['query'] : '';
+	}
+
+	/** Map supported flex distributions; unsupported or wrapped rows retain the fallback. */
+	private static function row_geometry( array $fact, array $fallback ): array {
+		$row    = $fallback;
+		$tracks = array();
+		foreach ( $fact['order'] as $index ) {
+			$item  = $fact['items'][ $index ];
+			$grow  = $item['flex_grow'] ?? '';
+			$basis = $item['flex_basis'] ?? '0';
+			if ( ! is_string( $grow ) || ! preg_match( '/^(?:\\d+(?:\\.\\d+)?|\\.\\d+)$/D', $grow ) || (float) $grow <= 0 || ( '' === self::absolute_length( $basis ) && ! in_array( $basis, array( '0%', '0.0%' ), true ) ) ) {
+				$tracks = array();
+				break;
+			}
+			$tracks[] = 'minmax(' . ( in_array( $basis, array( '0%', '0.0%' ), true ) ? '0' : $basis ) . ',' . $grow . 'fr)';
+		}
+		if ( 2 === count( $tracks ) && 'wrap' !== ( $fact['styles']['flex_wrap'] ?? '' ) ) {
+			$row['grid-template-columns'] = implode( ' ', $tracks );
+		}
+		$gap = self::absolute_length( $fact['styles']['column_gap'] ?? $fact['styles']['gap'] ?? '' );
+		if ( '' !== $gap ) {
+			$row['column-gap'] = $gap;
+		}
+		return $row;
 	}
 
 	/** Small layout-only vocabulary, also used to verify serialized receipts. */
@@ -161,6 +253,7 @@ final class Static_Site_Importer_Product_Presentation {
 				'overflow'   => array( 'visible' ),
 			);
 			$track   = 'grid-template-columns' === $property && is_string( $value ) && ( 'auto minmax(0,1fr)' === $value || preg_match( '/^(?:minmax\\(0,1fr\\) minmax\\(0,(?:0|\\d+(?:\\.\\d+)?px)\\)|(?:0|\\d+(?:\\.\\d+)?px) minmax\\(0,1fr\\))$/D', $value ) );
+			$track   = $track || ( 'grid-template-columns' === $property && is_string( $value ) && preg_match( '/^minmax\\((?:0|\\d+(?:\\.\\d+)?px),(?:\\d+(?:\\.\\d+)?|\\.\\d+)fr\\) minmax\\((?:0|\\d+(?:\\.\\d+)?px),(?:\\d+(?:\\.\\d+)?|\\.\\d+)fr\\)$/D', $value ) && ! preg_match( '/,0(?:\\.0+)?fr\\)/', $value ) );
 			$gap     = 'column-gap' === $property && '' !== self::length( $value );
 			if ( $track || $gap || in_array( $value, $allowed[ $property ] ?? array(), true ) ) {
 				$css .= $property . ':' . $value . ' !important;';
@@ -489,8 +582,17 @@ final class Static_Site_Importer_Product_Presentation {
 		$gallery  = array();
 		$layout   = array();
 		foreach ( $overlay['rules'] as $slot => $css ) {
+			list( $base_slot, $media ) = array_pad( explode( '@', $slot, 2 ), 2, '' );
+			if ( '' !== $media && ( ! in_array( $base_slot, array( 'layout:purchase-row', 'layout:simple-row' ), true ) || '' === self::media_query(
+				array(
+					'kind'  => 'media',
+					'query' => $media,
+				)
+			) ) ) {
+				return null;
+			}
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
-			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $slot, 7 ) ] );
+			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $base_slot, 7 ) ] );
 			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|submit)$/D', $slot ) ) ) {
 				return null;
 			}

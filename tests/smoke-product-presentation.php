@@ -120,6 +120,7 @@ if ( str_contains( $simple_capture['css'], 'table.variations' ) || ! str_contain
 }
 $purchase_cases = array(
 	'percentage submit' => array( '100%', '144px', '144px minmax(0,1fr)' ),
+	'control row'       => array( '100%', '86px', 'minmax(0,3fr) minmax(0,10fr)' ),
 );
 foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tracks ) ) {
 	$entity = array(
@@ -128,9 +129,35 @@ foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tr
 			array( 'tag' => 'button', 'type' => 'submit', 'styles' => array( 'width' => $submit_width, 'gap' => '10px' ) ),
 		),
 	);
+	$gap = '10px';
+	if ( 'control row' === $label ) {
+		$gap = '11px';
+		$entity['presentation_graph'] = array(
+			'schema' => 'generic/computed-form-presentation/v3',
+			'control_rows' => array( array(
+				'index' => 0,
+				'source_selector' => '.source-row',
+				'provenance' => array(),
+				'styles' => array( 'display' => 'flex', 'gap' => $gap ),
+				'members' => array(
+					array( 'index' => 0, 'source_selector' => '.source-quantity', 'provenance' => array(), 'styles' => array( 'flex_grow' => '3', 'flex_basis' => '0' ) ),
+					array( 'index' => 1, 'source_selector' => '.source-submit', 'provenance' => array(), 'styles' => array( 'flex_grow' => '10', 'flex_basis' => '0%' ) ),
+				),
+			) ),
+			'variants' => array( array(
+				'index' => 0, 'role' => 'control_row',
+				'condition' => array( 'kind' => 'media', 'query' => '(max-width:600px)' ),
+				'style_patch' => array( 'flex_wrap' => 'wrap' ),
+				'precedence' => array(), 'provenance' => array(),
+			) ),
+		);
+	}
 	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	if ( 'control row' === $label && ( ! str_contains( $overlay['css'], '@media (max-width:600px){' ) || ! str_contains( $overlay['rules']['layout:purchase-row@(max-width:600px)'] ?? '', 'grid-template-columns:86px minmax(0,1fr) !important;' ) ) ) {
+		throw new RuntimeException( 'Control row wrap must restore the fallback in scoped media.' );
+	}
 	foreach ( array( 'layout:purchase-row', 'layout:simple-row' ) as $slot ) {
-		if ( ! str_contains( $overlay['rules'][ $slot ], 'grid-template-columns:' . $tracks . ' !important;' ) || ! str_contains( $overlay['rules'][ $slot ], 'column-gap:10px !important;' ) ) {
+		if ( ! str_contains( $overlay['rules'][ $slot ], 'grid-template-columns:' . $tracks . ' !important;' ) || ! str_contains( $overlay['rules'][ $slot ], 'column-gap:' . $gap . ' !important;' ) ) {
 			throw new RuntimeException( $label . ': purchase proportions or gap lost.' );
 		}
 	}
