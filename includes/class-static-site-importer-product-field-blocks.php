@@ -56,6 +56,18 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		}
 		$attrs = self::presentation_attrs( $node['attrs'] ?? array(), $own );
 		if ( 'image' === $role ) {
+			if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) ) {
+				$source  = $node['attrs'] ?? array();
+				$classes = preg_split( '/\s+/', trim( ( $attrs['className'] ?? '' ) . ' ' . ( $source['sourcePresentationClasses'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
+				if ( is_array( $classes ) ) {
+					$attrs['className'] = implode( ' ', array_unique( $classes ) );
+				}
+				foreach ( $source['sourceIdentityAttributes'] ?? array() as $key => $value ) {
+					if ( preg_match( '/^data-(?!wp-)[a-z0-9_-]+$/D', $key ) && is_string( $value ) ) {
+						$attrs['metadata']['staticSiteImporterGalleryIdentity'][ $key ] = $value;
+					}
+				}
+			}
 			$capture = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) ) );
 			if ( $capture ) {
 				$attrs['className'] = trim( ( $attrs['className'] ?? '' ) . ' ' . $capture['className'] );

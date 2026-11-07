@@ -310,4 +310,63 @@ foreach ( $carousel_cases as $label => list( $placement, $position, $direction, 
 		}
 	}
 }
+// Source width belongs to the outer block; conflicting source layout does not.
+$replacement_cases = array(
+	'source carousel width cascade' => array( 'product-gallery be-inline-geometry-x', 'scope-example' ),
+);
+foreach ( $replacement_cases as $label => list( $classes, $scope ) ) {
+	$node = array(
+		'blockName' => 'example/authored-carousel',
+		'attrs' => array(
+			'className' => 'existing',
+			'sourcePresentationClasses' => $classes,
+			'sourceIdentityAttributes' => array( 'data-be-source-scope' => $scope, 'onclick' => 'unsafe()' ),
+			'stageAspectRatio' => '3/4',
+			'thumbnailPosition' => 'left',
+			'thumbnailWidth' => '50px',
+			'thumbnails' => array( array( 'src' => 'one.jpg' ) ),
+		),
+	);
+	$node['innerBlocks'] = array();
+	$node['innerHTML'] = '<div><img src="one.jpg" style="width:100%;height:100%" /></div>';
+	$node['innerContent'] = array( $node['innerHTML'] );
+	$overlays = array();
+	$bound = Static_Site_Importer_Product_Field_Blocks::bind_document( serialize_block( $node ), array( 'image' => 'one.jpg' ), $overlays );
+	$block = parse_blocks( $bound )[0];
+	if ( 'woocommerce/product-image-gallery' !== $block['blockName'] || str_contains( $bound, '<img' ) || 1 !== count( $overlays ) ) {
+		throw new RuntimeException( $label . ': public replacement path lost the native gallery.' );
+	}
+	$overlay = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) ) );
+	foreach ( array_merge( array( 'existing', $overlay['className'] ), explode( ' ', $classes ) ) as $class ) {
+		if ( ! in_array( $class, explode( ' ', $block['attrs']['className'] ), true ) ) {
+			throw new RuntimeException( $label . ': missing replacement class ' . $class );
+		}
+	}
+	if ( array( 'data-be-source-scope' => $scope ) !== ( $block['attrs']['metadata']['staticSiteImporterGalleryIdentity'] ?? null ) ) {
+		throw new RuntimeException( $label . ': lost inert source identity.' );
+	}
+	$rules = array(
+		'layout:gallery-block' => array( 'display:block', 'overflow:visible', 'min-width:0' ),
+		'gallery' => array( 'width:100%', 'display:flex' ),
+	);
+	foreach ( $rules as $slot => $values ) {
+		foreach ( $values as $value ) {
+			if ( ! str_contains( $overlay['rules'][ $slot ] ?? '', $value . ' !important;' ) ) {
+				throw new RuntimeException( $label . ': missing wrapper isolation or inner fill ' . $value );
+			}
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) || str_contains( $overlay['rules']['layout:gallery-block'], 'width:' . '100%' ) ) {
+		throw new RuntimeException( $label . ': receipt invalid or source width overridden.' );
+	}
+	$inner_selector = '.' . $overlay['className'] . '.' . $overlay['className'] . ' .woocommerce-product-gallery{width:100% !important;';
+	if ( ! str_contains( $overlay['css'], $inner_selector ) || $overlays[0] !== $overlay ) {
+		throw new RuntimeException( $label . ': fill rule must target the inner gallery, not the source-width wrapper.' );
+	}
+	$bad = $overlay;
+	$bad['rules']['layout:gallery-block'] .= 'overflow:hidden !important;';
+	if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+		throw new RuntimeException( $label . ': unsupported wrapper receipt accepted.' );
+	}
+}
 echo "Product presentation passed.\n";
