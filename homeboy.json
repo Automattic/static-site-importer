@@ -274,6 +274,7 @@
           "tests/smoke-form-fallback-contract.php",
           "tests/smoke-form-mapping-plan.php",
           "tests/smoke-form-textarea-rows.php",
+          "tests/smoke-form-control-editor-anchor.php",
           "tests/smoke-google-fonts-cap-fallback.php",
           "tests/smoke-google-fonts-request-budget.php",
           "tests/smoke-google-fonts-retry-determinism.php",
