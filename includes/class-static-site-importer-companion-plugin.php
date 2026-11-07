@@ -1760,7 +1760,7 @@ $svg_filter_names = array(
 );
 $svg_filters = array_fill_keys( array_map( 'strtolower', $svg_filter_names ), $svg_filter_attributes );
 $safe_style_css = static function ( array $properties ): array {
-	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'inset', 'overflow-x', 'overflow-y', 'text-shadow', 'transition' ) ) ) );
+	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'font-kerning', 'inset', 'overflow-x', 'overflow-y', 'text-decoration-line', 'text-decoration-style', 'text-decoration-thickness', 'text-shadow', 'transition' ) ) ) );
 };
 add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(

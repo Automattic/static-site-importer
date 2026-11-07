@@ -1,6 +1,6 @@
 <?php
 /**
- * Companion text shadows survive real core KSES with the WordPress 7.1 allow-list.
+ * Companion text styles survive real core KSES with the WordPress 7.1 allow-list.
  *
  * @package StaticSiteImporter
  */
@@ -18,23 +18,36 @@ require ABSPATH . WPINC . '/kses.php';
 require __DIR__ . '/fixtures/core-html-api.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
 
-// Core 7.2 added text-shadow; reproduce 7.1 before the companion's priority-10 extension.
+$cases = array(
+	'text-shadow'               => array( 'rgb(0, 0, 0) 2px 2px 1px', '#000000 2px 2px 1px' ),
+	'text-decoration-line'      => array( 'none', 'none' ),
+	'text-decoration-style'     => array( 'initial', 'initial' ),
+	'text-decoration-thickness' => array( 'initial', 'initial' ),
+	'font-kerning'              => array( 'none', 'none' ),
+);
+
+// Reproduce 7.1 before the companion's priority-10 extension (7.2 added text-shadow).
 add_filter(
 	'safe_style_css',
-	static fn( array $properties ): array => array_values( array_diff( $properties, array( 'text-shadow' ) ) ),
+	static fn( array $properties ): array => array_values( array_diff( $properties, array_keys( $cases ) ) ),
 	9
 );
 
 $method = new ReflectionMethod( Static_Site_Importer_Companion_Plugin::class, 'editable_content_renderer' );
 $method->setAccessible( true );
-$renderer   = $method->invoke( null );
-$attributes = array( 'content' => '<div style="text-shadow: rgb(0, 0, 0) 2px 2px 1px; transform: translate(0px, 0px)">x</div>' );
-$block      = null;
-ob_start();
-eval( '?>' . $renderer ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Exercise the generated companion render template.
-$output = (string) ob_get_clean();
-if ( ! preg_match( '/style="[^"]*text-shadow: #000000 2px 2px 1px[^"]*"/', $output ) ) {
-	fwrite( STDERR, 'FAIL [text-shadow-survives-7.1-kses]: ' . $output . "\n" );
-	exit( 1 );
+$renderer = $method->invoke( null );
+$block    = null;
+$failed   = false;
+foreach ( $cases as $property => list( $value, $expected ) ) {
+	$attributes = array( 'content' => '<a href="/" style="' . $property . ': ' . $value . '; transform: translate(0px, 0px)">x</a>' );
+	ob_start();
+	eval( '?>' . $renderer ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Exercise the generated companion render template.
+	$output = (string) ob_get_clean();
+	if ( ! preg_match( '/style="[^"]*' . preg_quote( $property . ': ' . $expected, '/' ) . '(?=;|")/', $output ) ) {
+		fwrite( STDERR, 'FAIL [' . $property . '-survives-7.1-kses]: ' . $output . "\n" );
+		$failed = true;
+		continue;
+	}
+	echo 'PASS [' . $property . '-survives-7.1-kses]: ' . $output . "\n";
 }
-echo 'PASS [text-shadow-survives-7.1-kses]: ' . $output . "\n";
+exit( $failed ? 1 : 0 );
