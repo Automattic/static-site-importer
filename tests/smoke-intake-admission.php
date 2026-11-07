@@ -8,7 +8,8 @@
  * reaches the same decision through Static_Site_Importer_Content_Policy::admit_artifact():
  *
  * - a non-static asset is skipped with `static_site_importer_non_static_file_skipped`;
- * - a non-entry page that is not static content is dropped with
+ * - a non-entry page that is not static content (server code, or only a
+ *   JavaScript app mount) is dropped with
  *   `static_site_importer_non_static_page_dropped`, and the remaining pages import;
  * - the entrypoint fails closed.
  *
@@ -29,11 +30,14 @@ $assert   = static function ( bool $condition, string $label ) use ( &$failures 
 	}
 };
 
-$document = static fn ( string $title, string $body ): string => '<!doctype html><html><head><title>' . $title . '</title><link rel="stylesheet" href="styles.css"></head><body><main><h1>' . $title . '</h1>' . $body . '</main></body></html>';
+$app_shell = '<!doctype html><html><head><title>Directory</title><script src="a.js"></script><script src="b.js"></script><script src="c.js"></script></head><body><div id="app"></div></body></html>';
+$document  = static fn ( string $title, string $body ): string => '<!doctype html><html><head><title>' . $title . '</title><link rel="stylesheet" href="styles.css"></head><body><main><h1>' . $title . '</h1>' . $body . '</main></body></html>';
 // Site-relative source tree: two clean pages, a page carrying server code,
-// a server page, a build-source asset, and a stylesheet.
-$tree = static fn ( string $home_body = '<p>Welcome.</p><a href="about.html">About</a> <a href="blog.html">Blog</a>' ): array => array(
-	'index.html'     => $document( 'Home', $home_body ),
+// a page that only mounts a JavaScript app, a server page, a build-source
+// asset, and a stylesheet.
+$tree = static fn ( string $home_body = '<p>Welcome.</p><a href="about.html">About</a> <a href="blog.html">Blog</a>', ?string $home = null ): array => array(
+	'index.html'     => $home ?? $document( 'Home', $home_body ),
+	'directory.html' => $app_shell,
 	'about.html'     => $document( 'About', '<p>About us.</p><a href="index.html">Home</a>' ),
 	'blog.html'      => $document( 'Blog', '<p><?php echo get_posts(); ?></p>' ),
 	'feed.php'       => '<?php echo "feed";',
@@ -127,6 +131,7 @@ $transports = array(
 $expected_findings = array(
 	array( Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/assets/app.ts', 'non_static_extension', 'file' ),
 	array( Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/blog.html', 'server_side_code', 'page' ),
+	array( Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/directory.html', 'client_rendered_app_shell', 'page' ),
 	array( Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/feed.php', 'non_static_extension', 'page' ),
 );
 $finding_tuples    = static function ( array $rows ): array {
@@ -155,13 +160,17 @@ foreach ( $transports as $transport => $build ) {
 		);
 	}
 	$summary = $result['result']['import_report_summary'] ?? array();
-	$assert( false === ( $summary['fail_import'] ?? true ) && 3 === ( $summary['loss_counts']['omitted_unit'] ?? 0 ), "$transport: the compact summary counts the three losses without failing the import" );
+	$assert( false === ( $summary['fail_import'] ?? true ) && 4 === ( $summary['loss_counts']['omitted_unit'] ?? 0 ), "$transport: the compact summary counts the four losses without failing the import" );
 
 	// The entrypoint fails closed on the same transport.
 	$imports_before = count( $GLOBALS['ssi_harness_imports'] );
 	$rejected       = ssi_harness_drive( $build( $tree( '<p><?php echo 1; ?></p>' ), 'intake-entry-' . $transport ) );
 	$assert( empty( $rejected['success'] ) && 'static_site_importer_executable_source_rejected' === ( $rejected['error']['code'] ?? '' ), "$transport: an entrypoint carrying server code fails closed" );
 	$assert( $imports_before === count( $GLOBALS['ssi_harness_imports'] ), "$transport: nothing is persisted when the entrypoint fails closed" );
+
+	// An entrypoint that only mounts a JavaScript app fails closed, naming the page.
+	$shell = ssi_harness_drive( $build( $tree( '', $app_shell ), 'intake-shell-' . $transport ) );
+	$assert( empty( $shell['success'] ) && 'static_site_importer_client_rendered_app_shell' === ( $shell['error']['code'] ?? '' ) && str_contains( (string) ( $shell['error']['message'] ?? '' ), 'website/index.html only mounts a JavaScript app' ), "$transport: an app-shell entrypoint fails closed and names the page: " . wp_json_encode( $shell['error'] ?? null ) );
 }
 
 // A provided artifact reaches the same decision through the same owner.
