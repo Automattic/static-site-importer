@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Quality_Count_Keys' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Block_Theme_Scorecard' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-block-theme-scorecard.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-visual-parity-oracle.php';
 }
@@ -175,7 +178,11 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
+		$report['block_theme_scorecard']    = Static_Site_Importer_Block_Theme_Scorecard::from_import( $report->to_array() );
 		$report['owner_handoff_evidence']   = Static_Site_Importer_Owner_Handoff_Evidence::compose_from_import( $report, $quality );
+		$handoff                            = $report['owner_handoff_evidence'];
+		$handoff['report_card']            .= Static_Site_Importer_Block_Theme_Scorecard::report_card_rows( $report['block_theme_scorecard'] );
+		$report['owner_handoff_evidence']   = $handoff;
 
 		if ( $build_fixture && class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
 			return Static_Site_Importer_Diagnostic_Contract::build(
