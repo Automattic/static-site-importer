@@ -298,7 +298,8 @@
     {
       "id": "retry",
       "needs": [
-        "confirm"
+        "confirm",
+        "merge"
       ],
       "always": true,
       "when": {
@@ -310,8 +311,8 @@
           },
           {
             "not": {
-              "step": "confirm",
-              "output": "/confirmed_count",
+              "step": "merge",
+              "output": "/merged_count",
               "gt": 0
             }
           }

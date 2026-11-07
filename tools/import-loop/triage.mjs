@@ -148,7 +148,15 @@ for (const finding of blockers) {
   const issue = existingIssue(finding);
   let entry;
   if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
-  else if (issue) entry = { status: 'untracked', reason: `fix did not hold: ${issue.url} is closed and the finding still reproduces` };
+  else if (issue) {
+    // The fix did not hold: the issue is the finding's record, so it reopens
+    // with the evidence and the loop keeps working it.
+    if (!args['dry-run']) {
+      gh('issue', 'reopen', issue.url);
+      gh('issue', 'comment', issue.url, '--body', `The import loop still finds \`${finding.check}\` on \`${finding.subject}\` after this issue was closed, on ${[...new Set(finding.occurrences.map((o) => `\`${o.route}\``))].join(', ')} (pass ${args.iteration}). Reopening: the merged fix did not cover every occurrence on the whole site.`);
+    }
+    entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false, reopened: true };
+  }
   else entry = reduceAndFile(finding);
   const record = { signature: finding.signature, stage: finding.stage, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
   if (record.status === 'tracked') {
@@ -217,7 +225,9 @@ for (const item of tracked) {
   const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : { exit: 0 };
   // CI that ran at this head and failed refutes it as surely as a predicate.
   const ci = pr ? (pr.statusCheckRollup || []).filter((c) => ['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR'].includes(c.conclusion || c.state)).map((c) => ({ name: c.name || c.context, url: c.detailsUrl || c.targetUrl })) : [];
-  if (refuted.length || collateral.exit === 1 || ci.length) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit === 1 ? { collateral: collateral.report } : {}), ...(ci.length ? { ci } : {}) };
+  // A PR that no longer merges into trunk is reworked onto it.
+  const conflicting = pr?.mergeable === 'CONFLICTING';
+  if (refuted.length || collateral.exit === 1 || ci.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit === 1 ? { collateral: collateral.report } : {}), ...(ci.length ? { ci } : {}), ...(conflicting ? { conflicting } : {}) };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
   if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
@@ -231,6 +241,10 @@ for (const item of tracked) {
         refuted[0].exit === 'import_failed'
           ? `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) breaks the import: a whole re-import of the capture with that head fails (${refuted[0].reason}), so the site cannot be imported at all. Continue on its branch and keep the import succeeding.`
           : `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) does not fix it: on a whole re-import of the capture with that head, the predicate still exits 0 on ${refuted.map((c) => `\`${c.route}@${c.width}\``).join(', ')}. Continue on its branch.`,
+      ] : []),
+      ...(conflicting ? [
+        '',
+        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since. Continue on its branch: merge trunk in, resolve the conflicts keeping both trunk's behavior and this fix, and keep every acceptance check passing.`,
       ] : []),
       ...(ci.length ? [
         '',
