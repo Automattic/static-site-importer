@@ -477,7 +477,6 @@
     "static_site_importer_provider_export_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_quality_gate_failed": { "class": "representability", "unit": "page", "owning_layer": "blocks-engine", "tracker": "Automattic/static-site-importer#2054" },
     "static_site_importer_redirect_ambiguous": { "class": "integrity", "owning_layer": "static-site-importer" },
-    "static_site_importer_redirect_bound_exceeded": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_redirect_chain_unproven": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_redirect_conflicts_unbounded": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_redirect_destination_missing": { "class": "integrity", "owning_layer": "static-site-importer" },
