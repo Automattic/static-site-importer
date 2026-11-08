@@ -680,7 +680,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( static_site_importer_cli_inline_body_spacing_present( $content ) ) {
 			$keys[ max( 0, count( $keys ) - 1 ) ] = 'page-body-style:' . $path;
 		}
-		return $keys;
+		return array_values( $keys );
 	}
 
 	/** Does inline `<body>` spacing exist that Blocks Engine carries as generated CSS? */
