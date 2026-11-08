@@ -24,7 +24,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { args, cellsAtHead, gh, linkedPullRequests, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead, collateralMode } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead, collateralMode } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -240,13 +240,15 @@ for (const item of tracked) {
   item.open_pr = pr?.url || null;
   const checkable = repo?.predicate_root && item.cells.length;
   const at = { clone: args['blocks-engine'], root: repo?.predicate_root, work: args.work, reimport, site: result.site, routes: result.routes };
-  const refuted = pr && checkable ? cellsAtHead(item, pr, at).filter((cell) => cell.exit !== 1) : [];
-  const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : { exit: 0 };
-  // CI that ran at this head and failed refutes it as surely as a predicate.
-  const ci = pr ? (pr.statusCheckRollup || []).filter((c) => ['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR'].includes(c.conclusion || c.state)).map((c) => ({ name: c.name || c.context, url: c.detailsUrl || c.targetUrl })) : [];
-  // A PR that no longer merges into trunk is reworked onto it.
-  const conflicting = pr?.mergeable === 'CONFLICTING';
-  if (refuted.length || collateral.exit === 1 || ci.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral.exit === 1 ? { collateral: collateral.report } : {}), ...(ci.length ? { ci } : {}), ...(conflicting ? { conflicting } : {}) };
+  const cells = pr && checkable ? cellsAtHead(item, pr, at) : [];
+  const refuted = cells.filter((cell) => cell.exit !== 1);
+  const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : null;
+  // confirm.mjs reuses this check when the head is unchanged after the Cooks.
+  if (pr && checkable) item.head_check = { pr: pr.url, head: pr.headRefOid, cells, collateral };
+  // Failed CI or a conflict with trunk refutes a head as surely as a predicate.
+  const health = pr ? prHealth(pr) : { failed: [] };
+  const conflicting = health.mergeable === 'CONFLICTING';
+  if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
   if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);

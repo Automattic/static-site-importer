@@ -16,6 +16,29 @@ export function linkedPullRequests(issueUrl) {
     .map((pr) => ({ ...pr, github }));
 }
 
+// A pull request's CI and mergeability at its head. With `wait` (merge),
+// running checks get up to an hour to finish and GitHub's lazily computed
+// mergeability gets time to settle.
+const FAILED = ['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ERROR', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
+const GREEN = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
+export function prHealth(pr, { wait = false } = {}) {
+  let { statusCheckRollup: checks = [], mergeable } = pr;
+  const pending = () => checks.filter((c) => ![...FAILED, ...GREEN].includes(c.conclusion || c.state));
+  let head = pr.headRefOid;
+  for (let polls = 0; wait && head === pr.headRefOid && (pending().length || mergeable === 'UNKNOWN') && polls < 120; polls++) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000);
+    ({ headRefOid: head, statusCheckRollup: checks = [], mergeable } = JSON.parse(gh('pr', 'view', pr.url, '--json', 'headRefOid,statusCheckRollup,mergeable')));
+  }
+  const name = (c) => c.name || c.context;
+  return {
+    head_moved: head !== pr.headRefOid ? head : null,
+    failed: checks.filter((c) => FAILED.includes(c.conclusion || c.state)).map((c) => ({ name: name(c), url: c.detailsUrl || c.targetUrl })),
+    pending: pending().map(name),
+    no_checks: !checks.length,
+    mergeable,
+  };
+}
+
 // A predicate reads the finding cell it reproduces, and the imported site
 // that renders transformer output, from the environment.
 export const predicateEnv = (subject, cell, site) => ({

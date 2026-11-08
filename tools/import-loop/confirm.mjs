@@ -37,10 +37,13 @@ for (const item of triage.tracked) {
     if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
     const at = { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes };
-    const cells = cellsAtHead(item, pr, at).map((cell) => ({ signature: item.signature, ...cell }));
-    log(pr.url, item.signature, cells.map((c) => `${c.route}@${c.width}=${c.exit}`).join(' '));
+    // A head no Cook moved since triage was checked there, on this capture and release.
+    const prior = item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid ? item.head_check : null;
+    const cells = (prior?.cells || cellsAtHead(item, pr, at)).map((cell) => ({ signature: item.signature, ...cell }));
+    log(pr.url, item.signature, prior ? '(checked by triage)' : '', cells.map((c) => `${c.route}@${c.width}=${c.exit}`).join(' '));
     verdict.failing.push(...cells.filter((c) => c.exit !== 1));
-    const collateral = collateralAtHead(item, pr, at);
+    if (cells.some((c) => c.exit !== 1)) continue;
+    const collateral = prior?.collateral || collateralAtHead(item, pr, at);
     log(pr.url, item.signature, `collateral=${collateral.exit}`);
     if (collateral.exit === 1) verdict.failing.push({ signature: item.signature, collateral: collateral.report });
     else if (collateral.exit) verdict.reasons.push(`collateral comparison failed for ${item.signature}: ${collateral.report.at(-1)}`);
