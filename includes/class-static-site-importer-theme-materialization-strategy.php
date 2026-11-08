@@ -50,15 +50,8 @@ final class Static_Site_Importer_Theme_Materialization_Strategy {
 		$name = Static_Site_Importer_Generated_File::comment_header_value( $name );
 		if ( '' === $name ) {
 			$name = 'Static Site Import'; }
-		// A provenance-carrying build stamps the producing build version and
-		// an Update URI identifying this theme as real style.css headers; an
-		// absent provenance record keeps the historical scaffold header.
-		$style_header = "/*\nTheme Name: " . $name . "\nText Domain: static-site-importer\n";
-		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $name ) as $header_line ) {
-			$style_header .= $header_line . "\n";
-		}
-		$style_header .= "*/\n";
-		$functions     = <<<'PHP'
+		$style_header = Static_Site_Importer_Stylesheet_Materializer::theme_header( $name, 'static-site-importer', $name, $artifact_provenance );
+		$functions    = <<<'PHP'
 <?php
 function static_site_importer_classic_assets() {
 	wp_enqueue_style( 'static-site-importer-classic', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );

@@ -239,30 +239,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );
 
-		// A provenance-carrying build replaces the frozen placeholder version
-		// with the producing build and adds an Update URI identifying this
-		// theme, so the theme stays attributable and updatable after SSI is
-		// removed. An absent provenance record keeps the historical header.
-		$headers         = array(
-			'Theme Name: ' . $theme_name,
-			'Author: Static Site Importer',
-			'Description: Materialized from a compiled website artifact.',
-			'Version: 0.1.0',
-			'Requires at least: 7.1',
-		);
-		$update_uri_line = '';
-		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $theme_name ) as $header_line ) {
-			if ( str_starts_with( $header_line, 'Version: ' ) ) {
-				$headers[3] = $header_line;
-			} else {
-				$update_uri_line = $header_line;
-			}
-		}
-		if ( '' !== $update_uri_line ) {
-			$headers[] = $update_uri_line;
-		}
-
-		return "/*\n" . implode( "\n", $headers ) . "\n*/\n\n" . $css . "\n" . $body_class_guard . $repair_css;
+		return self::theme_header( $theme_name, '', $theme_name, $artifact_provenance ) . "\n" . $css . "\n" . $body_class_guard . $repair_css;
 	}
 
 	/**
@@ -287,27 +264,61 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		if ( '' === $domain ) {
 			$domain = 'static-site-importer';
 		}
-		$headers         = array(
-			'Theme Name: ' . $theme_name,
-			'Text Domain: ' . $domain,
-			'Author: Static Site Importer',
-			'Description: Materialized from a compiled website artifact.',
-			'Version: 0.1.0',
-			'Requires at least: 7.1',
-		);
-		$update_uri_line = '';
-		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $domain ) as $header_line ) {
-			if ( str_starts_with( $header_line, 'Version: ' ) ) {
-				$headers[4] = $header_line;
-			} else {
-				$update_uri_line = $header_line;
-			}
-		}
-		if ( '' !== $update_uri_line ) {
-			$headers[] = $update_uri_line;
-		}
+		return self::theme_header( $theme_name, $domain, $domain, $artifact_provenance );
+	}
 
-		return "/*\n" . implode( "\n", $headers ) . "\n*/\n";
+	/**
+	 * The style.css header comment of a generated theme.
+	 *
+	 * The theme is GPL like WordPress, so its owner may keep developing it.
+	 * It bundles this plugin's runtime code, so it needs the plugin's PHP
+	 * floor, and it was materialized on, so tested with, the running
+	 * WordPress. A provenance-carrying build replaces the frozen placeholder
+	 * version with the producing build and adds an Update URI identifying
+	 * this theme, so the theme stays attributable and updatable after SSI is
+	 * removed.
+	 *
+	 * @param string              $theme_name          Header-safe theme name.
+	 * @param string              $text_domain         Text domain, or '' for none.
+	 * @param string              $provenance_slug     Slug the Update URI identifies.
+	 * @param array<string,mixed> $artifact_provenance Producer artifact provenance, when carried.
+	 */
+	public static function theme_header( string $theme_name, string $text_domain, string $provenance_slug, array $artifact_provenance ): string {
+		$headers = array( 'Theme Name' => $theme_name );
+		if ( '' !== $text_domain ) {
+			$headers['Text Domain'] = $text_domain;
+		}
+		$headers += array(
+			'Author'            => 'Static Site Importer',
+			'Description'       => 'Materialized from a compiled website artifact.',
+			'Version'           => '0.1.0',
+			'Requires at least' => '7.1',
+			'Tested up to'      => self::wordpress_branch(),
+			'Requires PHP'      => self::plugin_requires_php(),
+			'License'           => 'GNU General Public License v2 or later',
+			'License URI'       => 'https://www.gnu.org/licenses/gpl-2.0.html',
+		);
+		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $provenance_slug ) as $header_line ) {
+			list( $name, $value ) = array_map( 'trim', explode( ':', $header_line, 2 ) );
+			$headers[ $name ]     = $value;
+		}
+		$lines = array();
+		foreach ( array_filter( $headers, static fn( string $value ): bool => '' !== $value ) as $name => $value ) {
+			$lines[] = $name . ': ' . $value;
+		}
+		return "/*\n" . implode( "\n", $lines ) . "\n*/\n";
+	}
+
+	/** The running WordPress branch (`7.1` for `7.1.2` or `7.1-beta1`), or '' outside WordPress. */
+	private static function wordpress_branch(): string {
+		global $wp_version;
+		return is_string( $wp_version ) && preg_match( '/^\d+\.\d+/', $wp_version, $match ) ? $match[0] : '';
+	}
+
+	/** This plugin's `Requires PHP` header. */
+	private static function plugin_requires_php(): string {
+		$plugin = (string) file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php', false, null, 0, 2048 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads this plugin's own local header.
+		return preg_match( '/^[ \t\/*#@]*Requires PHP:\s*(\S+)/mi', $plugin, $match ) ? $match[1] : '';
 	}
 
 	/**
