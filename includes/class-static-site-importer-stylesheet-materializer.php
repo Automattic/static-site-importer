@@ -48,10 +48,11 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		?array $existing_stylesheets = null,
 		array $artifact_provenance = array()
 	): array {
-		$provider_layout_css         = self::provider_layout_overlay_css( $provider_layout_overlays );
-		$provider_editor_css         = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' );
-		$provider_context_css        = self::provider_layout_overlay_css( $provider_layout_overlays, 'context_css' );
-		$provider_editor_context_css = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_context_css' );
+		// Overlays carry site-root asset paths (a captured button sprite, say); publish them as theme asset URLs.
+		$provider_layout_css         = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays ), $assets );
+		$provider_editor_css         = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' ), $assets );
+		$provider_context_css        = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'context_css' ), $assets );
+		$provider_editor_context_css = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_context_css' ), $assets );
 		if ( null !== $existing_stylesheets ) {
 			$writes = array();
 			foreach ( $existing_stylesheets as $path => $content ) {

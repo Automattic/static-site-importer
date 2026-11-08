@@ -12,6 +12,8 @@ final class Static_Site_Importer_Product_Presentation {
 		'quantity'       => 'input.qty',
 		'quantity-frame' => 'form.cart .quantity',
 		'submit'         => '.single_add_to_cart_button',
+		'submit-host'    => '.single_add_to_cart_button',
+		'submit-layer'   => '.single_add_to_cart_button::before',
 		'gallery'        => '.woocommerce-product-gallery',
 		'viewport'       => '.flex-viewport',
 		'image'          => '.woocommerce-product-gallery__image img',
@@ -39,6 +41,7 @@ final class Static_Site_Importer_Product_Presentation {
 	/** Project only presentation, never source selectors or purchase behavior. */
 	public static function capture( array $entity ): array {
 		$rules    = array();
+		$layers   = array();
 		$purchase = array();
 		$indexes  = array();
 		$stepper  = self::quantity_stepper( $entity );
@@ -50,15 +53,28 @@ final class Static_Site_Importer_Product_Presentation {
 			$tag  = strtolower( (string) ( $control['tag'] ?? '' ) );
 			$type = strtolower( (string) ( $control['type'] ?? '' ) );
 			$name = strtolower( (string) ( $control['name'] ?? '' ) );
-			$role = 'select' === $tag ? 'variation' : ( 'input' === $tag && ( 'number' === $type || 'quantity' === $name ) ? 'quantity' : ( 'submit' === $type || ( 'button' === $tag && '' === $type ) ? 'submit' : '' ) );
+			$role = 'select' === $tag ? 'variation' : ( 'input' === $tag && ( 'number' === $type || 'quantity' === $name ) ? 'quantity' : ( 'submit' === $type || ( 'button' === $tag && '' === $type ) || 'button' === strtolower( (string) ( $control['role'] ?? '' ) ) ? 'submit' : '' ) );
 			if ( '' === $role ) {
 				continue;
 			}
-			$styles = $control['styles'] ?? self::block_styles( $control['presentation']['style'] ?? array() );
+			$styles  = $control['styles'] ?? self::block_styles( $control['presentation']['style'] ?? array() );
+			$caption = array();
 			foreach ( $entity['presentation_graph']['controls'] ?? array() as $row ) {
 				if ( ( $row['index'] ?? null ) === $index ) {
-					$styles = $row['control']['styles'] ?? $styles;
+					$styles  = isset( $row['control']['styles'] ) ? self::resolve_urls( $row['control']['styles'], $row['control']['provenance'] ?? array() ) : $styles;
+					$caption = 'submit' === $role && isset( $row['caption']['styles'] ) ? self::resolve_urls( $row['caption']['styles'], $row['caption']['provenance'] ?? array() ) : array();
 					break;
+				}
+			}
+			if ( $caption ) {
+				$layer = self::caption_layer( $styles, $caption );
+				$paint = $layer ? self::layer_declarations( $layer['layer'] ) : '';
+				if ( '' !== $paint ) {
+					$styles = $layer['button'];
+					$layers = array(
+						'submit-host'  => self::host_declarations(),
+						'submit-layer' => $paint,
+					);
 				}
 			}
 			$purchase[ $role ] = $styles;
@@ -73,7 +89,7 @@ final class Static_Site_Importer_Product_Presentation {
 		}
 		$layout  = self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes );
 		$frames  = $stepper ? array( 'quantity-frame' => self::frame_declarations( $stepper['styles'] ) ) : array();
-		$overlay = self::artifact( array_merge( $rules, $layout, $frames, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$overlay = self::artifact( array_merge( $rules, $layout, $frames, $layers, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
 		if ( $wording ) {
 			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
@@ -103,6 +119,112 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 		}
 		return array();
+	}
+
+	/**
+	 * A sliding-door button paints its cap on the control and its body on the
+	 * caption carrier inside the control's padding. One native button draws the
+	 * carrier as a `::before` layer inset by the control's padding, and lays its
+	 * caption out inside both paddings. Declines when a padding is not in pixels.
+	 *
+	 * @return array{button: array<string,string>, layer: array<string,string>}|array{}
+	 */
+	private static function caption_layer( array $control, array $caption ): array {
+		$outer = self::pixel_sides( (string) ( $control['padding'] ?? '0' ) );
+		$inner = self::pixel_sides( (string) ( $caption['padding'] ?? '0' ) );
+		if ( null === $outer || null === $inner ) {
+			return array();
+		}
+		$layer = array( 'inset' => implode( ' ', array_map( static fn( $side ) => $side . 'px', $outer ) ) );
+		foreach ( array( 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'border_radius' ) as $property ) {
+			if ( isset( $caption[ $property ] ) ) {
+				$layer[ $property ] = $caption[ $property ];
+			}
+		}
+		$control['padding'] = implode( ' ', array_map( static fn( $a, $b ) => ( $a + $b ) . 'px', $outer, $inner ) );
+		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+			unset( $control[ 'padding_' . $side ] );
+		}
+		return array(
+			'button' => $control,
+			'layer'  => $layer,
+		);
+	}
+
+	/** @return list<float>|null Top, right, bottom, left in pixels. */
+	private static function pixel_sides( string $value ): ?array {
+		$parts = preg_split( '/\s+/', trim( $value ) );
+		if ( ! $parts || count( $parts ) > 4 ) {
+			return null;
+		}
+		$sides = array();
+		foreach ( $parts as $part ) {
+			if ( ! preg_match( '/^(\d+(?:\.\d+)?)(?:px)?$/D', $part, $match ) || ( '0' !== $match[1] && ! str_ends_with( $part, 'px' ) ) ) {
+				return null;
+			}
+			$sides[] = (float) $match[1] + 0;
+		}
+		list( $top, $right, $bottom, $left ) = array( $sides[0], $sides[1] ?? $sides[0], $sides[2] ?? $sides[0], $sides[3] ?? $sides[1] ?? $sides[0] );
+		return array( $top, $right, $bottom, $left );
+	}
+
+	/** The button stacks its caption layer behind its own text. */
+	private static function host_declarations(): string {
+		return 'position:relative !important;isolation:isolate !important;';
+	}
+
+	/** The caption layer's box and paint; nothing else reaches the pseudo-element. */
+	private static function layer_declarations( array $styles ): string {
+		$paint = array_intersect_key( $styles, array_flip( array( 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'border_radius' ) ) );
+		$inset = (string) ( $styles['inset'] ?? '' );
+		if ( ! $paint || ! preg_match( '/^(?:\d+(?:\.\d+)?px ){3}\d+(?:\.\d+)?px$/D', $inset ) ) {
+			return '';
+		}
+		$paint = self::declarations( $paint );
+		return '' === $paint ? '' : 'content:"" !important;position:absolute !important;inset:' . $inset . ' !important;z-index:-1 !important;' . $paint;
+	}
+
+	/**
+	 * Resolve each `url()` in a captured value against the stylesheet that
+	 * declared it, as a site-root path the theme asset map rewrites.
+	 *
+	 * @param array<string,string> $styles
+	 * @param list<array<string,mixed>> $provenance
+	 * @return array<string,string>
+	 */
+	private static function resolve_urls( array $styles, array $provenance ): array {
+		$sources = array();
+		foreach ( $provenance as $fact ) {
+			foreach ( (array) ( $fact['properties'] ?? array() ) as $property ) {
+				$sources[ str_replace( '-', '_', (string) $property ) ] = (string) ( $fact['source_path'] ?? '' );
+			}
+		}
+		foreach ( $styles as $property => $value ) {
+			if ( ! is_string( $value ) || ! str_contains( $value, 'url(' ) ) {
+				continue;
+			}
+			$base                 = dirname( $sources[ $property ] ?? '' );
+			$styles[ $property ] = (string) preg_replace_callback(
+				'/url\(\s*([\'"]?)([^\'")]*)\1\s*\)/i',
+				static function ( array $match ) use ( $base ): string {
+					$ref = trim( $match[2] );
+					if ( '' === $ref || str_starts_with( $ref, '/' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $ref ) ) {
+						return 'url(' . $ref . ')';
+					}
+					$parts = array();
+					foreach ( explode( '/', ( '.' === $base || '' === $base ? '' : $base . '/' ) . $ref ) as $segment ) {
+						if ( '..' === $segment ) {
+							array_pop( $parts );
+						} elseif ( '' !== $segment && '.' !== $segment ) {
+							$parts[] = $segment;
+						}
+					}
+					return 'url(/' . implode( '/', $parts ) . ')';
+				},
+				$value
+			);
+		}
+		return $styles;
 	}
 
 	/** Container paint is distinct from input paint; do not guess absent chrome. */
@@ -596,7 +718,7 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Allowlisted computed CSS, with values unable to escape a declaration. */
 	private static function declarations( array $styles ): string {
-		$properties = array( 'width', 'height', 'min_width', 'max_width', 'min_height', 'max_height', 'box_sizing', 'border', 'border_width', 'border_style', 'border_color', 'border_radius', 'background', 'background_color', 'color', 'font_family', 'font_size', 'font_weight', 'font_style', 'line_height', 'letter_spacing', 'text_transform', 'text_align', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'box_shadow' );
+		$properties = array( 'width', 'height', 'min_width', 'max_width', 'min_height', 'max_height', 'box_sizing', 'border', 'border_width', 'border_style', 'border_color', 'border_radius', 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'color', 'font_family', 'font_size', 'font_weight', 'font_style', 'line_height', 'letter_spacing', 'text_transform', 'text_align', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'box_shadow' );
 		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
 			foreach ( array( 'width', 'style', 'color' ) as $part ) {
 				$properties[] = 'border_' . $side . '_' . $part;
@@ -608,7 +730,9 @@ final class Static_Site_Importer_Product_Presentation {
 		$css = '';
 		foreach ( $properties as $property ) {
 			$value = $styles[ $property ] ?? $styles[ str_replace( '_', '-', $property ) ] ?? null;
-			if ( ! is_string( $value ) || '' === trim( $value ) || preg_match( '/[;{}<>\\\\]|\/\*|url\s*\(|expression\s*\(|@/i', $value ) ) {
+			// Only site-root asset paths may paint; the theme asset map rewrites them.
+			$probe = is_string( $value ) ? (string) preg_replace( '#url\(/(?!/)(?:(?!\.\.)[A-Za-z0-9_./-])+\)#', '', $value ) : '';
+			if ( ! is_string( $value ) || '' === trim( $value ) || preg_match( '/[;{}<>\\\\]|\/\*|url\s*\(|expression\s*\(|@/i', $probe ) ) {
 				continue;
 			}
 			$css .= str_replace( '_', '-', $property ) . ':' . trim( $value ) . ' !important;';
@@ -655,7 +779,7 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
 			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $base_slot, 7 ) ] );
-			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit)$/D', $slot ) ) ) {
+			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit|submit-host|submit-layer)$/D', $slot ) ) ) {
 				return null;
 			}
 			$styles = array();
@@ -671,6 +795,14 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			if ( 'quantity-frame' === $slot ) {
 				$frames[ $slot ] = self::frame_declarations( $styles );
+				continue;
+			}
+			if ( 'submit-host' === $slot ) {
+				$frames[ $slot ] = self::host_declarations();
+				continue;
+			}
+			if ( 'submit-layer' === $slot ) {
+				$frames[ $slot ] = self::layer_declarations( array_combine( array_map( static fn( $key ) => str_replace( '-', '_', $key ), array_keys( $styles ) ), $styles ) );
 				continue;
 			}
 			if ( $is_layout ) {
