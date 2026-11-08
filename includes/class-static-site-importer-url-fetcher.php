@@ -726,7 +726,7 @@ class Static_Site_Importer_URL_Fetcher {
 		$text_chars = strlen( $text );
 		$text_ratio = $markup_bytes > 0 ? $text_chars / $markup_bytes : 0;
 
-		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 && 0 === $content_elements ) || ( $script_count >= 3 && $text_chars < 200 && '' !== $mount_id ) ) {
+		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 && 0 === $content_elements ) || ( $script_count >= 1 && $text_chars < 200 && 0 === $content_elements && '' !== $mount_id ) ) {
 			return array(
 				'type'          => 'client_rendered_app_shell',
 				'severity'      => 'error',
