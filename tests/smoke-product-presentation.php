@@ -20,9 +20,9 @@ function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { //
 function get_post_type( $id ) {
 	return $GLOBALS['ssi_post_types'][ $id ] ?? false;
 }
-/** Standalone URL sanitization contract. */
+/** Standalone URL sanitization contract: like core, a reference without a scheme gains http://. */
 function esc_url_raw( $url ) {
-	return $url;
+	return preg_match( '#^(?:[a-z][a-z0-9+.-]*:|/|\#|\?)#i', (string) $url ) ? (string) $url : 'http://' . $url;
 }
 /** Standalone block serialization contract. */
 function wp_json_encode( $value ) {
