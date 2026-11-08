@@ -42,6 +42,7 @@ $cases = array(
 	// Capture runtimes store HTML in JSON data attributes; style= inside that
 	// value is text, not an attribute, and must pass through byte-for-byte.
 	'json-data-attribute-survives'       => array( '<div data-state="{&quot;html&quot;:&quot;&lt;ul style=\\&quot;left: auto;\\&quot;&gt;&quot;}" style="color: rgb(255, 255, 255)">x</div>', 'data-state="{&quot;html&quot;:&quot;&lt;ul style=\\&quot;left: auto;\\&quot;&gt;&quot;}" style="color: #ffffff"', true ),
+	'underscore-svg-references-survive' => array( '<svg><defs><clipPath id="__c"><path d="M0,0"></path></clipPath><mask id="__m"><path d="M0,0"></path></mask></defs><path clip-path="url(#__c)" mask="url(#__m)"></path><path clip-path="var(--x, url(#__c))"></path></svg>', '<path clip-path="url(#__c)" mask="url(#__m)"></path><path clip-path="var(--x, url(#__c))"></path>', true ),
 	'non-scaling-svg-stroke-survives'    => array( '<svg viewBox="0 0 1 1" preserveAspectRatio="none"><path d="M0,1 L1,1" vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"></path></svg>', 'vector-effect="non-scaling-stroke" stroke-dasharray="576" stroke-dashoffset="1152"', true ),
 );
 foreach ( $cases as $label => [ $markup, $expected, $present ] ) {
