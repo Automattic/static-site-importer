@@ -42,6 +42,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			'binding_callback'         => array( self::class, 'binding_block_markup' ),
 			'classic_binding_callback' => array( self::class, 'binding_classic_render' ),
 			'report_callback'          => array( self::class, 'new_report' ),
+			'rejected_rows_degrade'    => true,
 			'presentation'             => 'Static_Site_Importer_Commerce_Presentation',
 			'dependencies'             => array(
 				array(
