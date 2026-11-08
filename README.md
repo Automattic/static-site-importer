@@ -430,25 +430,43 @@ status.
 
 ### Import findings loop
 
-`tools/import-loop/loop.json` is a `homeboy/workflow/v1` definition that drives one source URL toward a clean import through the same path a user takes: `studio create --from <url>`, which installs the latest Data Liberation, Static Site Importer, and Blocks Engine releases. One pass is one instance:
+`tools/import-loop/loop.json` is a [Homeboy](https://github.com/Extra-Chill/homeboy) workflow (`homeboy/workflow/v1`) that drives one source URL toward a clean, editable import. It imports the way a user does: `studio create --from <url>`, which installs the latest Data Liberation Agent, Static Site Importer and Blocks Engine releases. One pass is one workflow instance. Homeboy runs the steps, Cook fan-out, the approval and the chain of passes; the scripts in this directory hold the import-specific logic.
 
 1. **import** (`import.sh`) creates a Studio site from the URL and keeps the capture.
-2. **evaluate** (`evaluate.mjs`) renders source and import routes at 390px and 1440px and writes `findings.json` (`treasure-loop/findings/v1`). Each finding has a stable signature over stage, check, owning repository, and subject, so the same defect keeps the same id across passes. Materialization and editability checks are `blocker`s; theme metrics (`restyle_coverage_low`, `theme_css_bloat`, `quality_status`) are `advisory` and never block acceptance. No blockers means the source is accepted.
-3. **triage** (`triage.mjs`) matches each blocker to an issue carrying its signature. An unmatched finding with a predicate in `predicates/<check>.mjs` is reproduced against Blocks Engine trunk, reduced with `tools/reduce-finding.mjs`, re-checked, and filed in the owning repository with the reduced page and the predicate. Findings without a predicate are reported as untracked.
-4. **cook** runs one Homeboy Cook per tracked issue that has no open pull request, with the repository's gate from `repos.json`.
-5. **approve_merge** waits for `homeboy workflow approve <instance> approve_merge`; **merge** (`merge.mjs`) then squash-merges each non-draft, mergeable, all-green fix PR.
-6. **shipped** (`shipped.mjs`) waits until every merged fix is in the latest release that Studio installs. A Blocks Engine fix ships when the latest Static Site Importer release locks a transformer commit containing it.
-7. **again** admits the next pass with the previous signatures. The chain stops when the source is accepted, when nothing is tracked, when a pass sees the same blockers after a pass that merged nothing, or after 12 passes.
+2. **evaluate** (`evaluate.mjs`) renders every source and imported route at 390, 768 and 1440px, opens each route in the block editor, and writes `findings.json`. Each finding has a stable signature over stage, check, owning repository and subject, so a defect keeps its id across passes. Theme metrics (`restyle_coverage_low`, `theme_css_bloat`, `quality_status`, `block_nesting_deep`) are advisory; every other check is a blocker. A pass with no blockers accepts the source.
+3. **triage** (`triage.mjs`) matches each blocker to an issue that carries its signature. For a new finding with a predicate in `predicates/<check>.mjs`, it:
+   - reproduces the finding against Blocks Engine `trunk`, falling back to the capture's own route document when the inlined page does not show it;
+   - reduces it with `tools/reduce-finding.mjs`;
+   - files it in the owning repository with the reduced page and the predicate.
+
+   It reopens a closed issue whose finding still reproduces. Findings without a predicate are reported as untracked.
+4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
+5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
+6. **approve_merge** waits for a human: `homeboy workflow approve <instance> approve_merge`, or `reject`. With `--notification-transport`/`--notification-route`, the prompt is posted there.
+7. **merge** (`merge.mjs`) squash-merges, at its confirmed head, each approved PR that is green, non-draft and not refuted.
+8. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
+9. **again** starts the next pass after a merge; **retry** starts it when the pass merged nothing. The chain stops when:
+   - the source is accepted;
+   - no blocker is tracked;
+   - or three passes in a row see the same blockers without a merge.
+
+Run it from this repository's root (the host needs `studio`, an authenticated `gh`, PHP, Node, and this repository's `npm ci` with Playwright Chromium):
 
 ```sh
-homeboy workflow run tools/import-loop/loop.json \
+homeboy workflow run "$PWD/tools/import-loop/loop.json" \
   --input url=https://example.com/ --input slug=example \
   --input loop_dir="$PWD/tools/import-loop" --input runs_dir=/path/to/runs \
-  --input blocks_engine=/path/to/blocks-engine-clone
+  --input blocks_engine=/path/to/blocks-engine-clone \
+  --input cook_backend=<homeboy backend> --input cook_model=<model> \
+  [--input cook_placement=auto] [--input wp_cli='studio wp'] \
+  [--notification-transport <transport> --notification-route <route>]
 homeboy workflow status <instance>
+homeboy workflow approve <instance> approve_merge
 ```
 
-`blocks_engine` is a clone the loop owns: triage checks it out at `trunk` before reproducing. The host needs `studio`, `gh` (authenticated), PHP, Node, and this repository's `npm ci` (Playwright Chromium).
+`blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_backend` and `cook_model` choose the Cook route (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
+
+The loop measures; the importer does not fail an import on these findings. Import quality gates stay report-only unless a caller opts in with `fail_on_quality`, so the loop's blockers are its own acceptance policy, not import failures.
 
 ## Product Handoff Contract
 
