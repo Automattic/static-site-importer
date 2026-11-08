@@ -41,6 +41,9 @@ const BARE_WP = args['bare-wp'] || path.join(path.dirname(path.resolve(args.work
 // Acceptance re-imports the capture through the importer release Studio
 // installs; confirm.mjs and every Cook gate reuse the same capture and zip.
 const reimport = { capture: path.join(args.source, new URL(result.url).hostname), ssi_zip: path.join(args.work, 'static-site-importer.zip'), bare_wp: BARE_WP };
+// Predicates compile a page with its capture's evidence when the page alone
+// does not show the defect (predicates/emits.mjs).
+process.env.PREDICATE_CAPTURE = reimport.capture;
 // Reproduce against Blocks Engine trunk, so a defect fixed since the last
 // release is not filed again.
 execFileSync('git', ['-C', path.dirname(transformer), 'fetch', '-q', 'origin', 'trunk']);
@@ -196,7 +199,7 @@ function acceptanceGate(item, repo) {
     ] : []),
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
-      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
+      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' PREDICATE_CAPTURE='${reimport.capture}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
     }),
     // Scope: nothing outside the finding's elements may change against the
     // import of this change's merge base with trunk.

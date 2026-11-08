@@ -15,14 +15,22 @@ export function exitWhileEmitted() {
   const [transformer, candidate] = process.argv.slice(2);
   const { subject } = JSON.parse(process.env.PREDICATE_TARGET || '{}');
   if (!subject) process.exit(2);
-  const transform = new URL('../../reduce-finding/proofs/transform.php', import.meta.url).pathname;
-  const out = spawnSync('php', ['-d', 'memory_limit=2G', transform, transformer, candidate], { encoding: 'utf8', maxBuffer: 512 << 20 });
-  if (out.status !== 0) process.exit(2);
-  let result;
-  try { result = JSON.parse(out.stdout); } catch { process.exit(2); }
   const { slug: target, shape } = parseBlockSubject(subject);
   const attrs = (m) => { try { return JSON.parse(m[2] || '{}'); } catch { return {}; } };
-  const emitted = [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return (slug === target || slug.replace(/-[0-9a-f]{64}$/, '') === target) && (shape === null || blockShape(attrs(m)) === shape); });
+  const transform = new URL('../../reduce-finding/proofs/transform.php', import.meta.url).pathname;
+  const emittedBy = (...mode) => {
+    const out = spawnSync('php', ['-d', 'memory_limit=4G', transform, transformer, candidate, ...mode], { encoding: 'utf8', maxBuffer: 512 << 20 });
+    if (out.status !== 0) process.exit(2);
+    let result;
+    try { result = JSON.parse(out.stdout); } catch { process.exit(2); }
+    return [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return (slug === target || slug.replace(/-[0-9a-f]{64}$/, '') === target) && (shape === null || blockShape(attrs(m)) === shape); });
+  };
+  // Blocks built from capture evidence (captured dialogs and the controls that
+  // open them) exist only when the page compiles with that evidence, as the
+  // importer compiles it. PREDICATE_CAPTURE names the capture directory.
+  const { route = '/' } = JSON.parse(process.env.PREDICATE_TARGET || '{}');
+  let emitted = emittedBy();
+  if (!emitted.length && process.env.PREDICATE_CAPTURE) emitted = emittedBy('capture', process.env.PREDICATE_CAPTURE, route);
   // What still reproduces: each remaining block's attributes, so a fix can
   // tell which source structures it has not reached yet.
   if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ subject, emitted: emitted.length, remaining: emitted.slice(0, 8).map((m) => (m[2] || '').trim().slice(0, 300)) }));

@@ -1,12 +1,26 @@
 <?php
-// Usage: php transform.php <php-transformer dir> <page.html> [html|artifact]
+// Usage: php transform.php <php-transformer dir> <page.html> [html|artifact|static|capture <capture dir> <route>]
 [$_, $root, $page] = $argv; $mode = $argv[3] ?? 'html';
 spl_autoload_register(static function ($c) use ($root) {
     $p = 'Automattic\\BlocksEngine\\PhpTransformer\\';
     if (strncmp($c, $p, strlen($p)) === 0) { $f = "$root/src/" . str_replace('\\', '/', substr($c, strlen($p))) . '.php'; if (is_file($f)) require $f; }
 });
 $html = file_get_contents($page);
-if ($mode === 'artifact') {
+if ($mode === 'capture') {
+    // The page as the importer compiles it: one artifact holding the capture's
+    // evidence (interaction states, styles, reports) with the candidate as the
+    // route's document. Other routes' documents and bulky per-viewport
+    // evidence stay out; they do not feed this route's blocks.
+    [$capture, $route] = array($argv[4], trim($argv[5] ?? '/', '/'));
+    $document = 'website/' . ('' === $route ? '' : "$route/") . 'index.html';
+    $files = array(array('path' => $document, 'content' => $html));
+    $skip = '#^(website/.*\.html?|reference/|semantic-evidence/|layout-geometry/|screenshots/|html/|html-mobile/|sections/|sections-mobile/|media/|resources/)#i';
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($capture, FilesystemIterator::SKIP_DOTS)) as $f) {
+        $rel = substr($f->getPathname(), strlen(rtrim($capture, '/')) + 1);
+        if (preg_match('/\.(css|js|json|svg)$/i', $rel) && !preg_match($skip, $rel)) $files[] = array('path' => $rel, 'content' => file_get_contents($f->getPathname()));
+    }
+    $r = (new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler())->compile(array('files' => $files))->toArray();
+} elseif ($mode === 'artifact') {
     $r = (new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler())->compile(array('generated_html' => $html))->toArray();
 } elseif ($mode === 'static') {
     $css = '';

@@ -27,6 +27,7 @@ const log = (...parts) => console.error('[confirm]', ...parts);
 
 // One pull request can fix several tracked findings: it is confirmed only
 // when every cell of every finding it fixes clears.
+process.env.PREDICATE_CAPTURE = triage.reimport.capture;
 const verdicts = new Map();
 for (const item of triage.tracked) {
   for (const pr of linkedPullRequests(item.issue_url)) {
