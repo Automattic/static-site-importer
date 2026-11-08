@@ -68,8 +68,8 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			if ( $caption ) {
 				$layer = self::caption_layer( $styles, $caption );
-				$paint = $layer ? self::layer_declarations( $layer['layer'] ) : '';
-				if ( '' !== $paint ) {
+				$paint = isset( $layer['layer'], $layer['button'] ) ? self::layer_declarations( $layer['layer'] ) : '';
+				if ( '' !== $paint && isset( $layer['button'] ) ) {
 					$styles = $layer['button'];
 					$layers = array(
 						'submit-host'  => self::host_declarations(),
@@ -200,14 +200,14 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 		}
 		foreach ( $styles as $property => $value ) {
-			if ( ! is_string( $value ) || ! str_contains( $value, 'url(' ) ) {
+			if ( ! str_contains( $value, 'url(' ) ) {
 				continue;
 			}
-			$base                 = dirname( $sources[ $property ] ?? '' );
+			$base                = dirname( $sources[ $property ] ?? '' );
 			$styles[ $property ] = (string) preg_replace_callback(
 				'/url\(\s*([\'"]?)([^\'")]*)\1\s*\)/i',
-				static function ( array $match ) use ( $base ): string {
-					$ref = trim( $match[2] );
+				static function ( array $url ) use ( $base ): string {
+					$ref = trim( $url[2] );
 					if ( '' === $ref || str_starts_with( $ref, '/' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $ref ) ) {
 						return 'url(' . $ref . ')';
 					}
