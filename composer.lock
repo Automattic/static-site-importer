@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "fd5d7d6bfb4fa6ff4109fc8a53dff57c",
+    "content-hash": "270376891c44272a898f3c9380274e46",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.45.334",
+            "version": "v0.45.336",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "4ced7d70d277d71adb56a703f54fe74b5701d69f"
+                "reference": "0538fed49a8f35a6c915fe6d0cd933af77e00313"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/4ced7d70d277d71adb56a703f54fe74b5701d69f",
-                "reference": "4ced7d70d277d71adb56a703f54fe74b5701d69f",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/0538fed49a8f35a6c915fe6d0cd933af77e00313",
+                "reference": "0538fed49a8f35a6c915fe6d0cd933af77e00313",
                 "shasum": ""
             },
             "require": {
@@ -95,8 +95,8 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-11-08T14:21:11+00:00",
-            "published-time": "2026-11-08T14:22:49+00:00"
+            "time": "2026-11-08T15:10:29+00:00",
+            "published-time": "2026-11-08T15:12:29+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
