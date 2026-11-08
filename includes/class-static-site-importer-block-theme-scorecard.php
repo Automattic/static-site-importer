@@ -11,6 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /** Read-only measurements of theme structure and content. */
 final class Static_Site_Importer_Block_Theme_Scorecard {
+	/** Diagnostic type of a failing scorecard check. */
+	public const FINDING_TYPE = 'block_theme_scorecard_check';
+
 	/** Build scorecard evidence from a finalized import report. */
 	public static function from_import( array $report ): array {
 		$receipt                     = $report['materialization_receipt'] ?? array();
@@ -47,9 +50,6 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'checks' => array(),
 			);
 	}
-
-	/** Diagnostic type of a failing scorecard check. */
-	public const FINDING_TYPE = 'block_theme_scorecard_check';
 
 	/**
 	 * One non-gating diagnostic per failing check, routed to the layer that
