@@ -20,6 +20,10 @@ function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { //
 function get_post_type( $id ) {
 	return $GLOBALS['ssi_post_types'][ $id ] ?? false;
 }
+/** Standalone URL sanitization contract. */
+function esc_url_raw( $url ) {
+	return $url;
+}
 /** Standalone block serialization contract. */
 function wp_json_encode( $value ) {
 	return json_encode( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Core stub.
@@ -548,5 +552,52 @@ foreach ( $wording_cases as $case => $control ) {
 			throw new RuntimeException( 'Non-plain wording accepted.' );
 		}
 	}
+}
+// A sliding-door link button paints its cap on the control and its body on the
+// caption carrier. One native Woo button draws both: the carrier as a ::before
+// layer inset by the control's padding, sprite paths resolved against the
+// declaring stylesheet and published as theme asset URLs.
+$sheet   = array( 'source_path' => 'website/files/main.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.x', 'condition' => null );
+$sliding = array(
+	'controls'           => array( array( 'tag' => 'a', 'type' => 'a', 'role' => 'button' ) ),
+	'presentation_graph' => array(
+		'controls' => array(
+			array(
+				'index'   => 0,
+				'control' => array(
+					'styles'     => array( 'background' => 'url(../media/large.png) no-repeat 100% -126px', 'background_image' => 'url(/media/hl.png)', 'color' => '#fff', 'height' => '41px', 'padding' => '0 10px 0 0' ),
+					'provenance' => array( $sheet + array( 'properties' => array( 'background', 'background-image', 'color', 'height', 'padding' ) ) ),
+				),
+				'caption' => array(
+					'styles'     => array( 'background' => 'url(../media/large.png) no-repeat 0 0', 'background_image' => 'url(javascript:alert(1))', 'height' => '41px', 'padding' => '0 10px 0 20px' ),
+					'provenance' => array( $sheet + array( 'properties' => array( 'background', 'background-image', 'height', 'padding' ) ) ),
+				),
+			),
+		),
+	),
+);
+$overlay = Static_Site_Importer_Product_Presentation::capture( $sliding );
+if ( ! $overlay || $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+	throw new RuntimeException( 'Sliding-door receipt did not round trip.' );
+}
+$assets = array(
+	'website/media/large.png' => array( 'url' => 'https://example.test/theme/assets/website/media/large.png' ),
+	'website/media/hl.png'    => array( 'url' => 'https://example.test/theme/assets/website/media/hl.png' ),
+);
+$css    = implode( '', Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/theme', 'Captured', '', $assets, array(), array( $overlay ) ) );
+$scope  = '.' . $overlay['className'] . '.' . $overlay['className'] . ' .single_add_to_cart_button';
+foreach ( array(
+	$scope . '{'         => array( 'background:url(https://example.test/theme/assets/website/media/large.png) no-repeat 100% -126px', 'background-image:url(https://example.test/theme/assets/website/media/hl.png)', 'color:#fff', 'padding:0px 20px 0px 20px' ),
+	$scope . '::before{' => array( 'content:""', 'inset:0px 10px 0px 0px', 'z-index:-1', 'background:url(https://example.test/theme/assets/website/media/large.png) no-repeat 0 0' ),
+) as $selector => $expected ) {
+	$rule = preg_match( '/' . preg_quote( $selector, '/' ) . '([^}]+)\}/', $css, $match ) ? $match[1] : '';
+	foreach ( $expected as $declaration ) {
+		if ( ! str_contains( $rule, $declaration . ' !important;' ) ) {
+			throw new RuntimeException( 'Sliding-door button missing ' . $selector . ' ' . $declaration . ': ' . $rule );
+		}
+	}
+}
+if ( str_contains( $css, 'javascript' ) ) {
+	throw new RuntimeException( 'Unsafe caption image reached the stylesheet.' );
 }
 echo "Product presentation passed.\n";
