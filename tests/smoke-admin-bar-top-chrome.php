@@ -13,7 +13,7 @@ $resolved = array(
 	'pages'  => array( array( 'resolved_block_markup' => '<header class="fixed inset-x-0 top-0"></header><span class="absolute top-0"></span><nav class="sticky top-gap"></nav>' ) ),
 	'writes' => array(
 		array( 'target_path' => 'style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '/* Theme Name: Fixture */' ) ),
-		array( 'target_path' => 'assets/website/assets/styles-tailwind.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.fixed{position:fixed}.top-0{top:0}.absolute{position:absolute}.sticky{position:sticky}.top-gap{top:12px!important}.masthead{position:fixed;top:2rem!important}.modal{position:fixed;top:0}' ) ),
+		array( 'target_path' => 'assets/website/assets/styles-tailwind.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.fixed{position:fixed}.top-0{top:0}.absolute{position:absolute}.sticky{position:sticky}.top-gap{top:12px!important}.masthead{position:fixed;top:2rem!important}.modal{position:fixed;top:0}:where(.page, .home) .site-header, .topbar{position:sticky;top:0}' ) ),
 		array( 'target_path' => 'assets/css/editor-style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.editor-header{position:fixed;top:0}' ) ),
 	),
 );
@@ -24,6 +24,10 @@ $checks = array(
 	str_contains( $css, ':root .sticky.top-gap { top: calc(12px + var(--wp-admin--admin-bar--height, 0px)) !important; }' ),
 	str_contains( $css, ':root .masthead { top: calc(2rem + var(--wp-admin--admin-bar--height, 0px)) !important; }' ),
 	str_contains( $css, '@media screen and (max-width: 600px) { :root .fixed.top-0 { top: 0; } }' ),
+	// Commas inside functional pseudo-classes stay with their selector, so
+	// the generated stylesheet still parses.
+	str_contains( $css, ':root :where(.page, .home) .site-header, :root .topbar { top: calc(0px + var(--wp-admin--admin-bar--height, 0px)); }' ),
+	substr_count( $css, '(' ) === substr_count( $css, ')' ),
 	! str_contains( $css, '.absolute.top-0' ),
 	! str_contains( $css, '.editor-header' ),
 	! str_contains( $css, '.modal' ),

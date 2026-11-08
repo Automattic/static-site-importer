@@ -505,8 +505,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			$top      = self::css_declaration_value( $body, 'top' );
 
 			$selectors = array();
-			foreach ( explode( ',', $prelude ) as $selector ) {
-				$selector = trim( $selector );
+			foreach ( self::split_selector_list( $prelude ) as $selector ) {
 				if ( preg_match( '/^\.([a-zA-Z_][a-zA-Z0-9_-]*)$/', $selector, $class ) ) {
 					if ( $is_fixed ) {
 						$positions[ $class[1] ] = true;
@@ -545,11 +544,41 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		if ( null === $offset ) {
 			return array();
 		}
-		$selector = implode( ', ', array_map( static fn ( string $part ): string => ':root ' . trim( $part ), explode( ',', $selector ) ) );
+		$selector = implode( ', ', array_map( static fn ( string $part ): string => ':root ' . $part, self::split_selector_list( $selector ) ) );
 		return array(
 			$selector . ' { top: ' . $offset . '; }',
 			'@media screen and (max-width: 600px) { ' . $selector . ' { top: ' . $top . '; } }',
 		);
+	}
+
+	/**
+	 * Split a selector list at its top-level commas, keeping the commas inside
+	 * functional pseudo-classes and attribute selectors with their selector.
+	 *
+	 * @param string $selector_list CSS selector list.
+	 * @return array<int,string> Trimmed, nonempty selectors.
+	 */
+	private static function split_selector_list( string $selector_list ): array {
+		$selectors = array();
+		$depth     = 0;
+		$start     = 0;
+		$length    = strlen( $selector_list );
+		for ( $index = 0; $index <= $length; $index++ ) {
+			$char = $index < $length ? $selector_list[ $index ] : ',';
+			if ( '(' === $char || '[' === $char ) {
+				++$depth;
+			} elseif ( ')' === $char || ']' === $char ) {
+				--$depth;
+			} elseif ( ',' === $char && ( 0 === $depth || $index === $length ) ) {
+				$selector = trim( substr( $selector_list, $start, $index - $start ) );
+				if ( '' !== $selector ) {
+					$selectors[] = $selector;
+				}
+				$start = $index + 1;
+			}
+		}
+
+		return $selectors;
 	}
 
 	/**
