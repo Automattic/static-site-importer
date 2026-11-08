@@ -232,6 +232,15 @@ $assert( is_array( $plain ) && ! isset( $plain['source']['metadata']['reports'] 
 $assert( array( 'index.html', 'other.json' ) === $paths_of( $plain ), 'receipt-without-reports-imports-only-the-website-tree' );
 $assert( array( 'website/index.html', 'website/other.json' ) === $runtime_paths( $plain ), 'receipt-without-reports-keeps-existing-artifact-layout' );
 
+// The receipt's source URL becomes the artifact's source origin, so the
+// compiler can resolve captured absolute links to the same site.
+$origin = $resolve( 'origin', $stage( 'origin', array( 'source' => array( 'url' => 'https://captured.example/' ) ) ) );
+$origin_runtime = static_site_importer_source_runtime( $origin['source'], $origin['payload_reader'] );
+$assert( 'https://captured.example/' === ( $origin_runtime['artifact']['provenance']['source_url'] ?? null ), 'capture-receipt-source-url-becomes-artifact-source-origin' );
+$declared = $resolve( 'declared', $stage( 'declared', array( 'source' => array( 'url' => 'https://captured.example/' ) ), array( 'provenance' => array( 'source_url' => 'https://declared.example/' ) ) ) );
+$assert( 'https://declared.example/' === ( $declared['source']['metadata']['provenance']['source_url'] ?? null ), 'declared-source-url-wins-over-the-receipt' );
+$assert( ! isset( $plain['source']['metadata']['provenance'] ), 'receipt-without-source-url-declares-no-origin' );
+
 // A declared report that is a symlink is refused.
 $linked_request = $stage( 'linked', array( 'reports' => array( 'linked.json' ) ) );
 symlink( $bundle_dir . '/linked/scroll-states.json', $bundle_dir . '/linked/linked.json' );

@@ -907,6 +907,22 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_capture_receipt' ) ) {
+	/**
+	 * The capture receipt a Blocks Engine capture directory holds, or null.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	function static_site_importer_cli_capture_receipt( string $directory ): ?array {
+		$receipt_path = $directory . DIRECTORY_SEPARATOR . 'capture-receipt.json';
+		if ( '' === $directory || ! is_file( $receipt_path ) || is_link( $receipt_path ) || filesize( $receipt_path ) > 32 * 1024 * 1024 ) {
+			return null;
+		}
+		$receipt = json_decode( (string) file_get_contents( $receipt_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a bounded operator-staged capture receipt.
+		return is_array( $receipt ) && 'blocks-engine-capture/capture-receipt/v1' === ( $receipt['schema'] ?? null ) ? $receipt : null;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_capture_website_root' ) ) {
 	/**
 	 * Resolve a Blocks Engine capture directory to the website tree its receipt declares.
@@ -918,12 +934,8 @@ if ( ! function_exists( 'static_site_importer_cli_capture_website_root' ) ) {
 	 * @return string|WP_Error
 	 */
 	function static_site_importer_cli_capture_website_root( string $directory ) {
-		$receipt_path = $directory . DIRECTORY_SEPARATOR . 'capture-receipt.json';
-		if ( ! is_file( $receipt_path ) || is_link( $receipt_path ) || filesize( $receipt_path ) > 32 * 1024 * 1024 ) {
-			return $directory;
-		}
-		$receipt = json_decode( (string) file_get_contents( $receipt_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a bounded operator-staged capture receipt.
-		if ( ! is_array( $receipt ) || 'blocks-engine-capture/capture-receipt/v1' !== ( $receipt['schema'] ?? null ) ) {
+		$receipt = static_site_importer_cli_capture_receipt( $directory );
+		if ( null === $receipt ) {
 			return $directory;
 		}
 		$root     = $receipt['websiteRoot'] ?? 'website';
@@ -947,15 +959,25 @@ if ( ! function_exists( 'static_site_importer_cli_capture_receipt_reports' ) ) {
 	 * @return array<int,string>|null
 	 */
 	function static_site_importer_cli_capture_receipt_reports( string $directory ): ?array {
-		$receipt_path = $directory . DIRECTORY_SEPARATOR . 'capture-receipt.json';
-		if ( '' === $directory || ! is_file( $receipt_path ) || is_link( $receipt_path ) || filesize( $receipt_path ) > 32 * 1024 * 1024 ) {
-			return null;
-		}
-		$receipt = json_decode( (string) file_get_contents( $receipt_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a bounded operator-staged capture receipt.
-		if ( ! is_array( $receipt ) || 'blocks-engine-capture/capture-receipt/v1' !== ( $receipt['schema'] ?? null ) || ! is_array( $receipt['reports'] ?? null ) ) {
+		$receipt = static_site_importer_cli_capture_receipt( $directory );
+		if ( ! is_array( $receipt['reports'] ?? null ) ) {
 			return null;
 		}
 		return array_keys( static_site_importer_cli_request_bundle_declared_reports( $receipt['reports'] ) );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_capture_receipt_source_url' ) ) {
+	/**
+	 * The http(s) URL a capture receipt records as its source, or ''.
+	 *
+	 * Captured pages keep links to their own site as absolute URLs; the
+	 * compiler resolves those against this origin only when it knows it.
+	 */
+	function static_site_importer_cli_capture_receipt_source_url( string $directory ): string {
+		$url   = static_site_importer_cli_capture_receipt( $directory )['source']['url'] ?? null;
+		$parts = is_string( $url ) ? parse_url( $url ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- CLI helpers run without WordPress URL helpers.
+		return is_array( $parts ) && in_array( strtolower( (string) ( $parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) && '' !== (string) ( $parts['host'] ?? '' ) && ! isset( $parts['user'] ) ? $url : '';
 	}
 }
 
@@ -993,6 +1015,12 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 			if ( null !== $capture_reports ) {
 				$metadata['reports'] = $capture_reports;
 				$report_root         = $capture_root;
+			}
+			// The capture's source origin travels as artifact provenance; a
+			// caller-declared one always wins over it.
+			$capture_source_url = static_site_importer_cli_capture_receipt_source_url( $capture_root );
+			if ( '' !== $capture_source_url && ! isset( $metadata['provenance']['source_url'] ) ) {
+				$metadata['provenance'] = array( 'source_url' => $capture_source_url ) + ( isset( $metadata['provenance'] ) && is_array( $metadata['provenance'] ) ? $metadata['provenance'] : array() );
 			}
 		}
 		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array(), $report_root ) : null;
