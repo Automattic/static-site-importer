@@ -179,6 +179,20 @@ foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tr
 		}
 	}
 }
+// Block flow: quantity and button on separate lines, the button at its natural width.
+$stacked = Static_Site_Importer_Product_Presentation::capture( array(
+	'controls'           => array(
+		array( 'tag' => 'input', 'type' => 'number', 'styles' => array( 'width' => '70px' ) ),
+		array( 'tag' => 'a', 'role' => 'button', 'styles' => array( 'display' => 'inline-block', 'height' => '41px' ) ),
+	),
+	'presentation_graph' => array(
+		'schema'       => 'generic/computed-form-presentation/v3',
+		'control_rows' => array( array( 'index' => 0, 'source_selector' => '.product', 'provenance' => array(), 'styles' => array(), 'flow' => 'stacked', 'members' => array( array( 'index' => 0, 'styles' => array() ), array( 'index' => 1, 'styles' => array() ) ) ) ),
+	),
+) );
+if ( ! str_contains( $stacked['rules']['layout:purchase-row'] ?? '', 'display:block !important;' ) || str_contains( $stacked['rules']['layout:purchase-row'], 'grid-template-columns' ) || 'display:flex !important;margin:0 !important;' !== ( $stacked['rules']['layout:quantity-box'] ?? '' ) || 'margin:0 !important;' !== ( $stacked['rules']['layout:purchase-button'] ?? '' ) || $stacked !== Static_Site_Importer_Product_Presentation::validate_overlay( $stacked ) ) {
+	throw new RuntimeException( 'Stacked purchase controls must keep their own lines: ' . wp_json_encode( $stacked['rules'] ?? null ) );
+}
 // Acceptance: native stepper and portrait gallery frame, independent of source classes.
 $frame_cases = array(
 	'quantity stepper' => array(

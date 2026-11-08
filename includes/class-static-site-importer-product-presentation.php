@@ -102,7 +102,7 @@ final class Static_Site_Importer_Product_Presentation {
 	public static function quantity_stepper( array $entity ): array {
 		$controls = $entity['controls'] ?? array();
 		foreach ( $entity['presentation_graph']['control_rows'] ?? array() as $row ) {
-			if ( 'generic/computed-form-presentation/v3' !== ( $entity['presentation_graph']['schema'] ?? '' ) || ! is_array( $row['styles'] ?? null ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
+			if ( 'generic/computed-form-presentation/v3' !== ( $entity['presentation_graph']['schema'] ?? '' ) || ! is_array( $row['styles'] ?? null ) || isset( $row['flow'] ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
 				continue;
 			}
 			$members = $row['members'] ?? array();
@@ -309,6 +309,17 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$fallback = $row;
 			$fact     = self::purchase_row_fact( $graph, $indexes );
+			if ( 'stacked' === ( $fact['flow'] ?? null ) ) {
+				// Block flow gives each control its own line; the button keeps its captured width.
+				$styles['layout:purchase-row']    = array_merge( $full, array( 'display' => 'block' ) );
+				$styles['layout:simple-row']      = $styles['layout:purchase-row'];
+				$styles['layout:quantity-box']    = array(
+					'display' => 'flex',
+					'margin'  => '0',
+				);
+				$styles['layout:purchase-button'] = array( 'margin' => '0' );
+				return array_map( array( self::class, 'layout_declarations' ), $styles );
+			}
 			if ( $fact ) {
 				$row = self::row_geometry( $fact, $fallback );
 			}
@@ -370,6 +381,7 @@ final class Static_Site_Importer_Product_Presentation {
 					'styles' => $row['styles'],
 					'items'  => $items,
 					'order'  => array( $indexes['quantity'], $indexes['submit'] ),
+					'flow'   => $row['flow'] ?? null,
 				);
 			}
 		}
@@ -418,7 +430,7 @@ final class Static_Site_Importer_Product_Presentation {
 				'max-width'  => array( 'none' ),
 				'min-width'  => array( '0' ),
 				'box-sizing' => array( 'border-box' ),
-				'display'    => array( 'block', 'grid' ),
+				'display'    => array( 'block', 'flex', 'grid' ),
 				'padding'    => array( '0' ),
 				'margin'     => array( '0' ),
 				'overflow'   => array( 'visible' ),
