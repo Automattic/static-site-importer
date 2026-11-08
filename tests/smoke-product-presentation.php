@@ -174,6 +174,64 @@ foreach ( $purchase_cases as $label => list( $submit_width, $quantity_width, $tr
 		}
 	}
 }
+// Acceptance: native stepper and portrait gallery frame, independent of source classes.
+$frame_cases = array(
+	'quantity stepper' => array(
+		'entity_kind' => 'add_to_cart_form',
+		'controls' => array(
+			array( 'tag' => 'select' ),
+			array( 'tag' => 'button', 'type' => 'button', 'aria-label' => 'Decrease quantity by 1' ),
+			array( 'tag' => 'input', 'type' => 'number', 'styles' => array( 'width' => '42px', 'border' => '0' ) ),
+			array( 'tag' => 'button', 'type' => 'button', 'aria-label' => 'Increase quantity by 1' ),
+			array( 'tag' => 'button', 'type' => 'submit' ),
+		),
+		'presentation_graph' => array(
+			'schema' => 'generic/computed-form-presentation/v3',
+			'control_rows' => array( array(
+				'index' => 0,
+				'styles' => array( 'width' => '144px', 'border' => '1px solid rgb(48,54,54)', 'border_radius' => '24px' ),
+				'members' => array( array( 'index' => 1 ), array( 'index' => 2 ), array( 'index' => 3 ) ),
+			) ),
+		),
+	),
+	'gallery frame' => array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( array(
+		'blockName' => 'core/image',
+		'innerHTML' => '<figure><img width="1000" height="1000" style="aspect-ratio:3/4;object-fit:cover" src="square.jpg"></figure>',
+	) ) ),
+);
+foreach ( $frame_cases as $label => $entity ) {
+	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	$expected = 'quantity stepper' === $label ? array( 'width:144px', 'border:1px solid rgb(48,54,54)', 'border-radius:24px' ) : array( 'aspect-ratio:3/4', 'object-fit:cover' );
+	$rule = $overlay['rules'][ 'quantity stepper' === $label ? 'quantity-frame' : 'image' ] ?? '';
+	foreach ( $expected as $declaration ) {
+		if ( ! str_contains( $rule, $declaration . ' !important;' ) ) {
+			throw new RuntimeException( $label . ': missing ' . $declaration );
+		}
+	}
+	if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
+		throw new RuntimeException( $label . ': frame receipt rejected.' );
+	}
+	if ( 'quantity stepper' === $label ) {
+		$stepper_markup = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( $entity, array( 'id' => 42 ) );
+		if ( ! str_contains( $stepper_markup, '"quantitySelectorStyle":"stepper"' ) ) {
+			throw new RuntimeException( 'Native Woo stepper attribute missing.' );
+		}
+		$without_frame = $entity;
+		$without_frame['presentation_graph']['control_rows'][0]['styles'] = array();
+		if ( ! Static_Site_Importer_Product_Presentation::quantity_stepper( $without_frame ) || str_contains( Static_Site_Importer_Product_Presentation::capture( $without_frame )['rules']['quantity-frame'], 'border' ) ) {
+			throw new RuntimeException( 'Missing container paint must not be inferred from input paint.' );
+		}
+		unset( $entity['presentation_graph']['control_rows'] );
+		if ( Static_Site_Importer_Product_Presentation::quantity_stepper( $entity ) ) {
+			throw new RuntimeException( 'Buttons without a dedicated row are not stepper evidence.' );
+		}
+	}
+	$bad = $overlay;
+	$bad['rules'][ 'quantity stepper' === $label ? 'quantity-frame' : 'image' ] .= 'position:fixed !important;';
+	if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+		throw new RuntimeException( $label . ': open frame grammar.' );
+	}
+}
 $unknown_width = $fixture;
 unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'], $unknown_width['presentation_graph']['controls'][0]['control']['styles']['width'] );
 if ( ! str_contains( Static_Site_Importer_Product_Presentation::capture( $unknown_width )['css'], 'grid-template-columns:auto minmax(0,1fr)' ) ) {
