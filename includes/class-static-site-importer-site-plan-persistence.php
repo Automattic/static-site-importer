@@ -1993,7 +1993,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
-			if ( str_contains( $fragment, 'wp:woocommerce/single-product' ) && str_contains( $content, 'wp:woocommerce/single-product' ) ) {
+			// A page that owns its product persists the fragment as written. The
+			// product's own document binds it to the current product instead.
+			if ( '' !== $fragment && ! str_contains( $content, $fragment ) && str_contains( $fragment, 'wp:woocommerce/single-product' ) && str_contains( $content, 'wp:woocommerce/single-product' ) ) {
 				$fragment                                   = Static_Site_Importer_Product_Field_Blocks::bind_document( $fragment, array() );
 				$binding_report['replacement_block_markup'] = $fragment;
 			}
