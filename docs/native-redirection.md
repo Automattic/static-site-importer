@@ -9,7 +9,7 @@ Authorization follows the import. Web requests call the provider as their authen
 ## Ownership and reconciliation
 
 - Rules live in a source-scope group and remain editable in **Tools → Redirection**.
-- Exact source paths redirect permanently to final native destinations with query passthrough. Projection is bounded to 500 rules; native collision inspection is bounded to 2,000 rules.
+- Exact source paths redirect permanently to final native destinations with query passthrough. Every served document gets its rule, and collision inspection reads the provider's complete rule inventory.
 - Reimport preserves IDs and rejects owner-created or owner-edited collisions, occupied published routes, ambiguous destinations, and redirect chains.
 - Removed aliases disable owned rules while retaining IDs and history. Mutation journals restore prior rule configuration and enabled state, remove newly created rules/groups, and verify native readback and ownership restoration.
 - SSI's fallback route resolver defers to native-owned paths, including rules that an owner disables or removes.

@@ -11,7 +11,6 @@ require_once __DIR__ . '/class-static-site-importer-source-route.php';
 
 final class Static_Site_Importer_Redirection_Materializer {
 	public const OWNERSHIP_OPTION = 'static_site_importer_redirect_ownership';
-	private const MAX_RULES       = 500;
 
 	public static function adapter(): array {
 		return array(
@@ -285,9 +284,8 @@ final class Static_Site_Importer_Redirection_Materializer {
 				}
 			}
 		}
-		if ( count( $routes ) > self::MAX_RULES ) {
-			return new WP_Error( 'static_site_importer_redirect_bound_exceeded', 'The source redirect inventory exceeds its supported bound.' );
-		}
+		// Paged families are the only pattern sources; exact sources are keys.
+		$families = array_values( array_filter( array_keys( $routes ), static fn( string $source ): bool => str_starts_with( $source, '^' ) ) );
 		foreach ( $routes as $from => $target ) {
 			if ( str_starts_with( $from, '^' ) ) {
 				foreach ( $routes as $other => $destination ) {
@@ -297,7 +295,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				}
 			}
 			$path = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
-			if ( isset( $routes[ $path ] ) || array_filter( array_keys( $routes ), static fn( string $source ): bool => str_starts_with( $source, '^' ) && 1 === preg_match( '~' . $source . '~', $path ) ) ) {
+			if ( isset( $routes[ $path ] ) || array_filter( $families, static fn( string $source ): bool => 1 === preg_match( '~' . $source . '~', $path ) ) ) {
 				return new WP_Error( 'static_site_importer_redirect_chain_unproven', 'A destination is itself a source redirect; native final destinations are required.' );
 			}
 		}
@@ -434,8 +432,11 @@ final class Static_Site_Importer_Redirection_Materializer {
 	}
 
 	private static function inventory() {
+		// Collision checks read the provider's complete inventory, however large;
+		// the page budget only guards against a provider that never converges.
 		$items = array();
-		for ( $page = 0; $page < 10; ++$page ) {
+		$pages = 1;
+		for ( $page = 0; $page < $pages; ++$page ) {
 			$result = self::api(
 				'GET',
 				'redirect',
@@ -447,14 +448,12 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( is_wp_error( $result ) ) {
 				return $result; }
 			$total = (int) ( $result['total'] ?? 0 );
-			if ( $total > 2000 ) {
-				return new WP_Error( 'static_site_importer_redirect_conflicts_unbounded', 'The native rule inventory exceeds its bounded collision verification window.' );
-			}
+			$pages = max( $pages, (int) ceil( $total / 200 ) );
 			$items = array_merge( $items, $result['items'] ?? array() );
 			if ( count( $items ) >= $total ) {
 				return $items; }
 		}
-		return new WP_Error( 'static_site_importer_redirect_inventory_incomplete', 'The provider did not return its complete bounded rule inventory.' );
+		return new WP_Error( 'static_site_importer_redirect_inventory_incomplete', 'The provider did not return its complete rule inventory.' );
 	}
 
 	public static function materialize( array $manifest, array $args ) {

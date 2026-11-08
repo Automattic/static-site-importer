@@ -90,6 +90,17 @@ $clean_receipt['plan']['pages'][2]['route']['path'] = '/notes/deep/';
 $clean_receipt['plan']['pages'][2]['whole_page_candidates'] = array( array( 'provider' => 'test' ) );
 $assert( Static_Site_Importer_Redirection_Materializer::has_intent( $clean_receipt['plan'], array() ), 'Whole-page candidates retain provider route intent.' );
 $assert( Static_Site_Importer_Redirection_Materializer::has_intent( array( 'pages' => $clean_pages ), array( 'source_route_aliases' => array( '/old' => 'website/about/index.html' ) ) ), 'Explicit aliases retain route intent.' );
+// A whole blog projects one rule per served document, beyond any fixed count.
+$saved_permalinks      = $GLOBALS['permalinks'];
+$GLOBALS['permalinks'] = array();
+$many_pages            = array();
+for ( $i = 1; $i <= 2100; ++$i ) {
+	$many_pages[]               = array( 'source_path' => "website/2019/08/post-$i.html", 'route' => array( 'path' => "/2019/08/post-$i/" ) );
+	$GLOBALS['permalinks'][ $i ] = "https://native.test/2019/08/post-$i/";
+}
+$many_routes = Static_Site_Importer_Redirection_Materializer::routes( array( 'plan' => array( 'pages' => $many_pages ), 'completed' => array( 'pages' => array_combine( array_column( $many_pages, 'source_path' ), range( 1, 2100 ) ) ) ), array() );
+$assert( is_array( $many_routes ) && 2100 === count( $many_routes ) && 'https://native.test/2019/08/post-7/' === $many_routes['/2019/08/post-7.html'], 'A 2,100-page site redirects every served document.' );
+$GLOBALS['permalinks'] = $saved_permalinks;
 // Redirection stores sources after rawurldecode; encoded routes are
 // canonicalized once, where the rules are built, so one decoded rule owns the
 // encoded request (#2384).
