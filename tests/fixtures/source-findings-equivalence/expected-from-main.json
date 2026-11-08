@@ -1154,7 +1154,13 @@
                     "message": "desktop/goto: Navigation timeout",
                     "diagnostic_code": "route_capture_failed"
                 }
-            ]
+            ],
+            "block_theme_scorecard": {
+                "gating": false,
+                "status": "not_measured",
+                "check_count": 0,
+                "failing_checks": []
+            }
         },
         "inline_compact_summary": {
             "schema": "static-site-importer/import-metrics/v1",

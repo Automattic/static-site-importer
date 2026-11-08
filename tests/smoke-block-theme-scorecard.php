@@ -8,6 +8,7 @@ ssi_test_require_core_block_parser( require __DIR__ . '/fixtures/wordpress-core-
 require_once __DIR__ . '/../includes/class-static-site-importer-block-theme-scorecard.php';
 require_once __DIR__ . '/../includes/class-static-site-importer-import-report.php';
 require_once __DIR__ . '/../includes/class-static-site-importer-diagnostic-projection.php';
+foreach ( array( 'report-diagnostics', 'diagnostic-loss-classes', 'visual-parity-oracle' ) as $ssi_class ) { require_once __DIR__ . '/../includes/class-static-site-importer-' . $ssi_class . '.php'; }
 function scorecard_assert( $condition, $message ) { if ( ! $condition ) { throw new RuntimeException( $message ); } }
 $root = sys_get_temp_dir() . '/ssi-scorecard-' . bin2hex( random_bytes( 6 ) );
 $header = '<!-- wp:group --><header><!-- wp:navigation {"ref":7} /--></header><!-- /wp:group -->';
@@ -49,6 +50,16 @@ try {
 	scorecard_assert( 'pass' === $report['block_theme_scorecard']['checks']['shared_shell']['status'], 'Projection measures theme' );
 	scorecard_assert( str_contains( $report['owner_handoff_evidence']['report_card'], '| template_economy | pass |' ), 'Report card table' );
 	scorecard_assert( false === $report['block_theme_scorecard']['gating'] && empty( $report['quality']['fail_import'] ), 'Signals do not change gate' );
+	scorecard_assert( 0 === $report['finding_packets']['count'] && array() === $report['compact_summary']['block_theme_scorecard']['failing_checks'], 'A passing theme reports no scorecard findings' );
+	$report = Static_Site_Importer_Import_Report::from_array( array( 'materialization_receipt' => array( 'theme' => array( 'dir' => $root . '/bad' ), 'scorecard_context' => $context ) ) );
+	Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, array(), false );
+	$failing = $report['compact_summary']['block_theme_scorecard']['failing_checks'];
+	$packets = array_column( $report['finding_packets']['packets'], null, 'id' );
+	scorecard_assert( array( 'shared_shell', 'template_economy' ) === $failing && 'reported' === $report['finding_packets']['status'] && count( $failing ) === count( $packets ), 'Each failing check is summarized and becomes one finding' );
+	$economy_packet = $packets['finding-block-theme-scorecard-template_economy'];
+	scorecard_assert( 'blocks-engine/php-transformer' === $economy_packet['owner'] && 'warning' === $economy_packet['severity'] && 'acceptable_conversion' === $economy_packet['acceptability'], 'Finding is a routed, acceptable-conversion warning' );
+	scorecard_assert( $bad['checks']['template_economy']['measured'] === $economy_packet['observed']['measured'] && array( 'custom_templates_max' => 1, 'repeated_block_markup_bytes_max' => 0 ) === $economy_packet['expected']['pass_threshold'], 'Finding carries measured value and threshold' );
+	scorecard_assert( empty( $report['quality']['fail_import'] ) && 0 === $report['compact_summary']['diagnostic_count'], 'Scorecard findings stay out of the gate and diagnostic counts' );
 	$report = Static_Site_Importer_Import_Report::from_array( array() );
 	Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, array(), false );
 	scorecard_assert( isset( $report['block_theme_scorecard'] ), 'Every report has scorecard, even before materialization' );

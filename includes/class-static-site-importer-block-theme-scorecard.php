@@ -11,6 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /** Read-only measurements of theme structure and content. */
 final class Static_Site_Importer_Block_Theme_Scorecard {
+	/** Diagnostic type of a failing scorecard check. */
+	public const FINDING_TYPE = 'block_theme_scorecard_check';
+
 	/** Build scorecard evidence from a finalized import report. */
 	public static function from_import( array $report ): array {
 		$receipt                     = $report['materialization_receipt'] ?? array();
@@ -46,6 +49,45 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'reason' => 'materialized_theme_or_block_parser_unavailable',
 				'checks' => array(),
 			);
+	}
+
+	/**
+	 * One non-gating diagnostic per failing check, routed to the layer that
+	 * writes what the check measures: SSI writes the style.css headers, and
+	 * the site plan supplies everything else.
+	 */
+	public static function findings( array $scorecard ): array {
+		$findings = array();
+		foreach ( $scorecard['checks'] ?? array() as $name => $check ) {
+			if ( 'fail' !== ( $check['status'] ?? '' ) ) {
+				continue;
+			}
+			$findings[] = array(
+				'id'             => 'diag-block-theme-scorecard-' . $name,
+				'type'           => self::FINDING_TYPE,
+				'severity'       => 'warning',
+				'category'       => 'theme_quality',
+				'loss_class'     => 'native_conversion',
+				'engine'         => 'theme_metadata' === $name ? 'static-site-importer' : 'blocks-engine/php-transformer',
+				'stage'          => 'materialization',
+				'reason_code'    => 'block_theme_scorecard_' . $name,
+				'check'          => (string) $name,
+				'measured'       => $check['measured'] ?? array(),
+				'pass_threshold' => $check['pass_threshold'] ?? array(),
+			);
+		}
+		return $findings;
+	}
+
+	/** Compact status for the import summary. */
+	public static function summary( array $scorecard ): array {
+		$failing = array_keys( array_filter( $scorecard['checks'] ?? array(), static fn( $check ): bool => 'fail' === ( $check['status'] ?? '' ) ) );
+		return array(
+			'gating'         => false,
+			'status'         => $scorecard['status'] ?? ( $failing ? 'fail' : 'pass' ),
+			'check_count'    => count( $scorecard['checks'] ?? array() ),
+			'failing_checks' => $failing,
+		);
 	}
 
 	/** Render the signals-only report-card table without changing its encoding. */
