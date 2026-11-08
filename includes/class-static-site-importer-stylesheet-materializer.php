@@ -317,7 +317,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 	/** This plugin's `Requires PHP` header. */
 	private static function plugin_requires_php(): string {
-		$plugin = (string) file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php', false, null, 0, 2048 );
+		$plugin = (string) file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php', false, null, 0, 2048 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads this plugin's own local header.
 		return preg_match( '/^[ \t\/*#@]*Requires PHP:\s*(\S+)/mi', $plugin, $match ) ? $match[1] : '';
 	}
 
