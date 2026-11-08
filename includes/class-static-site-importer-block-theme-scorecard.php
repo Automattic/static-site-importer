@@ -123,7 +123,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'shared_shell'         => self::shared_shell( $template_blocks, $parts, $json, $routes ),
 				'navigation'           => self::navigation( $template_blocks, $part_blocks, $route_blocks, $context ),
 				'design_tokens'        => self::design_tokens( $json, $context ),
-				'theme_json'           => self::theme_json( $json ),
+				'theme_json'           => self::theme_json( $json, array_merge( array_values( $template_blocks ), array_values( $part_blocks ), array_values( $route_blocks ) ) ),
 				'proportionate_assets' => self::proportionate_assets( $theme_dir, $context ),
 				'content_quality'      => self::content_quality( $routes, $route_blocks ),
 				'theme_metadata'       => self::theme_metadata( $theme_dir ),
@@ -287,21 +287,54 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	}
 
 	/** Measure theme json. */
-	private static function theme_json( array $json ): array {
+	/**
+	 * Measure theme.json element styles for the elements the theme renders.
+	 *
+	 * An element style is expected only where the content renders that
+	 * element, so a site without buttons or text links is not asked to invent
+	 * a look for them. Per-level heading styles (`h1`–`h6`) style headings as
+	 * the combined `heading` element does. Links owned by a block that styles
+	 * them itself (button, image) are not text links. Block style count is
+	 * reported, not required: no source evidence implies a per-block style.
+	 *
+	 * @param array<string,mixed>                $json        Parsed theme.json.
+	 * @param array<int|string,array<int,array>> $block_lists Parsed templates, parts and routes.
+	 */
+	private static function theme_json( array $json, array $block_lists ): array {
+		$used = array();
+		foreach ( $block_lists as $blocks ) {
+			foreach ( self::flatten( $blocks ) as $block ) {
+				$html = (string) ( $block['innerHTML'] ?? '' );
+				if ( 'core/button' === $block['blockName'] ) {
+					$used['button'] = true;
+				} elseif ( 'core/image' !== $block['blockName'] && preg_match( '/<a\s[^>]*\bhref=/i', $html ) ) {
+					$used['link'] = true;
+				}
+				if ( 'core/heading' === $block['blockName'] || preg_match( '/<h[1-6][\s>]/i', $html ) ) {
+					$used['heading'] = true;
+				}
+			}
+		}
+		$styles   = $json['styles']['elements'] ?? array();
 		$elements = array();
 		foreach ( array( 'link', 'button', 'heading' ) as $name ) {
-			$elements[ $name ] = ! empty( $json['styles']['elements'][ $name ] );
+			$keys             = 'heading' === $name ? array( 'heading', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ) : array( $name );
+			$elements[ $name ] = array(
+				'used'   => isset( $used[ $name ] ),
+				'styled' => array() !== array_filter( array_intersect_key( $styles, array_flip( $keys ) ) ),
+			);
 		}
+		$unstyled = array_keys( array_filter( $elements, static fn( array $element ): bool => $element['used'] && ! $element['styled'] ) );
 		return self::check(
 			array(
 				'elements'          => $elements,
+				'unstyled_used'     => $unstyled,
 				'block_style_count' => count( $json['styles']['blocks'] ?? array() ),
 			),
 			array(
-				'all_elements_populated' => true,
-				'block_style_count_min'  => 1,
+				'unstyled_used' => 0,
 			),
-			! in_array( false, $elements, true ) && ! empty( $json['styles']['blocks'] )
+			array() === $unstyled
 		);
 	}
 
