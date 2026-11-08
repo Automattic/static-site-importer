@@ -267,12 +267,12 @@ for (const item of tracked) {
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since. Continue on its branch: merge trunk in, resolve the conflicts keeping both trunk's behavior and this fix, and keep every acceptance check passing.`,
       ] : []),
-      ...(ci.length ? [
+      ...(health.failed.length ? [
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) fails CI. Continue on its branch and make these jobs pass (\`gh run view --log-failed\` on each); a failing contract or parity test that asserts existing behavior is a regression to fix, not an expectation to update, unless the issue says that behavior is the defect:`,
-        ...[...new Map(ci.map((c) => [c.name, c])).values()].map((c) => `    - ${c.name}: ${c.url}`),
+        ...[...new Map(health.failed.map((c) => [c.name, c])).values()].map((c) => `    - ${c.name}: ${c.url}`),
       ] : []),
-      ...(collateral.exit === 1 ? [
+      ...(collateral?.exit === 1 ? [
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) clears the defect but restyles elements outside it on the whole import. Continue on its branch and confine the change to the defect:`,
         ...collateral.report.map((line) => `    ${line.slice(0, 400)}`),
