@@ -138,12 +138,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$bound = Static_Site_Importer_Site_Plan_Preparation::prepare( $state['plan'], $resolve_args, $resolutions );
 			if ( 'prepared' !== ( $bound['status'] ?? '' ) ) {
-				return self::failed_receipt( $state, $bound['receipt']['failure_reason'] ?? 'media_library_resolution_failed' );
+				return self::rebind_failure( $state, $bound['receipt'] );
 			}
 			$bound['receipt_instance_id'] = $state['receipt_instance_id'];
 			$state                        = Static_Site_Importer_Site_Plan_Preparation::refresh_prepared_destination( $bound );
 			if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
-				return self::failed_receipt( $media_state, 'media_library_resolution_failed' );
+				return self::rebind_failure( $media_state, $state['receipt'] );
 			}
 			$state['applied']['attachments']    = $media_state['applied']['attachments'] ?? array();
 			$state['media_library_unavailable'] = $media_state['media_library_unavailable'] ?? array();
@@ -2808,6 +2808,30 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function file_hash( string $path ): string {
 		$data = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Preflight hashes a declared destination file.
 		return false === $data ? '' : hash( 'sha256', $data );
+	}
+
+	/**
+	 * Preserve a rejected media rebind's reason through the public error projection.
+	 *
+	 * @param array<string,mixed> $state Materialization state, including the rollback journal.
+	 * @param array<string,mixed> $rejected_receipt Rejected preparation receipt.
+	 * @return array<string,mixed> Failed materialization receipt.
+	 */
+	private static function rebind_failure( array $state, array $rejected_receipt ): array {
+		// A rejected receipt states its reason as the code of its rows, not as a failure_reason.
+		$rejected = array_merge( $rejected_receipt['diagnostics'] ?? array(), $rejected_receipt['errors'] ?? array() );
+		$reason   = (string) ( $rejected[0]['reason_code'] ?? $rejected[0]['code'] ?? '' );
+		$cause    = array(
+			'reason_code' => 'media_library_resolution_failed',
+			'severity'    => 'error',
+			'detail'      => $reason,
+		);
+		// Error responses phrase their message from the first diagnostic, so the cause leads.
+		$state['diagnostics']     = array_merge( array( $cause ), $state['diagnostics'] ?? array(), $rejected );
+		$state['failure_reason']  = 'media_library_resolution_failed';
+		$state['failure_message'] = Static_Site_Importer_Public_Error_Projection::project_public_error_message( 'media_library_resolution_failed', Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( array( $cause ) ) );
+		self::rollback( $state );
+		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'partial', $state );
 	}
 
 	/** @param array<string,mixed> $state */
