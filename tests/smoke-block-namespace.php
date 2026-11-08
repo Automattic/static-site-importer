@@ -220,15 +220,21 @@ namespace {
 	$assert( 1 === preg_match( '/^Update URI: (\S+)$/m', $theme_style, $theme_uri ) && 'static-site-importer.invalid' === ( parse_url( (string) $theme_uri[1], PHP_URL_HOST ) ?? '' ), 'block-theme-style-css-carries-parseable-update-uri', $theme_style );
 	$plain_theme_style = (string) ( Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/ssi-ns-theme', 'acme', '.hero{color:inherit}', array(), array() )['/tmp/ssi-ns-theme/style.css'] ?? '' );
 	$assert( str_contains( $plain_theme_style, "Version: 0.1.0\n" ) && ! str_contains( $plain_theme_style, 'Update URI' ), 'provenance-free-block-theme-keeps-frozen-header' );
+	// Every generated theme is GPL, needs the PHP its bundled SSI runtime
+	// needs, and was tested with the WordPress branch that materialized it.
+	$GLOBALS['wp_version'] = '7.1.2-alpha-61000';
+	$header_theme_style    = (string) ( Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/ssi-ns-theme', 'acme', '.hero{color:inherit}', array(), array() )['/tmp/ssi-ns-theme/style.css'] ?? '' );
+	unset( $GLOBALS['wp_version'] );
+	$assert( str_contains( $header_theme_style, "\nRequires at least: 7.1\nTested up to: 7.1\nRequires PHP: 8.2\nLicense: GNU General Public License v2 or later\nLicense URI: https://www.gnu.org/licenses/gpl-2.0.html\n*/\n" ), 'block-theme-header-declares-license-and-requirements', $header_theme_style );
 
 	// 6. The classic theme projection's style.css carries the same identity.
 	$classic_scaffold = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( 'Acme Group', $provenance );
 	$classic_style    = (string) ( $classic_scaffold['style.css'] ?? '' );
-	$assert( str_starts_with( $classic_style, "/*\nTheme Name: Acme Group\nText Domain: static-site-importer\nVersion: 9.9.9+d4d4d4d4\n" ), 'classic-style-css-carries-producing-build-version', $classic_style );
+	$assert( 1 === preg_match( '/^Version: 9\.9\.9\+d4d4d4d4$/m', $classic_style ) && str_starts_with( $classic_style, "/*\nTheme Name: Acme Group\nText Domain: static-site-importer\n" ), 'classic-style-css-carries-producing-build-version', $classic_style );
 	$classic_uri = array();
 	$assert( 1 === preg_match( '/^Update URI: (\S+)$/m', $classic_style, $classic_uri ) && 'static-site-importer.invalid' === ( parse_url( (string) $classic_uri[1], PHP_URL_HOST ) ?? '' ), 'classic-style-css-carries-parseable-update-uri', $classic_style );
 	$plain_classic = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( 'Acme Group' );
-	$assert( "/*\nTheme Name: Acme Group\nText Domain: static-site-importer\n*/\n" === ( $plain_classic['style.css'] ?? '' ), 'provenance-free-classic-scaffold-keeps-historical-header' );
+	$assert( $plain_classic['style.css'] === Static_Site_Importer_Stylesheet_Materializer::theme_header( 'Acme Group', 'static-site-importer', 'Acme Group', array() ), 'provenance-free-classic-scaffold-shares-the-block-theme-header' );
 
 	// 7. The same identity is queryable from the site option without parsing
 	// any file headers, and survives with no plugin runtime at all.
