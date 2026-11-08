@@ -3113,14 +3113,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$text = array();
 			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
 				$candidate = $attribute[ $field ] ?? '';
-				if ( ! is_string( $candidate ) || ( 'value_label' !== $field && '' === trim( $candidate ) ) ) {
+				if ( ! is_string( $candidate ) || ( 'key' === $field && '' === trim( $candidate ) ) ) {
 					return null;
 				}
 				$text[ $field ] = trim( $candidate );
 			}
 			if ( '' === $text['label'] || '' === $text['value'] ) {
-				// Incomplete shopper-facing attributes are not useful; omit only
-				// that attribute rather than rejecting its product.
+				// An attribute without a shopper-facing label or value is left
+				// out; its product is kept.
 				continue;
 			}
 			$attributes[] = array(
