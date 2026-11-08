@@ -185,7 +185,7 @@ final class Static_Site_Importer_Product_Presentation {
 			if ( ( $variant['index'] ?? null ) !== $index || '' === $query || ! is_array( $variant['style_patch'] ?? null ) || ! ( 'control' === $role || ( 'caption' === $role && $layer ) ) ) {
 				continue;
 			}
-			$styles       = self::resolve_urls( $variant['style_patch'], is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+			$styles       = self::resolve_urls( $variant['style_patch'], is_array( $variant['provenance'] ?? null ) ? array_values( array_filter( $variant['provenance'], 'is_array' ) ) : array() );
 			$declarations = 'caption' === $role ? self::layer_paint( $styles ) : self::declarations( $styles );
 			if ( '' !== $declarations ) {
 				$rules[ ( 'caption' === $role ? 'submit-layer' : $slot ) . '@' . $query ] = $declarations;
