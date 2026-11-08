@@ -85,6 +85,8 @@ test('policy links render inline or standalone and use imported routes only for 
   for (const { href, target } of [
    { href: 'https://www.jccollaborative.com/privacy', target: '/imported-privacy/' },
    { href: 'https://external.example/privacy', target: 'https://external.example/privacy' },
+   // The capture localizes a same-site policy link to its captured route.
+   { href: '/privacy.html', target: '/imported-privacy/' },
   ]) {
    const fact = { text, accept_label: 'Accept', policy_link: { label: 'Privacy Policy', href } };
    const markup = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'policy-link', JSON.stringify(fact)], { encoding: 'utf8' });
