@@ -1402,7 +1402,7 @@ $content = preg_replace_callback(
 		if ( preg_match_all( '/\bid\s*=\s*(?:"([^"\s]+)"|\'([^\'\s]+)\'|([^\s>]+))/i', $svg, $id_matches ) ) {
 			foreach ( $id_matches[1] as $index => $double_quoted ) {
 				$id = '' !== $double_quoted ? $double_quoted : ( '' !== $id_matches[2][ $index ] ? $id_matches[2][ $index ] : $id_matches[3][ $index ] );
-				if ( preg_match( '/^[A-Za-z][A-Za-z0-9_.:-]*$/', $id ) ) {
+				if ( preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]*$/', $id ) ) {
 					$ids[ $id ] = true;
 				}
 			}
@@ -1735,6 +1735,7 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 $svg_paint = array_merge(
 	$svg_global,
 	array(
+		'clip-path' => true, 'mask' => true,
 		'fill' => true, 'fill-opacity' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true,
 		'stroke-dasharray' => true, 'stroke-dashoffset' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true,
 		'stroke-miterlimit' => true, 'stroke-opacity' => true, 'stroke-width' => true, 'transform' => true, 'vector-effect' => true,
@@ -1789,7 +1790,7 @@ $output = wp_kses(
 		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
 		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => array_merge( $svg_global, array( 'clippathunits' => true, 'transform' => true ) ), 'mask' => array_merge( $svg_global, array( 'height' => true, 'maskcontentunits' => true, 'maskunits' => true, 'width' => true, 'x' => true, 'y' => true ) ), 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
 		'filter' => array_merge( $svg_global, array( 'color-interpolation-filters' => true, 'filterunits' => true, 'height' => true, 'primitiveunits' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'g' => array_merge( $svg_paint, array( 'clip-path' => true ) ),
+		'g' => $svg_paint,
 		'path' => array_merge( $svg_paint, array( 'd' => true ) ),
 		'circle' => array_merge( $svg_paint, array( 'cx' => true, 'cy' => true, 'r' => true ) ),
 		'ellipse' => array_merge( $svg_paint, array( 'cx' => true, 'cy' => true, 'rx' => true, 'ry' => true ) ),
