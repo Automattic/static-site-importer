@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
 
 $assertions = 0;
@@ -314,6 +315,22 @@ foreach ( $rejected as $label => $case ) {
 	$assert( ! in_array( $marker, $kept_markers( $filtered_html ), true ), 'device-script-rejected: ' . $label );
 	$assert( array_values( array_diff( $markers, array( $marker ) ) ) === $kept_markers( $filtered_html ), 'device-script-rejection-is-scoped: ' . $label );
 }
+
+// A script body larger than PCRE's backtrack limit must not erase the page around it (#2797).
+$large_script = Static_Site_Importer_Client_Script_Policy::apply(
+	array(
+		'files' => array(
+			array(
+				'path'      => 'website/index.html',
+				'mime_type' => 'text/html',
+				'content'   => '<main><h1>Bakery</h1><p>Fresh bread.</p></main><script>var DATA="' . str_repeat( 'A', 1100 * 1024 ) . '";</script>',
+			),
+		),
+	),
+	array()
+);
+$large_html   = (string) ( $large_script['artifact']['files'][0]['content'] ?? '' );
+$assert( '<main><h1>Bakery</h1><p>Fresh bread.</p></main>' === $large_html, 'large-inline-script-is-dropped-without-erasing-the-page' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );

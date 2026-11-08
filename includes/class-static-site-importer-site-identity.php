@@ -21,6 +21,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
+
 /**
  * Resolves a canonical { name, slug, title } identity from an import source.
  */
@@ -496,28 +498,26 @@ class Static_Site_Importer_Site_Identity {
 		$nodes      = array();
 		$json_bytes = 0;
 		$json_count = 0;
-		if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
-			foreach ( $scripts as $script ) {
-				$attributes = self::evidence_attributes( $script[1] );
-				if ( 'application/ld+json' !== strtolower( trim( $attributes['type'] ?? '' ) ) ) {
-					continue;
-				}
-				$json_bytes += strlen( $script[2] );
-				if ( ++$json_count > 64 || $json_bytes > 256 * 1024 ) {
-					$status['truncated'] = true;
-					break;
-				}
-				$data = json_decode( $script[2], true );
-				if ( ! is_array( $data ) ) {
-					$status['invalid_jsonld'] = true;
-					continue;
-				}
-				foreach ( self::jsonld_nodes( $data ) as $node ) {
-					$type = $node['@type'] ?? array();
-					$type = array_filter( is_array( $type ) ? $type : array( $type ), 'is_string' );
-					if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) ) {
-						$nodes[] = $node;
-					}
+		foreach ( HtmlTagScanner::scan( $html, 'script' ) as $script ) {
+			$attributes = self::evidence_attributes( $script['attributes'] );
+			if ( 'application/ld+json' !== strtolower( trim( $attributes['type'] ?? '' ) ) ) {
+				continue;
+			}
+			$json_bytes += strlen( $script['content'] );
+			if ( ++$json_count > 64 || $json_bytes > 256 * 1024 ) {
+				$status['truncated'] = true;
+				break;
+			}
+			$data = json_decode( $script['content'], true );
+			if ( ! is_array( $data ) ) {
+				$status['invalid_jsonld'] = true;
+				continue;
+			}
+			foreach ( self::jsonld_nodes( $data ) as $node ) {
+				$type = $node['@type'] ?? array();
+				$type = array_filter( is_array( $type ) ? $type : array( $type ), 'is_string' );
+				if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) ) {
+					$nodes[] = $node;
 				}
 			}
 		}

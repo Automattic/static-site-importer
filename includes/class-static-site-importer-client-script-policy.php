@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
+
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy_Report' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy-report.php';
 }
@@ -226,8 +228,8 @@ class Static_Site_Importer_Client_Script_Policy {
 	 */
 	private static function strip_unproven_dynamic_markup( string $html, string $path, array $script_files, array $inline_orders, array &$dropped ): string {
 		$index = -1;
-		$html  = (string) preg_replace_callback(
-			'#<script\b([^>]*)>(.*?)</script\s*>#is',
+		$html  = self::replace_scripts(
+			$html,
 			static function ( array $matches ) use ( $path, $script_files, $inline_orders, &$index, &$dropped ): string {
 				++$index;
 				$source   = self::attribute( $matches[1], 'src' );
@@ -249,8 +251,7 @@ class Static_Site_Importer_Client_Script_Policy {
 					return '';
 				}
 				return $matches[0];
-			},
-			$html
+			}
 		);
 		return (string) preg_replace_callback(
 			'#<link\b([^>]*)/?>#is',
@@ -325,14 +326,13 @@ class Static_Site_Importer_Client_Script_Policy {
 	private static function structured_data( string $html ): array {
 		$records = array();
 		$bytes   = 0;
-		preg_match_all( '#<script\b([^>]*)>(.*?)</script\s*>#is', $html, $scripts, PREG_SET_ORDER );
-		foreach ( array_slice( $scripts, 0, 32 ) as $script ) {
-			if ( null !== self::attribute( $script[1], 'src' ) || 'application/ld+json' !== strtolower( trim( (string) self::attribute( $script[1], 'type' ) ) ) || strlen( $script[2] ) > 262144 ) {
+		foreach ( array_slice( HtmlTagScanner::scan( $html, 'script' ), 0, 32 ) as $script ) {
+			if ( null !== self::attribute( $script['attributes'], 'src' ) || 'application/ld+json' !== strtolower( trim( (string) self::attribute( $script['attributes'], 'type' ) ) ) || strlen( $script['content'] ) > 262144 ) {
 				continue;
 			}
-			$data = json_decode( $script[2], true, 24 );
+			$data = json_decode( $script['content'], true, 24 );
 			if ( is_array( $data ) ) {
-				$bytes += strlen( $script[2] );
+				$bytes += strlen( $script['content'] );
 				if ( $bytes > 262144 ) {
 					break;
 				}
@@ -346,8 +346,8 @@ class Static_Site_Importer_Client_Script_Policy {
 	}
 
 	private static function filter_html( string $html, string $path, bool $preserve, Static_Site_Importer_Client_Script_Policy_Report $report ): string {
-		$html = (string) preg_replace_callback(
-			'#<script\b([^>]*)>(.*?)</script\s*>#is',
+		$html = self::replace_scripts(
+			$html,
 			static function ( array $matches ) use ( $path, $preserve, $report ): string {
 				$attributes = $matches[1];
 				$source     = self::attribute( $attributes, 'src' );
@@ -372,8 +372,7 @@ class Static_Site_Importer_Client_Script_Policy {
 				}
 				self::record( $report, 'data' === $row['class'] ? 'quarantined' : 'dropped', $row );
 				return '';
-			},
-			$html
+			}
 		);
 		return (string) preg_replace_callback(
 			'#<link\b([^>]*)/?>#is',
@@ -609,6 +608,27 @@ class Static_Site_Importer_Client_Script_Policy {
 			',key=document.documentElement.getAttribute(\'' . Static_Site_Importer_Capture_Evidence::SELECTED_DOCUMENT . '\');overlayRoot(document.body,roots,\'body\',key);document.addEventListener(\'DOMContentLoaded\',function(){var wrapper=document.querySelector(\'[' . $document . '="\'+key+\'"]\')||document.querySelector(\'[' . $document . '="\'+',
 			'+\'"]\');if(wrapper)overlayRoot(wrapper,roots,\'body\',key);document.querySelectorAll(\'[' . $inline . ']\').forEach(function(node){var styles=JSON.parse(node.getAttribute(\'' . $inline . '\'));if(Object.prototype.hasOwnProperty.call(styles,key))node.setAttribute(\'style\',styles[key]);});});})();',
 		);
+	}
+
+	/**
+	 * Replace every `<script>` element in document order.
+	 *
+	 * Uses the Blocks Engine document scanner, so a script body of any size is
+	 * found in one linear pass and scripts are counted exactly as the compiler
+	 * counts them. The callback receives the element, its attribute text and
+	 * its body, and returns the replacement.
+	 *
+	 * @param callable(array{0:string,1:string,2:string}):string $replace
+	 */
+	private static function replace_scripts( string $html, callable $replace ): string {
+		$output = '';
+		$cursor = 0;
+		foreach ( HtmlTagScanner::scan( $html, 'script' ) as $script ) {
+			$output .= substr( $html, $cursor, $script['offset'] - $cursor );
+			$output .= $replace( array( substr( $html, $script['offset'], $script['end_offset'] - $script['offset'] ), $script['attributes'], $script['content'] ) );
+			$cursor  = $script['end_offset'];
+		}
+		return $output . substr( $html, $cursor );
 	}
 
 	private static function attribute( string $attributes, string $name ): ?string {
