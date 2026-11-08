@@ -48,25 +48,24 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		?array $existing_stylesheets = null,
 		array $artifact_provenance = array()
 	): array {
-		// Overlays carry site-root asset paths (a captured button sprite, say); publish them as theme asset URLs.
-		$provider_layout_css         = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays ), $assets );
-		$provider_editor_css         = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' ), $assets );
-		$provider_context_css        = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'context_css' ), $assets );
-		$provider_editor_context_css = self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_context_css' ), $assets );
+		// Overlays carry site-root asset paths (a captured button sprite, say);
+		// publish them as asset URLs relative to the stylesheet that serves them.
+		$provider = static fn( string $field, string $theme_base ): string => self::rewrite_css_asset_urls( self::provider_layout_overlay_css( $provider_layout_overlays, $field ), $assets, $theme_base );
 		if ( null !== $existing_stylesheets ) {
 			$writes = array();
 			foreach ( $existing_stylesheets as $path => $content ) {
 				$is_editor       = str_ends_with( $path, '/assets/css/editor-style.css' );
-				$context_css     = $is_editor ? $provider_editor_context_css : $provider_context_css;
-				$writes[ $path ] = $context_css . self::preserve_form_placeholders( $content, $provider_layout_overlays ) . $provider_layout_css . ( $is_editor ? $provider_editor_css : '' );
+				$base            = $is_editor ? '../../' : '';
+				$writes[ $path ] = $provider( $is_editor ? 'editor_context_css' : 'context_css', $base ) . self::preserve_form_placeholders( $content, $provider_layout_overlays ) . $provider( 'css', $base ) . ( $is_editor ? $provider( 'editor_css', $base ) : '' );
 			}
 			return $writes;
 		}
-		$css = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
+		$css                = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
+		$provider_layout_css = $provider( 'css', '' );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider_context_css . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $provider_editor_context_css . $css . $provider_layout_css . $provider_editor_css, $visual_repair_styles, '' !== $provider_layout_css ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider( 'context_css', '' ) . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $provider( 'editor_context_css', '../../' ) . $css . $provider( 'css', '../../' ) . $provider( 'editor_css', '../../' ), $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
 
@@ -141,17 +140,18 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * Rewrite CSS url(...) references to materialized theme asset URLs.
 	 *
 	 * @param string                            $css    Source CSS.
-	 * @param array<string,array<string,mixed>> $assets Materialized asset map.
+	 * @param array<string,array<string,mixed>> $assets     Materialized asset map; a `theme_path` entry is a theme-relative file.
+	 * @param string                            $theme_base Path from the stylesheet back to the theme root.
 	 * @return string
 	 */
-	private static function rewrite_css_asset_urls( string $css, array $assets ): string {
+	private static function rewrite_css_asset_urls( string $css, array $assets, string $theme_base = '' ): string {
 		if ( '' === trim( $css ) || empty( $assets ) || ! str_contains( $css, 'url(' ) ) {
 			return $css;
 		}
 
 		$replacements = array();
 		foreach ( $assets as $source => $asset ) {
-			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? (string) $asset['final_url'] : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? (string) $asset['url'] : '' );
+			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? (string) $asset['final_url'] : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? (string) $asset['url'] : ( isset( $asset['theme_path'] ) && is_string( $asset['theme_path'] ) && '' !== $asset['theme_path'] ? $theme_base . $asset['theme_path'] : '' ) );
 			if ( '' === $url ) {
 				continue;
 			}
