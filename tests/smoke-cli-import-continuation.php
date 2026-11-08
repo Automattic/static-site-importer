@@ -344,11 +344,17 @@ file_put_contents( $bounded_bundle_dir . '/index.html', $inline_styles . $inline
 for ( $index = 0; $index < 500; ++$index ) {
 	file_put_contents( $bounded_bundle_dir . '/asset-' . $index . '.css', 'a{}' );
 }
+// Media the compiler never opens is reserved on its own file budget, so a
+// capture whose images push the total past the 5,000 parsed-file limit fits.
+for ( $index = 0; $index < 4600; ++$index ) {
+	file_put_contents( $bounded_bundle_dir . '/photo-' . $index . '.jpg', 'x' );
+}
 $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
-$assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
+$assert( is_array( $bounded_bundle ) && 5101 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
 $assert(
 	array(
 		'max_files'              => 503,
+		'max_media_files'        => 4600,
 		'max_file_bytes'         => 10485760,
 		'max_total_bytes'        => 335544320,
 		'max_media_file_bytes'   => 104857600,

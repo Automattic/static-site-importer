@@ -517,6 +517,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	function static_site_importer_cli_request_bundle_limits(): array {
 		return array(
 			'max_files'                => 5000,
+			'max_media_files'          => 20000,
 			'max_file_bytes'           => 10485760,
 			'max_media_file_bytes'     => 104857600,
 			'max_report_file_bytes'    => 33554432,
@@ -770,6 +771,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$media_bytes     = 0;
 		$report_bytes    = 0;
 		$generated_files = array();
+		$media_files     = 0;
 		try {
 			$items = static function () use ( $walk ): Generator {
 				foreach ( $walk as list( $root, $selection ) ) {
@@ -833,7 +835,13 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				}
 				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
 				$inline_expansions = $is_html ? array_diff_key( array_flip( static_site_importer_cli_inline_expansion_keys( $absolute ) ), $generated_files ) : array();
-				if ( count( $files ) + 1 + count( $generated_files ) + count( $inline_expansions ) > $limits['max_files'] ) {
+				// Media the compiler never opens has its own file budget; the
+				// file budget bounds what it parses.
+				$media = ! $read_source && ! $report;
+				if ( $media && $media_files + 1 > $limits['max_media_files'] ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_media_file_limit_exceeded', 'Request-bundle media files exceed the 20,000-file compiler media limit.' );
+				}
+				if ( ! $media && count( $files ) - $media_files + 1 + count( $generated_files ) + count( $inline_expansions ) > $limits['max_files'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_file_limit_exceeded', 'Request-bundle source files and reserved inline expansion files exceed the 5,000-file compiler limit.' );
 				}
 				$digest = hash_file( 'sha256', $absolute );
@@ -857,6 +865,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 					$total_bytes += $bytes;
 				} else {
 					$media_bytes += $bytes;
+					++$media_files;
 				}
 				$generated_files += $inline_expansions;
 			}
@@ -870,7 +879,8 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'files'           => $files,
 			'compiler_limits' => array(
-				'max_files'              => count( $files ) + count( $generated_files ),
+				'max_files'              => count( $files ) - $media_files + count( $generated_files ),
+				'max_media_files'        => max( 1, $media_files ),
 				'max_file_bytes'         => $limits['max_file_bytes'],
 				'max_total_bytes'        => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
 				'max_media_file_bytes'   => $limits['max_media_file_bytes'],
