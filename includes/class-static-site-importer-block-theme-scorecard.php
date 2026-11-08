@@ -318,7 +318,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 		$styles   = $json['styles']['elements'] ?? array();
 		$elements = array();
 		foreach ( array( 'link', 'button', 'heading' ) as $name ) {
-			$keys             = 'heading' === $name ? array( 'heading', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ) : array( $name );
+			$keys              = 'heading' === $name ? array( 'heading', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ) : array( $name );
 			$elements[ $name ] = array(
 				'used'   => isset( $used[ $name ] ),
 				'styled' => array() !== array_filter( array_intersect_key( $styles, array_flip( $keys ) ) ),
