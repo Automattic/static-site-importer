@@ -8,15 +8,16 @@ defined( 'ABSPATH' ) || exit;
 
 final class Static_Site_Importer_Product_Presentation {
 	private const SELECTORS = array(
-		'variation' => 'select',
-		'quantity'  => 'input.qty',
-		'submit'    => '.single_add_to_cart_button',
-		'gallery'   => '.woocommerce-product-gallery',
-		'viewport'  => '.flex-viewport',
-		'image'     => '.woocommerce-product-gallery__image img',
-		'thumbs'    => '.flex-control-thumbs',
-		'thumb'     => '.flex-control-thumbs li',
-		'thumbimg'  => '.flex-control-thumbs img',
+		'variation'      => 'select',
+		'quantity'       => 'input.qty',
+		'quantity-frame' => 'form.cart .quantity',
+		'submit'         => '.single_add_to_cart_button',
+		'gallery'        => '.woocommerce-product-gallery',
+		'viewport'       => '.flex-viewport',
+		'image'          => '.woocommerce-product-gallery__image img',
+		'thumbs'         => '.flex-control-thumbs',
+		'thumb'          => '.flex-control-thumbs li',
+		'thumbimg'       => '.flex-control-thumbs img',
 	);
 
 	private const LAYOUT_SELECTORS = array(
@@ -40,7 +41,12 @@ final class Static_Site_Importer_Product_Presentation {
 		$rules    = array();
 		$purchase = array();
 		$indexes  = array();
+		$stepper  = self::quantity_stepper( $entity );
+		$buttons  = $stepper ? array_column( $stepper['members'], 'index' ) : array();
 		foreach ( $entity['controls'] ?? array() as $index => $control ) {
+			if ( $buttons && in_array( $index, array( $buttons[0], $buttons[2] ), true ) ) {
+				continue;
+			}
 			$tag  = strtolower( (string) ( $control['tag'] ?? '' ) );
 			$type = strtolower( (string) ( $control['type'] ?? '' ) );
 			$name = strtolower( (string) ( $control['name'] ?? '' ) );
@@ -65,13 +71,50 @@ final class Static_Site_Importer_Product_Presentation {
 				$rules[ $slot ] = $declarations;
 			}
 		}
-		$overlay = self::artifact( array_merge( $rules, self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes ), self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$layout  = self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes );
+		$frames  = $stepper ? array( 'quantity-frame' => self::frame_declarations( $stepper['styles'] ) ) : array();
+		$overlay = self::artifact( array_merge( $rules, $layout, $frames, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
 		if ( $wording ) {
 			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
 			$overlay['variation_wording'] = $wording;
 		}
 		return $overlay;
+	}
+
+	/** Recognise a dedicated three-control row by position, never source classes or wording. */
+	public static function quantity_stepper( array $entity ): array {
+		$controls = $entity['controls'] ?? array();
+		foreach ( $entity['presentation_graph']['control_rows'] ?? array() as $row ) {
+			if ( 'generic/computed-form-presentation/v3' !== ( $entity['presentation_graph']['schema'] ?? '' ) || ! is_array( $row['styles'] ?? null ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
+				continue;
+			}
+			$members = $row['members'] ?? array();
+			if ( 3 !== count( $members ) ) {
+				continue;
+			}
+			$indices = array_column( $members, 'index' );
+			if ( 3 !== count( $indices ) || ! is_int( $indices[1] ) || array( $indices[1] - 1, $indices[1], $indices[1] + 1 ) !== $indices ) {
+				continue;
+			}
+			list( $before, $quantity, $after ) = array_map( static fn( $index ) => $controls[ $index ] ?? array(), $indices );
+			if ( 'input' === ( $quantity['tag'] ?? '' ) && 'number' === ( $quantity['type'] ?? '' ) && 'button' === ( $before['tag'] ?? '' ) && 'button' === ( $after['tag'] ?? '' ) && 'submit' !== ( $before['type'] ?? '' ) && 'submit' !== ( $after['type'] ?? '' ) ) {
+				return $row;
+			}
+		}
+		return array();
+	}
+
+	/** Container paint is distinct from input paint; do not guess absent chrome. */
+	private static function frame_declarations( array $styles ): string {
+		$frame = array();
+		foreach ( $styles as $property => $value ) {
+			$property = str_replace( '-', '_', $property );
+			if ( in_array( $property, array( 'width', 'height', 'box_sizing', 'background', 'background_color' ), true ) || str_starts_with( $property, 'border' ) ) {
+				$frame[ $property ] = $value;
+			}
+		}
+		return self::declarations( $frame );
 	}
 
 	/** One deterministic scope and stylesheet artifact for all captured product rules. */
@@ -334,7 +377,15 @@ final class Static_Site_Importer_Product_Presentation {
 					}
 					$box[ $dimension ] = self::length( is_numeric( $value ) ? $value . 'px' : $value );
 				}
-				if ( str_ends_with( $box['width'], 'px' ) && str_ends_with( $box['height'], 'px' ) ) {
+				$ratio = self::aspect_ratio( $css['aspect-ratio'] ?? $block['attrs']['style']['dimensions']['aspectRatio'] ?? '' );
+				$fit   = $css['object-fit'] ?? $block['attrs']['style']['dimensions']['objectFit'] ?? '';
+				if ( $ratio ) {
+					$box['aspectRatio'] = $ratio;
+				}
+				if ( in_array( $fit, array( 'cover', 'contain' ), true ) ) {
+					$box['objectFit'] = $fit;
+				}
+				if ( $ratio || ( str_ends_with( $box['width'], 'px' ) && str_ends_with( $box['height'], 'px' ) ) ) {
 					$boxes[] = $box;
 				}
 			}
@@ -451,15 +502,19 @@ final class Static_Site_Importer_Product_Presentation {
 				'object-fit' => 'contain',
 			),
 		);
-		if ( ! $height && $ratio ) {
-			$styles['viewport']            = array(
+		if ( $ratio ) {
+			$styles['viewport']              = array(
 				'width'        => $side ? 'auto' : '100%',
 				'flex'         => $side ? '1 1 0' : '0 0 auto',
 				'min-width'    => '0',
 				'aspect-ratio' => $ratio,
 			);
-			$styles['image']['height']     = '100%';
-			$styles['image']['object-fit'] = 'cover';
+			$styles['image']['height']       = '100%';
+			$styles['image']['aspect-ratio'] = $ratio;
+			$styles['image']['object-fit']   = 'cover';
+		}
+		if ( in_array( $gallery['main']['objectFit'] ?? '', array( 'cover', 'contain' ), true ) ) {
+			$styles['image']['object-fit'] = $gallery['main']['objectFit'];
 		}
 		$thumb_w = self::length( $gallery['thumbnail']['width'] ?? '' );
 		$thumb_h = self::length( $gallery['thumbnail']['height'] ?? '' );
@@ -587,6 +642,7 @@ final class Static_Site_Importer_Product_Presentation {
 		$controls = array();
 		$gallery  = array();
 		$layout   = array();
+		$frames   = array();
 		foreach ( $overlay['rules'] as $slot => $css ) {
 			list( $base_slot, $media ) = array_pad( explode( '@', $slot, 2 ), 2, '' );
 			if ( '' !== $media && ( ! in_array( $base_slot, array( 'layout:purchase-row', 'layout:simple-row' ), true ) || '' === self::media_query(
@@ -599,7 +655,7 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
 			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $base_slot, 7 ) ] );
-			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|submit)$/D', $slot ) ) ) {
+			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit)$/D', $slot ) ) ) {
 				return null;
 			}
 			$styles = array();
@@ -612,6 +668,10 @@ final class Static_Site_Importer_Product_Presentation {
 					return null;
 				}
 				$styles[ $pair[0] ] = substr( $pair[1], 0, -11 );
+			}
+			if ( 'quantity-frame' === $slot ) {
+				$frames[ $slot ] = self::frame_declarations( $styles );
+				continue;
 			}
 			if ( $is_layout ) {
 				$layout[ $slot ] = self::layout_declarations( $styles );
@@ -629,7 +689,7 @@ final class Static_Site_Importer_Product_Presentation {
 		}
 		$expected = self::capture( array( 'controls' => $controls ) );
 		$rules    = array_filter( $expected['rules'] ?? array(), static fn( $slot ) => ! str_starts_with( $slot, 'layout:' ), ARRAY_FILTER_USE_KEY );
-		$expected = self::artifact( array_merge( $rules, $layout, $gallery ) );
+		$expected = self::artifact( array_merge( $rules, $layout, $frames, $gallery ) );
 		if ( array_key_exists( 'variation_wording', $overlay ) ) {
 			$wording = self::validate_wording( $overlay['variation_wording'] );
 			if ( ! $wording ) {

@@ -77,7 +77,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			if ( $id > 0 && function_exists( 'update_post_meta' ) ) {
 				update_post_meta( $id, '_static_site_importer_variation_wording', $capture['variation_wording'] ?? array() );
 			}
-			$attrs = empty( $capture ) ? '' : ' ' . json_encode( array( 'className' => $capture['className'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone binding contract.
+			$attributes = empty( $capture ) ? array() : array( 'className' => $capture['className'] );
+			if ( Static_Site_Importer_Product_Presentation::quantity_stepper( $entity ) ) {
+				$attributes['quantitySelectorStyle'] = 'stepper';
+			}
+			$attrs = $attributes ? ' ' . json_encode( $attributes ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone binding contract.
 			return $id > 0 ? '<!-- wp:woocommerce/single-product {"productId":' . $id . '} --><div class="wp-block-woocommerce-single-product"><!-- wp:woocommerce/add-to-cart-form' . $attrs . ' /--></div><!-- /wp:woocommerce/single-product -->' : '';
 		}
 		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->' : '';
