@@ -60,7 +60,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			}
 			return $writes;
 		}
-		$css                = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
+		$css                 = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
 		$provider_layout_css = $provider( 'css', '' );
 
 		return array(
