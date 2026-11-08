@@ -40,9 +40,10 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Project only presentation, never source selectors or purchase behavior. */
 	public static function capture( array $entity ): array {
-		$rules    = array();
-		$layers   = array();
-		$purchase = array();
+		$rules       = array();
+		$layers      = array();
+		$conditional = array();
+		$purchase    = array();
 		$indexes  = array();
 		$stepper  = self::quantity_stepper( $entity );
 		$buttons  = $stepper ? array_column( $stepper['members'], 'index' ) : array();
@@ -80,16 +81,17 @@ final class Static_Site_Importer_Product_Presentation {
 			$purchase[ $role ] = $styles;
 			$indexes[ $role ]  = $index;
 			$declarations      = self::declarations( $styles );
+			// Each variation may have its own captured design; do not flatten
+			// several source selects onto the last control's presentation.
+			$slot = 'variation' === $role ? $role . ':' . count( array_filter( array_keys( $rules ), static fn( $key ) => str_starts_with( $key, 'variation:' ) ) ) : $role;
 			if ( $declarations ) {
-				// Each variation may have its own captured design; do not flatten
-				// several source selects onto the last control's presentation.
-				$slot           = 'variation' === $role ? $role . ':' . count( array_filter( array_keys( $rules ), static fn( $key ) => str_starts_with( $key, 'variation:' ) ) ) : $role;
 				$rules[ $slot ] = $declarations;
+				$conditional    = array_merge( $conditional, self::conditional_rules( $entity['presentation_graph']['variants'] ?? array(), $index, $slot, isset( $layers['submit-layer'] ) && 'submit' === $role ) );
 			}
 		}
 		$layout  = self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes );
 		$frames  = $stepper ? array( 'quantity-frame' => self::frame_declarations( $stepper['styles'] ) ) : array();
-		$overlay = self::artifact( array_merge( $rules, $layout, $frames, $layers, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
+		$overlay = self::artifact( array_merge( $rules, $layout, $frames, $layers, $conditional, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
 		if ( $wording ) {
 			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
@@ -166,6 +168,35 @@ final class Static_Site_Importer_Product_Presentation {
 		}
 		list( $top, $right, $bottom, $left ) = array( $sides[0], $sides[1] ?? $sides[0], $sides[2] ?? $sides[0], $sides[3] ?? $sides[1] ?? $sides[0] );
 		return array( $top, $right, $bottom, $left );
+	}
+
+	/**
+	 * A breakpoint that repaints a control, or the caption layer it draws,
+	 * restates that paint inside the same media query after the base rules.
+	 *
+	 * @param array<mixed> $variants Presentation graph variants.
+	 * @return array<string,string> Slot@query => declarations.
+	 */
+	private static function conditional_rules( array $variants, int $index, string $slot, bool $layer ): array {
+		$rules = array();
+		foreach ( $variants as $variant ) {
+			$role  = $variant['role'] ?? '';
+			$query = self::media_query( $variant['condition'] ?? null );
+			if ( ( $variant['index'] ?? null ) !== $index || '' === $query || ! is_array( $variant['style_patch'] ?? null ) || ! ( 'control' === $role || ( 'caption' === $role && $layer ) ) ) {
+				continue;
+			}
+			$styles       = self::resolve_urls( $variant['style_patch'], is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+			$declarations = 'caption' === $role ? self::layer_paint( $styles ) : self::declarations( $styles );
+			if ( '' !== $declarations ) {
+				$rules[ ( 'caption' === $role ? 'submit-layer' : $slot ) . '@' . $query ] = $declarations;
+			}
+		}
+		return $rules;
+	}
+
+	/** Only paint changes under a condition; the base rule owns the layer box. */
+	private static function layer_paint( array $styles ): string {
+		return self::declarations( array_intersect_key( $styles, array_flip( array( 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'border_radius' ) ) ) );
 	}
 
 	/** The button stacks its caption layer behind its own text. */
@@ -781,7 +812,8 @@ final class Static_Site_Importer_Product_Presentation {
 		$frames   = array();
 		foreach ( $overlay['rules'] as $slot => $css ) {
 			list( $base_slot, $media ) = array_pad( explode( '@', $slot, 2 ), 2, '' );
-			if ( '' !== $media && ( ! in_array( $base_slot, array( 'layout:purchase-row', 'layout:simple-row' ), true ) || '' === self::media_query(
+			$is_conditional            = '' !== $media && 1 === preg_match( '/^(?:variation:\d+|quantity|submit|submit-layer)$/D', $base_slot );
+			if ( '' !== $media && ( ! ( $is_conditional || in_array( $base_slot, array( 'layout:purchase-row', 'layout:simple-row' ), true ) ) || '' === self::media_query(
 				array(
 					'kind'  => 'media',
 					'query' => $media,
@@ -791,7 +823,7 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
 			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $base_slot, 7 ) ] );
-			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit|submit-host|submit-layer)$/D', $slot ) ) ) {
+			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! $is_conditional && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit|submit-host|submit-layer)$/D', $slot ) ) ) {
 				return null;
 			}
 			$styles = array();
@@ -804,6 +836,11 @@ final class Static_Site_Importer_Product_Presentation {
 					return null;
 				}
 				$styles[ $pair[0] ] = substr( $pair[1], 0, -11 );
+			}
+			if ( $is_conditional ) {
+				$styles          = array_combine( array_map( static fn( $key ) => str_replace( '-', '_', $key ), array_keys( $styles ) ), $styles );
+				$frames[ $slot ] = 'submit-layer' === $base_slot ? self::layer_paint( $styles ) : self::declarations( $styles );
+				continue;
 			}
 			if ( 'quantity-frame' === $slot ) {
 				$frames[ $slot ] = self::frame_declarations( $styles );
