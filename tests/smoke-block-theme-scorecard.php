@@ -34,6 +34,18 @@ try {
 	scorecard_assert( filesize( $root . '/good/style.css' ) === $good['checks']['proportionate_assets']['measured']['theme_css_bytes'], 'CSS bytes' );
 	$multi_route = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', array_merge( $routes, array( array( 'route' => '/nested', 'post_content' => '<!-- wp:group --><div><!-- wp:paragraph --><p>Nested</p><!-- /wp:paragraph --></div><!-- /wp:group -->' ) ) ), $context );
 	scorecard_assert( 2 === $multi_route['checks']['content_quality']['measured']['totals']['max_nesting_depth'], 'Total nesting depth is the maximum across routes, not the sum' );
+	// Element styles are expected for the elements the content renders, and
+	// per-level heading styles style headings. Block styles are not required.
+	$levels = $root . '/levels'; mkdir( $levels . '/templates', 0777, true ); mkdir( $levels . '/parts' );
+	foreach ( array( 'templates/index.html', 'parts/header.html', 'parts/footer.html' ) as $file ) { copy( $root . '/good/' . $file, $levels . '/' . $file ); }
+	file_put_contents( $levels . '/theme.json', json_encode( array( 'version' => 3, 'styles' => array( 'elements' => array( 'h2' => array( 'typography' => array( 'fontWeight' => '400' ) ) ) ) ) ) );
+	$heading = '<!-- wp:heading --><h2 class="wp-block-heading">Title</h2><!-- /wp:heading -->';
+	$link    = '<!-- wp:paragraph --><p>Read <a href="/more">more</a></p><!-- /wp:paragraph -->';
+	$button  = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="/go">Go</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+	foreach ( array( array( $heading, array() ), array( $heading . $link . $button, array( 'link', 'button' ) ) ) as list( $content, $unstyled ) ) {
+		$theme_json = Static_Site_Importer_Block_Theme_Scorecard::measure( $levels, array( array( 'route' => '/', 'post_content' => $content ) ), $context )['checks']['theme_json'];
+		scorecard_assert( $unstyled === $theme_json['measured']['unstyled_used'] && ( array() === $unstyled ? 'pass' : 'fail' ) === $theme_json['status'] && 0 === $theme_json['measured']['block_style_count'], 'theme_json expects styles for rendered elements: ' . json_encode( $unstyled ) );
+	}
 	file_put_contents( $root . '/bad/parts/footer-unused.html', $footer );
 	$repeated = '<!-- wp:group --><div><!-- wp:paragraph --><p>Sidebar</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
 	for ( $i = 1; $i <= 3; ++$i ) { file_put_contents( $root . '/bad/templates/page-' . $i . '.html', $template . $repeated . '<!-- wp:heading {"anchor":"id-' . $i . '"} --><h2>Page ' . $i . '</h2><!-- /wp:heading -->' ); }
