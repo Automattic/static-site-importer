@@ -53,7 +53,6 @@
     "static_site_importer_jetpack_lifecycle_missing": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_jetpack_activation_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "existing_theme_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
-    "media_library_resolution_failed": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new ErrorException()": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-artifact-run.php#throw new RuntimeException('Artifact workspace could not be created.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "image_resource_unresolved": { "class": "integrity", "owning_layer": "static-site-importer" },
