@@ -460,7 +460,7 @@ homeboy workflow run "$PWD/tools/import-loop/loop.json" \
   --input cook_model=<model> \
   [--input cook_placement=auto] [--input wp_cli='studio wp'] \
   [--notification-transport <transport> --notification-route <route>]
-homeboy workflow status <instance>
+homeboy runs show <instance>
 homeboy workflow approve <instance> approve_merge
 ```
 
