@@ -46,7 +46,8 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				$name = 'core/post-content';
 				break;
 			case 'image':
-				$name = 'woocommerce/product-image-gallery';
+				$name = $loop ? 'woocommerce/product-image' : 'woocommerce/product-image-gallery';
+				$own  = $loop ? self::loop_image_attrs( $node ) : array();
 				break;
 			case 'breadcrumb':
 				$name = 'woocommerce/breadcrumbs';
@@ -55,7 +56,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				return null;
 		}
 		$attrs = self::presentation_attrs( $node['attrs'] ?? array(), $own );
-		if ( 'image' === $role ) {
+		if ( 'image' === $role && ! $loop ) {
 			if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) ) {
 				$source  = $node['attrs'] ?? array();
 				$classes = preg_split( '/\s+/', trim( ( $attrs['className'] ?? '' ) . ' ' . ( $source['sourcePresentationClasses'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
@@ -74,6 +75,31 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 		}
 		return self::dynamic_block( $name, $attrs );
+	}
+
+	/** Keep the source card crop on WooCommerce's linked loop image. */
+	private static function loop_image_attrs( array $node ): array {
+		$source = $node['attrs'] ?? array();
+		$attrs  = array_merge(
+			array(
+				'isDescendentOfQueryLoop' => true,
+				'isLink'                  => true,
+			),
+			array_intersect_key( $source, array_flip( array( 'aspectRatio', 'scale' ) ) )
+		);
+		// Native image attributes normally carry the compiled crop. Also admit
+		// inline evidence from the image or linked wrapper before it is removed.
+		$tags = new WP_HTML_Tag_Processor( $node['innerHTML'] ?? '' );
+		while ( $tags->next_tag() ) {
+			$style = (string) $tags->get_attribute( 'style' );
+			if ( ! isset( $source['aspectRatio'] ) && preg_match( '/(?:^|;)\s*aspect-ratio\s*:\s*(\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?)\s*(?:;|$)/i', $style, $match ) ) {
+				$attrs['aspectRatio'] = $match[1];
+			}
+			if ( ! isset( $source['scale'] ) && preg_match( '/(?:^|;)\s*object-fit\s*:\s*(cover|contain)\s*(?:;|$)/i', $style, $match ) ) {
+				$attrs['scale'] = strtolower( $match[1] );
+			}
+		}
+		return $attrs;
 	}
 
 	/** Capture wording before the source purchase subtree is replaced. */

@@ -253,6 +253,38 @@ $mixed_card              = parse_blocks( Static_Site_Importer_Woo_Product_Grid_M
 $assert( Static_Site_Importer_Product_Grid_Runtime::render_slot( $dynamic_alpha, $mixed_card ) === $dynamic_beta, 'styled card pooled from a listing whose template card differs' );
 $price_method = method_exists( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) ? new ReflectionMethod( Static_Site_Importer_Product_Grid_Runtime::class, 'replace_price_figure' ) : null;
 $assert( null !== $price_method && '2.345,75 €' === $price_method->invoke( null, '1.234,50 €', '1234.50', '2345.75' ), 'decimal comma and trailing currency preserved' );
+// Exercise the public collection binding, not just the field mapper.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+foreach ( array( 'wrapper', 'image', 'native' ) as $crop_source ) {
+	$image_attrs = 'native' === $crop_source ? ' {"className":"card-photo","aspectRatio":"1.3/1","scale":"cover"}' : ' {"className":"card-photo"}';
+	$ratio_style = 'image' === $crop_source ? 'aspect-ratio:1.3/1;' : '';
+	$link_style  = 'wrapper' === $crop_source ? ' style="aspect-ratio:1.3/1;overflow:hidden"' : '';
+	$image       = '<!-- wp:image' . $image_attrs . ' --><figure><a class="card-image-link"' . $link_style . '><img class="card-photo" src="/portrait.jpg" width="780" height="975" style="' . $ratio_style . 'width:100%;height:100%;object-fit:cover"></a></figure><!-- /wp:image -->';
+	$card        = '<!-- wp:group --><article>' . $image . '<!-- wp:heading {"level":3} --><h3>Alpha</h3><!-- /wp:heading --><!-- wp:paragraph --><p>39 €</p><!-- /wp:paragraph --></article><!-- /wp:group -->';
+	$grid        = array(
+		'source_path'   => 'index.html',
+		'selector'      => '.cards',
+		'bindings'      => array( array( 'search_block_markup' => '<!-- wp:group --><div class="cards" style="display:grid">' . $card . '</div><!-- /wp:group -->' ) ),
+		'items'         => array_map( static fn( string $slug ): array => array( 'product' => $slug ), array( 'alpha', 'beta', 'gamma', 'delta' ) ),
+		'item_template' => array(
+			'block_markup' => $card,
+			'slots'        => array(
+				array( 'id' => 'image', 'role' => 'image', 'path' => array( 0 ) ),
+				array( 'id' => 'name', 'role' => 'name', 'path' => array( 1 ) ),
+				array( 'id' => 'price', 'role' => 'price', 'path' => array( 2 ) ),
+			),
+		),
+	);
+	$output      = Static_Site_Importer_Woo_Product_Grid_Materializer::binding_block_markup( $grid, array( 'status' => 'mapped' ) );
+	$loop_image  = parse_blocks( $output )[0]['innerBlocks'][0]['innerBlocks'][0]['innerBlocks'][0]['innerBlocks'][0] ?? array();
+	$assert( 'woocommerce/product-image' === ( $loop_image['blockName'] ?? '' ), $crop_source . ': collection card uses loop image' );
+	$attrs = $loop_image['attrs'] ?? array();
+	$assert( '1.3/1' === ( $attrs['aspectRatio'] ?? '' ) && 'cover' === ( $attrs['scale'] ?? '' ), $crop_source . ': source crop survives portrait replacement' );
+	$assert( true === ( $attrs['isLink'] ?? false ) && true === ( $attrs['isDescendentOfQueryLoop'] ?? false ) && 'card-photo' === ( $attrs['className'] ?? '' ), $crop_source . ': linked image retains class and loop context' );
+	$assert( ! str_contains( $output, 'product-image-gallery' ) && ! str_contains( $output, 'woocommerce-product-gallery__trigger' ), $crop_source . ': no single-product gallery or zoom trigger' );
+	$single = Static_Site_Importer_Product_Field_Blocks::field( parse_blocks( $image )[0], 'image' );
+	$assert( 'woocommerce/product-image-gallery' === $single['blockName'], 'single-product gallery mapping unchanged' );
+}
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
