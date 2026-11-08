@@ -22,6 +22,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
+// A site title's underscores and accents still yield a valid companion slug (#BGM).
+foreach ( array( 'BoardgameMonkeys_Brettspielrezensionen' => 'ssi-boardgamemonkeys-brettspielrezensionen', 'Café Crème' => 'ssi-cafe-creme' ) as $site_slug => $expected ) {
+	$valid = Static_Site_Importer_Companion_Plugin::validate_payload( array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => $site_slug, 'blocks' => array() ) );
+	$slug  = Static_Site_Importer_Companion_Plugin::plugin_slug( array( 'site_slug' => $site_slug ) );
+	if ( true !== $valid || $expected !== $slug ) {
+		fwrite( STDERR, sprintf( "FAIL: site_slug %s => %s (%s)\n", $site_slug, $slug, is_wp_error( $valid ) ? $valid->get_error_code() : 'valid' ) );
+		exit( 1 );
+	}
+}
 $method = new ReflectionMethod( Static_Site_Importer_Companion_Plugin::class, 'editable_content_renderer' );
 $method->setAccessible( true );
 $renderer = $method->invoke( null );

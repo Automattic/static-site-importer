@@ -1883,11 +1883,11 @@ PHP;
 			return '';
 		}
 
-		if ( function_exists( 'sanitize_title' ) ) {
-			$sanitized = sanitize_title( $value );
-			if ( '' !== $sanitized ) {
-				return $sanitized;
-			}
+		// sanitize_title() transliterates accents but keeps underscores (and
+		// percent-encodes the rest), so its result still needs the identifier
+		// alphabet the companion plugin's PHP names and file paths require.
+		if ( function_exists( 'sanitize_title' ) && '' !== sanitize_title( $value ) ) {
+			$value = sanitize_title( $value );
 		}
 
 		$value = strtolower( $value );
