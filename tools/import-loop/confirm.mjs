@@ -12,11 +12,15 @@
 // import is their check.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
-// Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}], confirm_path}
+// Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
+//          merge:[{github, number, sha}], merge_count, confirm_path}
+// `merge` is what approval merges, each at the head checked here: every PR not
+// refuted. A confirmed draft (an incomplete Cook that a later pass finished) is
+// marked ready, since confirm just proved it; an unconfirmed draft waits.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, collateralAtHead, linkedPullRequests } from './lib.mjs';
+import { args, cellsAtHead, collateralAtHead, gh, linkedPullRequests } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
@@ -31,7 +35,7 @@ process.env.PREDICATE_CAPTURE = triage.reimport.capture;
 const verdicts = new Map();
 for (const item of triage.tracked) {
   for (const pr of linkedPullRequests(item.issue_url)) {
-    const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, failing: [], reasons: [] };
+    const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [] };
     verdicts.set(pr.url, verdict);
     const root = repos[item.repo]?.predicate_root;
     if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
@@ -53,9 +57,11 @@ const entries = [...verdicts];
 const refuted = entries.filter(([, v]) => v.failing.length).map(([pr, v]) => ({ pr, head: v.head, cells: v.failing }));
 const unconfirmed = entries.filter(([, v]) => !v.failing.length && v.reasons.length).map(([pr, v]) => ({ pr, head: v.head, reason: [...new Set(v.reasons)].join("; ") }));
 const confirmed = entries.filter(([, v]) => !v.failing.length && !v.reasons.length).map(([pr, v]) => ({ pr, head: v.head }));
+for (const [pr, v] of entries.filter(([, v]) => v.draft && !v.failing.length && !v.reasons.length)) { gh('pr', 'ready', pr); v.draft = false; }
+const merge = entries.filter(([, v]) => !v.failing.length && !v.draft).map(([, v]) => ({ github: v.github, number: v.number, sha: v.head }));
 
 fs.mkdirSync(args.work, { recursive: true });
 const confirm_path = path.join(args.work, 'confirm.json');
-const output = { confirmed, refuted, unconfirmed, confirmed_count: confirmed.length, refuted_count: refuted.length, confirm_path };
+const output = { confirmed, refuted, unconfirmed, confirmed_count: confirmed.length, refuted_count: refuted.length, merge, merge_count: merge.length, confirm_path };
 fs.writeFileSync(confirm_path, JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));

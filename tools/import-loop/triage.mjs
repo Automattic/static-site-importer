@@ -2,7 +2,7 @@
 // Loop step: turn one pass's blocker findings into tracked issues and Cook work.
 //
 // Usage: node triage.mjs --findings <findings.json> --source <kept source dir>
-//          --blocks-engine <clone> --work <dir> --iteration N [--prev <sig,sig>] [--prev-merged N] [--dry-run 1]
+//          --blocks-engine <clone> --work <dir> --iteration N [--dry-run 1]
 //
 // For each blocker finding, in order:
 //   1. An issue whose body carries the signature tracks it (open), or records
@@ -17,8 +17,8 @@
 // tracked finding with a predicate lists its acceptance cells: the full
 // captured page of each route/width it was seen in, which confirm.mjs re-checks
 // on each fix's head.
-// The pass continues the chain only when it can make progress: something is
-// tracked, and the blocker set changed or the previous pass merged a fix.
+// The chain continues while something is tracked; Homeboy's next_pass stops it
+// when evaluate's blocker signatures repeat for three passes.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -291,40 +291,27 @@ for (const item of tracked) {
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
-    // A refuted PR is reworked through its PR URL on its own branch: Cook
-    // refuses an issue URL whose destination already holds PR work. A fresh
-    // attempt gets a branch of its own per pass, because a derived branch may
-    // still hold an earlier pass's work (closed draft, merged PR). The name
-    // keeps `issue-N-`, which links it back to the issue.
-    const [task_url, head] = item.refuted
-      ? [pr.url, pr.headRefName]
-      : [item.issue_url, `fix/issue-${item.issue_url.split('/').pop()}-${item.repo}-p${args.iteration}`];
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url, head, prompt: `@${prompt}`, ...gate });
+    // Cook resolves the issue itself: it reworks the one open linked PR on
+    // its branch, or starts a fresh branch derived from the issue.
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...gate });
   }
 }
 
-const signatures = blockers.map((f) => f.signature).sort().join(',');
-// A pass that ends with the same blockers and nothing merged extends the
-// streak; after STALL_PASSES such passes in a row the loop stops.
-const STALL_PASSES = 3;
-const streak = Number(args.iteration) > 1 && signatures === (args.prev || '') && Number(args['prev-merged'] || 0) === 0 ? Number(args.streak || 0) + 1 : 0;
-const stalled = streak >= STALL_PASSES;
 const output = {
   iteration: Number(args.iteration),
   site: result.site,
   reimport,
   routes: result.routes,
   blocker_count: blockers.length,
-  signatures,
   tracked,
   untracked,
   tracked_count: tracked.length,
-  cook_items: stalled ? [] : cook_items,
-  cook_count: stalled ? 0 : cook_items.length,
-  streak,
-  stalled,
-  ...(blockers.length && tracked.length && !stalled ? { continue: true, next_iteration: Number(args.iteration) + 1 } : {}),
+  cook_items,
+  cook_count: cook_items.length,
+  // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
+  // stops the chain when evaluate's blocker signatures repeat.
+  continue: blockers.length > 0 && tracked.length > 0,
 };
 fs.writeFileSync(path.join(args.work, 'triage.json'), JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
-log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} stalled=${stalled}`);
+log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length}`);

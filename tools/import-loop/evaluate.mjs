@@ -5,7 +5,8 @@
 //          --site <site path> --source <kept source dir> --out <dir>
 //
 // Writes <out>/findings.json and, when $HOMEBOY_STEP_OUTPUT is set, the step
-// output {verdict, finding_count, blocker_count, findings_path}.
+// output {verdict, finding_count, blocker_count, blocker_signatures, findings_path}.
+// blocker_signatures is the pass's progress key: the chain stops when it repeats.
 // A finding is {signature, severity, stage, check, owner_repo, subject, evidence, occurrences[]};
 // the signature hashes everything except route and width so one defect seen on
 // several routes or widths is one finding. Materialization and editability
@@ -265,6 +266,6 @@ const result = {
 };
 const findingsPath = path.join(args.out, 'findings.json');
 fs.writeFileSync(findingsPath, JSON.stringify(result, null, 2));
-const output = { verdict: result.verdict, finding_count: list.length, blocker_count: list.filter((f) => f.severity === 'blocker').length, findings_path: findingsPath };
+const output = { verdict: result.verdict, finding_count: list.length, blocker_count: list.filter((f) => f.severity === 'blocker').length, blocker_signatures: list.filter((f) => f.severity === 'blocker').map((f) => f.signature), findings_path: findingsPath };
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
 for (const f of list) console.error(`${f.signature} ${f.severity} ${f.stage}/${f.check} ${f.owner_repo} ${f.subject} x${f.occurrences.length}`);

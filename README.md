@@ -443,12 +443,10 @@ status.
 4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
 5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
 6. **approve_merge** waits for a human: `homeboy workflow approve <instance> approve_merge`, or `reject`. With `--notification-transport`/`--notification-route`, the prompt is posted there.
-7. **merge** (`merge.mjs`) squash-merges, at its confirmed head, each approved PR that is green, non-draft and not refuted.
+7. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
 8. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
-9. **again** starts the next pass after a merge; **retry** starts it when the pass merged nothing. The chain stops when:
-   - the source is accepted;
-   - no blocker is tracked;
-   - or three passes in a row see the same blockers without a merge.
+
+Homeboy's `next_pass` starts the next pass. The chain stops when the source is accepted, when no blocker is tracked, when three passes in a row see the same blockers, or after 60 passes. Cook and merge items may fail without ending the chain (`"join": {"min_succeeded": 0}`): the next pass sees the same findings and tries again.
 
 Run it from this repository's root (the host needs `studio`, an authenticated `gh`, PHP, Node, and this repository's `npm ci` with Playwright Chromium):
 

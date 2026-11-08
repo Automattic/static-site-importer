@@ -4,7 +4,7 @@
 // Blocks Engine fix ships when the latest Static Site Importer release locks a
 // transformer commit that contains it.
 //
-// Usage: node shipped.mjs --merged '<json array from merge.mjs>' [--poll-seconds 300]
+// Usage: node shipped.mjs --merge '<the merge step's items>' [--poll-seconds 300]
 // Output: {shipped:[{pr, release}]}. Exits non-zero only on timeout (the step's).
 
 import { execFileSync } from 'node:child_process';
@@ -14,9 +14,13 @@ import path from 'node:path';
 const here = path.dirname(new URL(import.meta.url).pathname);
 const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
-const merged = JSON.parse(args.merged || '[]');
-const poll = Number(args['poll-seconds'] || 300) * 1000;
 const gh = (...argv) => execFileSync('gh', argv, { encoding: 'utf8', maxBuffer: 64 << 20 });
+// Each merged item names its pull request; its merge commit is what ships.
+const merged = JSON.parse(args.merge || '[]').filter((m) => m.outcome === 'succeeded').map(({ item }) => {
+  const pr = JSON.parse(gh('pr', 'view', String(item.number), '-R', item.github, '--json', 'url,mergeCommit'));
+  return { repo: Object.keys(repos).find((id) => repos[id].github === item.github), github: item.github, pr: pr.url, sha: pr.mergeCommit.oid };
+});
+const poll = Number(args['poll-seconds'] || 300) * 1000;
 
 const contains = (github, ref, sha) => {
   try { return ['ahead', 'identical'].includes(JSON.parse(gh('api', `repos/${github}/compare/${sha}...${ref}`)).status); } catch { return false; }

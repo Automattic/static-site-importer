@@ -5,15 +5,6 @@
     "url": {
       "required": true
     },
-    "iteration": {
-      "default": "1"
-    },
-    "prev": {
-      "default": ""
-    },
-    "prev_merged": {
-      "default": "0"
-    },
     "loop_dir": {
       "required": true
     },
@@ -28,9 +19,6 @@
     },
     "wp_cli": {
       "default": "studio wp"
-    },
-    "streak": {
-      "default": "0"
     },
     "cook_model": {
       "required": true
@@ -123,14 +111,8 @@
           "{{inputs.blocks_engine}}",
           "--iteration",
           "{{inputs.iteration}}",
-          "--prev",
-          "{{inputs.prev}}",
-          "--prev-merged",
-          "{{inputs.prev_merged}}",
           "--wp-cli",
-          "{{inputs.wp_cli}}",
-          "--streak",
-          "{{inputs.streak}}"
+          "{{inputs.wp_cli}}"
         ]
       }
     },
@@ -147,10 +129,12 @@
       },
       "foreach": "{{steps.triage.output/cook_items}}",
       "max_parallel": 3,
-      "join": "any",
+      "join": {
+        "min_succeeded": 0
+      },
       "cook": {
         "repo": "{{item.repo}}",
-        "task-url": "{{item.task_url}}",
+        "task-url": "{{item.issue_url}}",
         "prompt": "{{item.prompt}}",
         "verify": "{{item.verify}}",
         "placement": "{{inputs.cook_placement}}",
@@ -159,8 +143,7 @@
         "gate-env": "{{item.gate_env}}",
         "provider-evidence": "{{item.provider_evidence}}",
         "publish-incomplete-draft": true,
-        "timeout-ms": 2400000,
-        "head": "{{item.head}}"
+        "timeout-ms": 2400000
       }
     },
     {
@@ -174,7 +157,7 @@
       "when": {
         "step": "triage",
         "output": "/continue",
-        "exists": true
+        "equals": true
       },
       "exec": {
         "program": "node",
@@ -203,17 +186,17 @@
           {
             "step": "triage",
             "output": "/continue",
-            "exists": true
+            "equals": true
           },
           {
             "step": "confirm",
-            "output": "/confirmed_count",
+            "output": "/merge_count",
             "gt": 0
           }
         ]
       },
       "approval": {
-        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges the green, non-draft, mergeable PRs that were not refuted, at the head confirm checked."
+        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges each PR in confirm's merge list (not refuted, non-draft) at the head confirm checked, once its checks are green; a PR whose checks fail, conflicts or moves holds until the next pass."
       }
     },
     {
@@ -221,24 +204,30 @@
       "needs": [
         "approve_merge"
       ],
-      "timeout": "15m",
-      "exec": {
-        "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
-        "args": [
-          "merge.mjs",
-          "--triage",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json",
-          "--confirm",
-          "{{steps.confirm.output/confirm_path}}"
-        ]
-      },
       "always": true,
       "when": {
         "step": "approve_merge",
         "output": "/decision",
         "equals": "approved"
-      }
+      },
+      "foreach": "{{steps.confirm.output/merge}}",
+      "join": {
+        "min_succeeded": 0
+      },
+      "timeout": "65m",
+      "homeboy": [
+        "git",
+        "pr",
+        "merge-when-green",
+        "--repo",
+        "{{item.github}}",
+        "--number",
+        "{{item.number}}",
+        "--sha",
+        "{{item.sha}}",
+        "--wait-seconds",
+        "3600"
+      ]
     },
     {
       "id": "shipped",
@@ -248,7 +237,7 @@
       "timeout": "24h",
       "when": {
         "step": "merge",
-        "output": "/merged_count",
+        "output": "/succeeded",
         "gt": 0
       },
       "exec": {
@@ -256,114 +245,24 @@
         "cwd": "{{inputs.loop_dir}}",
         "args": [
           "shipped.mjs",
-          "--merged",
-          "{{steps.merge.output/merged}}"
+          "--merge",
+          "{{steps.merge.output/items}}"
         ]
       },
       "always": true
-    },
-    {
-      "id": "again",
-      "needs": [
-        "shipped"
-      ],
-      "when": {
-        "all": [
-          {
-            "step": "merge",
-            "output": "/merged_count",
-            "gt": 0
-          },
-          {
-            "step": "triage",
-            "output": "/continue",
-            "exists": true
-          }
-        ]
-      },
-      "homeboy": [
-        "workflow",
-        "run",
-        "{{inputs.loop_dir}}/loop.json",
-        "--input",
-        "url={{inputs.url}}",
-        "--input",
-        "slug={{inputs.slug}}",
-        "--input",
-        "loop_dir={{inputs.loop_dir}}",
-        "--input",
-        "runs_dir={{inputs.runs_dir}}",
-        "--input",
-        "blocks_engine={{inputs.blocks_engine}}",
-        "--input",
-        "iteration={{steps.triage.output/next_iteration}}",
-        "--input",
-        "prev={{steps.triage.output/signatures}}",
-        "--input",
-        "prev_merged={{steps.merge.output/merged_count}}",
-        "--input",
-        "wp_cli={{inputs.wp_cli}}",
-        "--input",
-        "streak={{steps.triage.output/streak}}",
-        "--input",
-        "cook_model={{inputs.cook_model}}",
-        "--input",
-        "cook_placement={{inputs.cook_placement}}"
-      ],
-      "always": true
-    },
-    {
-      "id": "retry",
-      "needs": [
-        "confirm",
-        "merge"
-      ],
-      "always": true,
-      "when": {
-        "all": [
-          {
-            "step": "triage",
-            "output": "/continue",
-            "exists": true
-          },
-          {
-            "not": {
-              "step": "merge",
-              "output": "/merged_count",
-              "gt": 0
-            }
-          }
-        ]
-      },
-      "homeboy": [
-        "workflow",
-        "run",
-        "{{inputs.loop_dir}}/loop.json",
-        "--input",
-        "url={{inputs.url}}",
-        "--input",
-        "slug={{inputs.slug}}",
-        "--input",
-        "loop_dir={{inputs.loop_dir}}",
-        "--input",
-        "runs_dir={{inputs.runs_dir}}",
-        "--input",
-        "blocks_engine={{inputs.blocks_engine}}",
-        "--input",
-        "iteration={{steps.triage.output/next_iteration}}",
-        "--input",
-        "prev={{steps.triage.output/signatures}}",
-        "--input",
-        "prev_merged=0",
-        "--input",
-        "wp_cli={{inputs.wp_cli}}",
-        "--input",
-        "streak={{steps.triage.output/streak}}",
-        "--input",
-        "cook_model={{inputs.cook_model}}",
-        "--input",
-        "cook_placement={{inputs.cook_placement}}"
-      ]
     }
-  ]
+  ],
+  "next_pass": {
+    "max_iterations": 60,
+    "when": {
+      "step": "triage",
+      "output": "/continue",
+      "equals": true
+    },
+    "stop_unchanged": {
+      "step": "evaluate",
+      "output": "/blocker_signatures",
+      "passes": 3
+    }
+  }
 }
