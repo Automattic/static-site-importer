@@ -69,6 +69,21 @@ function routePage(route) {
   return pages.get(route);
 }
 const predicatePath = (check) => path.join(here, 'predicates', `${check}.mjs`);
+// The page a finding is checked and reduced on: the inlined route page, or the
+// capture's own route document when only that shows the defect. Blocks built
+// from capture evidence bind to the document's original structure, which
+// inlining rewrites (predicates/emits.mjs).
+const findingPages = new Map();
+function findingPage(finding, cell, env = predicateEnv(finding.subject, cell, result.site)) {
+  const key = `${finding.signature}@${cell.route}`;
+  if (!findingPages.has(key)) {
+    const inlined = routePage(cell.route || '/');
+    const document = path.join(reimport.capture, 'website', (cell.route || '/').replace(/^\//, ''), 'index.html');
+    const page = predicateExit(predicatePath(finding.check), transformer, inlined, env) !== 0 && fs.existsSync(document) && predicateExit(predicatePath(finding.check), transformer, document, env) === 0 ? document : inlined;
+    findingPages.set(key, page);
+  }
+  return findingPages.get(key);
+}
 // The recorded route/width cells a fix must clear, on the full captured page.
 // Where the predicate runs the owning repository's code, a cell counts only if
 // it reproduces on the whole import at trunk: a cell trunk already clears
@@ -76,7 +91,7 @@ const predicatePath = (check) => path.join(here, 'predicates', `${check}.mjs`);
 let trunkSite = null;
 function acceptanceCells(finding) {
   if (!fs.existsSync(predicatePath(finding.check))) return [];
-  const cells = finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: routePage(o.route) }));
+  const cells = finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: findingPage(finding, o) }));
   if (!repos[finding.owner_repo]?.predicate_root) return cells;
   if (!trunkSite) {
     if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['static-site-importer'].github, '-p', 'static-site-importer.zip', '-O', reimport.ssi_zip);
@@ -94,11 +109,11 @@ function reduceAndFile(finding) {
   const dir = path.join(args.work, finding.signature);
   fs.mkdirSync(dir, { recursive: true });
   const occurrence = finding.occurrences.find((o) => o.route) || finding.occurrences[0];
-  const page = routePage(occurrence.route || '/');
   const env = predicateEnv(finding.subject, occurrence, result.site);
+  const page = findingPage(finding, occurrence, env);
   if (predicateExit(predicate, transformer, page, env) !== 0) return { status: 'untracked', reason: 'predicate does not reproduce on the captured page' };
   log(`reducing ${finding.signature} (${finding.check}) from ${fs.statSync(page).size} bytes`);
-  const run = spawnSync('node', [reducer, '--input', page, '--output', path.join(dir, 'out'), '--predicate', `node ${predicate} ${transformer} {candidate}`, '--stage', finding.stage, '--name', finding.signature, '--max-calls', '1500', '--timeout-ms', String(2 * 3600 * 1000)], { encoding: 'utf8', maxBuffer: 64 << 20, env });
+  const run = spawnSync('node', [reducer, '--input', page, '--output', path.join(dir, 'out'), '--predicate', `node ${predicate} ${transformer} {candidate}`, '--stage', finding.stage, '--name', finding.signature, '--max-calls', page === routePage(occurrence.route || '/') ? '1500' : '300', '--timeout-ms', String(2 * 3600 * 1000)], { encoding: 'utf8', maxBuffer: 64 << 20, env });
   const reduced = path.join(dir, 'out', 'source.html');
   if (run.status !== 0 || !fs.existsSync(reduced) || predicateExit(predicate, transformer, reduced, env) !== 0) return { status: 'untracked', reason: `reduction failed: ${(run.stderr || '').slice(-300)}` };
   const html = fs.readFileSync(reduced, 'utf8');
