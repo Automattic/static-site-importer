@@ -151,7 +151,11 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 		$replacements = array();
 		foreach ( $assets as $source => $asset ) {
-			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? (string) $asset['final_url'] : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? (string) $asset['url'] : ( isset( $asset['theme_path'] ) && is_string( $asset['theme_path'] ) && '' !== $asset['theme_path'] ? $theme_base . $asset['theme_path'] : '' ) );
+			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? esc_url_raw( (string) $asset['final_url'] ) : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? esc_url_raw( (string) $asset['url'] ) : '' );
+			// Theme-relative paths have no scheme for esc_url_raw() to anchor; admit plain path characters only.
+			if ( '' === $url && isset( $asset['theme_path'] ) && is_string( $asset['theme_path'] ) && preg_match( '#^[A-Za-z0-9._~%/-]+$#', $asset['theme_path'] ) && ! str_contains( $asset['theme_path'], '..' ) ) {
+				$url = $theme_base . $asset['theme_path'];
+			}
 			if ( '' === $url ) {
 				continue;
 			}
@@ -183,7 +187,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 					return $raw;
 				}
 
-				return esc_url_raw( $replacements[ $key ] );
+				return $replacements[ $key ];
 			}
 		);
 	}
