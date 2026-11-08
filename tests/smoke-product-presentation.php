@@ -571,7 +571,8 @@ foreach ( $wording_cases as $case => $control ) {
 // A sliding-door link button paints its cap on the control and its body on the
 // caption carrier. One native Woo button draws both: the carrier as a ::before
 // layer inset by the control's padding, sprite paths resolved against the
-// declaring stylesheet and published as theme asset URLs.
+// declaring stylesheet and published as theme asset URLs. A breakpoint that
+// repaints the button and clears the carrier restates both paints there.
 $sheet   = array( 'source_path' => 'website/files/main.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.x', 'condition' => null );
 $sliding = array(
 	'controls'           => array( array( 'tag' => 'a', 'type' => 'a', 'role' => 'button' ) ),
@@ -588,6 +589,10 @@ $sliding = array(
 					'provenance' => array( $sheet + array( 'properties' => array( 'background', 'background-image', 'height', 'padding' ) ) ),
 				),
 			),
+		),
+		'variants' => array(
+			array( 'index' => 0, 'role' => 'control', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:750px)' ), 'style_patch' => array( 'background' => 'linear-gradient(to bottom, #45A2E4 0%,#338FD1 100%)', 'border_radius' => '4px' ) ),
+			array( 'index' => 0, 'role' => 'caption', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:750px)' ), 'style_patch' => array( 'background' => 'none' ) ),
 		),
 	),
 );
@@ -623,6 +628,8 @@ if ( ! str_contains( $writes['/theme/assets/css/editor-style.css'], 'url(../../a
 foreach ( array(
 	$scope . '{'         => array( 'background:url(assets/website/media/large.png) no-repeat 100% -126px', 'background-image:url(assets/website/media/hl.png)', 'color:#fff', 'padding:0px 20px 0px 20px' ),
 	$scope . '::before{' => array( 'content:""', 'inset:0px 10px 0px 0px', 'z-index:-1', 'background:url(assets/website/media/large.png) no-repeat 0 0' ),
+	'@media (max-width:750px){' . $scope . '{' => array( 'background:linear-gradient(to bottom, #45A2E4 0%,#338FD1 100%)', 'border-radius:4px' ),
+	'@media (max-width:750px){' . $scope . '::before{' => array( 'background:none' ),
 ) as $selector => $expected ) {
 	$rule = preg_match( '/' . preg_quote( $selector, '/' ) . '([^}]+)\}/', $css, $match ) ? $match[1] : '';
 	foreach ( $expected as $declaration ) {
