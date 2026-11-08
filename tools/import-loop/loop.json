@@ -32,9 +32,6 @@
     "streak": {
       "default": "0"
     },
-    "cook_backend": {
-      "required": true
-    },
     "cook_model": {
       "required": true
     },
@@ -157,7 +154,6 @@
         "prompt": "{{item.prompt}}",
         "verify": "{{item.verify}}",
         "placement": "{{inputs.cook_placement}}",
-        "backend": "{{inputs.cook_backend}}",
         "model": "{{inputs.cook_model}}",
         "acknowledge-model-override": true,
         "gate-env": "{{item.gate_env}}",
@@ -310,8 +306,6 @@
         "--input",
         "streak={{steps.triage.output/streak}}",
         "--input",
-        "cook_backend={{inputs.cook_backend}}",
-        "--input",
         "cook_model={{inputs.cook_model}}",
         "--input",
         "cook_placement={{inputs.cook_placement}}"
@@ -365,8 +359,6 @@
         "wp_cli={{inputs.wp_cli}}",
         "--input",
         "streak={{steps.triage.output/streak}}",
-        "--input",
-        "cook_backend={{inputs.cook_backend}}",
         "--input",
         "cook_model={{inputs.cook_model}}",
         "--input",

@@ -457,14 +457,14 @@ homeboy workflow run "$PWD/tools/import-loop/loop.json" \
   --input url=https://example.com/ --input slug=example \
   --input loop_dir="$PWD/tools/import-loop" --input runs_dir=/path/to/runs \
   --input blocks_engine=/path/to/blocks-engine-clone \
-  --input cook_backend=<homeboy backend> --input cook_model=<model> \
+  --input cook_model=<model> \
   [--input cook_placement=auto] [--input wp_cli='studio wp'] \
   [--notification-transport <transport> --notification-route <route>]
 homeboy workflow status <instance>
 homeboy workflow approve <instance> approve_merge
 ```
 
-`blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_backend` and `cook_model` choose the Cook route (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
+`blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_model` chooses the Cook's Pi model (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
 
 The loop measures; the importer does not fail an import on these findings. Import quality gates stay report-only unless a caller opts in with `fail_on_quality`, so the loop's blockers are its own acceptance policy, not import failures.
 
