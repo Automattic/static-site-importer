@@ -175,10 +175,10 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 */
 	public static function refresh_projections( Static_Site_Importer_Import_Report $report, array $quality, bool $build_fixture = true ): array {
 		$report['quality']                  = $quality;
+		$report['block_theme_scorecard']    = Static_Site_Importer_Block_Theme_Scorecard::from_import( $report->to_array() );
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
-		$report['block_theme_scorecard']    = Static_Site_Importer_Block_Theme_Scorecard::from_import( $report->to_array() );
 		$report['owner_handoff_evidence']   = Static_Site_Importer_Owner_Handoff_Evidence::compose_from_import( $report, $quality );
 		$handoff                            = $report['owner_handoff_evidence'];
 		$handoff['report_card']            .= Static_Site_Importer_Block_Theme_Scorecard::report_card_rows( $report['block_theme_scorecard'] );
@@ -276,6 +276,15 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 
 			$packets[] = self::finding_packet_from_diagnostic( $diagnostic, $report );
+		}
+		// Scorecard failures are quality signals, not import diagnostics: they
+		// become findings without entering the gate's diagnostic counts.
+		$scorecard = isset( $report['block_theme_scorecard'] ) && is_array( $report['block_theme_scorecard'] ) ? $report['block_theme_scorecard'] : array();
+		foreach ( Static_Site_Importer_Block_Theme_Scorecard::findings( $scorecard ) as $finding ) {
+			$packet                               = self::finding_packet_from_diagnostic( $finding, $report );
+			$packet['observed']['measured']       = $finding['measured'];
+			$packet['expected']['pass_threshold'] = $finding['pass_threshold'];
+			$packets[]                            = $packet;
 		}
 
 		return array(
@@ -1486,6 +1495,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		if ( '' !== $design_system_summary ) {
 			$summary['design_system_summary'] = $design_system_summary;
 		}
+		if ( isset( $report['block_theme_scorecard'] ) && is_array( $report['block_theme_scorecard'] ) ) {
+			$summary['block_theme_scorecard'] = Static_Site_Importer_Block_Theme_Scorecard::summary( $report['block_theme_scorecard'] );
+		}
 		return $summary;
 	}
 
@@ -2018,6 +2030,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 		if ( Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === $type ) {
 			return 'Imported WordPress section geometry and typography should match the capture within documented tolerances.';
+		}
+		if ( Static_Site_Importer_Block_Theme_Scorecard::FINDING_TYPE === $type ) {
+			return 'The materialized theme should meet the block theme scorecard pass threshold for the ' . (string) ( $diagnostic['check'] ?? '' ) . ' check.';
 		}
 
 		return 'Import should complete without this diagnostic being reported.';
