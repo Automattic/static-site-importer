@@ -348,7 +348,7 @@ $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle
 $assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
 $assert(
 	array(
-		'max_files'              => 512,
+		'max_files'              => 503,
 		'max_file_bytes'         => 10485760,
 		'max_total_bytes'        => 335544320,
 		'max_media_file_bytes'   => 104857600,
@@ -356,7 +356,7 @@ $assert(
 		'max_report_file_bytes'  => 33554432,
 		'max_report_total_bytes' => 67108864,
 	) === ( $bounded_bundle['compiler_limits'] ?? null ),
-	'request-bundle-reserves every inline style and script expansion'
+	'request-bundle-reserves one file per distinct inline style and script body'
 );
 foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
@@ -450,16 +450,16 @@ file_put_contents(
 	. '<script type="text/javascript">console.log(1);</script>'
 	. '</head><body></body></html>'
 );
-$assert( 2 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-only-blocks-blocks-engine-expands' );
+$assert( 2 === count( static_site_importer_cli_inline_expansion_keys( $expansion_page ) ), 'inline-expansion-reserves-only-blocks-blocks-engine-expands' );
 
 // A document with no expandable stylesheet still reserves one slot, because
 // spacing authored on <body> is carried as generated CSS.
 file_put_contents( $expansion_page, '<html><head><style></style></head><body style="margin:3rem"></body></html>' );
-$assert( 1 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-keeps-a-slot-for-generated-body-spacing-css' );
+$assert( 1 === count( static_site_importer_cli_inline_expansion_keys( $expansion_page ) ), 'inline-expansion-keeps-a-slot-for-generated-body-spacing-css' );
 
 // A page that expands into nothing reserves nothing.
 file_put_contents( $expansion_page, '<html><head><style></style><script src="vendor.js"></script></head><body></body></html>' );
-$assert( 0 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-nothing-for-a-page-that-expands-into-nothing' );
+$assert( 0 === count( static_site_importer_cli_inline_expansion_keys( $expansion_page ) ), 'inline-expansion-reserves-nothing-for-a-page-that-expands-into-nothing' );
 
 // A capture whose pages are dense with non-expanding blocks must be accepted.
 unlink( $expansion_page );
@@ -471,7 +471,9 @@ for ( $index = 0; $index < 40; ++$index ) {
 }
 $expansion_bundle = static_site_importer_cli_request_bundle_files( $expansion_dir );
 $assert( ! is_wp_error( $expansion_bundle ), 'request-bundle-accepts-pages-dense-with-non-expanding-blocks' );
-$assert( is_array( $expansion_bundle ) && 80 === ( $expansion_bundle['compiler_limits']['max_files'] ?? 0 ), 'request-bundle-reserves-one-expansion-per-page-with-one-real-stylesheet' );
+// Blocks Engine content-addresses expansions: one stylesheet body repeated on
+// every page is one generated file, not one per page.
+$assert( is_array( $expansion_bundle ) && 41 === ( $expansion_bundle['compiler_limits']['max_files'] ?? 0 ), 'request-bundle-reserves-one-expansion-per-distinct-inline-body' );
 foreach ( scandir( $expansion_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $expansion_dir . '/' . $entry );
