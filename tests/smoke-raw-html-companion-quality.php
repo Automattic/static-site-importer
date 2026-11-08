@@ -21,7 +21,7 @@ function wp_strip_all_tags( $value ) {
 }
 require_once ABSPATH . 'vendor/autoload.php';
 require_once __DIR__ . '/fixtures/core-block-parser.php';
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: ABSPATH . 'vendor/wordpress-core';
+$wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
 if ( ! ssi_test_require_core_block_parser( $wp_root ) ) {
 	throw new RuntimeException( 'WordPress parser unavailable; set STATIC_SITE_IMPORTER_WP_ROOT.' );
 }
