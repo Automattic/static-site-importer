@@ -140,6 +140,7 @@ function reduceAndFile(finding) {
     [
       `PREDICATE_TARGET='${env.PREDICATE_TARGET}'`,
       `WORDPRESS_PATH=<wordpress with static-site-importer active> WP_CLI='studio wp'`,
+      ...(page === routePage(occurrence.route || '/') ? [] : [`PREDICATE_CAPTURE=<the site capture: its interaction-states.json and other evidence feed this block>`]),
       `node tools/import-loop/predicates/${finding.check}.mjs <blocks-engine>/php-transformer reduced.html`,
     ].join(' \\\n  '),
     '```',
