@@ -227,6 +227,12 @@
           "--confirm",
           "{{steps.confirm.output/confirm_path}}"
         ]
+      },
+      "always": true,
+      "when": {
+        "step": "approve_merge",
+        "output": "/decision",
+        "equals": "approved"
       }
     },
     {
@@ -248,7 +254,8 @@
           "--merged",
           "{{steps.merge.output/merged}}"
         ]
-      }
+      },
+      "always": true
     },
     {
       "id": "again",
@@ -293,7 +300,8 @@
         "wp_cli={{inputs.wp_cli}}",
         "--input",
         "streak={{steps.triage.output/streak}}"
-      ]
+      ],
+      "always": true
     },
     {
       "id": "retry",
