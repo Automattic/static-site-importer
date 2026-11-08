@@ -33,6 +33,7 @@ ssi_test_require_core_block_parser( require __DIR__ . '/fixtures/wordpress-core-
 require_once ABSPATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once ABSPATH . 'includes/class-static-site-importer-product-field-blocks.php';
 require_once ABSPATH . 'includes/class-static-site-importer-stylesheet-materializer.php';
+require_once ABSPATH . 'includes/class-static-site-importer-site-plan-persistence.php';
 $fixture = json_decode( file_get_contents( __DIR__ . '/fixtures/product-presentation/captured.json' ), true );
 require_once ABSPATH . 'includes/class-static-site-importer-entity-materializer-registry.php';
 $binding = array(
@@ -580,15 +581,34 @@ $overlay = Static_Site_Importer_Product_Presentation::capture( $sliding );
 if ( ! $overlay || $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) ) {
 	throw new RuntimeException( 'Sliding-door receipt did not round trip.' );
 }
-$assets = array(
-	'website/media/large.png' => array( 'url' => 'https://example.test/theme/assets/website/media/large.png' ),
-	'website/media/hl.png'    => array( 'url' => 'https://example.test/theme/assets/website/media/hl.png' ),
+// Production composes overlays into the theme's written stylesheets; sprites resolve to the theme copies.
+$writes = Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes(
+	array(
+		'theme_dir' => '/theme',
+		'plan'      => array(
+			'assets' => array(
+				array( 'source_path' => 'website/media/large.png', 'target_path' => 'assets/website/media/large.png' ),
+				array( 'source_path' => 'website/media/hl.png', 'target_path' => 'assets/website/media/hl.png' ),
+			),
+		),
+		'resolved'  => array(
+			'writes' => array(
+				array( 'target_path' => 'style.css', 'payload' => array( 'data' => '' ) ),
+				array( 'target_path' => 'assets/css/editor-style.css', 'payload' => array( 'data' => '' ) ),
+				array( 'target_path' => 'functions.php', 'payload' => array( 'data' => '<?php' ) ),
+			),
+		),
+	),
+	array( $overlay )
 );
-$css    = implode( '', Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/theme', 'Captured', '', $assets, array(), array( $overlay ) ) );
-$scope  = '.' . $overlay['className'] . '.' . $overlay['className'] . ' .single_add_to_cart_button';
+$css   = $writes['/theme/style.css'];
+$scope = '.' . $overlay['className'] . '.' . $overlay['className'] . ' .single_add_to_cart_button';
+if ( ! str_contains( $writes['/theme/assets/css/editor-style.css'], 'url(../../assets/website/media/hl.png)' ) ) {
+	throw new RuntimeException( 'Editor stylesheet must resolve sprites from its own directory.' );
+}
 foreach ( array(
-	$scope . '{'         => array( 'background:url(https://example.test/theme/assets/website/media/large.png) no-repeat 100% -126px', 'background-image:url(https://example.test/theme/assets/website/media/hl.png)', 'color:#fff', 'padding:0px 20px 0px 20px' ),
-	$scope . '::before{' => array( 'content:""', 'inset:0px 10px 0px 0px', 'z-index:-1', 'background:url(https://example.test/theme/assets/website/media/large.png) no-repeat 0 0' ),
+	$scope . '{'         => array( 'background:url(assets/website/media/large.png) no-repeat 100% -126px', 'background-image:url(assets/website/media/hl.png)', 'color:#fff', 'padding:0px 20px 0px 20px' ),
+	$scope . '::before{' => array( 'content:""', 'inset:0px 10px 0px 0px', 'z-index:-1', 'background:url(assets/website/media/large.png) no-repeat 0 0' ),
 ) as $selector => $expected ) {
 	$rule = preg_match( '/' . preg_quote( $selector, '/' ) . '([^}]+)\}/', $css, $match ) ? $match[1] : '';
 	foreach ( $expected as $declaration ) {

@@ -2240,11 +2240,18 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! is_string( $functions ) || ! str_starts_with( ltrim( $functions ), '<?php' ) ) {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
+		// Overlay paint names source files by site-root path; the theme ships them at their target path.
+		$theme_assets = array();
+		foreach ( $state['plan']['assets'] ?? array() as $asset ) {
+			if ( is_string( $asset['source_path'] ?? null ) && is_string( $asset['target_path'] ?? null ) ) {
+				$theme_assets[ $asset['source_path'] ] = array( 'theme_path' => $asset['target_path'] );
+			}
+		}
 		if ( isset( $stylesheets[ $state['theme_dir'] . '/style.css' ], $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ) ) {
-			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
+			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', $theme_assets, array(), $overlays, $stylesheets );
 		} elseif ( '' !== $source_css ) {
 			$overlay_theme_name = isset( $state['theme']['name'] ) && is_scalar( $state['theme']['name'] ) && '' !== trim( (string) $state['theme']['name'] ) ? (string) $state['theme']['name'] : (string) $state['theme']['slug'];
-			$writes             = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], $overlay_theme_name, $source_css, array(), array(), $overlays, null, isset( $state['args']['artifact_provenance'] ) && is_array( $state['args']['artifact_provenance'] ) ? $state['args']['artifact_provenance'] : array() );
+			$writes             = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], $overlay_theme_name, $source_css, $theme_assets, array(), $overlays, null, isset( $state['args']['artifact_provenance'] ) && is_array( $state['args']['artifact_provenance'] ) ? $state['args']['artifact_provenance'] : array() );
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
