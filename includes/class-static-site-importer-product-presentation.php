@@ -44,9 +44,9 @@ final class Static_Site_Importer_Product_Presentation {
 		$layers      = array();
 		$conditional = array();
 		$purchase    = array();
-		$indexes  = array();
-		$stepper  = self::quantity_stepper( $entity );
-		$buttons  = $stepper ? array_column( $stepper['members'], 'index' ) : array();
+		$indexes     = array();
+		$stepper     = self::quantity_stepper( $entity );
+		$buttons     = $stepper ? array_column( $stepper['members'], 'index' ) : array();
 		foreach ( $entity['controls'] ?? array() as $index => $control ) {
 			if ( $buttons && in_array( $index, array( $buttons[0], $buttons[2] ), true ) ) {
 				continue;
