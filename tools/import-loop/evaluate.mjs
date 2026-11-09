@@ -227,10 +227,14 @@ if (!reportFile) {
 }
 
 // Editability as an editor meets it: each page opened in the block editor.
-// A block the editor cannot validate is a blocker. So is each block outside
-// WordPress core: the importer's generated blocks keep source structure an
+// A block the editor cannot validate is a blocker. So is each block the
+// importer generated: its blocks keep source structure an
 // editor cannot change with core tools. Raw HTML companions are already
 // reported by slug above. Deep nesting is advisory.
+// Generated blocks live in the importer's companion namespace (ssi-<site>, or
+// custom before materialization). Provider blocks from installed plugins, such
+// as Jetpack form fields, are native editable blocks, not generated structure.
+const GENERATED_BLOCK = /^(ssi-[a-z0-9-]+|custom)\//;
 const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
 if (args['wp-cli']) {
   let pages = [];
@@ -244,7 +248,7 @@ if (args['wp-cli']) {
     const cell = routes.includes(route) ? { route, width: 1440 } : { route: null };
     for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { route, count }, ...cell });
     // One finding per generated block slug and source shape (shape.mjs).
-    for (const [subject, count] of tally(blocks.filter((b) => !b.name.startsWith('core/') && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) {
+    for (const [subject, count] of tally(blocks.filter((b) => GENERATED_BLOCK.test(b.name) && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) {
       report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { route, count, of: blocks.length }, ...cell });
     }
     const depth = Math.max(0, ...blocks.map((b) => b.depth));

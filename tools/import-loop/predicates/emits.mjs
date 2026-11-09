@@ -23,14 +23,28 @@ export function exitWhileEmitted() {
     if (out.status !== 0) process.exit(2);
     let result;
     try { result = JSON.parse(out.stdout); } catch { process.exit(2); }
-    return [...String(result.serialized_blocks || '').matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return (slug === target || slug.replace(/-[0-9a-f]{64}$/, '') === target) && (shape === null || blockShape(attrs(m)) === shape); });
+    return matching(String(result.serialized_blocks || ''));
   };
+  const matching = (markup) => [...markup.matchAll(/<!-- wp:([a-z0-9-]+\/[a-z0-9-]+)( \{.*?\})? \/?-->/g)].filter((m) => { const slug = m[1].split('/').pop(); return (slug === target || slug.replace(/-[0-9a-f]{64}$/, '') === target) && (shape === null || blockShape(attrs(m)) === shape); });
   // Blocks built from capture evidence (captured dialogs and the controls that
   // open them) exist only when the page compiles with that evidence, as the
   // importer compiles it. PREDICATE_CAPTURE names the capture directory.
   const { route = '/' } = JSON.parse(process.env.PREDICATE_TARGET || '{}');
   let emitted = emittedBy();
   if (!emitted.length && process.env.PREDICATE_CAPTURE) emitted = emittedBy('capture', process.env.PREDICATE_CAPTURE, route);
+  // Forms reach the editor through the importer's form materialization (the
+  // engine hands each whole form over as core/html), so a block the importer
+  // emits inside a materialized form is checked there. Needs an imported site
+  // with the importer active (WORDPRESS_PATH, WP_CLI).
+  if (!emitted.length && process.env.WORDPRESS_PATH) {
+    const [command, ...prefix] = (process.env.WP_CLI || 'wp').split(/\s+/);
+    const helper = new URL('./materialized-forms.php', import.meta.url).pathname;
+    const out = spawnSync(command, [...prefix, `--path=${process.env.WORDPRESS_PATH}`, 'eval-file', helper, transformer, candidate], { encoding: 'utf8', maxBuffer: 512 << 20 });
+    if (out.status !== 0) process.exit(2);
+    let forms;
+    try { forms = JSON.parse(out.stdout); } catch { process.exit(2); }
+    emitted = matching(forms.join('\n'));
+  }
   // What still reproduces: each remaining block's attributes, so a fix can
   // tell which source structures it has not reached yet.
   if (process.env.PREDICATE_DEBUG) console.error(JSON.stringify({ subject, emitted: emitted.length, remaining: emitted.slice(0, 8).map((m) => (m[2] || '').trim().slice(0, 300)) }));
