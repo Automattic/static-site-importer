@@ -21,9 +21,33 @@ permissions:
   contents: read
 
 jobs:
+  # Test against the Blocks Engine release the candidate's composer.json pins,
+  # so the gate always matches what the plugin ships with.
+  blocks-engine-pin:
+    name: Resolve pinned Blocks Engine
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          sparse-checkout: composer.json
+          sparse-checkout-cone-mode: false
+      - id: resolve
+        run: |
+          VERSION=$(jq -r '.require["automattic/blocks-engine-php-transformer"]' composer.json)
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          SHA=$(git ls-remote https://github.com/Automattic/blocks-engine "refs/tags/php-transformer-${VERSION}^{}" | cut -f1)
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]
+          echo "Blocks Engine php-transformer-${VERSION} -> ${SHA}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
   solved-site-promotion:
+    needs: blocks-engine-pin
     uses: ./.github/workflows/solved-site-promotion.yml
     with:
       static-site-importer-sha: ${{ github.event.pull_request.head.sha || github.sha }}
       static-site-importer-repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-      blocks-engine-sha: 3a8cebeb2d07cf26d47a2b14c20242e2f4eb4278
+      blocks-engine-sha: ${{ needs.blocks-engine-pin.outputs.sha }}

@@ -48,6 +48,7 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-identity.php';
 
 $assertions = 0;

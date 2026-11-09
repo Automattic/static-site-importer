@@ -22,6 +22,7 @@ function update_option( string $name, $value ): bool {
 function add_filter( string $name, callable $callback ): void {
 	$GLOBALS['title_filters'][ $name ] = $callback;
 }
+require_once ABSPATH . 'vendor/autoload.php';
 require_once ABSPATH . 'includes/class-static-site-importer-site-identity.php';
 require_once ABSPATH . 'includes/class-static-site-importer-site-language.php';
 require_once ABSPATH . 'includes/class-static-site-importer-import-destination.php';

@@ -5,6 +5,7 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
 use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
 
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
@@ -711,13 +712,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * @return list<string>
 	 */
 	function static_site_importer_cli_inline_script_expansion_keys( string $content ): array {
-		if ( ! preg_match_all( '@<script\b([^>]*)>(.*?)</script>@is', $content, $matches, PREG_SET_ORDER ) ) {
-			return array();
-		}
 		$keys = array();
-		foreach ( $matches as $match ) {
-			$attributes = (string) $match[1];
-			$body       = trim( (string) $match[2] );
+		foreach ( HtmlTagScanner::scan( $content, 'script' ) as $script ) {
+			$attributes = $script['attributes'];
+			$body       = trim( $script['content'] );
 			$type       = StyleTagScanner::attribute( $attributes, 'type' );
 			if ( '' === $body
 				|| '' !== StyleTagScanner::attribute( $attributes, 'src' )
