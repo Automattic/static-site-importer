@@ -186,11 +186,11 @@ jobs:
     permissions:
       contents: read
     env:
-      NODE_VERSION: '20.19.4'
+      NODE_VERSION: '24'
       PHP_VERSION: '8.2.33'
-      HOMEBOY_VERSION: v0.398.10
-      HOMEBOY_SHA256: 2c9c54fc4b62a0c03237219f58085f0dee2bb209adecedb745137674da198991
-      HOMEBOY_EXTENSIONS_REF: dd63b7befe89820c8704229f8b15486346e1e317
+      HOMEBOY_VERSION: v0.454.3
+      HOMEBOY_SHA256: 66602c37885bd76824066ee33cd8d5393f8620429a6619af17082ee60c6dc784
+      HOMEBOY_EXTENSIONS_REF: 92162b0e75045e69551cd9d69bdb8aa82dd4c68f
     steps:
       - name: Checkout prepared source
         uses: actions/checkout@v6

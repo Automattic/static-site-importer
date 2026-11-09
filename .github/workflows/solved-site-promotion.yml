@@ -36,15 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      NODE_VERSION: '20.19.4'
+      NODE_VERSION: '24'
       PHP_VERSION: '8.2.35'
-      HOMEBOY_VERSION: v0.298.1
-      HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
-      HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
-      WP_CODEBOX_VERSION: v0.28.3
-      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.28.3.tgz
-      WP_CODEBOX_SHA256: c2892a36f406402aeead58075ce2f26ab5aaa76f3e9390dfc5a2cb776fe240c9
-      WP_CODEBOX_SHA: 9d3e80b4a092eab3990082520ae8b5a4324571e2
+      HOMEBOY_VERSION: v0.454.3
+      HOMEBOY_SHA256: 66602c37885bd76824066ee33cd8d5393f8620429a6619af17082ee60c6dc784
+      HOMEBOY_EXTENSIONS_REF: 92162b0e75045e69551cd9d69bdb8aa82dd4c68f
+      WP_CODEBOX_VERSION: v0.33.2
+      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.33.2.tgz
+      WP_CODEBOX_SHA256: 244674ee07718768a6710f31ba36489fac1157fb1991afa405723e4b581860df
+      WP_CODEBOX_SHA: 86f79300a4eb85487fbca4b088801b5ea9dd25ba
       WORDPRESS_VERSION: ${{ inputs.wordpress-version }}
 
     steps:
@@ -74,6 +74,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      # The runner image also ships a system Node at /usr/local/bin, and
+      # processes spawned without the job PATH resolve that one. Point it at
+      # the pinned Node so every Playground runtime boots on the same version.
+      - name: Use the pinned Node system-wide
+        run: |
+          for tool in node npm npx; do sudo ln -sf "$(command -v "$tool")" "/usr/local/bin/$tool"; done
+          [ "$(/usr/local/bin/node -p 'process.versions.node.split(".")[0]')" = "${NODE_VERSION}" ]
 
       - name: Initialize immutable run evidence
         env:
@@ -199,6 +207,12 @@ jobs:
             --shared-state "$RUN_DIR/homeboy-shared-state" \
             --artifact-root "$ARTIFACT_ROOT" | tee "$ARTIFACT_ROOT/operator-output.log"
           matrix_status=${PIPESTATUS[0]}
+          # wp-codebox writes the full failure envelope (including the cause
+          # behind a runtime-creation failure) to its own output file under
+          # the Homeboy run directory; the bench result only keeps a stderr tail.
+          mkdir -p "$ARTIFACT_ROOT/wp-codebox-output"
+          find "$HOME" "$RUNNER_TEMP" -name 'wp-codebox-output-*.json' -type f -not -path "$ARTIFACT_ROOT/*" \
+            -exec cp {} "$ARTIFACT_ROOT/wp-codebox-output/" \; 2>/dev/null || true
           set -e
           echo "MATRIX_STATUS=$matrix_status" >> "$GITHUB_ENV"
 
