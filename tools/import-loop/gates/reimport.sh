@@ -40,7 +40,11 @@ jq -n --arg name "$name" --arg source "$capture" '{
   fail_on_quality: true, require_proven_dynamic_client_assets: true,
   seed_entities: true, materialize_dependencies: true,
   source: {type: "files", ref: "request-bundle:source"}}' > "$site/.studio-import/request.json"
+# A quality-gate refusal still materializes the site, as Studio keeps its
+# preview (import.sh): serve it, so findings on a site that fails the gate can
+# be checked. Any other failure refuses the head.
 (cd "$site" && $wp static-site-importer import --request=.studio-import/request.json > "$site/.studio-import/receipt.log" 2>&1) \
+  || grep -q '"code":"static_site_importer_quality_failed"' "$site/.studio-import/receipt.log" \
   || { tail -c 2000 "$site/.studio-import/receipt.log" >&2; exit 1; }
 
 cat > "$site/.router.php" <<'PHP'
