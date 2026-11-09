@@ -26,7 +26,9 @@ ssi="$site/wp-content/plugins/static-site-importer"
 slot="$ssi/vendor/automattic/blocks-engine-php-transformer"
 rm -rf "$slot"; mkdir -p "$slot"
 cp -a "$transformer/php-transformer.php" "$transformer/src" "$transformer/resources" "$transformer/VERSION" "$transformer/composer.json" "$slot/"
-sed -i '/blocks-engine-php-transformer\/src\//d' "$ssi/vendor/composer/autoload_classmap.php" "$ssi/vendor/composer/autoload_static.php"
+# `-i.bak` is the in-place form both GNU and BSD (macOS) sed accept.
+sed -i.bak '/blocks-engine-php-transformer\/src\//d' "$ssi/vendor/composer/autoload_classmap.php" "$ssi/vendor/composer/autoload_static.php"
+rm -f "$ssi/vendor/composer/autoload_classmap.php.bak" "$ssi/vendor/composer/autoload_static.php.bak"
 $wp plugin activate static-site-importer --quiet
 
 # Stage the capture beside the request, as Studio does.
