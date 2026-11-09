@@ -311,6 +311,7 @@
     { "path": "tools/reduce-finding.test.mjs", "environment": "node" },
     { "path": "tools/reduce-finding/css.test.mjs", "environment": "node" },
     { "path": "tools/reduce-finding/html.test.mjs", "environment": "node" },
+    { "path": "tools/reduce-finding/import-loop.test.mjs", "environment": "node" },
     { "path": "tests/authored-viewport.test.mjs", "environment": "node" },
     { "path": "tests/third-party-social-image.test.mjs", "environment": "node" },
     { "path": "tests/import-time-links.test.mjs", "environment": "node" },

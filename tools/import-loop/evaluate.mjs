@@ -28,6 +28,7 @@ import { chromium } from 'playwright';
 import { fitViewport, measure } from './measure.mjs';
 import { editorPages } from './editor.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
+import { coreHtmlFindings } from './core-html.mjs';
 
 const stageOwners = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(new URL('./repos.json', import.meta.url), 'utf8'))).map(([id, repo]) => [repo.stage, id]));
 
@@ -201,6 +202,7 @@ if (!reportFile) {
   const importReport = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
   const metrics = importReport.design_system?.metrics || {};
   const quality = importReport.quality || {};
+  for (const finding of coreHtmlFindings(importReport, routes)) report(finding);
   if (quality.status && quality.status !== 'pass' && quality.status !== 'passed') report({ stage: 'editability', check: 'quality_status', owner_repo: stageOwners.import, subject: quality.status, evidence: quality.status });
   if (quality.invalid_block_count > 0) report({ stage: 'editability', check: 'invalid_block_count', owner_repo: 'blocks-engine', subject: 'invalid_block_count', evidence: quality.invalid_block_count });
   // One finding per raw-HTML companion block, keyed by its slug (the prefix is
