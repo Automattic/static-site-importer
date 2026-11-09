@@ -42,7 +42,7 @@
     }
   ],
   "require": {
-    "php": "^8.2",
+    "php": "^8.3",
     "automattic/blocks-engine-figma-transformer": "0.3.0",
     "automattic/blocks-engine-php-transformer": "v0.45.381"
   },
@@ -50,7 +50,7 @@
   "prefer-stable": true,
   "config": {
     "platform": {
-      "php": "8.2.0"
+      "php": "8.3.0"
     },
     "sort-packages": true
   }

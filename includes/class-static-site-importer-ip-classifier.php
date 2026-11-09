@@ -14,8 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * PHP's `FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE` predicate is not a
  * stable security boundary: its IPv6 range table changed in 8.3.16 and 8.4.3, so
- * IPv4-mapped literals such as `::ffff:127.0.0.1` classify as public on every PHP
- * 8.2 release this plugin supports. It also reports RFC 6598 shared address space
+ * IPv4-mapped literals such as `::ffff:127.0.0.1` classify as public on earlier
+ * releases. It also reports RFC 6598 shared address space
  * (`100.64.0.0/10`) as public on every release. This class owns the classification
  * instead: addresses are compared as packed bytes against explicit CIDR blocks, and
  * IPv4-in-IPv6 encodings are unmapped so the address that is classified is the same

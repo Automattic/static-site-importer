@@ -5,7 +5,7 @@
  * Version: 1.33.471
  * Author: Chris Huber
  * Requires at least: 7.1
- * Requires PHP: 8.2
+ * Requires PHP: 8.3
  * Text Domain: static-site-importer
  *
  * @package StaticSiteImporter
