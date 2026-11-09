@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      NODE_VERSION: '20.19.4'
+      NODE_VERSION: '24'
       PHP_VERSION: '8.2.35'
       HOMEBOY_VERSION: v0.298.1
       HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5

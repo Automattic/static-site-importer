@@ -186,7 +186,7 @@ jobs:
     permissions:
       contents: read
     env:
-      NODE_VERSION: '20.19.4'
+      NODE_VERSION: '24'
       PHP_VERSION: '8.2.33'
       HOMEBOY_VERSION: v0.398.10
       HOMEBOY_SHA256: 2c9c54fc4b62a0c03237219f58085f0dee2bb209adecedb745137674da198991
