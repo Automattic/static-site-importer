@@ -1,6 +1,6 @@
-// Exit 0 while the candidate's materialized content contains core/html,
-// 1 once it does not, 2 on infrastructure failure. Requires an imported site
-// with SSI active (WORDPRESS_PATH and WP_CLI, as in render.mjs).
+// Exit 0 while the candidate still leaves core/html with the subject tag inside
+// a form the importer materialized, 1 once it does not, 2 on infrastructure
+// failure. Requires an imported site with SSI active (WORDPRESS_PATH, WP_CLI).
 import { spawnSync } from 'node:child_process';
 
 const [transformer, candidate] = process.argv.slice(2);

@@ -56,12 +56,15 @@ test('predicate counts materialized remnants, not the engine form fallback', () 
   try {
     const candidate = path.join(dir, 'index.html');
     const transformer = path.join(root, 'vendor/automattic/blocks-engine-php-transformer');
-    const run = (trap) => {
-      fs.writeFileSync(candidate, `<!doctype html><html><head><title>Contact</title></head><body><form action="/submit" method="post"><label>Email <input type="email" name="email"></label>${trap}<button type="submit">Send</button></form></body></html>`);
+    const run = (trap, body = `<form action="/submit" method="post"><label>Email <input type="email" name="email"></label>${trap}<button type="submit">Send</button></form>`) => {
+      fs.writeFileSync(candidate, `<!doctype html><html><head><title>Contact</title></head><body>${body}</body></html>`);
       return spawnSync('node', ['tools/import-loop/predicates/core_html_block_count.mjs', transformer, candidate], {
-        cwd: root, encoding: 'utf8', env: { ...process.env, WORDPRESS_PATH: dir, WP_CLI: `php ${root}/tests/fixtures/core-html-predicate-wp.php` },
+        cwd: root, encoding: 'utf8', env: { ...process.env, WORDPRESS_PATH: dir, WP_CLI: `php ${root}/tests/fixtures/core-html-predicate-wp.php`, PREDICATE_TARGET: '{"subject":"P:generated_document_contains_core_html"}' },
       });
     };
+    // core/html outside a materialized form has another owner: reduction must not drift onto it.
+    const loose = run('', '<p><input></p>');
+    assert.equal(loose.status, 1, loose.stderr);
     const clean = run('');
     assert.equal(clean.status, 1, clean.stderr);
     // The current materializer already suppresses optional hidden controls.

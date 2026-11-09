@@ -43,19 +43,27 @@ foreach ($plan['runtime_declarations'] ?? array() as $declaration) {
     if (is_wp_error($rows)) throw new RuntimeException($rows->get_error_message());
     $bindings = array_merge($bindings, $rows);
 }
+// Count core/html the importer left inside the forms it materialized, with
+// the subject's tag. Blocks Engine hands a whole form over as core/html by
+// design, and other core/html has its own owner and finding: counting it
+// would let reduction drift onto an unrelated defect.
+$target = json_decode((string) getenv('PREDICATE_TARGET'), true);
+$tag = strtolower(explode(':', (string) ($target['subject'] ?? ''))[0]);
 $count = 0;
-$walk = static function (array $blocks) use (&$walk, &$count): void {
+$walk = static function (array $blocks) use (&$walk, &$count, $tag): void {
     foreach ($blocks as $block) {
-        if ('core/html' === ($block['blockName'] ?? null)) ++$count;
+        if ('core/html' === ($block['blockName'] ?? null)
+            && ('' === $tag || preg_match('/^\s*<' . preg_quote($tag, '/') . '[\s>]/i', $block['innerHTML'] ?? ''))) ++$count;
         $walk($block['innerBlocks'] ?? array());
     }
 };
 foreach ($plan['pages'] ?? array() as $page) {
     $markup = $page['canonical_block_markup'] ?? '';
     foreach ($bindings as $binding) {
-        $markup = str_replace($binding['search_block_markup'], $binding['replacement_block_markup'], $markup);
+        if (!str_contains($markup, $binding['search_block_markup'])) continue;
+        $markup = str_replace($binding['search_block_markup'], '', $markup);
+        if (getenv('PREDICATE_DEBUG')) fwrite(STDERR, $binding['replacement_block_markup'] . "\n");
+        $walk(parse_blocks($binding['replacement_block_markup']));
     }
-    if (getenv('PREDICATE_DEBUG')) fwrite(STDERR, $markup . "\n");
-    $walk(parse_blocks($markup));
 }
 echo json_encode($count);
