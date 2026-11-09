@@ -1,6 +1,8 @@
 <?php
-// WP-CLI eval-file: compile with the candidate engine, then apply SSI's form
-// bindings before counting. A raw runtime-semantics form is not the final output.
+// WP-CLI eval-file: compile the candidate with the candidate engine, apply the
+// importer's form materialization, and print the block markup of each form it
+// materialized (JSON list). Blocks Engine hands a whole form to the importer
+// as core/html by design; what lands in the editor is this markup.
 // phpcs:ignoreFile -- Standalone predicate, executed inside WordPress.
 [$root, $candidate] = $args;
 spl_autoload_register(static function ($class) use ($root) {
@@ -43,27 +45,27 @@ foreach ($plan['runtime_declarations'] ?? array() as $declaration) {
     if (is_wp_error($rows)) throw new RuntimeException($rows->get_error_message());
     $bindings = array_merge($bindings, $rows);
 }
-// Count core/html the importer left inside the forms it materialized, with
-// the subject's tag. Blocks Engine hands a whole form over as core/html by
-// design, and other core/html has its own owner and finding: counting it
-// would let reduction drift onto an unrelated defect.
-$target = json_decode((string) getenv('PREDICATE_TARGET'), true);
-$tag = strtolower(explode(':', (string) ($target['subject'] ?? ''))[0]);
-$count = 0;
-$walk = static function (array $blocks) use (&$walk, &$count, $tag): void {
-    foreach ($blocks as $block) {
-        if ('core/html' === ($block['blockName'] ?? null)
-            && ('' === $tag || preg_match('/^\s*<' . preg_quote($tag, '/') . '[\s>]/i', $block['innerHTML'] ?? ''))) ++$count;
-        $walk($block['innerBlocks'] ?? array());
-    }
-};
+$forms = array();
 foreach ($plan['pages'] ?? array() as $page) {
     $markup = $page['canonical_block_markup'] ?? '';
     foreach ($bindings as $binding) {
-        if (!str_contains($markup, $binding['search_block_markup'])) continue;
-        $markup = str_replace($binding['search_block_markup'], '', $markup);
-        if (getenv('PREDICATE_DEBUG')) fwrite(STDERR, $binding['replacement_block_markup'] . "\n");
-        $walk(parse_blocks($binding['replacement_block_markup']));
+        if (str_contains($markup, $binding['search_block_markup'])) $forms[] = $binding['replacement_block_markup'];
     }
 }
-echo json_encode($count);
+if ('core-html' === ($args[2] ?? '')) {
+    // Count core/html with the subject's tag inside the materialized forms.
+    $target = json_decode((string) getenv('PREDICATE_TARGET'), true);
+    $tag = strtolower(explode(':', (string) ($target['subject'] ?? ''))[0]);
+    $count = 0;
+    $walk = static function (array $blocks) use (&$walk, &$count, $tag): void {
+        foreach ($blocks as $block) {
+            if ('core/html' === ($block['blockName'] ?? null)
+                && ('' === $tag || preg_match('/^\s*<' . preg_quote($tag, '/') . '[\s>]/i', $block['innerHTML'] ?? ''))) ++$count;
+            $walk($block['innerBlocks'] ?? array());
+        }
+    };
+    foreach ($forms as $form) $walk(parse_blocks($form));
+    echo json_encode($count);
+    return;
+}
+echo json_encode($forms);

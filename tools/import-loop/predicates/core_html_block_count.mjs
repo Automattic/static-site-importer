@@ -7,8 +7,8 @@ const [transformer, candidate] = process.argv.slice(2);
 try {
   if (!transformer || !candidate || !process.env.WORDPRESS_PATH) throw new Error('missing predicate arguments or WORDPRESS_PATH');
   const [command, ...prefix] = (process.env.WP_CLI || 'wp').split(/\s+/);
-  const helper = new URL('./core-html.php', import.meta.url).pathname;
-  const result = spawnSync(command, [...prefix, `--path=${process.env.WORDPRESS_PATH}`, 'eval-file', helper, transformer, candidate], { encoding: 'utf8', maxBuffer: 512 << 20 });
+  const helper = new URL('./materialized-forms.php', import.meta.url).pathname;
+  const result = spawnSync(command, [...prefix, `--path=${process.env.WORDPRESS_PATH}`, 'eval-file', helper, transformer, candidate, 'core-html'], { encoding: 'utf8', maxBuffer: 512 << 20 });
   if (result.status !== 0) throw new Error(result.stderr || 'materialization failed');
   const count = JSON.parse(result.stdout);
   if (!Number.isInteger(count) || count < 0) throw new Error('invalid core/html count');
