@@ -24,6 +24,8 @@ final class Static_Site_Importer_Product_Presentation {
 
 	private const LAYOUT_SELECTORS = array(
 		'gallery-block'    => '',
+		'product-row'      => '',
+		'product-summary'  => '',
 		'form'             => 'form.cart',
 		'variation-table'  => 'table.variations',
 		'variation-body'   => 'table.variations tbody',
@@ -300,6 +302,13 @@ final class Static_Site_Importer_Product_Presentation {
 			$scope = '.' . $class . '.' . $class;
 			// Rebuild legacy auto-width receipts exactly; new galleries fill only the inner element.
 			$rule = ( 'gallery' === $slot && str_contains( $declarations, 'width:auto !important;' ) ? $scope . $selector . ',' : '' ) . $scope . ( '' === $selector ? '' : ' ' . $selector ) . '{' . $declarations . '}';
+			// The gallery scope identifies its source row and adjacent summary,
+			// without depending on source-platform classes or viewport breakpoints.
+			if ( 'layout:product-row' === $slot ) {
+				$rule = ':has(> ' . $scope . ' + *){' . $declarations . '}';
+			} elseif ( 'layout:product-summary' === $slot ) {
+				$rule = $scope . ' + *{' . $declarations . '}';
+			}
 			$css .= '' === $media ? $rule : '@media ' . $media . '{' . $rule . '}';
 		}
 		return array(
@@ -471,7 +480,9 @@ final class Static_Site_Importer_Product_Presentation {
 			$allowed = array(
 				'width'      => array( '100%' ),
 				'max-width'  => array( 'none' ),
-				'min-width'  => array( '0' ),
+				'min-width'  => array( '0', 'min(100%,20rem)' ),
+				'flex-wrap'  => array( 'wrap' ),
+				'flex-grow'  => array( '1' ),
 				'box-sizing' => array( 'border-box' ),
 				'display'    => array( 'block', 'flex', 'grid' ),
 				'padding'    => array( '0' ),
@@ -642,7 +653,14 @@ final class Static_Site_Importer_Product_Presentation {
 		$ratio  = self::aspect_ratio( $gallery['main']['aspectRatio'] ?? '' );
 		// Preserve the source width cascade, but not its carousel-only layout.
 		$wrapper = $gallery ? array(
-			'layout:gallery-block' => self::layout_declarations( array(
+			// Keep desktop widths; wrap before the summary becomes unreadable.
+			// Capping the floor at 100% also permits narrow mobile containers.
+			'layout:product-row'     => self::layout_declarations( array( 'flex-wrap' => 'wrap' ) ),
+			'layout:product-summary' => self::layout_declarations( array(
+				'min-width' => 'min(100%,20rem)',
+				'flex-grow' => '1',
+			) ),
+			'layout:gallery-block'   => self::layout_declarations( array(
 				'display'    => 'block',
 				'max-width'  => 'none',
 				'min-width'  => '0',
