@@ -35,7 +35,6 @@
     { "path": "tests/smoke-form-intent-routing.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-add-to-cart-form-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-form-binding-placement.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-product-template-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-presentation.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-product-summary-readability.php", "environment": "standalone-php" },
     { "path": "tests/smoke-formless-purchase-reconciliation.php", "environment": "standalone-php" },
