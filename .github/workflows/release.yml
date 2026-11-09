@@ -190,7 +190,7 @@ jobs:
       PHP_VERSION: '8.2.33'
       HOMEBOY_VERSION: v0.454.3
       HOMEBOY_SHA256: 66602c37885bd76824066ee33cd8d5393f8620429a6619af17082ee60c6dc784
-      HOMEBOY_EXTENSIONS_REF: 92162b0e75045e69551cd9d69bdb8aa82dd4c68f
+      HOMEBOY_EXTENSIONS_REF: 7c3784ac6818a554ecabef7704504cbce7490564
     steps:
       - name: Checkout prepared source
         uses: actions/checkout@v6
@@ -240,7 +240,7 @@ jobs:
       # that run Homeboy against this component do.
       - name: Install pinned Homeboy wordpress extension
         run: |
-          homeboy extension install https://github.com/Extra-Chill/homeboy-extensions --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
+          homeboy extension install https://github.com/Extra-Chill/homeboy --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
 
       - name: Build the html-site-import runtime profile zip
         working-directory: static-site-importer
