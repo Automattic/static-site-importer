@@ -163,14 +163,18 @@ final class Static_Site_Importer_Content_Policy {
 			$path   = (string) $file['path'];
 			$format = self::source_format( $path );
 			if ( null !== $format && ! Static_Site_Importer_Runtime_Capabilities::supports_source_format( $format ) ) {
-				return new WP_Error(
-					'static_site_importer_source_format_unsupported',
-					sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ),
-					array(
-						'path'   => $path,
-						'format' => $format,
-					)
-				);
+				if ( self::fails_closed( $path, $entrypoint ) ) {
+					return new WP_Error(
+						'static_site_importer_source_format_unsupported',
+						sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ),
+						array(
+							'path'   => $path,
+							'format' => $format,
+						)
+					);
+				}
+				$findings[] = self::exclusion_finding( $path, 'unsupported_source_format' );
+				continue;
 			}
 			$metrics = array();
 			$reason  = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload, static_site_importer_cli_request_bundle_is_declared_report( $path, $reports ), $metrics );

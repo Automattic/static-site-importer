@@ -25,10 +25,20 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-runtime-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 
 assert( array() === ( Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'index.html', 'content' => '<main>HTML works without Markdown classes.</main>' ) ) ) )['findings'] ?? null ) );
-$markdown = Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'notes.md', 'content' => '# Unsupported here' ) ) ) );
-$mdx = Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'component.mdx', 'content' => '# Unsupported here' ) ) ) );
-assert( $markdown instanceof WP_Error && 'static_site_importer_source_format_unsupported' === $markdown->get_error_code() );
+$markdown = Static_Site_Importer_Content_Policy::admit_artifact(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array( 'path' => 'index.html', 'content' => '<main>Site</main>' ),
+			array( 'path' => 'README.md', 'content' => '# Documentation' ),
+			array( 'path' => 'docs/README.md', 'content' => '# Nested documentation' ),
+		),
+	)
+);
+$mdx = Static_Site_Importer_Content_Policy::admit_artifact( array( 'entrypoint' => 'index.md', 'files' => array( array( 'path' => 'index.md', 'content' => '# Unsupported here' ) ) ) );
+assert( is_array( $markdown ) && 2 === count( $markdown['findings'] ) );
+assert( 'static_site_importer_non_static_file_skipped' === $markdown['findings'][0]['code'] );
+assert( 'static_site_importer_non_static_file_skipped' === $markdown['findings'][1]['code'] );
 assert( $mdx instanceof WP_Error && 'static_site_importer_source_format_unsupported' === $mdx->get_error_code() );
-assert( str_contains( $markdown->get_error_message(), 'markdown conversion capability' ) );
 
 echo "HTML runtime capability smoke passed.\n";
