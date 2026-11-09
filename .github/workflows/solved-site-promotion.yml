@@ -75,6 +75,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # The runner image also ships a system Node at /usr/local/bin, and
+      # processes spawned without the job PATH resolve that one. Point it at
+      # the pinned Node so every Playground runtime boots on the same version.
+      - name: Use the pinned Node system-wide
+        run: |
+          for tool in node npm npx; do sudo ln -sf "$(command -v "$tool")" "/usr/local/bin/$tool"; done
+          [ "$(/usr/local/bin/node -p 'process.versions.node.split(".")[0]')" = "${NODE_VERSION}" ]
+
       - name: Initialize immutable run evidence
         env:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
