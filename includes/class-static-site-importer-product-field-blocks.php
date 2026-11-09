@@ -318,6 +318,10 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			foreach ( $nodes as $index => $node ) {
 				$path        = $parent_path . '/' . $index;
 				$has_gallery = $has_gallery || 'woocommerce/product-image-gallery' === $node['blockName'];
+				// Overlays are duplicates, never the primary gallery candidate.
+				if ( preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
+					continue;
+				}
 				$select( $node['innerBlocks'] ?? array(), $path );
 				$html = serialize_block( $node );
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', $html, $sources );
@@ -331,7 +335,13 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 		};
 		$select( $blocks );
-		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery, &$presentations ): array {
+		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery, &$presentations, $images, $identity ): ?array {
+			if ( ( $has_gallery || null !== $gallery_path ) && preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
+				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', serialize_block( $node ), $sources );
+				if ( $sources[1] && ! array_diff( array_map( $identity, $sources[1] ), $images ) ) {
+					return null;
+				}
+			}
 			if ( ! $has_gallery && $path === $gallery_path ) {
 				$capture = Static_Site_Importer_Product_Presentation::capture( array( 'gallery' => Static_Site_Importer_Product_Presentation::gallery_attrs( $node ) ) );
 				if ( $capture ) {
@@ -340,7 +350,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				return self::field( $node, 'image' );
 			}
 			$html = $node['innerHTML'] ?? '';
-			$text = self::text( $html );
+			$text = self::text( empty( $node['innerBlocks'] ) ? $html : serialize_block( $node ) );
 			$role = '';
 			$name = self::text( (string) ( $product['name'] ?? '' ) );
 			if ( '' !== $name && $text === $name && 'core/heading' === $node['blockName'] ) {
@@ -349,7 +359,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			if ( in_array( $node['blockName'], array( 'core/paragraph', 'core/heading' ), true ) ) {
 				foreach ( array( 'price', 'regular_price', 'sale_price' ) as $key ) {
 					$price = (string) ( $product[ $key ] ?? '' );
-					if ( '' !== $price && preg_match( '/^(?:[^\d\s]+\s*)?([\d,.]+)(?:\s*[^\d\s]+)?$/u', $text, $match ) && (float) str_replace( ',', '', $match[1] ) === (float) $price ) {
+					if ( '' !== $price && preg_match( '/^[^\d]*?([\d]+(?:[,.][\d]+)*)[^\d]*$/u', $text, $match ) && (float) str_replace( ',', '', $match[1] ) === (float) $price ) {
 						$role = 'price';
 					}
 				}
@@ -361,7 +371,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			$categories = $product['categories'] ?? $product['category_names'] ?? array();
 			foreach ( (array) $categories as $category ) {
 				$category = is_array( $category ) ? (string) ( $category['name'] ?? '' ) : (string) $category;
-				if ( '' !== $name && '' !== $category && preg_match( '/(?:>|›|»|\/|→)/u', $text ) && str_contains( $text, $category ) && str_ends_with( $text, $name ) && empty( $node['innerBlocks'] ) ) {
+				if ( '' !== $name && '' !== $category && preg_match( '/(?:>|›|»|\/|→)/u', $text ) && str_contains( $text, $category ) && str_ends_with( $text, $name ) && ( empty( $node['innerBlocks'] ) || preg_match( '/^' . preg_quote( $category, '/' ) . '\s*(?:>|›|»|\/|→)\s*' . preg_quote( $name, '/' ) . '$/u', $text ) ) ) {
 					$role = 'breadcrumb';
 				}
 			}
@@ -372,6 +382,13 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			foreach ( $node['innerBlocks'] ?? array() as $index => $child ) {
 				$node['innerBlocks'][ $index ] = $visit( $child, $path . '/' . $index );
 			}
+			$index = 0;
+			foreach ( $node['innerContent'] ?? array() as $slot => $content ) {
+				if ( null === $content && null === $node['innerBlocks'][ $index++ ] ) {
+					$node['innerContent'][ $slot ] = '';
+				}
+			}
+			$node['innerBlocks'] = array_values( array_filter( $node['innerBlocks'] ?? array() ) );
 			// Single-product context must inherit the current product, not the capture.
 			if ( 'woocommerce/single-product' === $node['blockName'] ) {
 				unset( $node['attrs']['productId'] );
@@ -381,7 +398,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		foreach ( $blocks as $index => $block ) {
 			$blocks[ $index ] = $visit( $block, '/' . $index );
 		}
-		/** @var array<array{blockName: string|null, attrs: array, innerBlocks: array, innerHTML: string, innerContent: array}> $blocks */
-		return serialize_blocks( $blocks );
+		/** @var array<array{blockName: string|null, attrs: array, innerBlocks: array, innerHTML: string, innerContent: array}|null> $blocks */
+		return serialize_blocks( array_values( array_filter( $blocks ) ) );
 	}
 }
