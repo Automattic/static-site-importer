@@ -229,8 +229,10 @@ function acceptanceGate(item, repo) {
     checked ? 'exit $failed' : 'exit 0',
   ].join('\n') + '\n');
   // Prompts stay free of machine-local paths: the agent receives the gate as
-  // declared provider evidence, the verify command through gate environment.
-  return { verify: `(${repo.verify}) && bash "$ACCEPT_GATE"`, gate_env: `ACCEPT_GATE=${gate}`, provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }) };
+  // declared provider evidence. The verify command names the gate file
+  // directly; Cook admission snapshots verify commands for every placement,
+  // while inline gate environment is refused on detached admission.
+  return { verify: `(${repo.verify}) && bash '${gate.replace(/'/g, "'\\''")}'`, provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }) };
 }
 
 const cook_items = [];
