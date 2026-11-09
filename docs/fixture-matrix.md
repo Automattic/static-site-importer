@@ -753,7 +753,7 @@ screenshots under `files/browser/visual-compare/<fixture-id>/...`; batch runs ke
 per-fixture visual evidence instead of overwriting every fixture into the default
 `files/browser/visual-compare/{source,candidate,diff}.png` paths. This is the
 exact recipe command the reusable `runVisualParityWorkload` helper composes in
-homeboy-extensions — the matrix emits it inline rather than spinning up a
+the Homeboy WordPress extension — the matrix emits it inline rather than spinning up a
 separate sandbox, so no new wp-codebox capability is introduced.
 
 Visual-parity capture is intentionally deterministic. SSI stages the static

@@ -40,7 +40,7 @@ jobs:
       PHP_VERSION: '8.2.35'
       HOMEBOY_VERSION: v0.454.3
       HOMEBOY_SHA256: 66602c37885bd76824066ee33cd8d5393f8620429a6619af17082ee60c6dc784
-      HOMEBOY_EXTENSIONS_REF: 92162b0e75045e69551cd9d69bdb8aa82dd4c68f
+      HOMEBOY_EXTENSIONS_REF: 7c3784ac6818a554ecabef7704504cbce7490564
       WP_CODEBOX_VERSION: v0.33.2
       WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.33.2.tgz
       WP_CODEBOX_SHA256: 244674ee07718768a6710f31ba36489fac1157fb1991afa405723e4b581860df
@@ -137,8 +137,8 @@ jobs:
           echo "${HOMEBOY_SHA256}  $RUNNER_TEMP/homeboy.tar.xz" | sha256sum --check --status
           tar --extract --xz --file "$RUNNER_TEMP/homeboy.tar.xz" --directory "$RUNNER_TEMP/homeboy" --strip-components=1
           chmod +x "$RUNNER_TEMP/homeboy/homeboy"
-          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy-extensions --id nodejs --ref "$HOMEBOY_EXTENSIONS_REF"
-          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy-extensions --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
+          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy --id nodejs --ref "$HOMEBOY_EXTENSIONS_REF"
+          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
           echo "HOMEBOY_BIN=$RUNNER_TEMP/homeboy/homeboy" >> "$GITHUB_ENV"
 
       - name: Install pinned WP Codebox
