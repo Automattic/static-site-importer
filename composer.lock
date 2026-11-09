@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8342e402bcf250cd92aa0fae0b2c450f",
+    "content-hash": "950bf6738e96a14fdc7384c730564c85",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -832,11 +832,11 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.2"
+        "php": "^8.3"
     },
     "platform-dev": {},
     "platform-overrides": {
-        "php": "8.2.0"
+        "php": "8.3.0"
     },
     "plugin-api-version": "2.11.0"
 }

@@ -4,7 +4,7 @@
  * Description: Demo-only importer UI for the Static Site Importer Playground experience.
  * Version: 1.0.0
  * Requires at least: 7.1
- * Requires PHP: 8.2
+ * Requires PHP: 8.3
  * Requires Plugins: static-site-importer
  * Text Domain: static-site-importer
  *

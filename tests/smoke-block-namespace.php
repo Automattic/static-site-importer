@@ -225,7 +225,7 @@ namespace {
 	$GLOBALS['wp_version'] = '7.1.2-alpha-61000';
 	$header_theme_style    = (string) ( Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/ssi-ns-theme', 'acme', '.hero{color:inherit}', array(), array() )['/tmp/ssi-ns-theme/style.css'] ?? '' );
 	unset( $GLOBALS['wp_version'] );
-	$assert( str_contains( $header_theme_style, "\nRequires at least: 7.1\nTested up to: 7.1\nRequires PHP: 8.2\nLicense: GNU General Public License v2 or later\nLicense URI: https://www.gnu.org/licenses/gpl-2.0.html\n*/\n" ), 'block-theme-header-declares-license-and-requirements', $header_theme_style );
+	$assert( str_contains( $header_theme_style, "\nRequires at least: 7.1\nTested up to: 7.1\nRequires PHP: 8.3\nLicense: GNU General Public License v2 or later\nLicense URI: https://www.gnu.org/licenses/gpl-2.0.html\n*/\n" ), 'block-theme-header-declares-license-and-requirements', $header_theme_style );
 
 	// 6. The classic theme projection's style.css carries the same identity.
 	$classic_scaffold = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( 'Acme Group', $provenance );
