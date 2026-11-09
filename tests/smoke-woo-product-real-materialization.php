@@ -223,7 +223,7 @@ $assert( 1 === substr_count( $written, 'wp:woocommerce/product-image-gallery' ) 
 foreach ( $resolutions as $token => $resolution ) {
 	$assert( $identities[ '{{wordpress-site-plan:asset:' . $token . '}}' ] === $identities[ $resolution['url'] ], 'Every token agrees with its resolved attachment, including shared paths.' );
 }
-$assert( 12 === substr_count( $written, '<img ' ), 'Only the 27 gallery images disappear; unrelated document images survive.' );
+$assert( 3 === substr_count( $written, '<img ' ), 'The 27 gallery images and nine duplicate lightbox images disappear; unrelated document images survive.' );
 $assert( count( $fixture['plan_assets'] ) + 1 <= count( $plan['assets'] ), 'Real photo assets participate in materialization.' );
 $other_written = file_get_contents( $GLOBALS['ssi_plan_root'] . '/real-gallery/templates/single-product-other.html' );
 $assert( 1 === substr_count( $other_written, 'wp:woocommerce/product-image-gallery' ) && ! preg_match( '~<!-- wp:[^\s]+/authored-carousel\b~', $other_written ), 'Shared-photo product also persists exactly one gallery.' );

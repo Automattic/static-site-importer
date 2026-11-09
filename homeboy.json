@@ -204,6 +204,7 @@
           "tests/smoke-media-rebind-error.php",
           "tests/smoke-raw-html-companion-quality.php",
           "tests/smoke-product-summary-readability.php",
+          "tests/smoke-product-field-binding-wording.php",
           "tests/smoke-plan-content-loss-quality.php",
           "tests/smoke-dependency-created-route-adoption.php",
           "tests/form-fallback-contract-equivalence.php",
