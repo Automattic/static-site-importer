@@ -199,6 +199,12 @@ jobs:
             --shared-state "$RUN_DIR/homeboy-shared-state" \
             --artifact-root "$ARTIFACT_ROOT" | tee "$ARTIFACT_ROOT/operator-output.log"
           matrix_status=${PIPESTATUS[0]}
+          # wp-codebox writes the full failure envelope (including the cause
+          # behind a runtime-creation failure) to its own output file under
+          # Homeboy's run tmp; the bench result only keeps a stderr tail.
+          mkdir -p "$ARTIFACT_ROOT/wp-codebox-output"
+          find "$HOME/.config/homeboy/runtime/tmp" -path '*/artifacts/wp-codebox-output-*.json' -type f \
+            -exec cp {} "$ARTIFACT_ROOT/wp-codebox-output/" \; 2>/dev/null || true
           set -e
           echo "MATRIX_STATUS=$matrix_status" >> "$GITHUB_ENV"
 
