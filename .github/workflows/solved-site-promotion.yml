@@ -125,7 +125,7 @@ jobs:
       - name: Install pinned Homeboy and Extensions
         run: |
           mkdir -p "$RUNNER_TEMP/homeboy"
-          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/homeboy.tar.xz" "https://github.com/Extra-Chill/homeboy/releases/download/${HOMEBOY_VERSION}/homeboy-x86_64-unknown-linux-gnu.tar.xz"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --output "$RUNNER_TEMP/homeboy.tar.xz" "https://github.com/Extra-Chill/homeboy/releases/download/${HOMEBOY_VERSION}/homeboy-x86_64-unknown-linux-gnu.tar.xz"
           echo "${HOMEBOY_SHA256}  $RUNNER_TEMP/homeboy.tar.xz" | sha256sum --check --status
           tar --extract --xz --file "$RUNNER_TEMP/homeboy.tar.xz" --directory "$RUNNER_TEMP/homeboy" --strip-components=1
           chmod +x "$RUNNER_TEMP/homeboy/homeboy"
@@ -136,7 +136,7 @@ jobs:
       - name: Install pinned WP Codebox
         run: |
           mkdir -p "$RUNNER_TEMP/wp-codebox"
-          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
           echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
           npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
           "$RUNNER_TEMP/wp-codebox/bin/wp-codebox" commands --json
