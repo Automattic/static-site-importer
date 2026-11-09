@@ -192,6 +192,9 @@ $client_shell_html = '<!doctype html><html><head><title>App</title>' . str_repea
 $client_shell_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $client_shell_html );
 $assert( 'client_rendered_app_shell' === ( $client_shell_diagnostic['type'] ?? '' ), 'client-rendered-shell-diagnostic-detected' );
 $assert( 'browser_rendered_capture_required' === ( $client_shell_diagnostic['repair_bucket'] ?? '' ), 'client-rendered-shell-repair-bucket' );
+$unbuilt_app_html = '<!doctype html><html lang="en"><head><meta charset="UTF-8" /><title>App</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>';
+$unbuilt_app_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $unbuilt_app_html );
+$assert( 'client_rendered_app_shell' === ( $unbuilt_app_diagnostic['type'] ?? '' ), 'unbuilt-single-module-app-shell-detected' );
 $reduced_capture_html = '<!doctype html><html><head><script type="application/ld+json">{}</script><script>1</script><script>2</script></head><body><div id="app"><button data-x="<span><!-- icon --></span>">Menu</button><main><h1>Server-rendered heading</h1><p>' . str_repeat( 'Visible body text. ', 30 ) . '</p></main></div></body></html>';
 $reduced_capture_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $reduced_capture_html );
 $assert( array() === $reduced_capture_diagnostic, 'attribute-comment-does-not-truncate-visible-page-text' );
