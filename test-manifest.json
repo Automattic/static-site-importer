@@ -83,6 +83,7 @@
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-responsive-border.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-input-border-reset.php", "environment": "standalone-php" },
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
     { "path": "tests/smoke-shared-part-form.php", "environment": "standalone-php" },

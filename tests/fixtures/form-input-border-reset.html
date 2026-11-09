@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Form border reset</title>
+<style>
+body{margin:0;padding:40px;font-family:Arial,sans-serif}
+.box{--in-bg:#f7f6f1;--in-border-color:#e2e5e4;--in-border-style:solid;--in-border-width:1px;--in-radius:4px;--in-padding:12px;position:relative;background:var(--in-bg);border-radius:var(--in-radius);height:46px;margin-bottom:16px}
+.box:after{content:"";pointer-events:none;box-sizing:border-box;position:absolute;inset:0;border-radius:var(--in-radius);border:var(--in-border-width) var(--in-border-style) var(--in-border-color)}
+.ctl{padding:var(--in-padding);width:100%;height:100%;box-sizing:border-box;background:0 0;border:none;font-size:15px}
+</style></head><body>
+<form>
+<label><p>Name</p><div class="box"><input class="ctl" type="text" name="name" placeholder="Your name"></div></label>
+<label><p>Email</p><div class="box"><input class="ctl" type="email" name="email" placeholder="you@example.com"></div></label>
+<label><p>Message</p><div class="box" style="height:100px"><textarea class="ctl" name="msg" placeholder="Tell us"></textarea></div></label>
+<button type="submit">Send</button>
+</form>
+</body></html>
