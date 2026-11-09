@@ -1,0 +1,269 @@
+{
+  "schema": "homeboy/workflow/v1",
+  "id": "import-findings-loop",
+  "inputs": {
+    "url": {
+      "required": true
+    },
+    "loop_dir": {
+      "required": true
+    },
+    "runs_dir": {
+      "required": true
+    },
+    "blocks_engine": {
+      "required": true
+    },
+    "slug": {
+      "required": true
+    },
+    "wp_cli": {
+      "default": "studio wp"
+    },
+    "cook_model": {
+      "required": true
+    },
+    "cook_placement": {
+      "default": "auto"
+    }
+  },
+  "env": {
+    "public": [
+      "PATH",
+      "HOME"
+    ]
+  },
+  "budget": {
+    "max_step_runs": 40,
+    "deadline": "36h"
+  },
+  "steps": [
+    {
+      "id": "import",
+      "timeout": "60m",
+      "retry": {
+        "max": 8,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "1h"
+      },
+      "exec": {
+        "program": "bash",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "import.sh",
+          "{{inputs.url}}",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "needs": [
+        "import"
+      ],
+      "timeout": "45m",
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "evaluate.mjs",
+          "--url",
+          "{{inputs.url}}",
+          "--wp-url",
+          "{{steps.import.output/site_url}}",
+          "--site",
+          "{{steps.import.output/site}}",
+          "--source",
+          "{{steps.import.output/source}}",
+          "--out",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
+        ]
+      }
+    },
+    {
+      "id": "triage",
+      "needs": [
+        "evaluate"
+      ],
+      "timeout": "12h",
+      "when": {
+        "step": "evaluate",
+        "output": "/blocker_count",
+        "gt": 0
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "triage.mjs",
+          "--findings",
+          "{{steps.evaluate.output/findings_path}}",
+          "--source",
+          "{{steps.import.output/source}}",
+          "--work",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage",
+          "--blocks-engine",
+          "{{inputs.blocks_engine}}",
+          "--iteration",
+          "{{inputs.iteration}}",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
+        ]
+      }
+    },
+    {
+      "id": "cook",
+      "needs": [
+        "triage"
+      ],
+      "timeout": "8h",
+      "when": {
+        "step": "triage",
+        "output": "/cook_count",
+        "gt": 0
+      },
+      "foreach": "{{steps.triage.output/cook_items}}",
+      "max_parallel": 3,
+      "join": {
+        "min_succeeded": 0
+      },
+      "cook": {
+        "repo": "{{item.repo}}",
+        "task-url": "{{item.issue_url}}",
+        "prompt": "{{item.prompt}}",
+        "verify": "{{item.verify}}",
+        "placement": "{{inputs.cook_placement}}",
+        "model": "{{inputs.cook_model}}",
+        "acknowledge-model-override": true,
+        "gate-env": "{{item.gate_env}}",
+        "provider-evidence": "{{item.provider_evidence}}",
+        "publish-incomplete-draft": true,
+        "timeout-ms": 2400000,
+        "gate-timeout-seconds": "5400"
+      }
+    },
+    {
+      "id": "confirm",
+      "needs": [
+        "triage",
+        "cook"
+      ],
+      "always": true,
+      "timeout": "2h",
+      "when": {
+        "step": "triage",
+        "output": "/continue",
+        "equals": true
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "confirm.mjs",
+          "--triage",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json",
+          "--blocks-engine",
+          "{{inputs.blocks_engine}}",
+          "--work",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm",
+          "--wp-cli",
+          "{{inputs.wp_cli}}"
+        ]
+      }
+    },
+    {
+      "id": "approve_merge",
+      "needs": [
+        "confirm"
+      ],
+      "always": true,
+      "when": {
+        "all": [
+          {
+            "step": "triage",
+            "output": "/continue",
+            "equals": true
+          },
+          {
+            "step": "confirm",
+            "output": "/merge_count",
+            "gt": 0
+          }
+        ]
+      },
+      "approval": {
+        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges each PR in confirm's merge list (not refuted, non-draft) at the head confirm checked, once its checks are green; a PR whose checks fail, conflicts or moves holds until the next pass."
+      }
+    },
+    {
+      "id": "merge",
+      "needs": [
+        "approve_merge"
+      ],
+      "always": true,
+      "when": {
+        "step": "approve_merge",
+        "output": "/decision",
+        "equals": "approved"
+      },
+      "foreach": "{{steps.confirm.output/merge}}",
+      "join": {
+        "min_succeeded": 0
+      },
+      "timeout": "65m",
+      "homeboy": [
+        "git",
+        "pr",
+        "merge-when-green",
+        "--repo",
+        "{{item.github}}",
+        "--number",
+        "{{item.number}}",
+        "--sha",
+        "{{item.sha}}",
+        "--wait-seconds",
+        "3600"
+      ]
+    },
+    {
+      "id": "shipped",
+      "needs": [
+        "merge"
+      ],
+      "timeout": "24h",
+      "when": {
+        "step": "merge",
+        "output": "/succeeded",
+        "gt": 0
+      },
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "shipped.mjs",
+          "--merge",
+          "{{steps.merge.output/items}}"
+        ]
+      },
+      "always": true
+    }
+  ],
+  "next_pass": {
+    "max_iterations": 60,
+    "when": {
+      "step": "triage",
+      "output": "/continue",
+      "equals": true
+    },
+    "stop_unchanged": {
+      "step": "evaluate",
+      "output": "/blocker_signatures",
+      "passes": 3
+    }
+  }
+}

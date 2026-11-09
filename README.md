@@ -359,6 +359,20 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 ## URL Loop Intake
 
+### Finding reduction
+
+`tools/reduce-finding.mjs` shrinks a standalone page to the smallest version that still shows a finding. It parses HTML with parse5 and CSS with a block-aware parser. It then runs hierarchical delta debugging: ddmin over each level of the element tree, then unwrapping elements, dropping attributes and shortening text, then ddmin over CSS rules (including whole at-rule blocks and rules nested in `@media`/`@layer`) and declarations. It repeats until a round changes nothing or `--max-calls`/`--timeout-ms` runs out.
+
+```sh
+node tools/reduce-finding.mjs --input page.html --output reduced-case \
+  --predicate 'my-check {candidate}'          # exit 0 = still reproduces
+# or check a JSON report the command prints for each candidate:
+#   --report-command 'editability-report {candidate}' --check 'metrics.raw_html_block_count > 0' --stage editability
+```
+
+The output directory holds `source.html` (the reduced page), `reduction.json` (counts, budget use and a failure signature), and `fixture.json`. `fixture.json` is a `blocks-engine/php-transformer/visual-parity-fixture/v1` fixture with 390px and 1440px viewports. Pass `--target-command '<cmd {source}>'` to write the transformer's WordPress render to `target.html`. Without it, the target is a placeholder (`metadata.target_status: "placeholder"`) for the caller to fill in. The signature digests stage, check, blocks and structural features (tags, CSS property names, at-rules, selector features, value functions) and ignores names, text and literal values. Predicates can also be functions: `reportPredicate`, `editabilityPredicate` (Blocks Engine editability report metrics such as `raw_html_block_count` or `max_nesting_depth`) and `visualParityPredicate` (visual parity report `reason_code`). The import findings loop calls it to reduce each new finding before filing.
+
+
 The bounded URL entrypoint retains one fresh capture from a caller-configured
 capture command, then passes that exact generated-artifact tree through SSI's
 existing fixture intake. It never interprets fallback counts as solved-site
@@ -416,154 +430,43 @@ evidence summary. WordPress/editor evidence remains owned by the existing fixtur
 matrix and is required by solved-site promotion; this entrypoint never claims solved
 status.
 
-### Durable, bounded evaluation
+### Import findings loop
 
-`tools/url-loop-controller.mjs` turns one URL into a bounded, hands-off repair
-chain of `homeboy/workflow/v1` instances across SSI, Blocks Engine and a
-configured capture producer. The operator supplies the URL; the loop opens
-upstream pull requests until the source passes or the iteration cap or a typed
-blocker stops it. One instance is one pass: the pass's final `next` step
-re-admits the same definition with `iteration` advanced and the captured
-fixture carried as an input, and because Homeboy derives instance ids
-deterministically from definition and inputs, a replayed admission converges on
-the existing next instance.
+`tools/import-loop/loop.json` is a [Homeboy](https://github.com/Extra-Chill/homeboy) workflow (`homeboy/workflow/v1`) that drives one source URL toward a clean, editable import. It imports the way a user does: `studio create --from <url>`, which installs the latest Data Liberation Agent, Static Site Importer and Blocks Engine releases. One pass is one workflow instance. Homeboy runs the steps, Cook fan-out, the approval and the chain of passes; the scripts in this directory hold the import-specific logic.
 
-The capture producer is operator configuration: the repository the loop
-composes and repairs for capture, and the commands that build it, capture a URL
-and compare a capture. Pass it as `--capture-producer '<JSON>'` or set
-`SSI_URL_LOOP_CAPTURE_PRODUCER` on the runner. Placeholders are `{checkout}`
-(the composed checkout), `{url}`, `{output}`, `{capture}` (the directory with
-the Blocks Engine `capture-receipt.json`), `{stage}` (`capture` or
-`materialization`) and `{candidate}` (the served WordPress origin). For example,
-with Data Liberation Agent:
+1. **import** (`import.sh`) creates a Studio site from the URL and keeps the capture.
+2. **evaluate** (`evaluate.mjs`) renders every source and imported route at 390, 768 and 1440px, opens each route in the block editor, and writes `findings.json`. Each finding has a stable signature over stage, check, owning repository and subject, so a defect keeps its id across passes. Theme metrics (`restyle_coverage_low`, `theme_css_bloat`, `quality_status`, `block_nesting_deep`) are advisory; every other check is a blocker. A pass with no blockers accepts the source.
+3. **triage** (`triage.mjs`) matches each blocker to an issue that carries its signature. For a new finding with a predicate in `predicates/<check>.mjs`, it:
+   - reproduces the finding against Blocks Engine `trunk`, falling back to the capture's own route document when the inlined page does not show it;
+   - reduces it with `tools/reduce-finding.mjs`;
+   - files it in the owning repository with the reduced page and the predicate.
 
-```json
-{
-  "repository": "data-liberation-agent",
-  "checkout": "/path/to/data-liberation-agent",
-  "remote": "https://github.com/Automattic/data-liberation-agent.git",
-  "base": "main",
-  "build": [["npm", "ci", "--no-audit", "--no-fund"], ["npm", "run", "build"]],
-  "capture": ["node", "{checkout}/dist/cli.js", "{url}", "--output", "{output}", "--route-limit", "12", "--reference-sample", "all"],
-  "compare": ["node", "{checkout}/dist/cli.js", "compare", "{capture}", "--stage", "{stage}"],
-  "compare_candidate": ["--candidate", "{candidate}"],
-  "failure_details": {"file": "{capture}/diagnostics.json", "pointer": "/failures"},
-  "verify": ["npm test"]
-}
+   It reopens a closed issue whose finding still reproduces. Findings without a predicate are reported as untracked.
+4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
+5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
+6. **approve_merge** waits for a human: `homeboy workflow approve <instance> approve_merge`, or `reject`. With `--notification-transport`/`--notification-route`, the prompt is posted there.
+7. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
+8. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
+
+Homeboy's `next_pass` starts the next pass. The chain stops when the source is accepted, when no blocker is tracked, when three passes in a row see the same blockers, or after 60 passes. Cook and merge items may fail without ending the chain (`"join": {"min_succeeded": 0}`): the next pass sees the same findings and tries again.
+
+Run it from this repository's root (the host needs `studio`, an authenticated `gh`, PHP, Node, and this repository's `npm ci` with Playwright Chromium):
+
+```sh
+homeboy workflow run "$PWD/tools/import-loop/loop.json" \
+  --input url=https://example.com/ --input slug=example \
+  --input loop_dir="$PWD/tools/import-loop" --input runs_dir=/path/to/runs \
+  --input blocks_engine=/path/to/blocks-engine-clone \
+  --input cook_model=<model> \
+  [--input cook_placement=auto] [--input wp_cli='studio wp'] \
+  [--notification-transport <transport> --notification-route <route>]
+homeboy runs show <instance>
+homeboy workflow approve <instance> approve_merge
 ```
 
-`compare_report` (default `{capture}/compare/{stage}/report.json`) names the
-report whose `pass` decides each comparison. Its contract is `pass`, `status`,
-and optional `scores[]` entries with `pass` and `failures`; failing entries are
-included in repair evidence. Optional `failure_details` identifies a JSON file
-and pointer to an array of capture failure details, which are included in
-repair evidence when available. `task_url` names the producer's tracker.
+`blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_model` chooses the Cook's Pi model (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
 
-```bash
-node tools/url-loop-controller.mjs start \
-  --url https://housing-resolutions.com/ \
-  --capture-producer "$(cat capture-producer.json)" \
-  --task-url https://github.com/<owner>/<repo>/issues/<n> \
-  --blocks-engine /path/to/blocks-engine \
-  --wp-codebox-bin /path/to/wp-codebox \
-  --max-iterations 3 --max-step-runs 20 --deadline 10h
-homeboy workflow status <instance printed by start>
-```
-
-Each pass runs four steps:
-
-1. **`capture`** runs only on the first pass: it composes the producer
-   repository, builds it and captures the live URL once, and its output is the
-   capture directory (the loop's `fixture`). A pass that received a `fixture`
-   input passes it through unchanged, so later passes measure the same capture.
-2. **`evaluate`** composes the candidate and measures it:
-   - **Compose.** For each repository it checks out the public base (`main`;
-     `trunk` for Blocks Engine; the configured base for the producer) and merges
-     this loop's repair branches `url-loop/<loop>/<repo>-i<n>` in iteration
-     order, so every pass measures all earlier repairs. `<loop>` is the loop
-     identity `start` derives from the URL (suffixed with `--instance` when
-     forking), shared by every pass, so branch names never depend on a Homeboy
-     instance id. Base and merged SHAs are recorded; a conflict is the typed
-     blocker `candidate_merge_conflict:<repo>:<branch>`.
-   - **Compare.** It builds the composed producer and runs the `capture`
-     comparison against the fixture.
-   - **Import.** It builds the SSI development package against the composed
-     Blocks Engine (`tools/build-dev-package.mjs`) and imports the capture into
-     a disposable WP Codebox Playground with `recipe-run`: WordPress 7.1,
-     WP-CLI, Jetpack preinstalled for forms, and SSI driven through
-     `import --single-step --state` because PHP.wasm has no subprocesses.
-   - **Measure.** While Codebox serves the imported site, the `materialization`
-     comparison measures WordPress against the capture. The step output records
-     the verdict plus `next_iteration` and `continue`, true only when the
-     verdict is `findings` and `iteration < max_iterations`.
- 3. **`repair`** is one Homeboy Cook step with `foreach` over the routed repair
-    items. It fans out up to three independent repository repairs; each Cook
-    receives that repository's evidence, tracker, branch and verify commands.
-    The `any` join lets the next step run when at least one repair passes,
-    even if another repository's repair fails. If every repair fails, the join
-    fails the workflow instance. Repairs open ready-for-review PRs; nothing merges
-    automatically.
-4. **`next`** re-admits the same definition file (`workflow.json` under the
-    loop's artifact root) with every input unchanged except
-    `iteration=<next_iteration>` and `fixture=<fixture root>`, gated by
-    `continue == true`. `max_step_runs` and `deadline` bound each pass; the
-    iteration cap bounds the chain.
-
-**Verdict.** `accepted` requires a passing capture comparison, a passing
-materialization comparison, `quality_pass`, and zero unsupported fallback, core
-HTML, freeform and invalid blocks. This is the loop stop rule; SSI's fail-closed
-solved-site promotion receipt remains the separate publication step. Failing
-evidence with an owner is `findings`; missing or unroutable evidence is
-`blocked`, which fails the step and the instance.
-
-**Routing.** Failed capture routes (from the receipt) and capture-comparison
-failures go to the capture producer; finding packets owned by `blocks-engine/*`
-go to Blocks Engine; other finding packets, import failures and
-materialization-comparison failures go to SSI. Each routed repository gets
-`evaluations/<loop>/i<n>/repairs/<repo>.json` with its findings, the
-composed component SHAs, stage reports, import quality and a sorted `scope`
-array. Scope is derived from finding packet owners of the form
-`<repository>/<component>` when that top-level component directory exists in
-the composed checkout. Bare repository owners and failures without an owner do
-not add scope.
-
-The repair Cook prompt names the owning component paths (`scope_text`) and says
-the fix belongs there: changes elsewhere do not address the finding. For a
-scoped repair, its verify program first requires at least one changed path
-under a scope directory, considering both committed changes against the
-repository's pinned base and uncommitted working-tree changes, before running
-the configured repository tests. Unscoped repairs run only their configured
-tests.
-
-**Options.** `--task-url` (or `SSI_URL_LOOP_TASK_URL`) names the tracker every
-repair Cook works on; it is required unless every repository names its own
-through `--ssi-task-url`, `--blocks-engine-task-url` and the producer's
-`task_url`. `--ssi-verify` and `--blocks-engine-verify`
-(repeatable) override the Cook gates, which default to `npm test` and
-`composer --working-dir=php-transformer test` inside Blocks Engine's reference
-PHP runtime (`php-transformer/tools/reference-runtime/run.sh`, the PHP and
-libxml2 WordPress.com serves from), so a runner's own PHP build cannot change
-the recorded serialized output the gate compares. `SSI_BLOCKS_ENGINE_PATH` and
-`HOMEBOY_WP_CODEBOX_BIN` configure the Blocks Engine checkout and Codebox CLI on
-a runner. Steps run with an empty environment plus the declared public
-toolchain names (`PATH`, `HOME`, `XDG_*`, `PLAYWRIGHT_*`, npm and Composer
-caches) captured where `start` runs. Evaluation children get a temp directory
-owned by the pass (`evaluations/<loop>/i<n>/tmp`), never an inherited
-one. `--fix-timeout-minutes` (default 40) is each repair provider's base deadline;
-Homeboy extends a provider still producing output to three times that.
-`--fix-secret-env <NAME>` (repeatable) names an environment variable each repair
-Cook asks Homeboy to hydrate for its provider (the Cook step's `secret-env`),
-resolved from the runner's configured secrets; providers otherwise see a
-filtered environment, so a credential such as a provider header key must be
-named here. `--max-iterations` (default 3) bounds the chain: `evaluate` emits
-`continue` only while the verdict is `findings` and `iteration < max_iterations`,
-and the `next` step re-admits the definition only while `continue` holds.
-`--max-step-runs` and `--deadline` bound each pass, not the whole chain.
-`--instance <token>` forks an
-independent loop for the same source: repair branches, captures and evaluations
-are named from the resulting loop identity, so a fork never composes another
-loop's repairs. `workflow` instead of `start` prints the
-generated definition for `homeboy workflow validate -` without admitting it.
+The loop measures; the importer does not fail an import on these findings. Import quality gates stay report-only unless a caller opts in with `fail_on_quality`, so the loop's blockers are its own acceptance policy, not import failures.
 
 ## Product Handoff Contract
 

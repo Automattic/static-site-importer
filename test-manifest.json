@@ -307,7 +307,9 @@
     { "path": "tools/outcome-checks.test.mjs", "environment": "node" },
     { "path": "tools/outcome-corpus.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-intake.test.mjs", "environment": "node" },
-    { "path": "tools/url-loop-controller.test.mjs", "environment": "node" },
+    { "path": "tools/reduce-finding.test.mjs", "environment": "node" },
+    { "path": "tools/reduce-finding/css.test.mjs", "environment": "node" },
+    { "path": "tools/reduce-finding/html.test.mjs", "environment": "node" },
     { "path": "tests/authored-viewport.test.mjs", "environment": "node" },
     { "path": "tests/third-party-social-image.test.mjs", "environment": "node" },
     { "path": "tests/import-time-links.test.mjs", "environment": "node" },
@@ -318,7 +320,6 @@
     { "path": "tests/editor-companion-acceptance.mjs", "environment": "browser-wp-codebox", "command": ["bash", "tools/run-editor-companion-acceptance.sh"] },
     { "path": "tests/run-validation-harness.cjs", "environment": "operator-only", "command": ["node", "tests/run-validation-harness.cjs"] },
     { "path": "tools/run-fixture-matrix.mjs", "environment": "operator-only", "command": ["node", "tools/run-fixture-matrix.mjs"] },
-    { "path": "tools/url-loop-controller.mjs", "environment": "operator-only", "command": ["node", "tools/url-loop-controller.mjs"] },
     { "path": "tools/run-existing-runtime-review.mjs", "environment": "operator-only", "command": ["node", "tools/run-existing-runtime-review.mjs"] },
     { "path": "tools/verify-playground-inputs.mjs", "environment": "operator-only", "reason": "Real browser input matrix against the published or candidate Playground; requires PLAYGROUND_FIXTURE_REPO." },
     { "path": "tools/fig-acceptance-provider.mjs", "environment": "operator-only", "command": ["node", "tools/fig-acceptance-provider.mjs"] }
