@@ -140,7 +140,6 @@
         "placement": "{{inputs.cook_placement}}",
         "model": "{{inputs.cook_model}}",
         "acknowledge-model-override": true,
-        "gate-env": "{{item.gate_env}}",
         "provider-evidence": "{{item.provider_evidence}}",
         "publish-incomplete-draft": true,
         "timeout-ms": 2400000,
