@@ -213,6 +213,17 @@ jobs:
           set -e
           echo "MATRIX_STATUS=$matrix_status" >> "$GITHUB_ENV"
 
+      - name: DEBUG node resolution (temporary)
+        if: always()
+        run: |
+          set +e
+          which -a node nodejs; for n in $(which -a node) /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && echo "$n -> $($n --version)"; done
+          echo "WP_CODEBOX_BIN=$WP_CODEBOX_BIN -> $(readlink -f "$WP_CODEBOX_BIN")"; head -1 "$(readlink -f "$WP_CODEBOX_BIN")"
+          echo "HOMEBOY_WP_CODEBOX_BIN=$HOMEBOY_WP_CODEBOX_BIN"; file ~/.local/bin/wp-codebox; head -c 1500 ~/.local/bin/wp-codebox; echo
+          ls ~/.cache/homeboy/wp-codebox/release/wp-codebox-cli/vendor/node/bin 2>&1; ~/.cache/homeboy/wp-codebox/release/wp-codebox-cli/vendor/node/bin/node --version 2>&1
+          find / -name node -type f -perm -u+x 2>/dev/null | grep -v proc | while read n; do echo "$n $($n --version 2>/dev/null)"; done | grep 'v22' | head
+          grep -rl '22.23.4' ~/.config/homeboy 2>/dev/null | head -5
+
       - name: Verify and issue promotion receipt
         working-directory: static-site-importer
         env:
