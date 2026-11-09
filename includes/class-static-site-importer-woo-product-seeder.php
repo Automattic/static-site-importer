@@ -76,6 +76,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$capture = Static_Site_Importer_Product_Presentation::capture( $entity );
 			if ( $id > 0 && function_exists( 'update_post_meta' ) ) {
 				update_post_meta( $id, '_static_site_importer_variation_wording', $capture['variation_wording'] ?? array() );
+				update_post_meta( $id, '_static_site_importer_purchase_wording', $capture['purchase_wording'] ?? array() );
 			}
 			$attributes = empty( $capture ) ? array() : array( 'className' => $capture['className'] );
 			if ( Static_Site_Importer_Product_Presentation::quantity_stepper( $entity ) ) {

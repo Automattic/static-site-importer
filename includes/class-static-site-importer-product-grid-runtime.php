@@ -42,6 +42,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
 		add_filter( 'woocommerce_dropdown_variation_attribute_options_args', array( self::class, 'variation_placeholder' ) );
 		add_filter( 'woocommerce_attribute_label', array( self::class, 'variation_label' ), 10, 3 );
+		add_filter( 'woocommerce_product_single_add_to_cart_text', array( self::class, 'submit_text' ), 10, 2 );
+		add_action( 'woocommerce_before_add_to_cart_quantity', array( self::class, 'quantity_caption' ) );
 		add_action( 'woocommerce_before_variations_form', array( self::class, 'open_variation_form' ) );
 		add_action( 'woocommerce_after_variations_form', array( self::class, 'close_variation_form' ) );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
@@ -71,14 +73,51 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 
 	/** Read only validated plain text, including in generated companion runtimes. */
 	private static function variation_wording( mixed $product, string $attribute ): array {
+		$key = sanitize_title( $attribute );
+		// Woo prefixes global attribute taxonomies; source controls name the attribute.
+		return self::stored_wording( $product, '_static_site_importer_variation_wording', array( $key, str_starts_with( $key, 'pa_' ) ? substr( $key, 3 ) : $key ) );
+	}
+
+	/** The source's wording for a purchase control (`quantity` or `submit`). */
+	private static function purchase_wording( mixed $product, string $role ): array {
+		return self::stored_wording( $product, '_static_site_importer_purchase_wording', array( $role ) );
+	}
+
+	/** Woo keeps rendering and escaping the native button; only its wording is the source's. */
+	public static function submit_text( mixed $text, mixed $product = null ): mixed {
+		return self::purchase_wording( $product, 'submit' )['label'] ?? $text;
+	}
+
+	/**
+	 * Restore the source's visible quantity caption above the native quantity
+	 * control. Woo already names the input for assistive technology, so the
+	 * caption is presentational and hidden from it.
+	 */
+	public static function quantity_caption(): void {
+		global $product;
+		$label = self::purchase_wording( $product, 'quantity' )['label'] ?? '';
+		if ( '' !== $label ) {
+			echo '<span class="ssi-purchase-quantity-label" aria-hidden="true">' . esc_html( $label ) . '</span>';
+		}
+	}
+
+	/**
+	 * The first stored row among `$keys`, accepted only as canonical plain text.
+	 *
+	 * @param array<int,string> $keys
+	 */
+	private static function stored_wording( mixed $product, string $meta_key, array $keys ): array {
 		if ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) ) {
 			return array();
 		}
-		$wording = get_post_meta( $product->get_id(), '_static_site_importer_variation_wording', true );
-		$key     = sanitize_title( $attribute );
-		// Woo prefixes global attribute taxonomies; source controls name the attribute.
-		$plain = str_starts_with( $key, 'pa_' ) ? substr( $key, 3 ) : $key;
-		$row   = is_array( $wording ) ? ( $wording[ $key ] ?? $wording[ $plain ] ?? array() ) : array();
+		$wording = get_post_meta( $product->get_id(), $meta_key, true );
+		$row     = array();
+		foreach ( $keys as $key ) {
+			if ( is_array( $wording ) && isset( $wording[ $key ] ) ) {
+				$row = $wording[ $key ];
+				break;
+			}
+		}
 		if ( ! is_array( $row ) ) {
 			return array();
 		}
@@ -498,7 +537,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
 		// The card list may sit deeper than the loop: a store listing's loop
 		// wraps the whole listing and the list sits in its grid element.
-		return $loop . ',' . $loop . ' > .wc-block-components-notices{display:contents;}'
+		return '.ssi-purchase-quantity-label{display:block;}'
+			. $loop . ',' . $loop . ' > .wc-block-components-notices{display:contents;}'
 			// A store notice spans the whole grid row instead of taking a card's cell.
 			. $loop . ' > .wc-block-components-notices > *{grid-column:1/-1;}';
 	}

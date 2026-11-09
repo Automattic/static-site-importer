@@ -16,6 +16,10 @@ function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) { //
 	$GLOBALS['ssi_filters'][ $hook ][] = $callback;
 }
 function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Core signature.
+	$GLOBALS['ssi_filters'][ $hook ][] = $callback;
+}
+function esc_html( $text ) {
+	return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
 }
 function get_post_type( $id ) {
 	return $GLOBALS['ssi_post_types'][ $id ] ?? false;
@@ -567,6 +571,34 @@ foreach ( $wording_cases as $case => $control ) {
 			throw new RuntimeException( 'Non-plain wording accepted.' );
 		}
 	}
+}
+// The source's quantity caption and button wording reach the native Woo form
+// through product meta; Woo still renders and names the controls.
+$purchase = array(
+	'entity_kind' => 'add_to_cart_form',
+	'controls'    => array(
+		array( 'tag' => 'input', 'type' => 'number', 'label' => 'Quantity' ),
+		array( 'tag' => 'a', 'type' => 'a', 'role' => 'button', 'text' => "Add to\n Cart" ),
+	),
+);
+Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( $purchase, array( 'id' => 43 ) );
+$GLOBALS['product'] = new class {
+	public function get_id() { return 43; }
+};
+ob_start();
+foreach ( $GLOBALS['ssi_filters']['woocommerce_before_add_to_cart_quantity'] ?? array() as $callback ) {
+	$callback();
+}
+$caption = ob_get_clean();
+if ( 'Add to Cart' !== apply_filters( 'woocommerce_product_single_add_to_cart_text', 'Add to cart', $GLOBALS['product'] ) || '<span class="ssi-purchase-quantity-label" aria-hidden="true">Quantity</span>' !== $caption ) {
+	throw new RuntimeException( 'Native purchase form lost the source quantity caption or button wording: ' . $caption );
+}
+$overlay = Static_Site_Importer_Product_Presentation::capture( $purchase );
+$bad     = $overlay;
+
+$bad['purchase_wording']['submit']['label'] = '<b>Buy</b>';
+if ( $overlay !== Static_Site_Importer_Product_Presentation::validate_overlay( $overlay ) || null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+	throw new RuntimeException( 'Purchase wording receipt did not round trip exactly.' );
 }
 // A sliding-door link button paints its cap on the control and its body on the
 // caption carrier. One native Woo button draws both: the carrier as a ::before

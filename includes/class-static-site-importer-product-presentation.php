@@ -47,6 +47,8 @@ final class Static_Site_Importer_Product_Presentation {
 		$indexes     = array();
 		$stepper     = self::quantity_stepper( $entity );
 		$buttons     = $stepper ? array_column( $stepper['members'], 'index' ) : array();
+
+		$purchase_wording = array();
 		foreach ( $entity['controls'] ?? array() as $index => $control ) {
 			if ( $buttons && in_array( $index, array( $buttons[0], $buttons[2] ), true ) ) {
 				continue;
@@ -81,6 +83,12 @@ final class Static_Site_Importer_Product_Presentation {
 			$purchase[ $role ] = $styles;
 			$indexes[ $role ]  = $index;
 			$declarations      = self::declarations( $styles );
+			// The source's own wording for the quantity caption and the button.
+			$text = 'submit' === $role ? ( $control['text'] ?? '' ) : ( 'quantity' === $role && false !== ( $control['label_visible'] ?? true ) ? ( $control['label'] ?? '' ) : '' );
+			$text = is_string( $text ) ? trim( (string) preg_replace( '/\s+/u', ' ', $text ) ) : '';
+			if ( '' !== $text && self::validate_wording( array( $role => array( 'label' => $text ) ) ) ) {
+				$purchase_wording[ $role ] = array( 'label' => $text );
+			}
 			// Each variation may have its own captured design; do not flatten
 			// several source selects onto the last control's presentation.
 			$slot = 'variation' === $role ? $role . ':' . count( array_filter( array_keys( $rules ), static fn( $key ) => str_starts_with( $key, 'variation:' ) ) ) : $role;
@@ -96,6 +104,10 @@ final class Static_Site_Importer_Product_Presentation {
 		if ( $wording ) {
 			$overlay                      = $overlay ? $overlay : self::artifact( array(), true );
 			$overlay['variation_wording'] = $wording;
+		}
+		if ( $purchase_wording ) {
+			$overlay                     = $overlay ? $overlay : self::artifact( array(), true );
+			$overlay['purchase_wording'] = $purchase_wording;
 		}
 		return $overlay;
 	}
@@ -878,6 +890,14 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$expected                      = $expected ? $expected : self::artifact( array(), true );
 			$expected['variation_wording'] = $wording;
+		}
+		if ( array_key_exists( 'purchase_wording', $overlay ) ) {
+			$wording = self::validate_wording( $overlay['purchase_wording'] );
+			if ( ! $wording || array_diff_key( $wording, array_flip( array( 'quantity', 'submit' ) ) ) || array_filter( $wording, static fn( array $row ): bool => array( 'label' ) !== array_keys( $row ) ) ) {
+				return null;
+			}
+			$expected                     = $expected ? $expected : self::artifact( array(), true );
+			$expected['purchase_wording'] = $wording;
 		}
 		return $expected === $overlay ? $expected : null;
 	}
