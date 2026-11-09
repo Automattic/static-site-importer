@@ -893,7 +893,7 @@ final class Static_Site_Importer_Product_Presentation {
 		}
 		if ( array_key_exists( 'purchase_wording', $overlay ) ) {
 			$wording = self::validate_wording( $overlay['purchase_wording'] );
-			if ( ! $wording || array_diff_key( $wording, array( 'quantity' => true, 'submit' => true ) ) || array_filter( $wording, static fn( array $row ): bool => array( 'label' ) !== array_keys( $row ) ) ) {
+			if ( ! $wording || array_diff_key( $wording, array_flip( array( 'quantity', 'submit' ) ) ) || array_filter( $wording, static fn( array $row ): bool => array( 'label' ) !== array_keys( $row ) ) ) {
 				return null;
 			}
 			$expected                     = $expected ? $expected : self::artifact( array(), true );
