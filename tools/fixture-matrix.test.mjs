@@ -4102,7 +4102,6 @@ test('builds one-command Blocks Engine fixture matrix plan from its derived inve
   assert.deepEqual(plan.warnings, []);
   assert.equal(plan.dependency_overrides.blocks_engine_php_transformer.path, blocksEngine);
   assert.equal(plan.steps.some((step) => step.args.includes('install')), false);
-  assert.ok(plan.steps.some((step) => step.args.includes('sync')));
 
   const benchStep = plan.steps.at(-1);
   assert.deepEqual(benchStep.args.slice(0, 7), ['bench', '--rig', 'static-site-importer-fixture-matrix', '--profile', 'fixture-matrix', '--iterations', '1']);
@@ -4133,7 +4132,6 @@ test('builds one-command Blocks Engine fixture matrix plan from its derived inve
     blocksEngine,
     targetFixture: 'fixture-01',
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(targetPlan.fixture_count, 1);
   assert.deepEqual(targetPlan.lane_filter.fixture_ids, ['fixture-01']);
@@ -4146,7 +4144,6 @@ test('builds one-command Blocks Engine fixture matrix plan from its derived inve
     targetFixture: 'fixture-01',
     promotionGate: true,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(promotionPlan.fixture_count, 2);
   assert.equal(promotionPlan.selected_active_fixture_count, 1);
@@ -4171,7 +4168,6 @@ test('builds one-command Blocks Engine fixture matrix plan from its derived inve
     blocksEngine,
     solvedOnly: true,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(solvedOnlyPlan.lane_identity, SOLVED_ONLY_LANE_ID);
   assert.equal(solvedOnlyPlan.fixture_count, 1);
@@ -4213,7 +4209,6 @@ test('builds one-command Blocks Engine fixture matrix plan from its derived inve
     blocksEngine,
     surfaceCoverage: '99',
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(surfacePlan.surface_coverage.extra_surfaces_per_fixture, MAX_EXTRA_SURFACE_COUNT);
   assert.equal(surfacePlan.surface_coverage.capped, true);
@@ -4308,11 +4303,11 @@ test('fixture coverage evidence keeps solved-only and promotion selection separa
   }
   mkdirSync(staticSiteImporter, { recursive: true });
 
-  const solvedOnly = buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, solvedOnly: true, skipInstall: true, skipSync: true });
+  const solvedOnly = buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, solvedOnly: true, skipInstall: true });
   assert.deepEqual(solvedOnly.fixture_coverage.active.selected, []);
   assert.deepEqual(solvedOnly.fixture_coverage.solved.selected, [{ id: 'solved-site', reason: 'selected' }]);
 
-  const promotion = buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, targetFixture: 'active-site', promotionGate: true, skipInstall: true, skipSync: true });
+  const promotion = buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, targetFixture: 'active-site', promotionGate: true, skipInstall: true });
   assert.deepEqual(promotion.fixture_coverage.active.selected, [{ id: 'active-site', reason: 'selected' }]);
   assert.deepEqual(promotion.fixture_coverage.solved.selected, [{ id: 'solved-site', reason: 'selected' }]);
 });
@@ -4626,7 +4621,6 @@ test('--solved-only selects exactly the valid solved fixture corpus', () => {
     fixtureRoot,
     solvedOnly: true,
     skipInstall: true,
-    skipSync: true,
   });
 
   assert.deepEqual(plan.lane_filter.fixture_ids, ['solved-a', 'solved-b']);
@@ -4659,7 +4653,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
   });
   assert.deepEqual(setupPlan.steps.slice(0, -1).map((step) => step.args), [
     ['--placement', 'local', 'rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
-    ['--placement', 'local', 'rig', 'sync', 'static-site-importer-fixture-matrix'],
   ]);
   assert.deepEqual(setupPlan.phase_plan, {
     schema: FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
@@ -4681,7 +4674,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   const labArgs = labPlan.steps.at(-1).args;
   assert.equal(labPlan.execution_target, 'lab:homeboy-lab');
@@ -4700,7 +4692,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     sharedState: '/var/folders/ab/example/shared-state',
     artifactRoot: '/private/var/folders/ab/example/artifacts',
     skipInstall: true,
-    skipSync: true,
   });
   assert.ok(explicitMacTempLabPlan.steps.at(-1).args.includes('/var/folders/ab/example/shared-state'));
   assert.ok(explicitMacTempLabPlan.steps.at(-1).args.includes('/private/var/folders/ab/example/artifacts'));
@@ -4713,7 +4704,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   const localArgs = localPlan.steps.at(-1).args;
   assert.equal(localPlan.execution_target, 'local');
@@ -4727,7 +4717,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   const runnerLocalArgs = runnerLocalPlan.steps.at(-1).args;
   assert.equal(runnerLocalPlan.execution_target, 'local');
@@ -4741,7 +4730,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(labOnlyPlan.execution_target, 'lab');
   assert.deepEqual(labOnlyPlan.steps.at(-1).args.slice(-2), ['--placement', 'lab']);
@@ -4751,7 +4739,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(unnamedFallbackPlan.execution_target, 'lab-or-local');
   assert.deepEqual(unnamedFallbackPlan.steps.at(-1).args.slice(-2), ['--placement', 'lab-or-local']);
@@ -4761,7 +4748,6 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     staticSiteImporter,
     fixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(autoPlan.execution_target, 'auto');
   assert.deepEqual(autoPlan.steps.at(-1).args.slice(-2), ['--placement', 'auto']);
@@ -4771,13 +4757,13 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
 test('fixture matrix phase retries identify setup ownership and the exact command', () => {
   const setup = {
     phase: 'controller-setup',
-    label: 'Sync/materialize rig components (lab:homeboy-lab)',
+    label: 'Refresh installed SSI fixture matrix rig (lab:homeboy-lab)',
     command: 'homeboy',
-    args: ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+    args: ['rig', 'install', '.', '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
   };
   assert.equal(
     phaseFailureDiagnostic(setup, 17),
-    'Sync/materialize rig components (lab:homeboy-lab) failed with exit 17 during controller-setup. Retry: homeboy rig sync static-site-importer-fixture-matrix',
+    'Refresh installed SSI fixture matrix rig (lab:homeboy-lab) failed with exit 17 during controller-setup. Retry: homeboy rig install . --id static-site-importer-fixture-matrix --reinstall',
   );
 });
 
@@ -4803,7 +4789,6 @@ test('fixture matrix operator projects exact Homeboy arguments for every routing
       staticSiteImporter,
       fixtureRoot,
       skipInstall: true,
-      skipSync: true,
     }).steps.at(-1).args;
     const start = args.findIndex((arg) => arg === '--placement' || arg === '--runner');
     assert.deepEqual(args.slice(start), expected, name);
@@ -4823,7 +4808,6 @@ test('fixture matrix operator plan forwards complexity lane settings', () => {
     complexity: '2',
     maxComplexity: '3',
     skipInstall: true,
-    skipSync: true,
   });
   const benchArgs = plan.steps.at(-1).args;
 
@@ -4847,7 +4831,6 @@ test('fixture matrix operator preserves exact-zero visual thresholds', () => {
     visualParityMaxVerticalShift: '0',
     visualParityMaxHorizontalShift: '0',
     skipInstall: true,
-    skipSync: true,
   }).steps.at(-1).args;
 
   for (const setting of [
@@ -5294,7 +5277,6 @@ test('code freshness guard blocks stale overrides unless explicitly allowed', ()
     blocksEngine,
     runId: 'ssi-freshness-stale',
     skipInstall: true,
-    skipSync: true,
     gitRunner,
   });
 
@@ -5312,7 +5294,6 @@ test('code freshness guard blocks stale overrides unless explicitly allowed', ()
     blocksEngine,
     runId: 'ssi-freshness-stale-allowed',
     skipInstall: true,
-    skipSync: true,
     allowStaleOverride: true,
     gitRunner,
   });
@@ -5340,7 +5321,6 @@ test('code freshness guard lets fresh and diverged overrides through with accura
     blocksEngine,
     runId: 'ssi-freshness-fresh',
     skipInstall: true,
-    skipSync: true,
     dependencyOverlayReferences: true,
     gitRunner,
   });
@@ -5357,7 +5337,6 @@ test('code freshness guard lets fresh and diverged overrides through with accura
     blocksEngine,
     runId: 'ssi-freshness-compatible',
     skipInstall: true,
-    skipSync: true,
     gitRunner,
   });
   assert.equal(compatiblePlan.dependency_overrides.blocks_engine_php_transformer.reference, undefined);
@@ -5418,7 +5397,6 @@ test('fixture matrix dry-run plan surfaces local fallback and dirty workspace wa
     allowLocalFallback: true,
     allowDirtyLabWorkspace: true,
     skipInstall: true,
-    skipSync: true,
   });
 
   assert.equal(plan.namespace, 'proof-run-1');
@@ -5443,7 +5421,6 @@ test('--local selects typed local placement and suppresses the auto-placement wa
     fixtureRoot: localFixtureRoot,
     local: true,
     skipInstall: true,
-    skipSync: true,
   });
 
   // The auto-placement warning is gone; the local-placement note replaces it.
@@ -6471,7 +6448,6 @@ test('--no-editor-validation skips the editor browser step while keeping native-
     staticSiteImporter,
     fixtureRoot: planFixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(enabledPlan.editor_validation.enabled, true);
   assert.equal(
@@ -6486,7 +6462,6 @@ test('--no-editor-validation skips the editor browser step while keeping native-
     fixtureRoot: planFixtureRoot,
     editorValidation: false,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(skippedPlan.editor_validation.enabled, false);
   assert.ok(skippedPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION=0'));
@@ -9362,7 +9337,6 @@ test('--live-wp-parity threads flag -> env into the bench, OFF leaves it absent'
     staticSiteImporter,
     fixtureRoot: planFixtureRoot,
     skipInstall: true,
-    skipSync: true,
   });
   assert.equal(
     offPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY=1'),
@@ -9377,7 +9351,6 @@ test('--live-wp-parity threads flag -> env into the bench, OFF leaves it absent'
     fixtureRoot: planFixtureRoot,
     liveWpParity: true,
     skipInstall: true,
-    skipSync: true,
   });
   assert.ok(onPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY=1'));
 });
