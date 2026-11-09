@@ -276,6 +276,52 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		return array_values( array_diff( array_unique( $known ), $displayed ) );
 	}
 
+	/** Keep wording separate from the currency and live numeric value. */
+	private static function source_field_presentation( array $node, string $role, string $text ): array {
+		if ( 'price' === $role && preg_match( '/^([^\d]*?)[\d]+(?:[,.][\d]+)*([^\d]*)$/u', $text, $parts ) ) {
+			$prefix = preg_replace( '/\p{Sc}\s*$/u', '', $parts[1] );
+			$suffix = preg_replace( '/^\s*\p{Sc}/u', '', $parts[2] );
+			return '' !== trim( $prefix . $suffix ) ? array(
+				'prefix' => $prefix,
+				'suffix' => $suffix,
+			) : array();
+		}
+		if ( 'breadcrumb' !== $role || ! preg_match( '/[>›»\/→]/u', $text, $separator ) ) {
+			return array();
+		}
+		$presentation = array(
+			'separator' => $separator[0],
+			'home'      => (bool) preg_match( '/^Home\s*[>›»\/→]/iu', $text ),
+		);
+		$font_size    = self::source_font_size( $node );
+		if ( '' !== $font_size ) {
+			$presentation['fontSize'] = $font_size;
+		}
+		return $presentation;
+	}
+
+	/** Prefer the container typography, then a captured link's presentation. */
+	private static function source_font_size( array $node ): string {
+		$size = $node['attrs']['style']['typography']['fontSize'] ?? '';
+		if ( is_string( $size ) && '' !== $size ) {
+			return $size;
+		}
+		if ( preg_match_all( '/\bstyle=["\x27]([^"\x27]*)["\x27]/i', $node['innerHTML'] ?? '', $styles ) ) {
+			foreach ( $styles[1] as $style ) {
+				if ( preg_match( '/(?:^|;)\s*font-size\s*:\s*([^;]+)/i', $style, $match ) ) {
+					return trim( $match[1] );
+				}
+			}
+		}
+		foreach ( $node['innerBlocks'] ?? array() as $child ) {
+			$size = self::source_font_size( $child );
+			if ( '' !== $size ) {
+				return $size;
+			}
+		}
+		return '';
+	}
+
 	/** Bind only fields backed by the admitted producer row. */
 	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array(), array $undisplayed_images = array() ): string {
 		$identity = static function ( string $url ) use ( $image_identities ): string {
@@ -371,12 +417,16 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			$categories = $product['categories'] ?? $product['category_names'] ?? array();
 			foreach ( (array) $categories as $category ) {
 				$category = is_array( $category ) ? (string) ( $category['name'] ?? '' ) : (string) $category;
-				if ( '' !== $name && '' !== $category && preg_match( '/(?:>|›|»|\/|→)/u', $text ) && str_contains( $text, $category ) && str_ends_with( $text, $name ) && ( empty( $node['innerBlocks'] ) || preg_match( '/^' . preg_quote( $category, '/' ) . '\s*(?:>|›|»|\/|→)\s*' . preg_quote( $name, '/' ) . '$/u', $text ) ) ) {
+				if ( '' !== $name && '' !== $category && preg_match( '/(?:>|›|»|\/|→)/u', $text ) && str_contains( $text, $category ) && str_ends_with( $text, $name ) && ( empty( $node['innerBlocks'] ) || preg_match( '/^(?:Home\s*(?:>|›|»|\/|→)\s*)?' . preg_quote( $category, '/' ) . '\s*(?:>|›|»|\/|→)\s*' . preg_quote( $name, '/' ) . '$/u', $text ) ) ) {
 					$role = 'breadcrumb';
 				}
 			}
 			$replacement = self::field( $node, $role );
 			if ( null !== $replacement ) {
+				$presentation = self::source_field_presentation( $node, $role, $text );
+				if ( $presentation ) {
+					$replacement['attrs']['metadata']['staticSiteImporterFieldPresentation'] = $presentation;
+				}
 				return $replacement;
 			}
 			foreach ( $node['innerBlocks'] ?? array() as $index => $child ) {

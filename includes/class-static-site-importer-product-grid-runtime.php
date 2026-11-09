@@ -49,6 +49,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'blocks_engine_served_route', array( self::class, 'served_route' ), 10, 2 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
+		add_filter( 'render_block_woocommerce/product-price', array( self::class, 'render_field_presentation' ), 20, 2 );
+		add_filter( 'render_block_woocommerce/breadcrumbs', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
@@ -156,6 +158,47 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			return $label;
 		}
 		return self::variation_wording( $product, $attribute )['label'] ?? $label;
+	}
+
+	/** Apply captured wording only to explicitly bound imported field blocks. */
+	public static function render_field_presentation( string $content, array $block ): string {
+		$source = $block['attrs']['metadata']['staticSiteImporterFieldPresentation'] ?? null;
+		if ( ! is_array( $source ) || ! function_exists( 'wc_get_product' ) ) {
+			return $content;
+		}
+		$product = wc_get_product( get_the_ID() );
+		if ( ! $product instanceof WC_Product ) {
+			return $content;
+		}
+		if ( 'woocommerce/product-price' === ( $block['blockName'] ?? '' ) && isset( $source['prefix'], $source['suffix'] ) && is_string( $source['prefix'] ) && is_string( $source['suffix'] ) ) {
+			$price = $product instanceof WC_Product_Variable ? wc_price( (float) $product->get_variation_price( 'min' ) ) : $product->get_price_html();
+			$price = esc_html( $source['prefix'] ) . $price . esc_html( $source['suffix'] );
+			// Preserve Woo's outer block and its source presentation supports.
+			return (string) preg_replace_callback( '/^(\s*<([a-z][a-z0-9]*)\b[^>]*>).*?(<\/\2>\s*)$/is', static fn( array $parts ): string => $parts[1] . $price . $parts[3], $content );
+		}
+		if ( 'woocommerce/breadcrumbs' !== ( $block['blockName'] ?? '' ) || ! in_array( $source['separator'] ?? '', array( '>', '›', '»', '/', '→' ), true ) || ! isset( $source['home'] ) || ! is_bool( $source['home'] ) || ! class_exists( 'WC_Breadcrumb' ) ) {
+			return $content;
+		}
+		$breadcrumb = new WC_Breadcrumb();
+		if ( $source['home'] ) {
+			$breadcrumb->add_crumb( __( 'Home', 'static-site-importer' ), home_url() );
+		}
+		$crumbs = $breadcrumb->generate();
+		$parts  = array();
+		foreach ( $crumbs as $index => $crumb ) {
+			$parts[] = ! empty( $crumb[1] ) && $index < count( $crumbs ) - 1 ? '<a href="' . esc_url( $crumb[1] ) . '">' . esc_html( $crumb[0] ) . '</a>' : esc_html( $crumb[0] );
+		}
+		$body    = implode( ' ' . esc_html( $source['separator'] ) . ' ', $parts );
+		$content = (string) preg_replace_callback( '/(<nav\b[^>]*>).*?(<\/nav>)/is', static fn( array $parts ): string => $parts[1] . $body . $parts[2], $content );
+		$size    = $source['fontSize'] ?? '';
+		if ( is_string( $size ) && preg_match( '/^\d+(?:\.\d+)?(?:px|rem|em|%)$/D', $size ) ) {
+			$tags = new WP_HTML_Tag_Processor( $content );
+			if ( $tags->next_tag( array( 'tag_name' => 'NAV' ) ) ) {
+				$tags->set_attribute( 'style', rtrim( (string) $tags->get_attribute( 'style' ), ';' ) . ';font-size:' . $size );
+			}
+			$content = $tags->get_updated_html();
+		}
+		return $content;
 	}
 
 	/** Restore inert source identity on the native gallery's outer block only. */
