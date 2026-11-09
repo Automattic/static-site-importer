@@ -243,6 +243,16 @@ jobs:
             --manifest-output "$ARTIFACT_ROOT/solved-site-artifact-manifest.json"
           test "$MATRIX_STATUS" -eq 0
 
+      - name: Collect WP Codebox runtime evidence
+        if: always()
+        run: |
+          find "$HOME/.config/homeboy/runtime/tmp" -path '*/files/runtime-evidence/*.json' -type f 2>/dev/null | while read -r file; do
+            run_dir=$(echo "$file" | sed -E 's#.*/(artifacts-[^/]+)/(runtime-[^/]+)/.*#\1-\2#')
+            mkdir -p "$ARTIFACT_ROOT/wp-codebox-runtime-evidence/$run_dir"
+            cp "$file" "$ARTIFACT_ROOT/wp-codebox-runtime-evidence/$run_dir/"
+          done
+          find "$ARTIFACT_ROOT/wp-codebox-runtime-evidence" -type f 2>/dev/null | head -20
+
       - name: Upload promotion evidence
         if: always()
         uses: actions/upload-artifact@v4
