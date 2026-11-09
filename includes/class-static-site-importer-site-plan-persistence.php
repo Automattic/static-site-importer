@@ -1151,6 +1151,59 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return true;
 	}
 
+	/** Keep existing CSS consumers while adding selectors for the structural product document. */
+	private static function alias_product_presentation_tokens( array &$state, array $tokens ): void {
+		$alias = static function ( string $css ) use ( $tokens ): string {
+			return preg_replace_callback(
+				'/([^{}]+)\{/',
+				static function ( array $parts ) use ( $tokens ): string {
+					$selector = strtr( $parts[1], $tokens );
+					return $selector === $parts[1] ? $parts[0] : $parts[1] . ',' . $selector . '{';
+				},
+				$css
+			);
+		};
+		foreach ( $state['resolved']['writes'] ?? array() as $index => $write ) {
+			if ( ! str_ends_with( $write['target_path'], '.css' ) ) {
+				continue;
+			}
+			$css     = self::payload_data( $write );
+			$updated = $alias( $css );
+			if ( $updated !== $css ) {
+				$state['resolved']['writes'][ $index ]['payload'] = array(
+					'encoding' => 'utf8',
+					'data'     => $updated,
+				);
+				unset( $state['resolved']['writes'][ $index ]['payload_hash'] );
+			}
+		}
+		foreach ( $state['applied']['files'] ?? array() as $index => $file ) {
+			if ( ! str_ends_with( $file['target_path'], '.css' ) ) {
+				continue;
+			}
+			$path = $state['theme_dir'] . '/' . $file['target_path'];
+			$css  = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Journaled local CSS.
+			if ( ! is_string( $css ) || $alias( $css ) === $css ) {
+				continue;
+			}
+			self::journal_file( $state, $path );
+			$written = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path' => $file['target_path'],
+					'source_path' => '',
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => $alias( $css ),
+					),
+				)
+			);
+			if ( ! is_wp_error( $written ) ) {
+				$state['applied']['files'][ $index ] = array_merge( $file, $written );
+			}
+		}
+	}
+
 	/** Copy admitted provider template aliases after route-link rewriting, before journaled writes. */
 	public static function append_handoff_template_aliases( array &$state ): void {
 		$writes = $state['resolved']['writes'];
@@ -1187,10 +1240,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return new WP_Error( 'whole_page_template_target_invalid' );
 		}
 		if ( 'product' === $post_type && ! empty( $page['product_data'] ) ) {
-			$presentations = array();
-			$identities    = Static_Site_Importer_Product_Field_Blocks::image_identities( $state );
-			$original      = $markup;
-			$markup        = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities, Static_Site_Importer_Product_Field_Blocks::undisplayed_image_identities( $state, $identities ) );
+			$presentations     = array();
+			$structural_tokens = array();
+			$identities        = Static_Site_Importer_Product_Field_Blocks::image_identities( $state );
+			$original          = $markup;
+			$markup            = Static_Site_Importer_Product_Field_Blocks::bind_document( $markup, $page['product_data'], $presentations, $identities, Static_Site_Importer_Product_Field_Blocks::undisplayed_image_identities( $state, $identities ), $structural_tokens );
+			self::alias_product_presentation_tokens( $state, $structural_tokens );
 			if ( $original !== $markup && str_contains( $markup, 'wp:woocommerce/product-image-gallery' ) ) {
 				foreach ( $state['plan']['assets'] ?? array() as $asset ) {
 					$identity          = $identities[ $asset['source_path'] ] ?? '/' . ltrim( $asset['source_path'], '/' );
