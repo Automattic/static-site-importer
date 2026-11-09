@@ -167,6 +167,13 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 			'header' => array(),
 			'footer' => array(),
 		);
+		foreach ( $parts as $slug => $markup ) {
+			$area = self::part_area( $slug, $json );
+			if ( isset( $variants[ $area ] ) ) {
+				$variants[ $area ][ $slug ] = true;
+			}
+		}
+		$required_areas = array_filter( $variants );
 		foreach ( $template_blocks as $slug => $blocks ) {
 			$areas = array();
 			foreach ( self::flatten( $blocks ) as $block ) {
@@ -180,14 +187,8 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 					}
 				}
 			}
-			if ( ! isset( $areas['header'], $areas['footer'] ) ) {
+			if ( array_diff_key( $required_areas, $areas ) ) {
 				$missing_shell[] = $slug;
-			}
-		}
-		foreach ( $parts as $slug => $markup ) {
-			$area = self::part_area( $slug, $json );
-			if ( isset( $variants[ $area ] ) ) {
-				$variants[ $area ][ $slug ] = true;
 			}
 		}
 		$duplicates = array();

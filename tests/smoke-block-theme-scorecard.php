@@ -25,6 +25,21 @@ try {
 		file_put_contents( $dir . '/functions.php', '<?php' ); file_put_contents( $dir . '/screenshot.png', base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' ) );
 		file_put_contents( $dir . '/theme.json', json_encode( array( 'version' => 3, 'settings' => array( 'color' => array( 'palette' => array( array( 'slug' => 'black', 'color' => '#000' ) ) ), 'typography' => array( 'fontFamilies' => array( array( 'slug' => 'sans', 'fontFamily' => 'sans-serif' ) ), 'fontSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ), 'spacing' => array( 'spacingSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ) ), 'styles' => array( 'elements' => array( 'link' => array( 'color' => array( 'text' => '#000' ) ), 'button' => array( 'border' => array( 'radius' => '2px' ) ), 'heading' => array( 'typography' => array( 'fontWeight' => '700' ) ) ), 'blocks' => array( 'core/paragraph' => array( 'spacing' => array( 'margin' => array( 'bottom' => '1rem' ) ) ) ) ) ) ) );
 	}
+	foreach ( array(
+		'footer-only referenced' => array( false, true, 'pass', array(), array() ),
+		'footer-only unreferenced' => array( false, false, 'fail', array( 'index' ), array( 'footer' ) ),
+		'header and footer missing header reference' => array( true, true, 'fail', array( 'index' ), array( 'header' ) ),
+	) as $name => list( $has_header, $references_footer, $status, $missing_shell, $unreferenced ) ) {
+		$dir = $root . '/' . $name; mkdir( $dir . '/templates', 0777, true ); mkdir( $dir . '/parts' );
+		file_put_contents( $dir . '/parts/footer.html', $footer );
+		if ( $has_header ) { file_put_contents( $dir . '/parts/header.html', $header ); }
+		file_put_contents( $dir . '/templates/index.html', '<!-- wp:post-content /-->' . ( $references_footer ? '<!-- wp:template-part {"slug":"footer","area":"footer"} /-->' : '' ) );
+		$shell = Static_Site_Importer_Block_Theme_Scorecard::measure( $dir, $routes, $context )['checks']['shared_shell'];
+		scorecard_assert( $status === $shell['status'], $name . ': shared shell status' );
+		scorecard_assert( $missing_shell === $shell['measured']['templates_missing_shell'], $name . ': missing shell templates' );
+		scorecard_assert( $unreferenced === $shell['measured']['unreferenced_parts'], $name . ': unreferenced parts' );
+		scorecard_assert( array() === $shell['measured']['duplicated_parts_by_route'], $name . ': no duplicated parts' );
+	}
 	$good = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', $routes, $context );
 	foreach ( $good['checks'] as $name => $check ) { scorecard_assert( 'pass' === $check['status'], 'Good theme: ' . $name ); }
 	scorecard_assert( 1 === $good['checks']['navigation']['measured']['navigation_blocks_with_ref'], 'Navigation in part measured once' );
