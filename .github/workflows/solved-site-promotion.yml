@@ -70,10 +70,15 @@ jobs:
           ref: ${{ inputs.blocks-engine-sha }}
           path: blocks-engine
 
-      - name: Setup pinned Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      # The self-contained wp-codebox CLI prefers its bundled Node runtime;
+      # run Playground on the Node selected above instead.
+      - name: Point wp-codebox at the job's Node
+        run: echo "WP_CODEBOX_NODE_BIN=$(command -v node)" >> "$GITHUB_ENV"
 
       - name: Initialize immutable run evidence
         env:
