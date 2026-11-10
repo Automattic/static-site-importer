@@ -1098,6 +1098,15 @@ if ( is_array( $svg_descriptor ) ) {
 	$assert( str_contains( $svg_render, 'Generated svg-artwork companion block render' ) && str_contains( $svg_artwork_output, '<path class="s1" d="M10 18V2"' ), 'svg-artwork-renderer-preserves-safe-inline-artwork' );
 	$assert( str_contains( $svg_artwork_output, '<filter id="glow">' ) && str_contains( $svg_artwork_output, '<feGaussianBlur stdDeviation="3" result="blur">' ) && str_contains( $svg_artwork_output, '<feMergeNode in="SourceGraphic">' ) && str_contains( $svg_artwork_output, 'filter="url(#glow)"' ), 'svg-artwork-renderer-preserves-safe-local-filter' );
 	$assert( ! str_contains( strtolower( $svg_artwork_output ), '<script' ), 'svg-artwork-renderer-strips-executable-content' );
+
+	// Area-map regions keep safe page links in either spelling; unsafe links and
+	// non-link references are still stripped (#5388).
+	$attributes = array( 'svg' => '<svg viewBox="0 0 20 20"><a xlink:href="/communities/west/"><rect width="10" height="20"></rect></a><a href="https://example.test/east"><rect x="10" width="10" height="20"></rect></a><a href="javascript:alert(1)"><circle r="2"></circle></a><image href="/evil.svg"></image></svg>' );
+	ob_start();
+	eval( '?>' . $svg_render );
+	$svg_links_output = (string) ob_get_clean();
+	$assert( str_contains( $svg_links_output, '<a href="/communities/west/">' ) && str_contains( $svg_links_output, '<a href="https://example.test/east">' ), 'svg-artwork-renderer-keeps-safe-region-links' );
+	$assert( ! str_contains( $svg_links_output, 'javascript:' ) && ! str_contains( $svg_links_output, '/evil.svg' ), 'svg-artwork-renderer-strips-unsafe-links-and-non-link-references' );
 }
 
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
