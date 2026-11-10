@@ -131,7 +131,7 @@ $archives       = array_values( array_filter( $prepared['writes'], static fn( ar
 $archive_markup = $archives[0]['payload']['data'];
 $assert( str_contains( $prepared['pages'][0]['resolved_block_markup'], $media_url ), 'fixture-page-content-holds-build-host-media-url' );
 $assert( ! str_contains( $archive_markup, 'https://example.test/' ) && str_contains( $archive_markup, 'wp-image-91' ) && str_contains( $archive_markup, $token ), 'archive-media-keeps-token-and-attachment-id-not-build-host-url', $archive_markup );
-$assert( $resolver::resolveWritePayload( $archives[0]['canonical_payload'], $prepared['reference_tokens'], $prepared['resolution']['theme_uri'], 'templates/archive-product.html', $media ) === $archive_markup, 'archive-write-is-its-canonical-portable-projection' );
+$assert( is_string( $archives[0]['canonical_payload'] ?? null ) && $resolver::resolveWritePayload( $archives[0]['canonical_payload'], $prepared['reference_tokens'], $prepared['resolution']['theme_uri'], 'templates/archive-product.html', $media ) === $archive_markup, 'archive-write-is-its-canonical-portable-projection' );
 
 $temp = tempnam( sys_get_temp_dir(), 'ssi-archive-' );
 file_put_contents( $temp, $data ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary theme fixture.
