@@ -1235,7 +1235,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
 	 */
 	private static function splice_canonical_markup( array $plan, string $resolved, string $canonical, array $patches ): string {
-		$tokens = array_flip( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $plan['resolution']['attachment_resolutions'] ?? array() ) );
+		$tokens           = array_flip( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $plan['resolution']['attachment_resolutions'] ?? array() ) );
 		$resolved_ranges  = ( new BlockMarkupIndex( $resolved ) )->ranges();
 		$canonical_ranges = ( new BlockMarkupIndex( $canonical ) )->ranges();
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
