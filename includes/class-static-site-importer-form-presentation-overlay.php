@@ -317,10 +317,34 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( null === $node ) {
 			return;
 		}
+		self::compile_form_item_rule( $pass, $node['layout'] );
+		foreach ( $graph['variants'] ?? array() as $variant ) {
+			if ( 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
+				continue;
+			}
+			$condition = $variant['condition'] ?? null;
+			if ( self::is_media_all( $condition ) ) {
+				$condition = null;
+			} elseif ( ! self::safe_condition( $condition ) || 'state' === ( $condition['kind'] ?? null ) ) {
+				continue;
+			}
+			self::compile_form_item_rule( $pass, $variant['layout_patch'], $condition );
+		}
+	}
+
+	/**
+	 * Emit the same bounded item facts for base layout and conditional patches.
+	 *
+	 * @param array                  $pass      Compile pass.
+	 * @param array<string,string>   $layout    Source item facts.
+	 * @param array<string,mixed>|null $condition Variant condition.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_form_item_rule( array &$pass, array $layout, ?array $condition = null ): void {
 		$declared     = $pass['declared'];
 		$map          = self::form_item_fact_map();
 		$declarations = array();
-		foreach ( array_intersect_key( $node['layout'], $map ) as $fact => $value ) {
+		foreach ( array_intersect_key( $layout, $map ) as $fact => $value ) {
 			// Length margins would arrive twice, once here and once through the
 			// box's own copy of the source stylesheet; only the free-space kind
 			// can be restated safely, and it only consumes free space once.
@@ -336,7 +360,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			return;
 		}
 		$target               = $pass['scope'] . $declared['form_item']['suffix'];
-		$pass['rules'][]      = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $target ) ) . '{' . implode( ';', $declarations ) . '}';
+		$rule                 = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $target ) ) . '{' . implode( ';', $declarations ) . '}';
+		$pass['rules'][]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 		$pass['operations'][] = array(
 			'dimension'   => 'layout',
 			'strategy'    => $declared['form_item']['strategy'],
@@ -355,6 +380,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		return array(
 			'width'        => 'width',
 			'max_width'    => 'max-width',
+			'min_width'    => 'min-width',
 			'margin_left'  => 'margin-left',
 			'margin_right' => 'margin-right',
 			'flex'         => 'flex',

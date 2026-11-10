@@ -260,7 +260,7 @@ final class Static_Site_Importer_Form_Presentation {
 	 * parent-referencing item sizing the parent reads.
 	 *
 	 * @param mixed $graph Producer computed layout graph.
-	 * @return array{nodes:array<int,array<string,mixed>>}
+	 * @return array{nodes:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>}
 	 * @internal
 	 */
 	public static function form_item_layout_graph( mixed $graph ): array {
@@ -271,7 +271,10 @@ final class Static_Site_Importer_Form_Presentation {
 				break;
 			}
 		}
-		return array( 'nodes' => $nodes );
+		return array(
+			'nodes'    => $nodes,
+			'variants' => array_values( array_filter( is_array( $graph['variants'] ?? null ) ? $graph['variants'] : array(), static fn( $variant ): bool => is_array( $variant ) && 'form' === ( $variant['node'] ?? null ) ) ),
+		);
 	}
 
 	/**
