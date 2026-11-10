@@ -13,7 +13,18 @@ export function linkedPullRequests(issueUrl) {
   const github = `${owner}/${name}`;
   return JSON.parse(gh('pr', 'list', '-R', github, '--state', 'open', '--json', 'number,url,body,headRefName,headRefOid,isDraft,mergeable,statusCheckRollup', '-L', '100'))
     .filter((pr) => (pr.body || '').includes(issueUrl) || new RegExp(`#${number}\\b`).test(pr.body || '') || pr.headRefName.includes(`issue-${number}-`))
-    .map((pr) => ({ ...pr, github }));
+    .map((pr) => ({ ...pr, github, mergeable: knownMergeable(github, pr) }));
+}
+
+// GitHub computes mergeability lazily: a list right after trunk moves reports
+// UNKNOWN for a pull request that conflicts. Asking for it starts the
+// computation; poll until it settles so a conflict reaches triage.
+function knownMergeable(github, { number, mergeable }) {
+  for (let attempt = 0; mergeable === 'UNKNOWN' && attempt < 10; attempt++) {
+    execFileSync('sleep', ['3']);
+    mergeable = JSON.parse(gh('pr', 'view', String(number), '-R', github, '--json', 'mergeable')).mergeable;
+  }
+  return mergeable;
 }
 
 // A pull request's CI and mergeability at its head, as triage tells a Cook.
