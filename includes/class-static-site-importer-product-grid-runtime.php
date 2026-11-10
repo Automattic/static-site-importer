@@ -52,6 +52,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'render_block_woocommerce/product-price', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/breadcrumbs', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
+		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'render_bound_layout' ), 20, 2 );
+		add_filter( 'render_block_woocommerce/add-to-cart-form', array( self::class, 'render_bound_layout' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
 	}
@@ -205,6 +207,38 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			$tags->set_attribute( 'style', $style );
 		}
 		return $tags->get_updated_html();
+	}
+
+	/** Remove classic Woo outer spacing only inside importer-bound blocks. */
+	public static function render_bound_layout( string $content, array $block ): string {
+		$source = $block['attrs']['metadata']['staticSiteImporterFieldPresentation'] ?? array();
+		$name   = $block['blockName'] ?? '';
+		if ( true !== ( $source['bound'] ?? false ) || ! in_array( $name, array( 'woocommerce/product-image-gallery', 'woocommerce/add-to-cart-form' ), true ) ) {
+			return $content;
+		}
+		$gallery = 'woocommerce/product-image-gallery' === $name;
+		$query   = $source['thumbnailHideQuery'] ?? '';
+		$query   = $gallery && is_string( $query ) && preg_match( '/^\(max-width: \d+(?:\.\d+)?px\)$/D', $query ) ? $query : '';
+		$ratio   = $source['mainAspectRatio'] ?? '';
+		$ratio   = is_string( $ratio ) && preg_match( '/^\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?$/D', $ratio ) ? $ratio : '';
+		$scope   = 'ssi-bound-gallery-' . substr( hash( 'sha256', $query . $ratio ), 0, 12 );
+		$tags    = new WP_HTML_Tag_Processor( $content );
+		while ( $tags->next_tag() ) {
+			$target = $gallery ? $tags->has_class( 'woocommerce-product-gallery' ) : ( ( 'FORM' === $tags->get_tag() && $tags->has_class( 'cart' ) ) || ( 'TABLE' === $tags->get_tag() && $tags->has_class( 'variations' ) ) );
+			if ( $target ) {
+				$tags->set_attribute( 'style', rtrim( (string) $tags->get_attribute( 'style' ), ';' ) . ';margin:0' );
+				if ( $gallery && '' !== $query ) {
+					$tags->add_class( $scope );
+				}
+			}
+		}
+		$content = $tags->get_updated_html();
+		if ( '' !== $query ) {
+			$selector = '.' . $scope . '.' . $scope . '.' . $scope;
+			$aspect   = '' !== $ratio ? 'height:auto !important;aspect-ratio:' . $ratio . ' !important;' : '';
+			$content .= '<style>@media ' . $query . '{' . $selector . ' .flex-control-thumbs{display:none !important;}' . $selector . ' .flex-viewport{width:100% !important;flex:1 1 100% !important;min-width:0 !important;' . $aspect . '}' . ( '' !== $ratio ? $selector . ' .woocommerce-product-gallery__image img{width:100% !important;' . $aspect . '}' : '' ) . '}</style>';
+		}
+		return $content;
 	}
 
 	/** Restore inert source identity on the native gallery's outer block only. */
