@@ -328,16 +328,18 @@ $plan         = array(
 	'writes'               => array(
 		array(
 			'kind'        => 'theme_template',
-			'target_path' => 'templates/shop-shell.html',
-			'payload'     => array( 'encoding' => 'utf8', 'data' => '<!-- wp:post-content /-->' ),
+			'target_path'       => 'templates/shop-shell.html',
+			'payload'           => array( 'encoding' => 'utf8', 'data' => '<!-- wp:post-content /-->' ),
+			'canonical_payload' => '<!-- wp:post-content /-->',
 		),
 		array(
-			'kind'        => 'theme_template',
-			'target_path' => 'templates/page.html',
-			'payload'     => array(
+			'kind'              => 'theme_template',
+			'target_path'       => 'templates/page.html',
+			'payload'           => array(
 				'encoding' => 'utf8',
 				'data'     => $page_tpl,
 			),
+			'canonical_payload' => $page_tpl,
 		),
 	),
 	'runtime_declarations' => array(
