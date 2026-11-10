@@ -1216,7 +1216,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
 		}
-		$canonical = self::splice_canonical_markup( (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
+		$canonical = self::splice_canonical_markup( $plan, (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
 
 		$plan['writes'][ $write ]['payload']['data'] = $canonical;
 		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
@@ -1227,11 +1227,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * the same document. Asset tokens live inside attribute values, so both
 	 * serializations have the same blocks in the same order: each binding's
 	 * resolved block maps to the canonical block at the same index, and the
-	 * provider replacement is spliced there, last offset first.
+	 * provider replacement is spliced there, last offset first. Providers build
+	 * replacements from the resolved markup, so each asset URL the plan resolved
+	 * returns to its token: theme files never carry build-host URLs.
 	 *
+	 * @param array<string,mixed>                                               $plan    Resolved site plan.
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
 	 */
-	private static function splice_canonical_markup( string $resolved, string $canonical, array $patches ): string {
+	private static function splice_canonical_markup( array $plan, string $resolved, string $canonical, array $patches ): string {
+		$tokens = array_flip( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $plan['resolution']['attachment_resolutions'] ?? array() ) );
 		$resolved_ranges  = ( new BlockMarkupIndex( $resolved ) )->ranges();
 		$canonical_ranges = ( new BlockMarkupIndex( $canonical ) )->ranges();
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
@@ -1251,7 +1255,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
 			}
-			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => $patch['replacement'] );
+			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => strtr( $patch['replacement'], $tokens ) );
 		}
 		usort( $splices, static fn( array $left, array $right ): int => $right['offset'] <=> $left['offset'] );
 		foreach ( $splices as $splice ) {
@@ -1311,7 +1315,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		// resolved through the plan's portable template projection. The page's
 		// resolved markup holds build-host Media Library and theme URLs, which
 		// only the database search-replace rewrites on export.
-		$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
+		$content = self::splice_canonical_markup( $plan, (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
 		$count   = 0;
 		$markup  = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
 		if ( 1 !== $count || '' === $content ) {
