@@ -31,7 +31,9 @@ $wp plugin activate static-site-importer --quiet
 
 # Stage the capture beside the request, as Studio does.
 name=$(jq -r '.title // "Imported Site"' "$capture/capture-receipt.json")
-mkdir -p "$site/.studio-import"; cp -a "$capture" "$site/.studio-import/source"
+# A gate input is a read-only snapshot: the staged copy stays writable, so
+# the site can be removed.
+mkdir -p "$site/.studio-import"; cp -R "$capture" "$site/.studio-import/source"; chmod -R u+w "$site/.studio-import/source"
 jq -n --arg name "$name" --arg source "$capture" '{
   operation: "apply", name: $name, site_title: $name, activate: true, overwrite: true,
   client_script_policy: "isolated_preview", client_script_isolated: true,

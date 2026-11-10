@@ -23,7 +23,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright';
 import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead, collateralMode } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -191,52 +190,91 @@ for (const finding of blockers) {
 
 // Cook promotes only when the repository's own checks pass and, where the
 // predicates run this repository's code, the defect is gone from every
-// acceptance cell. The gate runs from the root of Cook's worktree; its
-// machine-local path reaches Cook as gate environment, not in the command.
+// acceptance cell. The gate runs from the root of Cook's worktree, on whichever
+// runner Cook places it. Everything it reads beyond that worktree is a declared
+// Cook gate input (Homeboy `--gate-input`): a content-addressed snapshot that
+// Homeboy ships to the runner and names by environment variable, so the gate
+// carries no machine-local path.
+//   IMPORT_LOOP_GATE     this gate script
+//   IMPORT_LOOP_TOOLS    tools/ plus the Playwright packages its scripts import
+//   IMPORT_LOOP_CAPTURE  the captured source site
+//   IMPORT_LOOP_PAGES    the inlined route pages acceptance cells check
+//   IMPORT_LOOP_SSI_ZIP  the Static Site Importer release zip
+// The gate provisions its own bare WordPress: an installed tree pins absolute
+// paths, so it cannot travel.
+const gateTools = path.join(args.work, 'gate-tools');
+function stageGateTools() {
+  fs.rmSync(gateTools, { recursive: true, force: true });
+  fs.cpSync(path.join(here, '..'), path.join(gateTools, 'tools'), { recursive: true, dereference: true, filter: (source) => path.basename(source) !== 'node_modules' });
+  for (const pkg of ['playwright', 'playwright-core']) {
+    fs.cpSync(fs.realpathSync(path.join(here, '..', '..', 'node_modules', pkg)), path.join(gateTools, 'node_modules', pkg), { recursive: true, dereference: true });
+  }
+}
+const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
+// A file the gate reads, as a path under the gate input that holds it.
+function gatePath(file) {
+  for (const [root, name] of [[reimport.capture, 'IMPORT_LOOP_CAPTURE'], [path.join(args.work, 'pages'), 'IMPORT_LOOP_PAGES']]) {
+    const relative = path.relative(root, file);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return `"$${name}"/${quote(relative)}`;
+  }
+  throw new Error(`acceptance_gate_input_unmapped: ${file}`);
+}
 
 function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
   const checked = repo.predicate_root && item.cells.length;
   // Contracts CI runs that the repository's verify command does not.
-  const contracts = repo.contracts ? path.join(here, repo.contracts) : null;
-  if (contracts) execFileSync('bash', [path.join(here, 'gates/bare-wp.sh'), BARE_WP], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const contracts = repo.contracts ? `"$tools"/${quote(repo.contracts)}` : null;
+  const reimportLine = (transformer, site) => `SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/reimport.sh" ${transformer} "$IMPORT_LOOP_CAPTURE" ${site}`;
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
-    // Gates run under a private HOME: pin the browsers this HOME installed.
-    `export PLAYWRIGHT_BROWSERS_PATH='${process.env.PLAYWRIGHT_BROWSERS_PATH || chromium.executablePath().replace(/(ms-playwright).*$/, '$1')}'`,
-    ...(contracts ? [`BARE_WP='${BARE_WP}' bash '${contracts}' || exit 1`] : []),
+    'tools="${IMPORT_LOOP_TOOLS:?}/tools/import-loop"; failed=0; scratch=$(mktemp -d); bare="$scratch/wp"; site="$scratch/site"; base="$scratch/base"; mkdir -p "$base"',
+    `trap 'for d in "$site" "$base/site"; do kill $(cat "$d/.server.pid" 2>/dev/null) 2>/dev/null; done; rm -rf "$scratch"' EXIT`,
+    ...(checked || contracts ? ['bash "$tools/gates/bare-wp.sh" "$bare" >/dev/null || exit 1'] : []),
+    ...(contracts ? [`BARE_WP="$bare" bash ${contracts} || exit 1`] : []),
     checked
       ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
       : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
     ...(checked ? [
-      `root="$PWD/${repo.predicate_root}"; failed=0; site=$(mktemp -d); base=$(mktemp -d)`,
-      `trap 'for d in "$site" "$base/site"; do kill $(cat "$d/.server.pid" 2>/dev/null) 2>/dev/null; done; rm -rf "$site" "$base"' EXIT`,
-      `url=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$root" '${reimport.capture}' "$site") || exit 1; url=$(tail -n1 <<<"$url")`,
+      `root="$PWD/${repo.predicate_root}"`,
+      `url=$(${reimportLine('"$root"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url")`,
     ] : []),
+    // Predicates that compile a page through WordPress use the re-imported
+    // site: it has the importer active with the candidate transformer.
     ...(checked ? item.cells : []).map((cell) => {
       const env = predicateEnv(item.subject, cell, result.site);
-      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET='${env.PREDICATE_TARGET}' WORDPRESS_PATH='${env.WORDPRESS_PATH}' WP_CLI='${env.WP_CLI}' PREDICATE_CAPTURE='${reimport.capture}' node '${predicatePath(item.check)}' "$root" '${cell.page}'; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
+      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET=${quote(env.PREDICATE_TARGET)} WORDPRESS_PATH="$site" WP_CLI="php $bare/wp-cli.phar" PREDICATE_CAPTURE="$IMPORT_LOOP_CAPTURE" node "$tools/predicates/${item.check}.mjs" "$root" ${gatePath(cell.page)}; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
     }),
     // Scope: nothing outside the finding's elements may change against the
     // import of this change's merge base with trunk.
     ...(checked ? [
       `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
-      `burl=$(SSI_ZIP='${reimport.ssi_zip}' BARE_WP='${BARE_WP}' bash '${path.join(here, 'gates/reimport.sh')}' "$base/${repo.predicate_root}" '${reimport.capture}' "$base/site") || exit 1; burl=$(tail -n1 <<<"$burl")`,
-      `node '${path.join(here, 'gates/collateral.mjs')}' "$burl" "$url" '${scopeKeys(item).replace(/'/g, "'\\''")}' '${result.routes.join(',')}' '${collateralMode(item)}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
+      `burl=$(${reimportLine(`"$base/${repo.predicate_root}"`, '"$base/site"')}) || exit 1; burl=$(tail -n1 <<<"$burl")`,
+      `node "$tools/gates/collateral.mjs" "$burl" "$url" ${quote(scopeKeys(item))} ${quote(result.routes.join(','))} '${collateralMode(item)}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
       // Editability: no new raw-HTML companion slug or invalid block either.
-      `node '${path.join(here, 'gates/editability.mjs')}' "$base/site" "$site"; code=$?; echo "editability: exit $code"; [ "$code" = 0 ] || failed=1`,
+      `node "$tools/gates/editability.mjs" "$base/site" "$site"; code=$?; echo "editability: exit $code"; [ "$code" = 0 ] || failed=1`,
     ] : []),
-    checked ? 'exit $failed' : 'exit 0',
+    'exit $failed',
   ].join('\n') + '\n');
+  const inputs = [
+    { id: 'acceptance-gate', source: gate, env: 'IMPORT_LOOP_GATE' },
+    { id: 'import-loop-tools', source: gateTools, env: 'IMPORT_LOOP_TOOLS' },
+    ...(checked ? [
+      { id: 'capture', source: reimport.capture, env: 'IMPORT_LOOP_CAPTURE' },
+      { id: 'pages', source: path.join(args.work, 'pages'), env: 'IMPORT_LOOP_PAGES' },
+      { id: 'ssi-zip', source: reimport.ssi_zip, env: 'IMPORT_LOOP_SSI_ZIP' },
+    ] : []),
+  ];
   // Prompts stay free of machine-local paths: the agent receives the gate as
-  // declared provider evidence. The verify command assigns the gate path
-  // inline, the one form that is both reviewer-safe (Homeboy shows reviewers
-  // ACCEPT_GATE="${ACCEPT_GATE}") and accepted on detached Cook admission,
-  // which refuses --gate-env. Gate paths carry no whitespace or quotes.
-  if (/[\s'"$`\\]/.test(gate)) throw new Error(`acceptance_gate_path_unsafe: ${gate}`);
-  return { verify: `(${repo.verify}) && ACCEPT_GATE=${gate} && bash "$ACCEPT_GATE"`, provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }) };
+  // declared provider evidence, and Cook's gates receive it as a gate input.
+  return {
+    verify: `(${repo.verify}) && bash "$IMPORT_LOOP_GATE"`,
+    gate_inputs: inputs.map((input) => JSON.stringify(input)),
+    provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }),
+  };
 }
 
+stageGateTools();
 const cook_items = [];
 for (const item of tracked) {
   const repo = repos[item.repo];
@@ -285,11 +323,11 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate`: run it with bash from your worktree root. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed).',
+        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed). Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         `- Nothing outside the finding's elements (\`${scopeKeys(item)}\`) changes style on any route or width: the gate re-imports this change's merge base with trunk the same way and compares every element's computed style (\`collateral.mjs\`).`,
         ...(collateralMode(item) === 'pixels' ? ['- The whole site looks exactly as it did: this is an editability finding, so the gate also compares full-page screenshots of every route and width against the merge base. Change how the page is built, not how it renders.'] : []),
         '- The import adds no editability debt against the merge base: no new or larger raw-HTML companion block slug and no more invalid blocks (`editability.mjs`, from the importer\'s own report). Turning one companion into another does not fix the finding.',
-        '- Its `reimport.sh` line also runs on its own and prints the imported site\'s URL, for inspecting the import. The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show.',
+        '- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),

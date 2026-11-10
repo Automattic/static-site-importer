@@ -141,6 +141,9 @@
         "model": "{{inputs.cook_model}}",
         "acknowledge-model-override": true,
         "provider-evidence": "{{item.provider_evidence}}",
+        "gate-input": "{{item.gate_inputs}}",
+        "gate-env-from": "PLAYWRIGHT_BROWSERS_PATH=HOME/.cache/ms-playwright",
+        "gate-toolchain": ["node", "php"],
         "publish-incomplete-draft": true,
         "timeout-ms": 2400000,
         "gate-timeout-seconds": "5400"
