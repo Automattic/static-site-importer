@@ -289,9 +289,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return $value;
 		};
+
 		$presentation = $without_digests( array( $report['provider_layout_overlay_css'] ?? null, $report['provider_layout_target_map'] ?? null ) );
 		$output       = str_replace( $scope, 'ssi-form', $report['block_markup'] . "\n" . json_encode( $presentation, JSON_UNESCAPED_SLASHES ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Deterministic standalone contract.
 		$output       = (string) preg_replace( '#/\*.*?\*/#s', '', $output );
+
 		$nodes  = array();
 		$output = (string) preg_replace_callback(
 			'/ssi-node-[a-f0-9]{12}/',
