@@ -61,6 +61,19 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			$attrs['fontSize'] = '';
 		}
 		if ( 'image' === $role && ! $loop ) {
+			$attrs['metadata']['staticSiteImporterFieldPresentation'] = array( 'bound' => true );
+			$query = self::thumbnail_hide_query( $node );
+			if ( '' !== $query ) {
+				$attrs['metadata']['staticSiteImporterFieldPresentation']['thumbnailHideQuery'] = $query;
+				$main  = Static_Site_Importer_Product_Presentation::gallery_attrs( $node )['main'] ?? array();
+				$ratio = $main['aspectRatio'] ?? '';
+				if ( '' === $ratio && preg_match( '/^\d+(?:\.\d+)?px$/D', $main['width'] ?? '' ) && preg_match( '/^\d+(?:\.\d+)?px$/D', $main['height'] ?? '' ) ) {
+					$ratio = (float) $main['width'] . '/' . (float) $main['height'];
+				}
+				$attrs['metadata']['staticSiteImporterFieldPresentation']['mainAspectRatio'] = $ratio;
+			}
+		}
+		if ( 'image' === $role && ! $loop ) {
 			if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) ) {
 				$source  = $node['attrs'] ?? array();
 				$classes = preg_split( '/\s+/', trim( ( $attrs['className'] ?? '' ) . ' ' . ( $source['sourcePresentationClasses'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
@@ -79,6 +92,74 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 		}
 		return self::dynamic_block( $name, $attrs );
+	}
+
+	/** Read bounded mobile hide evidence before the source gallery subtree is removed. */
+	private static function thumbnail_hide_query( array $node ): string {
+		$css = $node['attrs']['metadata']['staticSiteImporterSourceCSS'] ?? '';
+		if ( ! is_string( $css ) || '' === $css ) {
+			return '';
+		}
+		$classes = preg_split( '/\s+/', trim( ( $node['attrs']['className'] ?? '' ) . ' ' . ( $node['attrs']['sourcePresentationClasses'] ?? '' ) ) );
+		$classes = is_array( $classes ) ? $classes : array();
+		$rails   = array();
+		preg_match_all( '/\bclass=["\x27]([^"\x27]*)["\x27]/i', serialize_block( $node ), $class_attributes );
+		foreach ( $class_attributes[1] as $attribute ) {
+			$tokens = preg_split( '/\s+/', $attribute );
+			foreach ( is_array( $tokens ) ? $tokens : array() as $class ) {
+				if ( preg_match( '/(?:thumbs|thumbnails)$/i', $class ) ) {
+					$rails[] = $class;
+				}
+			}
+		}
+		// Authored carousels replace the source rail. Its root-qualified rail
+		// selector can still identify that evidence in the captured stylesheet.
+		if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) && ! empty( $node['attrs']['thumbnails'] ) ) {
+			foreach ( $classes as $class ) {
+				if ( '' !== $class ) {
+					$rails[] = $class . '-thumbnails';
+				}
+			}
+		}
+		$css = (string) preg_replace( '#/\*.*?\*/#s', '', $css );
+		preg_match_all( '/@media\s*(?:screen\s+and\s*)?(\(max-width:\s*(\d+(?:\.\d+)?)px\))\s*\{((?:[^{}]+\{[^{}]*\}\s*)+)\}/i', $css, $media, PREG_SET_ORDER );
+		foreach ( $media as $query ) {
+			if ( (float) $query[2] <= 0 ) {
+				continue;
+			}
+			preg_match_all( '/([^{}]+)\{([^{}]*)\}/', $query[3], $rules, PREG_SET_ORDER );
+			foreach ( $rules as $rule ) {
+				if ( ! preg_match( '/(?:^|;)\s*display\s*:\s*none\s*(?:!important\s*)?(?:;|$)/i', $rule[2] ) ) {
+					continue;
+				}
+				foreach ( explode( ',', $rule[1] ) as $selector ) {
+					// Match only a rail itself, not an image or a stateful child.
+					foreach ( $rails as $rail ) {
+						$selector = trim( $selector );
+						if ( '.' . $rail === $selector ) {
+							return '(max-width: ' . $query[2] . 'px)';
+						}
+						foreach ( $classes as $root ) {
+							if ( '' !== $root && preg_match( '/^\.' . preg_quote( $root, '/' ) . '\s+(?:>\s*)?\.' . preg_quote( $rail, '/' ) . '$/D', $selector ) ) {
+								return '(max-width: ' . $query[2] . 'px)';
+							}
+						}
+					}
+				}
+			}
+		}
+		return '';
+	}
+
+	/** Captured author stylesheet writes are the same evidence in preparation and persistence. */
+	public static function source_css( array $state ): string {
+		$css = '';
+		foreach ( $state['resolved']['writes'] ?? array() as $write ) {
+			if ( str_ends_with( (string) ( $write['target_path'] ?? '' ), '.css' ) ) {
+				$css .= Static_Site_Importer_Site_Plan_Persistence::payload_data( $write ) . "\n";
+			}
+		}
+		return $css;
 	}
 
 	/** Keep the source card crop on WooCommerce's linked loop image. */
@@ -327,7 +408,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 	}
 
 	/** Bind only fields backed by the admitted producer row. */
-	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array(), array $undisplayed_images = array() ): string {
+	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array(), array $undisplayed_images = array(), string $source_css = '' ): string {
 		$identity = static function ( string $url ) use ( $image_identities ): string {
 			$url = html_entity_decode( $url, ENT_QUOTES, 'UTF-8' );
 			if ( isset( $image_identities[ $url ] ) ) {
@@ -385,7 +466,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 		};
 		$select( $blocks );
-		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery, &$presentations, $images, $identity ): ?array {
+		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery, &$presentations, $images, $identity, $source_css ): ?array {
 			if ( ( $has_gallery || null !== $gallery_path ) && preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', serialize_block( $node ), $sources );
 				if ( $sources[1] && ! array_diff( array_map( $identity, $sources[1] ), $images ) ) {
@@ -397,6 +478,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				if ( $capture ) {
 					$presentations[] = $capture;
 				}
+				$node['attrs']['metadata']['staticSiteImporterSourceCSS'] = $source_css;
 				return self::field( $node, 'image' );
 			}
 			$html = $node['innerHTML'] ?? '';
