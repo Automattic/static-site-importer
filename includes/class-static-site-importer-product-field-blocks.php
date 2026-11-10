@@ -56,6 +56,10 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				return null;
 		}
 		$attrs = self::presentation_attrs( $node['attrs'] ?? array(), $own );
+		// Of the bound Woo fields, only breadcrumbs declares a block.json fontSize default.
+		if ( 'woocommerce/breadcrumbs' === $name && ! isset( $attrs['fontSize'] ) ) {
+			$attrs['fontSize'] = '';
+		}
 		if ( 'image' === $role && ! $loop ) {
 			if ( str_ends_with( (string) ( $node['blockName'] ?? '' ), '/authored-carousel' ) ) {
 				$source  = $node['attrs'] ?? array();
