@@ -10,10 +10,10 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-styleshe
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-preparation.php';
 
 $resolved = array(
-	'pages'  => array( array( 'resolved_block_markup' => '<header class="fixed inset-x-0 top-0"></header><span class="absolute top-0"></span><nav class="sticky top-gap"></nav>' ) ),
+	'pages'  => array( array( 'resolved_block_markup' => '<header class="fixed inset-x-0 top-0"></header><span class="absolute top-0"></span><nav class="sticky top-gap"></nav><a class="widget-link"></a><div class="topbar-row"></div>' ) ),
 	'writes' => array(
 		array( 'target_path' => 'style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '/* Theme Name: Fixture */' ) ),
-		array( 'target_path' => 'assets/website/assets/styles-tailwind.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.fixed{position:fixed}.top-0{top:0}.absolute{position:absolute}.sticky{position:sticky}.top-gap{top:12px!important}.masthead{position:fixed;top:2rem!important}.modal{position:fixed;top:0}' ) ),
+		array( 'target_path' => 'assets/website/assets/styles-tailwind.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.fixed{position:fixed}.top-0{top:0}.absolute{position:absolute}.sticky{position:sticky}.top-gap{top:12px!important}.masthead{position:fixed;top:2rem!important}.modal{position:fixed;top:0}.dock :where(.dock-item,.widget-link,.dock-icon){position:fixed!important}.slider :where(.slide-arrow,.widget-link,.slide-dot){top:50%}.navbar :where(.topbar-row,.nav-row){position:fixed;top:0}' ) ),
 		array( 'target_path' => 'assets/css/editor-style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.editor-header{position:fixed;top:0}' ) ),
 	),
 );
@@ -27,6 +27,9 @@ $checks = array(
 	! str_contains( $css, '.absolute.top-0' ),
 	! str_contains( $css, '.editor-header' ),
 	! str_contains( $css, '.modal' ),
+	// Classes inside :where() argument lists are not selectors of their own.
+	! str_contains( $css, 'widget-link' ),
+	str_contains( $css, ':root .navbar :where(.topbar-row,.nav-row) { top: calc(0px + var(--wp-admin--admin-bar--height, 0px)); }' ),
 	! str_contains( $css, 'body.admin-bar' ),
 	! str_contains( $css, '32px' ),
 	! str_contains( $css, '46px' ),
