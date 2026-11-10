@@ -238,6 +238,9 @@ final class Static_Site_Importer_Form_Presentation {
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
 	public static function layout_scope( array $form ): string {
+		if ( is_string( $form['layout_scope'] ?? null ) && 1 === preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $form['layout_scope'] ) ) {
+			return $form['layout_scope'];
+		}
 		$identity = $form['fallback_identity'] ?? '';
 		if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $identity ) ) {
 			return 'ssi-form-' . substr( $identity, 0, 12 );
