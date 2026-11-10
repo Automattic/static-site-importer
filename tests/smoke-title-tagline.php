@@ -100,6 +100,17 @@ foreach ( $cases as $index => $case ) {
 // Without branding metadata, an English colon title must also remain whole.
 $artifact = array( 'entrypoint' => 'index.html', 'files' => array( array( 'path' => 'index.html', 'content' => '<title>Name: subtitle</title>' ) ) );
 $assert( 'Name: subtitle' === Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact ), 'unspaced colon majority route title' );
+// Branding metadata is absent and the brand alternates between title edges.
+$artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		array( 'path' => 'index.html', 'content' => '<title>Home | Acme Electric</title>' ),
+		array( 'path' => 'services/index.html', 'content' => '<title>Services | Installation | Acme Electric</title>' ),
+		array( 'path' => 'about/index.html', 'content' => '<title>Acme Electric — About</title>' ),
+		array( 'path' => 'contact/index.html', 'content' => '<title>Acme Electric — Contact</title>' ),
+	),
+);
+$assert( 'Acme Electric' === Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact ), 'majority brand across mixed title edges and separators' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
