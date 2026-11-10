@@ -52,7 +52,8 @@ const log = (...parts) => console.error('[triage]', ...parts);
 
 function existingIssue(finding) {
   const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository', '-L', '20'));
-  return hits.find((h) => h.state === 'open') || hits[0] || null;
+  const known = hits.filter((h) => repos[h.repository.name]);
+  return known.find((h) => h.state === 'open') || known[0] || null;
 }
 
 // One standalone HTML file per captured route, stylesheets inlined.
@@ -164,6 +165,9 @@ const tracked = [];
 const untracked = [];
 for (const finding of blockers) {
   const issue = existingIssue(finding);
+  // An existing issue's repository owns the fix, wherever the finding pointed:
+  // the cook item, its verify command, and its acceptance cells follow it.
+  if (issue) finding.owner_repo = issue.repository.name;
   let entry;
   if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
   else if (issue) {
