@@ -385,16 +385,23 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 	 * @param int                            $template_id Product matched across the whole card.
 	 */
 	private static function fill_slot( array &$block, array $path, array $slot, array $items, string $source_card = '', string $source_name = '', int $template_id = 0 ): bool {
-		$node = &$block;
+		$node   = &$block;
+		$linked = false;
 		foreach ( $path as $index ) {
 			if ( ! is_int( $index ) || ! isset( $node['innerBlocks'][ $index ] ) ) {
 				return false;
 			}
-			$node = &$node['innerBlocks'][ $index ];
+			$linked = $linked || self::opens_anchor( $node );
+			$node   = &$node['innerBlocks'][ $index ];
 		}
 		$role        = (string) ( $slot['role'] ?? 'field' );
 		$replacement = Static_Site_Importer_Product_Field_Blocks::field( $node, $role, true );
 		if ( null !== $replacement ) {
+			// Anchors cannot nest: inside a card that already links to the
+			// product, a linking field would split the card apart.
+			if ( $linked && array_key_exists( 'isLink', $replacement['attrs'] ?? array() ) ) {
+				$replacement['attrs']['isLink'] = false;
+			}
 			$node = $replacement;
 			return true;
 		}
@@ -428,6 +435,17 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 		}
 		$node['attrs']['metadata'][ Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY ] = $marker;
 		return true;
+	}
+
+	/**
+	 * Whether a block's own markup opens with an anchor around its children.
+	 *
+	 * @param array<string,mixed> $block Parsed block.
+	 */
+	private static function opens_anchor( array $block ): bool {
+		$open = $block['innerContent'][0] ?? '';
+		$tags = new WP_HTML_Tag_Processor( is_string( $open ) ? $open : '' );
+		return $tags->next_tag() && 'A' === $tags->get_tag();
 	}
 
 	/**
