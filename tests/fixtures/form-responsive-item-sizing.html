@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Responsive form item sizing</title>
+<style>
+.contact-row { display:flex; flex-direction:row; }
+.contact-form { display:flex; flex-direction:column; align-items:flex-start; flex:1 0 0; }
+.contact-form label, .contact-form input { width:100%; }
+@media (max-width: 809.98px) {
+  .contact-row { flex-direction:column; align-items:flex-start; }
+  .contact-form { flex:0 0 auto; width:100%; }
+}
+</style>
+</head>
+<body>
+<div class="contact-row">
+<p>Contact us</p>
+<form class="contact-form" action="/contact" method="post">
+<label>Name <input type="text" name="name"></label>
+<label>Email <input type="email" name="email"></label>
+<button type="submit">Send</button>
+</form>
+</div>
+</body>
+</html>
