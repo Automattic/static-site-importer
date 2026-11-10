@@ -538,7 +538,7 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
-$assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && null === $frozen_workspace->read_raw( 'artifact.json' ) && null === $frozen_workspace->read_raw( 'shared-plan.json' ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a completed run prunes resume-only checkpoints and keeps its terminal response' );
+$assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && is_string( $frozen_workspace->read_raw( 'artifact.json' ) ) && is_string( $frozen_workspace->read_raw( 'shared-plan.json' ) ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a quality-failed completed run retains composition inputs and its terminal response' );
 $completed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
 $assert( $timed_run['payload']['step_timings'] === ( $completed_run['payload']['step_timings'] ?? null ), 'compile and compose step timings must survive resume and terminal checkpoint pruning' );
 $replayed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
@@ -942,7 +942,7 @@ $ambiguous_request['source'] = array( 'type' => 'files', 'import_id' => $interru
 $ambiguous = Static_Site_Importer_Canonical_Import_Service::import( $ambiguous_request );
 $assert( 'static_site_importer_direct_artifact_materialization_ambiguous' === ( $ambiguous['error']['code'] ?? '' ) && $mutations_before_interruption + 1 === $GLOBALS['ssi_direct_mutations'], 'resume across the mutation receipt boundary must fail closed instead of repeating WordPress mutation' );
 $kept = array_values( array_diff( (array) scandir( $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' . $interrupted_id ), array( '.', '..' ) ) );
-$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' ) ) && in_array( 'materialization-claim', $kept, true ), 'a terminal materialization failure keeps only its evidence: ' . implode( ',', $kept ) );
+$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan', 'artifact.json', 'artifact-files', 'shared-plan.json', 'shared-files', 'page-plans', 'receipts', 'payloads' ) ) && in_array( 'materialization-claim', $kept, true ), 'a terminal materialization failure keeps evidence and composition inputs: ' . implode( ',', $kept ) );
 
 $fail_run_after_receipt = true;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_checkpoint_publish'][] = static function ( $allowed, string $kind, string $relative, array $evidence ) use ( &$fail_run_after_receipt ) {
