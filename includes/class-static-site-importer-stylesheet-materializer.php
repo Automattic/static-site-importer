@@ -521,8 +521,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			$top      = self::css_declaration_value( $body, 'top' );
 
 			$selectors = array();
-			foreach ( explode( ',', $prelude ) as $selector ) {
-				$selector = trim( $selector );
+			foreach ( self::top_level_selectors( $prelude ) as $selector ) {
 				if ( preg_match( '/^\.([a-zA-Z_][a-zA-Z0-9_-]*)$/', $selector, $class ) ) {
 					if ( $is_fixed ) {
 						$positions[ $class[1] ] = true;
@@ -547,6 +546,46 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	}
 
 	/**
+	 * Split a selector list at its top-level commas.
+	 *
+	 * A comma inside `:where()`, `:is()`, `:not()`, or an attribute value separates
+	 * arguments, not selectors: `.slider :where(.a,.b)` is one complex selector,
+	 * and `.b` inside it is not a selector of its own.
+	 *
+	 * @param string $prelude Selector list.
+	 * @return array<int,string> Trimmed, non-empty selectors.
+	 */
+	private static function top_level_selectors( string $prelude ): array {
+		$selectors = array();
+		$depth     = 0;
+		$quote     = '';
+		$start     = 0;
+		$length    = strlen( $prelude );
+		for ( $index = 0; $index < $length; $index++ ) {
+			$char = $prelude[ $index ];
+			if ( '' !== $quote ) {
+				if ( '\\' === $char ) {
+					++$index;
+				} elseif ( $quote === $char ) {
+					$quote = '';
+				}
+			} elseif ( '"' === $char || "'" === $char ) {
+				$quote = $char;
+			} elseif ( '(' === $char || '[' === $char ) {
+				++$depth;
+			} elseif ( ( ')' === $char || ']' === $char ) && $depth > 0 ) {
+				--$depth;
+			} elseif ( ',' === $char && 0 === $depth ) {
+				$selectors[] = substr( $prelude, $start, $index - $start );
+				$start       = $index + 1;
+			}
+		}
+		$selectors[] = substr( $prelude, $start );
+
+		return array_values( array_filter( array_map( 'trim', $selectors ), static fn ( string $selector ): bool => '' !== $selector ) );
+	}
+
+	/**
 	 * Offset top chrome except where core makes the admin bar absolute.
 	 *
 	 * Each selector gets a `:root` prefix so the offset outranks its source rule, which may live in a
@@ -561,7 +600,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		if ( null === $offset ) {
 			return array();
 		}
-		$selector = implode( ', ', array_map( static fn ( string $part ): string => ':root ' . trim( $part ), explode( ',', $selector ) ) );
+		$selector = implode( ', ', array_map( static fn ( string $part ): string => ':root ' . $part, self::top_level_selectors( $selector ) ) );
 		return array(
 			$selector . ' { top: ' . $offset . '; }',
 			'@media screen and (max-width: 600px) { ' . $selector . ' { top: ' . $top . '; } }',
