@@ -117,6 +117,24 @@ file_put_contents( $state['theme_dir'] . '/templates/page-mug.html', $route_temp
 $apply = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'apply_whole_page_handoffs' );
 $arguments = array( &$state );
 $assert( true === $apply->invokeArgs( null, $arguments ), 'Product handoff commits.' );
+$hierarchy = array(
+	array( 'source_path' => 'item/index.html', 'parent_source_path' => '', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/index.html', 'parent_source_path' => 'item/index.html', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/abc123/index.html', 'parent_source_path' => 'item/mug/index.html', 'skip_materialization' => true, 'provider_owned' => true ),
+);
+$hierarchy_state = array( 'ordered_pages' => $hierarchy );
+$prune = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'skip_orphaned_synthetic_parents' );
+$prune_args = array( &$hierarchy_state );
+$prune->invokeArgs( null, $prune_args );
+$assert( ! empty( $hierarchy_state['ordered_pages'][0]['skip_materialization'] ) && ! empty( $hierarchy_state['ordered_pages'][1]['skip_materialization'] ), 'Handoff retires synthetic ancestors with no live descendant.' );
+$hierarchy_state = array( 'ordered_pages' => array(
+	array( 'source_path' => 'item/index.html', 'parent_source_path' => '', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/index.html', 'parent_source_path' => 'item/index.html', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/catalog/index.html', 'parent_source_path' => 'item/mug/index.html' ),
+) );
+$prune_args = array( &$hierarchy_state );
+$prune->invokeArgs( null, $prune_args );
+$assert( empty( $hierarchy_state['ordered_pages'][0]['skip_materialization'] ) && empty( $hierarchy_state['ordered_pages'][1]['skip_materialization'] ), 'Synthetic ancestors remain when a live descendant exists.' );
 $assert( 'A sturdy mug.' === get_post_field( 'post_content', $id ), 'Handoff leaves the product description intact.' );
 $assert( 'completed' === $state['applied']['runtime_declarations']['entity_bindings'][0]['status'], 'Add-to-cart binding completes on the product that serves the page.' );
 $assert( 'draft' === get_post( 10 )->post_status, 'Captured page is no longer published.' );

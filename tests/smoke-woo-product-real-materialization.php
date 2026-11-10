@@ -28,11 +28,12 @@ $swapped_fixture = file_get_contents( __DIR__ . '/fixtures/product-gallery-real/
 $swapped = Static_Site_Importer_Product_Field_Blocks::bind_document( $swapped_fixture, $entities['beach-b-bubble-free-stickers'] );
 $assert( 1 === substr_count( $swapped, 'wp:woocommerce/product-image-gallery' ), 'Already-swapped real product remains a single native gallery.' );
 $product = $fixture['product'] + array( 'id' => 'real-product', 'name' => 'Real product', 'slug' => 'real-product', 'regular_price' => '24' );
-$source = 'products/real.html';
+$source = 'item/real/abc123/index.html';
 $product['source_path'] = $source;
-$product['source_route'] = '/products/real';
+$product['source_route'] = '/item/real/abc123';
 $product['whole_page_candidate'] = 'blocks-engine/whole-page-candidate/v1';
-$files = array( 'index.html' => '<main><h1>Home</h1></main>', $source => '<main><h1>Real product</h1></main>', 'products/other.html' => '<main><h1>Other product</h1></main>' );
+$other_source = 'item/other/def456/index.html';
+$files = array( 'index.html' => '<main><h1>Home</h1></main>', $source => '<main><h1>Real product</h1></main>', $other_source => '<main><h1>Other product</h1></main>' );
 foreach ( $fixture['plan_assets'] as $asset ) {
 	$files[ preg_replace( '~^website/~', '', $asset['source_path'] ) ] = 'captured photo bytes';
 }
@@ -73,7 +74,7 @@ $entity_images = $product['images'];
 $plan = ( new ArtifactCompiler() )->compile( array(
 	'entrypoint' => 'index.html',
 	'files' => $files,
-	'runtime_declarations' => array( array( 'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html', 'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( $product, array_replace( $product, array( 'id' => 'other-product', 'slug' => 'other', 'source_path' => 'products/other.html', 'source_route' => '/products/other' ) ) ) ) ) ),
+	'runtime_declarations' => array( array( 'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html', 'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( $product, array_replace( $product, array( 'id' => 'other-product', 'slug' => 'other', 'source_path' => $other_source, 'source_route' => '/item/other/def456' ) ) ) ) ) ),
 ) )->toArray()['source_reports']['wordpress_site_plan'];
 // Restore the capture evidence carried by the real import's asset records.
 foreach ( $plan['assets'] as &$asset ) {
@@ -112,7 +113,7 @@ $plan['pages'][ $index ]['content_hash'] = hash( 'sha256', $markup );
 // A producer-generated single template is also a pending canonical write.
 $target = 'templates/single-product-' . $product['slug'] . '.html';
 $plan['writes'][] = array( 'kind' => 'theme_template', 'source_path' => $source, 'target_path' => $target, 'reconciliation_identity' => WordPressSitePlan::identity( 'write', $source, $target ), 'payload' => array( 'encoding' => 'utf8', 'data' => $markup ), 'payload_hash' => hash( 'sha256', $markup ) );
-$other_index = array_search( 'products/other.html', array_column( $plan['pages'], 'source_path' ), true );
+$other_index = array_search( $other_source, array_column( $plan['pages'], 'source_path' ), true );
 $other_candidate = $plan['pages'][ $other_index ]['whole_page_candidates'][0];
 $other_markup = $markup . '<!-- wp:paragraph --><p>Other product details</p><!-- /wp:paragraph -->';
 $plan['pages'][ $other_index ]['canonical_block_markup'] = $other_markup;
@@ -225,6 +226,8 @@ foreach ( $resolutions as $token => $resolution ) {
 }
 $assert( 3 === substr_count( $written, '<img ' ), 'The 27 gallery images and nine duplicate lightbox images disappear; unrelated document images survive.' );
 $assert( count( $fixture['plan_assets'] ) + 1 <= count( $plan['assets'] ), 'Real photo assets participate in materialization.' );
+$draft_routes = array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'page' === $post['post_type'] && 'draft' === $post['post_status'] );
+$assert( array() === $draft_routes, 'Nested whole-page handoffs leave no empty synthetic draft parent pages.' );
 $other_written = file_get_contents( $GLOBALS['ssi_plan_root'] . '/real-gallery/templates/single-product-other.html' );
 $assert( 1 === substr_count( $other_written, 'wp:woocommerce/product-image-gallery' ) && ! preg_match( '~<!-- wp:[^\s]+/authored-carousel\b~', $other_written ), 'Shared-photo product also persists exactly one gallery.' );
 foreach ( $plan['assets'] as $asset ) {
