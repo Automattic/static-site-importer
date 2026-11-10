@@ -1396,7 +1396,7 @@ $content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
 $content = preg_replace_callback(
 	'#<svg\b[^>]*>.*?</svg\s*>#is',
-	static function ( array $match ): string {
+	static function ( array $match ) use ( $safe_url ): string {
 		$svg = $match[0];
 		$ids = array();
 		if ( preg_match_all( '/\bid\s*=\s*(?:"([^"\s]+)"|\'([^\'\s]+)\'|([^\s>]+))/i', $svg, $id_matches ) ) {
@@ -1415,11 +1415,22 @@ $content = preg_replace_callback(
 			},
 			$svg
 		) ?? '';
+		// A local fragment is the only reference an artwork element may keep,
+		// except a link: an SVG <a> (an area map region) keeps its safe page
+		// destination, written as href whichever spelling the source used.
 		$svg = preg_replace_callback(
-			'/\s+(?:href|xlink:href)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i',
-			static function ( array $href_match ) use ( $ids ): string {
-				$reference = '' !== ( $href_match[1] ?? '' ) ? $href_match[1] : ( '' !== ( $href_match[2] ?? '' ) ? $href_match[2] : ( $href_match[3] ?? '' ) );
-				return str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] ) ? ' href="' . esc_attr( $reference ) . '"' : '';
+			'#<([a-z][a-z0-9:-]*)\b((?:"[^"]*"|\'[^\']*\'|[^>])*)>#i',
+			static function ( array $tag ) use ( $ids, $safe_url ): string {
+				$link = 0 === strcasecmp( $tag[1], 'a' );
+				return '<' . $tag[1] . ( preg_replace_callback(
+					'/\s+(?:href|xlink:href)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i',
+					static function ( array $href_match ) use ( $ids, $safe_url, $link ): string {
+						$reference = '' !== ( $href_match[1] ?? '' ) ? $href_match[1] : ( '' !== ( $href_match[2] ?? '' ) ? $href_match[2] : ( $href_match[3] ?? '' ) );
+						$fragment  = str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] );
+						return $fragment || ( $link && ! str_starts_with( $reference, '#' ) && $safe_url( $reference ) ) ? ' href="' . esc_attr( $reference ) . '"' : '';
+					},
+					$tag[2]
+				) ?? '' ) . '>';
 			},
 			$svg
 		) ?? '';
