@@ -481,7 +481,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
 			$input_attrs = array();
-			if ( ! $responsive_border ) {
+			// A source shorthand already owns the border through the presentation
+			// overlay. An inline style default would override its style component
+			// (including the implicit none in border:0).
+			if ( ! $responsive_border && ! isset( $control_styles['border'] ) ) {
 				$input_attrs['style'] = array( 'border' => array( 'style' => 'solid' ) );
 				if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
 					$input_attrs['style']['border']['style'] = $control_styles['border_style'];

@@ -218,6 +218,7 @@
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-contract.php",
           "tests/smoke-form-responsive-border.php",
+          "tests/smoke-form-input-border-reset.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-readable-substitution.php",
           "tests/smoke-shared-part-form.php",
