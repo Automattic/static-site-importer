@@ -191,14 +191,20 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		$body    = implode( ' ' . esc_html( $source['separator'] ) . ' ', $parts );
 		$content = (string) preg_replace_callback( '/(<nav\b[^>]*>).*?(<\/nav>)/is', static fn( array $parts ): string => $parts[1] . $body . $parts[2], $content );
 		$size    = $source['fontSize'] ?? '';
-		if ( is_string( $size ) && preg_match( '/^\d+(?:\.\d+)?(?:px|rem|em|%)$/D', $size ) ) {
-			$tags = new WP_HTML_Tag_Processor( $content );
-			if ( $tags->next_tag( array( 'tag_name' => 'NAV' ) ) ) {
-				$tags->set_attribute( 'style', rtrim( (string) $tags->get_attribute( 'style' ), ';' ) . ';font-size:' . $size );
+		$tags    = new WP_HTML_Tag_Processor( $content );
+		if ( $tags->next_tag(
+			array(
+				'tag_name'   => 'NAV',
+				'class_name' => 'woocommerce-breadcrumb',
+			)
+		) ) {
+			$style = rtrim( (string) $tags->get_attribute( 'style' ), ';' ) . ';margin:0';
+			if ( is_string( $size ) && preg_match( '/^\d+(?:\.\d+)?(?:px|rem|em|%)$/D', $size ) ) {
+				$style .= ';font-size:' . $size;
 			}
-			$content = $tags->get_updated_html();
+			$tags->set_attribute( 'style', $style );
 		}
-		return $content;
+		return $tags->get_updated_html();
 	}
 
 	/** Restore inert source identity on the native gallery's outer block only. */

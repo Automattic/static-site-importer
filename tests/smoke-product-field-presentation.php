@@ -40,6 +40,7 @@ $cases = array(
 	array( '$27.99', array( 'price' => '27.99' ), '<div class="price">$27.99</div>', '$27.99', new WC_Product() ),
 	array( '<a style="font-size:16px" href="/cat">Cat</a> › Name', array( 'name' => 'Name', 'categories' => array( 'Cat' ) ), '<div><nav class="woocommerce-breadcrumb">Home / Cat / Name</nav></div>', 'Cat › Name', new WC_Product() ),
 );
+$cases[] = array( '<a href="/cat">Cat</a> › Name', array( 'name' => 'Name', 'categories' => array( 'Cat' ) ), '<div><nav class="woocommerce-breadcrumb" style="color:red;margin-bottom:1em">Home / Cat / Name</nav></div>', 'Cat › Name', new WC_Product() );
 foreach ( $cases as [ $text, $row, $rendered, $expected, $product ] ) {
 	$GLOBALS['live_product'] = $product;
 	$bound = Static_Site_Importer_Product_Field_Blocks::bind_document( '<!-- wp:paragraph --><p>' . $text . '</p><!-- /wp:paragraph -->', $row );
@@ -53,10 +54,19 @@ foreach ( $cases as [ $text, $row, $rendered, $expected, $product ] ) {
 		$edited = Static_Site_Importer_Product_Grid_Runtime::render_field_presentation( $rendered, $block );
 		if ( ! str_contains( $edited, '$6.50' ) ) { throw new RuntimeException( 'Price edit was frozen' ); }
 	} elseif ( isset( $row['categories'] ) ) {
-		if ( ( $source['separator'] ?? '' ) !== '›' || ( $source['home'] ?? true ) || ( $source['fontSize'] ?? '' ) !== '16px' || ! str_contains( $result, 'font-size:16px' ) || str_contains( $result, 'Home' ) ) { throw new RuntimeException( 'Breadcrumb source presentation missing' ); }
+		$size = str_contains( $text, 'font-size:16px' ) ? '16px' : '';
+		if ( ( $source['separator'] ?? '' ) !== '›' || ( $source['home'] ?? true ) || ( $source['fontSize'] ?? '' ) !== $size || ( '' !== $size && ! str_contains( $result, 'font-size:' . $size ) ) || str_contains( $result, 'Home' ) ) { throw new RuntimeException( 'Breadcrumb source presentation missing' ); }
+		if ( ( $block['attrs']['fontSize'] ?? null ) !== '' ) { throw new RuntimeException( 'Woo default font size was not cleared' ); }
+		$tags = new WP_HTML_Tag_Processor( $result );
+		if ( ! $tags->next_tag( array( 'tag_name' => 'NAV', 'class_name' => 'woocommerce-breadcrumb' ) ) || ! str_contains( (string) $tags->get_attribute( 'style' ), 'margin:0' ) ) { throw new RuntimeException( 'Woo breadcrumb margin was not cleared' ); }
 	} elseif ( $result !== $rendered || $source ) { throw new RuntimeException( 'Plain price changed' ); }
 	$unbound = $block;
 	unset( $unbound['attrs']['metadata'] );
 	if ( Static_Site_Importer_Product_Grid_Runtime::render_field_presentation( $rendered, $unbound ) !== $rendered ) { throw new RuntimeException( 'Unbound default changed' ); }
+}
+foreach ( array( '', 'large' ) as $preset ) {
+	$source = '<!-- wp:paragraph ' . json_encode( array( 'fontSize' => $preset ) ) . ' --><p>Cat › Name</p><!-- /wp:paragraph -->';
+	$bound = parse_blocks( Static_Site_Importer_Product_Field_Blocks::bind_document( $source, array( 'name' => 'Name', 'categories' => array( 'Cat' ) ) ) )[0];
+	if ( ( $bound['attrs']['fontSize'] ?? null ) !== $preset ) { throw new RuntimeException( 'Explicit source font size changed' ); }
 }
 echo "PASS bound product field presentation\n";
