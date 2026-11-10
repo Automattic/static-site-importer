@@ -259,6 +259,14 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 ## CLI Usage
 
+Replay composition after a direct-artifact import fails at composition or later:
+
+```bash
+wp static-site-importer recompose --import-id=<id> [--output=/path/to/result.json]
+```
+
+This uses retained compile receipts with the installed Blocks Engine, without recompiling pages or materializing the site. It writes the compact plan view (default: `recomposed-result.json` in the run workspace) and prints JSON diagnostic counts by code plus content-loss source paths. Successful runs still prune replay inputs; expired or missing checkpoints cannot be replayed.
+
 The canonical ability uses `source.type` (`html`, `files`, `zip`, `url`, or `figma`) and `operation` (`plan` or `apply`). Figma sources accept a raw `figma_file`, scenegraph, or artifact bundle and normalize through the Blocks Engine Figma transformer before canonical materialization. Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths. All source HTML is preserved: SSI has no provider or platform axis and offers no option to strip source markup.
 
 Direct artifact imports bound each step by `max_invocation_seconds`; reaching it yields a resumable continuation, so a host that relaunches steps compiles every page. A host that stops relaunching at a wall-clock limit sets `import_deadline_seconds` through the `static_site_importer_direct_artifact_run_policy` filter, measured from the run's start. When that deadline passes, the import finishes with the pages already compiled: the entrypoint is compiled first, and each unstarted page is reported as a `page_compile_omitted` warning with reason `deadline` and its source path in the import report's loss ledger. A missing entrypoint remains fatal.
