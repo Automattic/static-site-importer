@@ -1490,9 +1490,11 @@ $capture_documents = array_merge(
 	$capture_compiled['wordpress_site_plan']['template_parts'] ?? array()
 );
 $capture_markup = implode( '\n', array_column( $capture_documents, 'canonical_block_markup' ) );
-$assert( str_contains( $capture_markup, '<dialog' ) && str_contains( $capture_markup, 'data-blocks-engine-triggers="menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
-$capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), 'data-blocks-engine-triggers="menu-toggle"' ) ) );
-$assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '<dialog' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
+// Blocks Engine lowers a captured dialog to a core group whose metadata
+// carries the dialog element and its trigger binding.
+$assert( str_contains( $capture_markup, '"blocksEngineDialog":{"tagName":"dialog"' ) && str_contains( $capture_markup, '"data-blocks-engine-triggers":"menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
+$capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '"data-blocks-engine-triggers":"menu-toggle"' ) ) );
+$assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '"blocksEngineDialog":{"tagName":"dialog"' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
 
 $GLOBALS['ssi_direct_test_retained_plan'] = true;
 $retained_result = $drive_apply( $input() );
