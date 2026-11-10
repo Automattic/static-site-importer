@@ -100,15 +100,32 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		if ( ! is_string( $css ) || '' === $css ) {
 			return '';
 		}
-		$classes = preg_split( '/\s+/', trim( ( $node['attrs']['className'] ?? '' ) . ' ' . ( $node['attrs']['sourcePresentationClasses'] ?? '' ) ) );
-		$classes = is_array( $classes ) ? $classes : array();
-		$rails   = array();
-		preg_match_all( '/\bclass=["\x27]([^"\x27]*)["\x27]/i', serialize_block( $node ), $class_attributes );
-		foreach ( $class_attributes[1] as $attribute ) {
-			$tokens = preg_split( '/\s+/', $attribute );
-			foreach ( is_array( $tokens ) ? $tokens : array() as $class ) {
-				if ( preg_match( '/(?:thumbs|thumbnails)$/i', $class ) ) {
-					$rails[] = $class;
+		$classes  = preg_split( '/\s+/', trim( ( $node['attrs']['className'] ?? '' ) . ' ' . ( $node['attrs']['sourcePresentationClasses'] ?? '' ) ) );
+		$classes  = is_array( $classes ) ? $classes : array();
+		$rails    = array();
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( '<html><body>' . serialize_block( $node ) . '</body></html>' );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		foreach ( $document->getElementsByTagName( '*' ) as $element ) {
+			$tokens = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ), -1, PREG_SPLIT_NO_EMPTY );
+			$tokens = is_array( $tokens ) ? $tokens : array();
+			foreach ( $tokens as $class ) {
+				if ( ! preg_match( '/(?:thumbs|thumbnails)$/i', $class ) ) {
+					continue;
+				}
+				$rails[] = $class;
+				// Only wrappers below this gallery's root can hide its rail.
+				$wrappers = array();
+				for ( $parent = $element->parentNode; $parent instanceof DOMElement; $parent = $parent->parentNode ) {
+					$parent_classes = preg_split( '/\s+/', trim( $parent->getAttribute( 'class' ) ), -1, PREG_SPLIT_NO_EMPTY );
+					$parent_classes = is_array( $parent_classes ) ? $parent_classes : array();
+					if ( array_intersect( $classes, $parent_classes ) ) {
+						$rails = array_merge( $rails, $wrappers );
+						break;
+					}
+					$wrappers = array_merge( $wrappers, $parent_classes );
 				}
 			}
 		}
@@ -122,33 +139,70 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			}
 		}
 		$css = (string) preg_replace( '#/\*.*?\*/#s', '', $css );
-		preg_match_all( '/@media\s*(?:screen\s+and\s*)?(\(max-width:\s*(\d+(?:\.\d+)?)px\))\s*\{((?:[^{}]+\{[^{}]*\}\s*)+)\}/i', $css, $media, PREG_SET_ORDER );
+		// Strip at-rule blocks from base evidence, including unsupported/nested
+		// queries. The flat media matcher below intentionally accepts only widths.
+		$base  = '';
+		$depth = 0;
+		$start = 0;
+		for ( $index = 0, $length = strlen( $css ); $index < $length; ++$index ) {
+			if ( '{' === $css[ $index ] ) {
+				++$depth;
+			} elseif ( '}' === $css[ $index ] ) {
+				--$depth;
+				if ( 0 === $depth ) {
+					$rule = substr( $css, $start, $index - $start + 1 );
+					if ( ! str_starts_with( ltrim( $rule ), '@' ) ) {
+						$base .= $rule;
+					}
+					$start = $index + 1;
+				}
+			}
+		}
+		preg_match_all( '/([^{}]+)\{([^{}]*)\}/', $base, $base_rules, PREG_SET_ORDER );
+		$hidden = array();
+		foreach ( $base_rules as $rule ) {
+			if ( preg_match( '/(?:^|;)\s*display\s*:\s*none\s*(?:!important\s*)?(?:;|$)/i', $rule[2] ) ) {
+				$hidden = array_merge( $hidden, self::thumbnail_selector_targets( $rule[1], $rails, $classes ) );
+			}
+		}
+		preg_match_all( '/@media\s*(?:screen\s+and\s*)?\((max|min)-width:\s*(\d+(?:\.\d+)?)px\)\s*\{((?:[^{}]+\{[^{}]*\}\s*)+)\}/i', $css, $media, PREG_SET_ORDER );
 		foreach ( $media as $query ) {
 			if ( (float) $query[2] <= 0 ) {
 				continue;
 			}
 			preg_match_all( '/([^{}]+)\{([^{}]*)\}/', $query[3], $rules, PREG_SET_ORDER );
 			foreach ( $rules as $rule ) {
-				if ( ! preg_match( '/(?:^|;)\s*display\s*:\s*none\s*(?:!important\s*)?(?:;|$)/i', $rule[2] ) ) {
-					continue;
+				$targets = self::thumbnail_selector_targets( $rule[1], $rails, $classes );
+				if ( 'max' === strtolower( $query[1] ) && $targets && preg_match( '/(?:^|;)\s*display\s*:\s*none\s*(?:!important\s*)?(?:;|$)/i', $rule[2] ) ) {
+					return '(max-width: ' . $query[2] . 'px)';
 				}
-				foreach ( explode( ',', $rule[1] ) as $selector ) {
-					// Match only a rail itself, not an image or a stateful child.
-					foreach ( $rails as $rail ) {
-						$selector = trim( $selector );
-						if ( '.' . $rail === $selector ) {
-							return '(max-width: ' . $query[2] . 'px)';
-						}
-						foreach ( $classes as $root ) {
-							if ( '' !== $root && preg_match( '/^\.' . preg_quote( $root, '/' ) . '\s+(?:>\s*)?\.' . preg_quote( $rail, '/' ) . '$/D', $selector ) ) {
-								return '(max-width: ' . $query[2] . 'px)';
-							}
-						}
-					}
+				if ( 'min' === strtolower( $query[1] ) && array_intersect( $targets, $hidden ) && (float) $query[2] > 0.02 && preg_match( '/(?:^|;)\s*display\s*:\s*(?:block|inline-block|flex|inline-flex|grid|inline-grid|inline|table|flow-root)\s*(?:!important\s*)?(?:;|$)/i', $rule[2] ) ) {
+					return '(max-width: ' . ( (float) $query[2] - 0.02 ) . 'px)';
 				}
 			}
 		}
 		return '';
+	}
+
+	/** Match only a known rail/wrapper, optionally root- or ancestor-attribute-qualified. */
+	private static function thumbnail_selector_targets( string $selectors, array $rails, array $classes ): array {
+		$targets = array();
+		foreach ( explode( ',', $selectors ) as $selector ) {
+			$selector = trim( $selector );
+			// A simple ancestor attribute qualifier is common on mobile-first layouts.
+			$selector = preg_replace( '/^\[[a-zA-Z_][a-zA-Z0-9_-]*=(?:[a-zA-Z0-9_-]+|"[^"\\r\\n]+"|\x27[^\x27\\r\\n]+\x27)\]\s+/', '', $selector );
+			foreach ( array_unique( $rails ) as $rail ) {
+				if ( '.' . $rail === $selector ) {
+					$targets[] = $rail;
+				}
+				foreach ( $classes as $root ) {
+					if ( '' !== $root && preg_match( '/^\.' . preg_quote( $root, '/' ) . '\s+(?:>\s*)?\.' . preg_quote( $rail, '/' ) . '$/D', $selector ) ) {
+						$targets[] = $rail;
+					}
+				}
+			}
+		}
+		return array_unique( $targets );
 	}
 
 	/** Captured author stylesheet writes are the same evidence in preparation and persistence. */

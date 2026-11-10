@@ -82,10 +82,27 @@ $gallery_node = array(
 	'innerContent' => array( '<div class="product-gallery"><img src="one.jpg"></div>' ),
 	'innerBlocks' => array(),
 );
-foreach ( array( '', '@media (max-width: 768px){.product-gallery-thumbnails{display:none}}', '@media (max-width: 768px){.product-gallery > .product-gallery-thumbnails{display:none!important}}', '@media (max-width: 600px){.unrelated-thumbnails{display:none}}', '@media (max-width: 600px){.other-gallery .product-gallery-thumbnails{display:none}}' ) as $css ) {
+$wrapper_node = $gallery_node;
+$wrapper_node['innerHTML'] = '<div class="product-gallery"><img src="one.jpg"><div class="source-strip"><div class="product-gallery-thumbnails"></div></div></div>';
+$wrapper_node['innerContent'] = array( $wrapper_node['innerHTML'] );
+foreach ( array(
+	array( $gallery_node, '', '' ),
+	array( $gallery_node, '@media (max-width: 768px){.product-gallery-thumbnails{display:none}}', '(max-width: 768px)' ),
+	array( $gallery_node, '@media (max-width: 768px){.product-gallery > .product-gallery-thumbnails{display:none!important}}', '(max-width: 768px)' ),
+	array( $gallery_node, '@media (max-width: 600px){.unrelated-thumbnails{display:none}}', '' ),
+	array( $gallery_node, '@media (max-width: 600px){.other-gallery .product-gallery-thumbnails{display:none}}', '' ),
+	array( $wrapper_node, '.source-strip{display:none;position:relative}@media screen and (min-width:768px){[data-gallery-design=slideshow] .source-strip{display:block}}', '(max-width: 767.98px)' ),
+	array( $wrapper_node, '.source-strip{display:none}@media (min-width:768px){.source-strip{position:relative}}', '' ),
+	array( $wrapper_node, '.source-strip{display:none}@media (min-width:768px){.source-strip{display:none}}', '' ),
+	array( $wrapper_node, '.unrelated{display:none}@media (min-width:768px){.source-strip{display:block}}', '' ),
+	array( $wrapper_node, '@media (max-width:768px){.product-gallery > .source-strip{display:none}}', '(max-width: 768px)' ),
+	array( $wrapper_node, '.product-gallery-thumbnails{display:none}@media (min-width:768px){.product-gallery .product-gallery-thumbnails{display:flex}}', '(max-width: 767.98px)' ),
+	array( $wrapper_node, '@media (max-width:600px){.source-strip{display:none}}@media (min-width:768px){.source-strip{display:block}}', '(max-width: 600px)' ),
+) as [ $source_node, $css, $expected_query ] ) {
 	$overlays = array();
-	$markup = Static_Site_Importer_Product_Field_Blocks::bind_document( serialize_block( $gallery_node ), array( 'images' => array( array( 'src' => 'one.jpg' ) ) ), $overlays, array(), array(), $css );
+	$markup = Static_Site_Importer_Product_Field_Blocks::bind_document( serialize_block( $source_node ), array( 'images' => array( array( 'src' => 'one.jpg' ) ) ), $overlays, array(), array(), $css );
 	$gallery = parse_blocks( $markup )[0];
+	if ( $expected_query !== ( $gallery['attrs']['metadata']['staticSiteImporterFieldPresentation']['thumbnailHideQuery'] ?? '' ) ) { throw new RuntimeException( 'Source thumbnail query missing or invented: ' . $css ); }
 	$cart_markup = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => 7 ) );
 	$cart = parse_blocks( $cart_markup )[0]['innerBlocks'][0];
 	foreach ( array(
@@ -99,8 +116,8 @@ foreach ( array( '', '@media (max-width: 768px){.product-gallery-thumbnails{disp
 			if ( in_array( $tags->get_tag(), $targets, true ) && str_contains( (string) $tags->get_attribute( 'style' ), ';margin:0' ) ) { ++$zeroed; }
 		}
 		if ( count( $targets ) !== $zeroed ) { throw new RuntimeException( 'Bound classic margins not cleared: ' . $result ); }
-		$hide = 'woocommerce/product-image-gallery' === $block['blockName'] && str_contains( $css, '768px' );
-		if ( $hide !== str_contains( $result, '@media (max-width: 768px)' ) || ( $hide && ( ! str_contains( $result, '.flex-control-thumbs{display:none !important;}' ) || ! str_contains( $result, 'width:100% !important;flex:1 1 100%' ) || ! str_contains( $result, 'ssi-bound-gallery-' ) || ! str_contains( $result, 'aspect-ratio:3/4 !important' ) ) ) ) { throw new RuntimeException( 'Source thumbnail visibility missing or invented' ); }
+		$hide = 'woocommerce/product-image-gallery' === $block['blockName'] && '' !== $expected_query;
+		if ( ( $hide ? ! str_contains( $result, '@media ' . $expected_query ) : str_contains( $result, '.flex-control-thumbs{display:none' ) ) || ( $hide && ( ! str_contains( $result, '.flex-control-thumbs{display:none !important;}' ) || ! str_contains( $result, 'width:100% !important;flex:1 1 100%' ) || ! str_contains( $result, 'ssi-bound-gallery-' ) || ! str_contains( $result, 'aspect-ratio:3/4 !important' ) ) ) ) { throw new RuntimeException( 'Source thumbnail visibility missing or invented' ); }
 		unset( $block['attrs']['metadata'] );
 		if ( $html !== apply_filters( 'render_block_' . $block['blockName'], $html, $block ) ) { throw new RuntimeException( 'Unbound gallery/cart changed' ); }
 	}
