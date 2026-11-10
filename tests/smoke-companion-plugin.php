@@ -1107,6 +1107,19 @@ if ( is_array( $svg_descriptor ) ) {
 	$svg_links_output = (string) ob_get_clean();
 	$assert( str_contains( $svg_links_output, '<a href="/communities/west/">' ) && str_contains( $svg_links_output, '<a href="https://example.test/east">' ), 'svg-artwork-renderer-keeps-safe-region-links' );
 	$assert( ! str_contains( $svg_links_output, 'javascript:' ) && ! str_contains( $svg_links_output, '/evil.svg' ), 'svg-artwork-renderer-strips-unsafe-links-and-non-link-references' );
+
+	// A large map (hundreds of KB of path data) renders; nested and unclosed SVGs are still dropped.
+	$region = '<path d="' . str_repeat( 'M1236.2 673.278C1233.9 677.166 1232.89 681.77 1230.54 685.418', 160 ) . '"></path>';
+	foreach ( array(
+		'<svg viewBox="0 0 10 10">' . str_repeat( $region, 60 ) . '</svg>' => true,
+		'<svg viewBox="0 0 10 10"><svg><path d="M0 0"></path></svg></svg>' => false,
+		'<svg viewBox="0 0 10 10"><path d="M0 0"></path>'                   => false,
+	) as $svg => $renders ) {
+		$attributes = array( 'svg' => $svg );
+		ob_start();
+		eval( '?>' . $svg_render );
+		$assert( $renders === str_contains( (string) ob_get_clean(), '<path d="M' ), 'svg-artwork-renderer-' . ( $renders ? 'renders-large-artwork' : 'drops-malformed-svg-' . strlen( $svg ) ) );
+	}
 }
 
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';

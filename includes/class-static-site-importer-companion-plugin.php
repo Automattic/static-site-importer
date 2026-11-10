@@ -1391,9 +1391,11 @@ $content = $rewrite_attribute(
 		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
 	}
 );
-$content = preg_match( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*<svg\b#is', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
+// Possessive runs keep these scans linear: a per-character lookahead over a
+// large artwork body exhausts the PCRE JIT stack and erased the artwork.
+$content = preg_match( '#<svg\b[^>]*>(?:[^<]++|<(?!/svg\s*>|svg\b))*+<svg\b#i', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
 $content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
-$content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
+$content = preg_replace( '#<svg\b[^>]*>(?:[^<]++|<(?!/svg\s*>))*+$#i', '', $content ) ?? '';
 $content = preg_replace_callback(
 	'#<svg\b[^>]*>.*?</svg\s*>#is',
 	static function ( array $match ) use ( $safe_url ): string {
