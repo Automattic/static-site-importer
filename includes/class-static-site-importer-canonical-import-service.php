@@ -350,14 +350,15 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( is_wp_error( $result ) ) {
 				return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 			}
-			return array(
-				'success'               => true,
-				'operation'             => 'apply',
-				'plan'                  => $plan,
-				'applied_plan'          => $plan,
-				'applied_plan_identity' => $classic['plan_identity'],
-				'result'                => $result,
-				'error'                 => null,
+			return array_merge(
+				array(
+					'operation'             => 'apply',
+					'plan'                  => $plan,
+					'applied_plan'          => $plan,
+					'applied_plan_identity' => $classic['plan_identity'],
+					'error'                 => null,
+				),
+				self::success( $result, $input, false )
 			);
 		}
 		if ( is_object( $payload_reader ) ) {
@@ -366,6 +367,20 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$input['plan'] = $plan;
 		$receipt       = self::materialize_wordpress_site_plan( $input );
 		$success       = 'completed' === ( $receipt['status'] ?? '' );
+		if ( $success ) {
+			require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
+			require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
+			require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
+			$projection                         = Static_Site_Importer_Receipt_Projection::compose( $receipt, $input, array(), array(), array(), '', array(), array() );
+			$report                             = $projection['report'];
+			$receipt['quality']                  = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $input );
+			$receipt['import_report_summary']    = $report['compact_summary'];
+			$receipt['import_validation_result'] = $report['import_validation_result'];
+			return array_merge(
+				array( 'operation' => 'apply', 'plan' => $plan, 'error' => null ),
+				self::success( $receipt, $input, false )
+			);
+		}
 		return array(
 			'success'   => $success,
 			'operation' => 'apply',
@@ -761,7 +776,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 	}
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
-	public static function success( array $result, array $input ): array {
+	public static function success( array $result, array $input, bool $notify_completion = true ): array {
 		$requires_form_setup = false;
 		foreach ( array( $result, $result['terminal_batch_result'] ?? array() ) as $level ) {
 			foreach ( array( 'quality', 'import_report_summary', 'import_validation_result' ) as $field ) {
@@ -785,7 +800,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
 		$is_terminal = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
-		if ( $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
+		if ( $notify_completion && $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
 		$response = array(

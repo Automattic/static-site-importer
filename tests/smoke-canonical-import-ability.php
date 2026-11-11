@@ -14,7 +14,9 @@ function wp_json_encode( $value ) {
 	return json_encode( $value ); }
 function wp_generate_uuid4() {
 	return '00000000-0000-4000-8000-000000000001'; }
-function do_action() {}
+function do_action( $hook ) {
+	$GLOBALS['ssi_actions'][] = $hook;
+}
 function doing_action() {
 	return false; }
 function did_action() {
@@ -22,6 +24,9 @@ function did_action() {
 function add_action() {}
 function current_user_can( $capability ) {
 	return ! empty( $GLOBALS['ssi_can'][ $capability ] ); }
+function sanitize_key( $value ) {
+	return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $value ) );
+}
 function sanitize_text_field( $value ) {
 	return (string) $value; }
 function apply_filters( $hook, $value, ...$args ) {
@@ -141,6 +146,7 @@ class Static_Site_Importer_Theme_Generator {
 	public static $last_args = array();
 	public static $last_artifact = array();
 	public static $drift    = false;
+	public static $quality = array( 'pass' => true );
 	public static function import_website_artifact( $artifact, $args ) {
 		if ( self::$drift && isset( $args['approved_classic_plan_identity'] ) ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'drift' );
@@ -148,7 +154,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$last_artifact = $artifact;
 		self::$last_args = $args;
 		return array(
-			'quality'               => array( 'pass' => true ),
+			'quality'               => self::$quality,
 			'import_report_summary' => array( 'status' => 'completed' ),
 		); }
 }
@@ -161,15 +167,25 @@ class Static_Site_Importer_Classic_Theme_Projection {
 		); }
 }
 class Static_Site_Importer_WordPress_Site_Plan_Materializer {
-	public static $plans = array();
+	public static $plans     = array();
+	public static $completed = array();
+	public static $status    = 'completed';
 	public static function materialize( $plan, $args ) {
 		self::$plans[] = array(
 			'plan' => $plan,
 			'args' => $args,
 		);
 		return array(
-			'status'         => 'completed',
+			'status'         => self::$status,
+			'completed'      => self::$completed,
 			'receipt_schema' => 'static-site-importer/materialization-receipt/v2',
+			'plan'          => $plan + array(
+				'pages'          => array(),
+				'source'         => array( 'source_hash' => 'approved', 'provenance' => array() ),
+				'template_parts' => array(),
+				'assets'         => array(),
+			),
+			'theme'         => array( 'slug' => 'approved-plan', 'dir' => '/tmp/approved-plan' ),
 		);
 	}
 }
@@ -585,4 +601,53 @@ if ( ! static_site_importer_ability_import_permission_callback( array( 'operatio
 Static_Site_Importer_URL_Import_Runtime::$summary = array( 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ) );
 $choice_url = Static_Site_Importer_Canonical_Import_Service::import_url_operation( array( 'operation' => 'apply' ), array( 'url' => 'https://example.com/' ) );
 $assert_service( false === $choice_url['success'] && 'static_site_importer_quality_failed' === ( $choice_url['error']['code'] ?? '' ), 'URL completion cannot overwrite a missing form handler failure' );
+$choice_plan = $approved;
+$choice_plan['diagnostics'] = array( array(
+	'type'                  => 'unsupported_html_fallback',
+	'code'                  => 'preserved_runtime_island',
+	'loss_class'            => 'runtime_island_preserved',
+	'acceptability'         => 'acceptable_preservation',
+	'kind'                  => 'form',
+	'form_intent'           => 'choice_submission',
+	'source_path'           => 'question.html',
+	'selector'              => 'main > form:nth-of-type(1)',
+	'preservation_strategy' => 'fallback_metadata_with_readable_blocks',
+	'runtime_requirement'   => 'server_or_client_form_handler',
+) );
+Static_Site_Importer_WordPress_Site_Plan_Materializer::$completed = array( 'pages' => array( 'question.html' => 42 ) );
+foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ) ) as $options ) {
+	$GLOBALS['ssi_actions'] = array();
+	$choice_apply = static_site_importer_ability_import( $options + array( 'operation' => 'apply', 'plan' => $choice_plan ) );
+	if ( false !== $choice_apply['success'] || 'static_site_importer_quality_failed' !== ( $choice_apply['error']['code'] ?? '' ) || 1 !== ( $choice_apply['result']['quality']['choice_submission_form_count'] ?? null ) || empty( $choice_apply['result']['import_validation_result']['fail_import'] ) || 'failed' !== ( $choice_apply['result']['import_report_summary']['status'] ?? '' ) ) {
+		throw new RuntimeException( 'approved block plans must report unresolved submission setup even with permissive quality options' );
+	}
+	if ( $choice_plan !== $choice_apply['plan'] || 42 !== ( $choice_apply['result']['completed']['pages']['question.html'] ?? null ) || in_array( 'static_site_importer_import_completed', $GLOBALS['ssi_actions'], true ) ) {
+		throw new RuntimeException( 'failed readiness must retain the approved plan and imported pages without announcing completion' );
+	}
+}
+$preference_plan = $choice_plan;
+$preference_plan['diagnostics'][0]['form_intent'] = 'preference';
+$preference_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $preference_plan ) );
+if ( empty( $preference_apply['success'] ) || 0 !== $preference_apply['result']['quality']['choice_submission_form_count'] || in_array( 'static_site_importer_import_completed', $GLOBALS['ssi_actions'], true ) ) {
+	throw new RuntimeException( 'non-submitting preferences must retain successful approved-plan behavior' );
+}
+Static_Site_Importer_WordPress_Site_Plan_Materializer::$completed['runtime_declarations']['entity_bindings'] = array( array(
+	'status' => 'completed', 'source_path' => 'question.html', 'superseded_runtime_selectors' => array( 'main > form:nth-of-type(1)' ),
+) );
+$resolved_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $choice_plan ) );
+if ( empty( $resolved_apply['success'] ) || 0 !== $resolved_apply['result']['quality']['choice_submission_form_count'] ) {
+	throw new RuntimeException( 'completed replacement bindings must supersede the original form warning' );
+}
+Static_Site_Importer_WordPress_Site_Plan_Materializer::$status = 'failed';
+$failed_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $approved ) );
+if ( false !== $failed_apply['success'] || 'static_site_importer_materialization_failed' !== $failed_apply['error']['code'] ) {
+	throw new RuntimeException( 'materialization failures must preserve their original error' );
+}
+Static_Site_Importer_Theme_Generator::$drift = false;
+Static_Site_Importer_Theme_Generator::$quality = array( 'pass' => false, 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ), 'choice_submission_form_count' => 1 );
+$GLOBALS['ssi_actions'] = array();
+$classic_choice_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $classic_plan ) );
+if ( false !== $classic_choice_apply['success'] || 'static_site_importer_quality_failed' !== ( $classic_choice_apply['error']['code'] ?? '' ) || $classic_plan['plan']['plan_identity'] !== $classic_choice_apply['applied_plan_identity'] || in_array( 'static_site_importer_import_completed', $GLOBALS['ssi_actions'], true ) ) {
+	throw new RuntimeException( 'approved classic plans must preserve their identity and require submission setup without announcing completion' );
+}
 echo "Canonical import ability smoke passed.\n";
