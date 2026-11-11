@@ -201,6 +201,7 @@
           }
         ],
         "standalone_php_test_paths": [
+          "tests/smoke-product-grid-inline-svg-import.php",
           "tests/smoke-media-rebind-error.php",
           "tests/smoke-raw-html-companion-quality.php",
           "tests/smoke-product-summary-readability.php",

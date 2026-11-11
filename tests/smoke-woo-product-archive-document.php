@@ -31,6 +31,9 @@ $fixture['reference_tokens']        = array(
 		'target_path' => 'assets/logo.png',
 	),
 );
+// Exercise the existing resolver-enabled bootstrap contract; the real import
+// regression separately covers archives created without a producer resolver.
+$fixture['templates']               = array( array( 'canonical_block_markup' => '<!-- wp:image --><img src="' . $token . '"><!-- /wp:image -->' ) );
 $fixture['resolution']              = array( 'theme_uri' => 'https://example.test/theme' );
 $fixture['pages'][0]['source_path'] = 'large.html';
 $fixture['pages'][0]['reconciliation_identity'] = str_repeat( 'b', 64 );

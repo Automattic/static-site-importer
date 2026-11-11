@@ -21,6 +21,12 @@ if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
 			return $block;
 		}
 
+		public function unregister( string $name ): ?object {
+			$block = $this->registered[ $name ] ?? null;
+			unset( $this->registered[ $name ] );
+			return $block;
+		}
+
 		public function is_registered( string $name ): bool {
 			return isset( $this->registered[ $name ] );
 		}

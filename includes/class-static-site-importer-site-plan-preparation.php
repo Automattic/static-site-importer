@@ -1344,6 +1344,20 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: integrity
 			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
 		}
+		// This archive is created after the producer built functions.php. If no
+		// producer template needed assets, that bootstrap has no token resolver.
+		// Publish site-root URLs in that case rather than orphaned placeholders.
+		if ( array() === Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $plan ) ) {
+			$references = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $plan['resolution']['attachment_resolutions'] ?? array() );
+			$theme_host = parse_url( (string) ( $plan['resolution']['theme_uri'] ?? '' ), PHP_URL_HOST ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Parse canonical resolver URLs without a WordPress runtime.
+			foreach ( $references as &$url ) {
+				if ( parse_url( $url, PHP_URL_HOST ) === $theme_host ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Parse canonical resolver URLs.
+					$url = (string) preg_replace( '~^https?://[^/]+~', '', $url );
+				}
+			}
+			unset( $url );
+			$published = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $published, $references );
+		}
 		$write = array(
 			'kind'                    => 'theme_template',
 			'source_path'             => (string) $page['source_path'],
