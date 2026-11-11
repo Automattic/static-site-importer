@@ -90,7 +90,7 @@ namespace {
 	}
 
 	// Product grafts depend on WordPress Core for canonical anchor serialization.
-	$wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+	$wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
 	require_once __DIR__ . '/fixtures/core-block-parser.php';
 	ssi_test_require_core_block_parser( $wp_root );
 	if ( ! function_exists( 'serialize_blocks' ) ) {

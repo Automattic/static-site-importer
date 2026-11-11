@@ -28,19 +28,7 @@ require dirname( __DIR__ ) . '/vendor/autoload.php';
 
 // Use the same source-only Core fixture as the manifest runner, including when
 // this harness is invoked directly without a configured WordPress installation.
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
-if ( ! $wp_root ) {
-	$wp_root = getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
-}
-if ( ! $wp_root ) {
-	$wp_root = dirname( __DIR__ ) . '/vendor/wordpress-core';
-	if ( ! is_readable( $wp_root . '/wp-includes/blocks.php' ) ) {
-		passthru( 'bash ' . escapeshellarg( dirname( __DIR__ ) . '/tools/prepare-wordpress-core-fixture.sh' ), $fixture_status ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_passthru -- Standalone CLI test provisions the pinned source-only fixture.
-		if ( 0 !== $fixture_status ) {
-			exit( 1 );
-		}
-	}
-}
+$wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
 define( 'ABSPATH', rtrim( $wp_root, '/\\' ) . '/' );
 define( 'WPINC', 'wp-includes' );
 define( 'OBJECT', 'OBJECT' );
