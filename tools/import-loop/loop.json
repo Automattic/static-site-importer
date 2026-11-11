@@ -47,7 +47,7 @@
           "failed",
           "timed_out"
         ],
-        "backoff": "1h"
+        "backoff": "5m"
       },
       "exec": {
         "program": "bash",
@@ -128,6 +128,14 @@
           "--wp-cli",
           "{{inputs.wp_cli}}"
         ]
+      },
+      "retry": {
+        "max": 2,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "2m"
       }
     },
     {
@@ -157,7 +165,10 @@
         "provider-evidence": "{{item.provider_evidence}}",
         "gate-input": "{{item.gate_inputs}}",
         "gate-env-from": "PLAYWRIGHT_BROWSERS_PATH=HOME/.cache/ms-playwright",
-        "gate-toolchain": ["node", "php"],
+        "gate-toolchain": [
+          "node",
+          "php"
+        ],
         "publish-incomplete-draft": true,
         "timeout-ms": 2400000,
         "gate-timeout-seconds": "5400"
@@ -190,6 +201,14 @@
           "--wp-cli",
           "{{inputs.wp_cli}}"
         ]
+      },
+      "retry": {
+        "max": 2,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "2m"
       }
     },
     {
