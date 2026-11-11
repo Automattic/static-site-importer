@@ -371,13 +371,17 @@ class Static_Site_Importer_Canonical_Import_Service {
 			require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
 			require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
 			require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
-			$projection                         = Static_Site_Importer_Receipt_Projection::compose( $receipt, $input, array(), array(), array(), '', array(), array() );
-			$report                             = $projection['report'];
+			$projection                          = Static_Site_Importer_Receipt_Projection::compose( $receipt, $input, array(), array(), array(), '', array(), array() );
+			$report                              = $projection['report'];
 			$receipt['quality']                  = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $input );
 			$receipt['import_report_summary']    = $report['compact_summary'];
 			$receipt['import_validation_result'] = $report['import_validation_result'];
 			return array_merge(
-				array( 'operation' => 'apply', 'plan' => $plan, 'error' => null ),
+				array(
+					'operation' => 'apply',
+					'plan'      => $plan,
+					'error'     => null,
+				),
 				self::success( $receipt, $input, false )
 			);
 		}
@@ -386,10 +390,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'operation' => 'apply',
 			'plan'      => $plan,
 			'result'    => $receipt,
-			'error'     => $success ? null : ( $receipt['errors'][0] ?? array(
+			'error'     => $receipt['errors'][0] ?? array(
 				'code'    => 'static_site_importer_materialization_failed',
 				'message' => 'The approved plan could not be materialized.',
-			) ),
+			),
 		);
 	}
 
@@ -799,7 +803,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$remaining_items                 = 1000;
 		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
-		$is_terminal = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
+		$is_terminal                     = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
 		if ( $notify_completion && $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
