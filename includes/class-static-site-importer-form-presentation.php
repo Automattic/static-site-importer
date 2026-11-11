@@ -189,9 +189,11 @@ final class Static_Site_Importer_Form_Presentation {
 	/**
 	 * Inactive field errors take no space, and a placeholder without an
 	 * authored colour keeps the browser default over the provider's `inherit`.
+	 * Labels inherit source weight instead of the provider's bold default;
+	 * authored node weights keep their higher specificity.
 	 */
 	private static function provider_base_rules( string $scope ): array {
-		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' );
+		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}', '.' . $scope . ' label{font-weight:inherit}' );
 	}
 
 	/**

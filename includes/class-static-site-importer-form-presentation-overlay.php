@@ -951,6 +951,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
+		// Admit only the scoped label-weight reset, not arbitrary label styling.
+		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} label\{font-weight:inherit\}$/D', $rule ) ) {
+			return true;
+		}
 		// Provider dropdown chrome may only be suppressed within a generated
 		// select hook. Do not admit arbitrary declarations on provider icons.
 		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
