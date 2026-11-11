@@ -1,0 +1,108 @@
+// One check implementation for live evaluation and candidate acceptance.
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { editorPages } from './editor.mjs';
+import { blockShape, blockSubject } from './shape.mjs';
+import { coreHtmlFindings } from './core-html.mjs';
+import { compareImports } from './progress.mjs';
+
+export const WIDTHS = [390, 768, 1440];
+const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
+const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
+const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep']);
+const findReport = (dir) => {
+  for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
+    const full = path.join(dir, entry.name);
+    if (entry.isFile() && entry.name === 'import-report.json') return full;
+    if (entry.isDirectory()) { const found = findReport(full); if (found) return found; }
+  }
+  return null;
+};
+
+export async function checkImport(args) {
+  for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
+  fs.mkdirSync(args.out, { recursive: true });
+  const captureRoot = path.join(args.source, new URL(args.url).hostname);
+  const website = path.join(captureRoot, 'website');
+  const routes = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && !['assets', 'media', 'parts'].includes(entry.name)) walk(path.join(dir, entry.name));
+      else if (entry.name === 'index.html') routes.push('/' + path.relative(website, dir).split(path.sep).filter(Boolean).map((p) => `${p}/`).join(''));
+    }
+  };
+  walk(website);
+  routes.sort();
+  if (!routes.length) throw new Error('capture_has_no_routes');
+  const findings = new Map();
+  const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null }) => {
+    const signature = createHash('sha1').update(JSON.stringify([stage, check, owner_repo, subject])).digest('hex').slice(0, 12);
+    const finding = findings.get(signature) || { signature, severity: advisory.has(check) ? 'advisory' : 'blocker', stage, check, owner_repo, subject, evidence, occurrences: [] };
+    finding.occurrences.push({ route, width, evidence });
+    findings.set(signature, finding);
+  };
+
+  // Compare writes artifacts into the capture: never mutate a gate input or
+  // reuse stale evidence from another run. The same pinned release checks both.
+  const capture = path.join(args.out, 'parity-capture');
+  fs.rmSync(capture, { recursive: true, force: true });
+  fs.cpSync(captureRoot, capture, { recursive: true });
+  const command = ['--yes', `--package=${compareClient.package}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
+  const reportPath = path.join(capture, 'compare', 'materialization', 'report.json');
+  fs.rmSync(reportPath, { force: true });
+  const run = spawnSync('npx', command, { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 30 * 60_000 });
+  fs.writeFileSync(path.join(args.out, 'compare.log'), `${run.stdout || ''}\n${run.stderr || ''}`);
+  let parity;
+  try {
+    if (![0, 1].includes(run.status)) throw new Error(run.error?.message || `compare_exit_${run.status}`);
+    parity = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  } catch (error) {
+    report({ stage: 'materialization', check: 'visual_parity_unverified', owner_repo: compareClient.owner_repo, subject: 'compare', evidence: { command: ['npx', ...command], status: run.status, error: error.message } });
+  }
+  const visual = [];
+  const sameRoute = (value, route) => new URL(value, args.url).pathname === route;
+  for (const route of routes) for (const width of WIDTHS) {
+    const scores = (parity?.scores || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
+    const pending = (parity?.pending || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
+    const cell = { route, width, scores, pending, verified: scores.length > 0 && pending.length === 0 };
+    visual.push(cell);
+    if (!cell.verified || scores.some((s) => !s.pass)) report({ stage: 'materialization', check: 'visual_parity', owner_repo: 'blocks-engine', subject: 'captured_render', evidence: cell, route, width });
+  }
+
+  const reportFile = findReport(path.join(args.site, 'wp-content', 'static-site-importer'));
+  if (!reportFile) report({ stage: 'import', check: 'import_report_missing', owner_repo: 'static-site-importer', subject: 'import-report.json', evidence: args.site });
+  else {
+    const imported = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+    for (const finding of coreHtmlFindings(imported, routes)) report(finding);
+    const metrics = imported.design_system?.metrics || {};
+    if (metrics.restyle_coverage < 0.5) report({ stage: 'theme', check: 'restyle_coverage_low', owner_repo: 'blocks-engine', subject: 'restyle_coverage', evidence: metrics });
+    if (metrics.generated_to_source_css_ratio > 2) report({ stage: 'theme', check: 'theme_css_bloat', owner_repo: 'blocks-engine', subject: 'generated_to_source_css_ratio', evidence: metrics });
+    // Each diagnostic is one actual occurrence; do not multiply a site-wide
+    // count by every route when the report has no route attribution.
+    for (const d of imported.diagnostics || []) if (d.type === 'raw_html_companion_block') report({ stage: 'editability', check: 'raw_html_companion_block_count', owner_repo: 'blocks-engine', subject: slugStem(String(d.context?.block_name || '').split('/').pop() || 'unknown'), evidence: { document: d.source_path, selector: d.selector } });
+  }
+
+  const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
+  try {
+    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report);
+    const tally = (list, key) => list.reduce((m, b) => m.set(key(b), (m.get(key(b)) || 0) + 1), new Map());
+    for (const { route, blocks } of pages) {
+      const cell = { route, width: 1440 };
+      for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { count }, ...cell });
+      for (const [subject, count] of tally(blocks.filter((b) => /^(ssi-[a-z0-9-]+|custom)\//.test(b.name) && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { count, of: blocks.length }, ...cell });
+      const depth = Math.max(0, ...blocks.map((b) => b.depth));
+      if (depth > 8) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { depth, threshold: 8 }, ...cell });
+    }
+  } catch (error) { report({ stage: 'editability', check: 'editor_unreachable', owner_repo: 'static-site-importer', subject: 'block_editor', evidence: error.message }); }
+
+  const list = [...findings.values()].sort((a, b) => a.signature.localeCompare(b.signature));
+  const result = { schema: 'import-loop/findings/v1', url: args.url, site: args.site, wp_url: args['wp-url'], routes, widths: WIDTHS, import_report: reportFile, verdict: list.some((f) => f.severity === 'blocker') ? 'findings' : 'accepted', findings: list, visual, parity_command: ['npx', ...command] };
+  const previous = args.before ? JSON.parse(fs.readFileSync(args.before, 'utf8')) : { findings: [], visual: [] };
+  result.progress = compareImports(previous, result).blockers;
+  const findingsPath = path.join(args.out, 'findings.json');
+  fs.writeFileSync(findingsPath, JSON.stringify(result, null, 2));
+  const output = { verdict: result.verdict, finding_count: list.length, blocker_count: list.filter((f) => f.severity === 'blocker').length, blocker_signatures: list.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${f.occurrences.reduce((n, o) => n + (o.evidence?.count ?? 1), 0)}`), findings_path: findingsPath, progress: result.progress };
+  return { result, output };
+}

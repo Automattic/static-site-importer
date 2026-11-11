@@ -116,17 +116,22 @@ test('accepts a completed v2 materialization receipt identity', () => {
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.28\.3/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.28\.3\.tgz/);
-  assert.match(workflow, /WP_CODEBOX_SHA256: c2892a36f406402aeead58075ce2f26ab5aaa76f3e9390dfc5a2cb776fe240c9/);
-  assert.match(workflow, /WP_CODEBOX_SHA: 9d3e80b4a092eab3990082520ae8b5a4324571e2/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.33\.2/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.33\.2\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: 244674ee07718768a6710f31ba36489fac1157fb1991afa405723e4b581860df/);
+  assert.match(workflow, /WP_CODEBOX_SHA: 86f79300a4eb85487fbca4b088801b5ea9dd25ba/);
   assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(workflow, /"\$WP_CODEBOX_BIN" recipe validate --recipe "\$CONTRACT_RECIPE" --json/);
   assert.ok(workflow.indexOf('recipe validate --recipe') < workflow.indexOf('playwright/cli.js" install --with-deps chromium'));
-  assert.match(caller, /blocks-engine-sha: 3a8cebeb2d07cf26d47a2b14c20242e2f4eb4278/);
+  assert.match(caller, /needs: blocks-engine-pin/);
+  assert.match(caller, /blocks-engine-sha: \$\{\{ needs\.blocks-engine-pin\.outputs\.sha \}\}/);
+  assert.match(caller, /sparse-checkout: composer\.json/);
+  assert.match(caller, /\.require\["automattic\/blocks-engine-php-transformer"\]/);
+  assert.ok(caller.includes('refs/tags/php-transformer-${VERSION}^{}'));
+  assert.ok(caller.includes('[[ "$SHA" =~ ^[a-f0-9]{40}$ ]]'));
   assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 
