@@ -3,7 +3,15 @@
 export async function themeChecks(page, wpUrl, routes, report) {
   await page.goto(new URL('/wp-admin/site-editor.php', wpUrl).href, { waitUntil: 'load' });
   await page.waitForFunction(() => window.wp?.apiFetch, null, { timeout: 120_000 });
-  const api = (pathname, method = 'GET', data) => page.evaluate(async ({ pathname, method, data }) => window.wp.apiFetch({ path: pathname, method, data }), { pathname, method, data });
+  // apiFetch rejects with a plain REST error object, which Playwright reduces
+  // to "Object": surface its path, code and message instead.
+  const api = async (pathname, method = 'GET', data) => {
+    const result = await page.evaluate(async ({ pathname, method, data }) => {
+      try { return { ok: await window.wp.apiFetch({ path: pathname, method, data }) }; } catch (error) { return { error: { path: pathname, method, code: error?.code, status: error?.data?.status, message: error?.message } }; }
+    }, { pathname, method, data });
+    if (result.error) throw new Error(`apiFetch ${JSON.stringify(result.error)}`);
+    return result.ok;
+  };
   const fail = (check, evidence, severity = 'blocker') => report({ stage: 'theme', check, severity, owner_repo: 'blocks-engine', subject: check, evidence });
   const templates = await api('/wp/v2/templates?context=edit&per_page=100');
   const parts = await api('/wp/v2/template-parts?context=edit&per_page=100');
@@ -25,11 +33,16 @@ export async function themeChecks(page, wpUrl, routes, report) {
   const presets = [settings.color?.palette, settings.typography?.fontFamilies, settings.typography?.fontSizes, settings.spacing?.spacingSizes];
   if (presets.some((p) => !p || !Object.keys(p).length)) fail('theme_presets', settings);
   if (['link', 'button', 'heading'].some((name) => !current.styles?.elements?.[name])) fail('theme_element_styles', current.styles?.elements);
-  const entities = await api('/wp/v2/global-styles?context=edit');
-  const entity = entities.find((e) => e.theme === theme) || entities[0];
-  if (!entity?.id) { fail('theme_live_restyle', 'No editable Global Styles entity'); return; }
+  // Core exposes the user's Global Styles post only as a link on the active
+  // theme; /wp/v2/global-styles has no collection route.
+  const href = themes[0]?._links?.['wp:user-global-styles']?.[0]?.href;
+  const entity = { id: href && decodeURIComponent(href).match(/global-styles\/(\d+)/)?.[1] };
+  if (!entity.id) { fail('theme_live_restyle', 'No editable Global Styles entity'); return; }
   const original = await api(`/wp/v2/global-styles/${entity.id}?context=edit`);
-  const front = await page.context().newPage();
+  // The editor page owns a browser.newPage() context, which cannot open more
+  // pages: observe the front end in a sibling context with the same session.
+  const frontContext = await page.context().browser().newContext({ storageState: await page.context().storageState() });
+  const front = await frontContext.newPage();
   const observe = async () => {
     const snapshots = [];
     for (const route of routes) {
@@ -54,6 +67,6 @@ export async function themeChecks(page, wpUrl, routes, report) {
     }
   } finally {
     await api(`/wp/v2/global-styles/${entity.id}`, 'POST', { styles: original.styles, settings: original.settings });
-    await front.close();
+    await frontContext.close();
   }
 }

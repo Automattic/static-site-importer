@@ -25,4 +25,10 @@ test('unmeasured or regressed visual cell fails closed', () => {
     assert.equal(compareImports(result(finding('a', 7)), { findings: [finding('a', 5)], visual: next }, 'a').pass, false);
   }
 });
+test('a cell unmeasured on both sides is reported, not a regression; nothing measured fails', () => {
+  const blind = { route: '/about/', width: 1440, verified: false, scores: [] };
+  const v = compareImports({ findings: [finding('a', 7)], visual: [...visual, blind] }, { findings: [finding('a', 5)], visual: [...visual, blind] }, 'a');
+  assert.deepEqual([v.pass, v.visual_regressions, v.visual_unmeasured], [true, [], ['/about/@1440']]);
+  assert.equal(compareImports({ findings: [finding('a', 7)], visual: [blind] }, { findings: [finding('a', 5)], visual: [blind] }, 'a').pass, false);
+});
 test('counts block instances rather than just cells', () => assert.equal(occurrences(finding('a', 7)), 7));
