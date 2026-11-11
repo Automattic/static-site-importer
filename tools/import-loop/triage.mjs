@@ -37,9 +37,11 @@ fs.mkdirSync(args.work, { recursive: true });
 // One bare WordPress per runs directory serves every pass's contracts and
 // re-imports.
 const BARE_WP = args['bare-wp'] || path.join(path.dirname(path.resolve(args.work)), 'bare-wp');
-// Acceptance re-imports the capture through the importer release Studio
-// installs; confirm.mjs and every Cook gate reuse the same capture and zip.
-const reimport = { capture: path.join(args.source, new URL(result.url).hostname), ssi_zip: path.join(args.work, 'static-site-importer.zip'), bare_wp: BARE_WP };
+// Acceptance re-imports the capture through the importer release the import
+// step used (--ssi-zip), so a release landing mid-pass cannot split the pass;
+// confirm.mjs and every Cook gate reuse the same capture and zip.
+// The real path: Cook gate inputs refuse symlinks, and the pass links its capture.
+const reimport = { capture: fs.realpathSync(path.join(args.source, new URL(result.url).hostname)), ssi_zip: args['ssi-zip'] || path.join(args.work, 'static-site-importer.zip'), bare_wp: BARE_WP };
 // Predicates compile a page with its capture's evidence when the page alone
 // does not show the defect (predicates/emits.mjs).
 process.env.PREDICATE_CAPTURE = reimport.capture;

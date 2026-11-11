@@ -5,7 +5,19 @@ import fs from 'node:fs';
 
 export const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 
-export const gh = (...argv) => execFileSync('gh', argv, { encoding: 'utf8', maxBuffer: 64 << 20 });
+// A loop runs for days: a transient network failure retries with backoff
+// instead of failing the pass. Any other gh error surfaces at once.
+const TRANSIENT = /TLS handshake timeout|i\/o timeout|connection (reset|refused)|unexpected EOF|EOF$|HTTP 50[234]|Gateway Time-?out|timeout awaiting response|no such host/im;
+export const gh = (...argv) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync('gh', argv, { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (error) {
+      if (attempt >= 5 || !TRANSIENT.test(String(error.stderr || error.message))) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000 * 2 ** attempt);
+    }
+  }
+};
 
 // Open pull requests that name the issue, by URL, by #number, or by Cook's branch name.
 export function linkedPullRequests(issueUrl) {
