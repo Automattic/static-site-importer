@@ -159,6 +159,7 @@
     { "path": "tests/smoke-import-permission-filter.php", "environment": "standalone-php" },
     { "path": "tests/smoke-current-site-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-html-runtime-capabilities.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-markdown-html-entrypoint.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
     { "path": "tests/smoke-privacy-seed-url-change.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content-wp-eval.php", "environment": "operator-only", "reason": "Disposable WordPress regression for the core privacy-policy seed; run with `wp eval-file` against a freshly installed site." },
