@@ -107,6 +107,8 @@
           "{{steps.evaluate.output/findings_path}}",
           "--source",
           "{{steps.import.output/source}}",
+          "--ssi-zip",
+          "{{steps.import.output/ssi_zip}}",
           "--work",
           "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage",
           "--blocks-engine",
