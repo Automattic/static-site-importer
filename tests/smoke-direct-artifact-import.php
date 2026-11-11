@@ -1100,6 +1100,25 @@ foreach (
 	$assert( ! empty( $recovered['success'] ) && empty( $recovered['continuation'] ), 'a composition failing with ' . $label . ' must remain resumable' );
 }
 
+// Exercise the real canonical build boundary, not fail() or the projector in isolation.
+$type_error_line = 0;
+$type_error_hook = static function ( string $phase ) use ( &$type_error_line ): void {
+	if ( 'compose' === $phase ) {
+		$type_error_line = __LINE__ + 1;
+		throw new TypeError( 'Known build failure at /private/server/input; api_key=hidden.' );
+	}
+};
+add_action( 'static_site_importer_direct_artifact_before_phase', $type_error_hook );
+$type_failed = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+remove_action( 'static_site_importer_direct_artifact_before_phase', $type_error_hook );
+$type_message = (string) ( $type_failed['error']['message'] ?? '' );
+$assert( str_contains( $type_message, 'TypeError:' ) && str_contains( $type_message, 'tests/smoke-direct-artifact-import.php:' . $type_error_line ), 'the public build failure must name the TypeError file and line: ' . $type_message );
+$assert( str_contains( $type_message, 'includes/class-static-site-importer-direct-artifact-import.php:' ), 'the public build failure must include importer call frames' );
+$type_diagnostic = $type_failed['diagnostics'][0] ?? array();
+$assert( $type_message === ( $type_diagnostic['message'] ?? '' ) && $type_message === ( $type_failed['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['message'] ?? '' ), 'exception locations must survive every public projection unchanged' );
+$type_json = (string) wp_json_encode( $type_failed, JSON_UNESCAPED_SLASHES );
+$assert( ! str_contains( $type_json, dirname( __DIR__ ) ) && ! str_contains( $type_json, '/private/server' ) && ! str_contains( $type_json, 'hidden' ), 'exception evidence must not expose absolute paths or secrets' );
+
 $throw_detailed_compose = true;
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( &$throw_detailed_compose ): void {
 	if ( $throw_detailed_compose && 'compose' === $phase ) {
@@ -1109,7 +1128,7 @@ $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phas
 };
 $detailed_throw      = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $detailed_throw_json = (string) wp_json_encode( $detailed_throw );
-$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $detailed_throw['error']['code'] ?? '' ) && 'Materialization failed (static_site_importer_direct_artifact_phase_failed): InvalidArgumentException: Entity declaration at [path] is invalid; api_key=[redacted] rejected.' === ( $detailed_throw['error']['message'] ?? '' ), 'a thrown phase failure must surface its redacted exception class and message: ' . ( $detailed_throw['error']['message'] ?? '' ) );
+$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $detailed_throw['error']['code'] ?? '' ) && str_starts_with( ( $detailed_throw['error']['message'] ?? '' ), 'Materialization failed (static_site_importer_direct_artifact_phase_failed): InvalidArgumentException: Entity declaration at [path] is invalid; api_key=[redacted] rejected. at tests/smoke-direct-artifact-import.php:' ), 'a thrown phase failure must surface its redacted exception class and message: ' . ( $detailed_throw['error']['message'] ?? '' ) );
 $assert( 'InvalidArgumentException' === ( $detailed_throw['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['exception_class'] ?? '' ) && 'compose' === ( $detailed_throw['diagnostics'][0]['phase'] ?? '' ) && ! str_contains( $detailed_throw_json, '/var/www' ) && ! str_contains( $detailed_throw_json, 'abc123' ), 'thrown phase failure evidence must be redacted and bounded' );
 
 $quality_failure_data = array(
