@@ -5000,9 +5000,10 @@ $assert( is_wp_error( $invalid_post ) && str_contains( $invalid_post->get_error_
 $runtime_token = '{{wordpress-site-plan:asset:asset-covered}}';
 $runtime_plan = array(
 	'templates' => array( array( 'canonical_block_markup' => '<img src="' . $runtime_token . '">' ) ),
-	'reference_tokens' => array( array( 'token' => 'asset-covered', 'target_path' => 'assets/logo.svg' ) ),
+	'reference_tokens' => array( array( 'token' => 'asset-covered', 'target_path' => 'assets/logo.svg' ), array( 'token' => 'asset-stylesheet-only', 'target_path' => 'assets/hero.png' ) ),
 );
 $runtime_covered = Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan );
+$assert( array( $runtime_token => true ) === $runtime_covered, 'The runtime map covers only tokens the documents reference.' );
 foreach ( array(
 	'covered-asset' => array( $runtime_token, false, false ),
 	'navigation' => array( $runtime_token . '{{wordpress-site-plan:navigation:missing}}', false, true ),
