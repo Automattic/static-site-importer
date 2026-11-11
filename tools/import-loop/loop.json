@@ -142,7 +142,7 @@
         "gt": 0
       },
       "foreach": "{{steps.triage.output/cook_items}}",
-      "max_parallel": 3,
+      "max_parallel": 6,
       "join": {
         "min_succeeded": 0
       },
