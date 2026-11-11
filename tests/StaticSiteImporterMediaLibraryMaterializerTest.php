@@ -419,7 +419,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	/** Generated companion hooks distinguish authored auto from core's addition. */
 	public function test_companion_preserves_only_authored_auto_through_the_content(): void {
 		$method = new ReflectionMethod( Static_Site_Importer_Companion_Plugin::class, 'main_plugin_file' );
-		$source = $method->invoke( null, 'Image test', array(), 'ssi-image-test', 'sizes', 'Forms', 'Links', 'Metrics', 'Grid' );
+		$source = $method->invoke( null, 'Image test', array(), 'ssi-image-test', 'sizes', 'Forms', 'Links', 'Metrics', 'Grid', 'Routes' );
 		$start  = strpos( $source, '/** Remember source-authored auto sizes' );
 		$end    = strpos( $source, '/** Register and enqueue declared editor-only scripts.' );
 		// Execute the generated image hooks without loading unrelated companion runtimes.
