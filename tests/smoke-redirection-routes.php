@@ -169,4 +169,19 @@ $assert( $GLOBALS['dependency_report'] === ( $pending->data['dependency_reports'
 $GLOBALS['dependency_report']['status'] = 'failed';
 $failed = Static_Site_Importer_Redirection_Materializer::materialize( array(), array( 'slug' => 'deferred', 'materialized_receipt' => $scoped_receipt, 'materialize_dependencies' => true ) );
 $assert( $failed instanceof WP_Error && $GLOBALS['dependency_report'] === ( $failed->data['dependency'] ?? null ), 'Terminal readiness failure also preserves the real report.' );
+// Twin selection retains entrypoint priority and existing manifest aliases.
+$twin_files = array(
+	array( 'path' => 'website/index.html', 'content' => '<h1>Home</h1>' ),
+	array( 'path' => 'website/x.html', 'content' => '<h1>Flat</h1>' ),
+	array( 'path' => 'website/x/index.html', 'content' => '<h1>Directory</h1>' ),
+	array( 'path' => 'website/_redirects', 'content' => '/old /x.html 301' ),
+);
+$extracted = Static_Site_Importer_Redirects_Manifest::extract( array( 'entry_path' => 'website/index.html', 'files' => $twin_files ) );
+$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $extracted['aliases'], array_column( $extracted['artifact']['files'], 'path' ) );
+$assert( array( 'old', 'x.html' ) === $aliases['website/x/index.html'], 'Manifest targets follow the collapsed source to the directory document.' );
+$extracted = Static_Site_Importer_Redirects_Manifest::extract( array( 'entry_path' => 'website/x.html', 'files' => array_slice( $twin_files, 0, 3 ) ) );
+$assert( array( 'website/index.html', 'website/x.html' ) === array_column( $extracted['artifact']['files'], 'path' ), 'An explicit entrypoint remains authoritative over the directory default.' );
+$twin_files[1]['metadata']['route_path'] = '/different';
+$extracted = Static_Site_Importer_Redirects_Manifest::extract( array( 'files' => array_slice( $twin_files, 0, 3 ) ) );
+$assert( 3 === count( $extracted['artifact']['files'] ) && array() === $extracted['aliases'], 'Explicit producer routes are not collapsed as inferred twins.' );
 echo "Redirection source route contract passed.\n";
