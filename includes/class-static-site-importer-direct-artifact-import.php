@@ -1502,6 +1502,36 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		return $keep;
 	}
 
+	/** Keep the throw site and first three owned call sites, without arguments or host paths. */
+	private static function exception_locations( Throwable $error ): array {
+		$root      = str_replace( '\\', '/', dirname( __DIR__ ) ) . '/';
+		$locations = array();
+		$sites     = array_merge( array(
+			array(
+				'file' => $error->getFile(),
+				'line' => $error->getLine(),
+			),
+		), $error->getTrace() );
+		foreach ( $sites as $index => $site ) {
+			$file = str_replace( '\\', '/', (string) ( $site['file'] ?? '' ) );
+			if ( ! str_starts_with( $file, $root ) || empty( $site['line'] ) ) {
+				continue;
+			}
+			$path = substr( $file, strlen( $root ) );
+			if ( 0 !== $index && ! preg_match( '#^(?:includes|lib|vendor)/#', $path ) ) {
+				continue;
+			}
+			$locations[] = array(
+				'path' => $path,
+				'line' => (int) $site['line'],
+			);
+			if ( 4 <= count( $locations ) ) {
+				break;
+			}
+		}
+		return $locations;
+	}
+
 	private static function fail( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $phase, Throwable|WP_Error $error, array $page_ids = array() ) {
 		if ( is_wp_error( $error ) ) {
 			$code    = (string) $error->get_error_code();
@@ -1521,14 +1551,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				array(
 					array_merge(
 						array(
-							'type'            => 'validation_error',
-							'kind'            => 'validation_error',
-							'severity'        => 'error',
-							'code'            => $code,
-							'reason_code'     => $code,
-							'phase'           => $phase,
-							'exception_class' => $error instanceof Throwable ? get_class( $error ) : '',
-							'message'         => $message,
+							'type'                => 'validation_error',
+							'kind'                => 'validation_error',
+							'severity'            => 'error',
+							'code'                => $code,
+							'reason_code'         => $code,
+							'phase'               => $phase,
+							'exception_class'     => $error instanceof Throwable ? get_class( $error ) : '',
+							'exception_locations' => $error instanceof Throwable ? self::exception_locations( $error ) : array(),
+							'message'             => $message,
 						),
 						$evidence
 					),

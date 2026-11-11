@@ -374,6 +374,25 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$row['exception_class'] = $exception_class;
 			}
 		}
+		if ( is_array( $diagnostic['exception_locations'] ?? null ) ) {
+			$locations = array();
+			foreach ( array_slice( $diagnostic['exception_locations'], 0, 4 ) as $location ) {
+				if ( ! is_array( $location ) ) {
+					continue;
+				}
+				$path = self::project_public_source_path( $location['path'] ?? null );
+				$line = $location['line'] ?? null;
+				if ( '' !== $path && is_int( $line ) && 0 < $line ) {
+					$locations[] = array(
+						'path' => $path,
+						'line' => $line,
+					);
+				}
+			}
+			if ( ! empty( $locations ) ) {
+				$row['exception_locations'] = $locations;
+			}
+		}
 		if ( is_array( $diagnostic['data'] ?? null ) ) {
 			$context = array_intersect_key( $diagnostic['data'], array_flip( array( 'path', 'bytes', 'max_bytes' ) ) );
 			if ( ! empty( $context ) ) {
@@ -581,7 +600,12 @@ final class Static_Site_Importer_Public_Error_Projection {
 		}
 		$exception_class = self::project_public_token( $diagnostic['exception_class'] ?? null, 128 );
 		$detail          = '' !== $exception_class ? $exception_class . ': ' . $detail : $detail;
-		return preg_match( '/[.!?]$/', $detail ) ? $detail : $detail . '.';
+		$detail          = preg_match( '/[.!?]$/', $detail ) ? $detail : $detail . '.';
+		if ( ! empty( $diagnostic['exception_locations'] ) ) {
+			$locations = array_map( static fn ( array $location ): string => $location['path'] . ':' . $location['line'], $diagnostic['exception_locations'] );
+			$detail   .= ' at ' . implode( ' <- ', $locations );
+		}
+		return $detail;
 	}
 
 	/**
