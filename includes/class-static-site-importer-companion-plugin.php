@@ -1286,6 +1286,9 @@ JS;
 	 */
 	private static function safe_markup_boundary(): string {
 		return <<<'PHP'
+// Comments carry no content; consecutive empty placeholders can make core's
+// filter_block_content() corrupt closing tags before KSES sanitizes the markup.
+$content = preg_replace( '/<!--[\s\S]*?-->/', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
 $content = preg_replace_callback(
