@@ -165,6 +165,18 @@ $assert( ( $fired[0]['args'][0] ?? null ) === $contract, 'hook-arg-contract' );
 $assert( ( $fired[0]['args'][1] ?? null ) === $result, 'hook-arg-result' );
 $assert( ( $fired[0]['args'][2] ?? null ) === $input, 'hook-arg-input' );
 
+$choice_result = array(
+	'theme_slug'               => 'question-preview',
+	'import_report_summary'    => array( 'status' => 'failed', 'failure_reasons' => array( 'form_submission_setup_required' ) ),
+	'import_validation_result' => array( 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ), 'counts' => array( 'choice_submission_forms' => 1 ) ),
+);
+$choice_hooks_before = count( $GLOBALS['ssi_smoke_fired_hooks'] );
+$choice_envelope = static_site_importer_ability_import_success( $choice_result, $input );
+$assert( false === $choice_envelope['success'], 'choice-form-is-not-an-api-success' );
+$assert( 'static_site_importer_quality_failed' === ( $choice_envelope['error']['code'] ?? '' ), 'choice-form-api-explains-quality-failure' );
+$assert( $choice_result === $choice_envelope['result'], 'choice-form-keeps-editable-preview-evidence' );
+$assert( $choice_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'choice-form-does-not-fire-completion-hook' );
+
 $failed_validation_result = array(
 	'theme_slug'               => 'failed-validation-site',
 	'import_report_summary'    => array( 'status' => 'failed' ),

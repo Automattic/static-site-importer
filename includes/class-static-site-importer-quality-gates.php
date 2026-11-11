@@ -67,6 +67,9 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['choice_submission_form_count']            = self::choice_submission_form_count( $report['diagnostics'] ?? array() );
 		// Reviewed exception: raw-HTML companions are reported, not gated, until structured editors ship.
 		$reasons = array();
+		if ( $quality['choice_submission_form_count'] > 0 ) {
+			$reasons[] = 'form_submission_setup_required';
+		}
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
 		}
@@ -126,6 +129,9 @@ final class Static_Site_Importer_Quality_Gates {
 			$quality['fail_import'] = true;
 		}
 		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
+			$quality['fail_import'] = true;
+		}
+		if ( $quality['choice_submission_form_count'] > 0 ) {
 			$quality['fail_import'] = true;
 		}
 		// Dropped artifact files are reported losses: they stay a quality reason,
@@ -324,6 +330,9 @@ final class Static_Site_Importer_Quality_Gates {
 	 * @param array<string,mixed> $diagnostic Normalized diagnostic.
 	 */
 	public static function is_accepted_preserved_runtime_island( array $diagnostic ): bool {
+		if ( 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) ) {
+			return false;
+		}
 		if ( 'unsupported_html_fallback' !== ( $diagnostic['type'] ?? '' ) ) {
 			return false;
 		}
@@ -756,7 +765,8 @@ final class Static_Site_Importer_Quality_Gates {
 		$resolved    = 0;
 		$resolutions = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) {
+			$choice_submission = is_array( $diagnostic ) && 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) && 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' );
+			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && ( $choice_submission || in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) ) {
 				// These handlers have no contact-form equivalent. Keep the source
 				// and report the runtime requirement, not a form-provider decline.
 				$diagnostic['recoverability']         = 'recoverable_with_runtime_mapping';
@@ -764,6 +774,9 @@ final class Static_Site_Importer_Quality_Gates {
 				$diagnostic['actionability']          = 'map_form_runtime_or_preserve_handler';
 				$diagnostic['suggested_repair_class'] = 'preserve_runtime_island';
 				$diagnostic['materialization_hint']   = 'preserve_form_runtime_source_until_controls_can_be_mapped';
+				if ( $choice_submission ) {
+					$diagnostic['message'] = 'Form choices are editable, but a working submission handler must be configured before this import is ready.';
+				}
 				$report->replace_diagnostic( $index, $diagnostic );
 			}
 			if ( ! is_array( $diagnostic ) || ! ( self::is_form_fallback_diagnostic( $diagnostic ) || self::is_listing_owned_form( $diagnostic, $receipts_by_fallback ) ) ) {

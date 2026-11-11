@@ -800,6 +800,34 @@ $assert( 1 === ( $safe_runtime_quality['accepted_preserved_runtime_island_count'
 $assert( 1 === ( $safe_runtime_report['import_validation_result']['counts']['accepted_preserved_runtime_islands'] ?? 0 ) && 'passed' === ( $safe_runtime_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'validation-result-reports-accepted-runtime-island-without-fallback-failure' );
 $assert( 'sanitized_embed_markup' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['strategy'] ?? '' ) && 'runtime_island_registry' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['materialization_path'] ?? '' ), 'finding-packet-preserves-runtime-island-contract-evidence' );
 
+$choice_submission = array_merge( $safe_runtime_report->diagnostics()[0], array(
+	'code'                  => 'preserved_runtime_island',
+	'kind'                  => 'form',
+	'form_intent'           => 'choice_submission',
+	'source_path'           => 'question.html',
+	'selector'              => 'main:nth-of-type(1) > form:nth-of-type(1)',
+	'source_html_preview'   => '<form><input type="radio" name="answer" value="yes"><input type="radio" name="answer" value="no"><button>Send</button></form>',
+	'preservation_strategy' => 'fallback_metadata_with_readable_blocks',
+	'runtime_requirement'   => 'server_or_client_form_handler',
+) );
+$assert( ! Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $choice_submission ), 'editable-choice-form-needs-handler-before-runtime-admission' );
+foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ), array( 'fail_on_quality' => true ) ) as $choice_args ) {
+	$choice_report = Static_Site_Importer_Import_Report::from_array( array(
+		'quality'     => array( 'fallback_count' => 1 ),
+		'diagnostics' => array( $choice_submission ),
+	) );
+	$choice_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $choice_report, $choice_args );
+	$assert( false === $choice_quality['pass'] && true === $choice_quality['fail_import'], 'choice-form-requires-remediation-even-with-permissive-quality-options' );
+	$assert( 1 === $choice_quality['choice_submission_form_count'] && 0 === $choice_quality['accepted_preserved_runtime_island_count'] && 1 === $choice_quality['unsupported_fallback_count'], 'choice-form-stays-counted-and-outside-accepted-runtime-total' );
+	$assert( in_array( 'form_submission_setup_required', $choice_quality['failure_reasons'], true ), 'choice-form-names-submission-setup-failure' );
+	$assert( 'failed' === $choice_report['compact_summary']['status'] && 'failed' === $choice_report['import_validation_result']['status'], 'choice-form-cannot-be-reported-as-completed' );
+	$choice_diagnostic = $choice_report->diagnostics()[0];
+	$assert( 'map_form_runtime_or_preserve_handler' === ( $choice_diagnostic['actionability'] ?? '' ), 'choice-form-uses-existing-runtime-remediation' );
+	$assert( str_contains( $choice_diagnostic['message'] ?? '', 'submission handler' ), 'choice-form-explains-required-submission-setup' );
+}
+$preference = array_merge( $choice_submission, array( 'form_intent' => 'preference' ) );
+$assert( Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $preference ), 'non-submitting-choice-state-keeps-existing-runtime-admission' );
+
 $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
 $unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
 $unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';

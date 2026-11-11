@@ -174,9 +174,11 @@ class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 }
 class Static_Site_Importer_URL_Import_Runtime {
+	public static array $summary = array();
 	public static function run_operation() {
 		return array(
 			'import_id'             => 'url-import-1',
+			'import_report_summary' => self::$summary,
 			'continuation'          => false,
 			'url_batch_run'         => array( 'diagnostics' => array() ),
 			'terminal_batch_result' => array(
@@ -580,4 +582,7 @@ if ( 'static_site_importer_approved_classic_plan_changed' !== ( $drift['error'][
 	throw new RuntimeException( 'compiler drift rejects the approved classic plan before materialization writes or entity lifecycle work' ); }
 if ( ! static_site_importer_ability_import_permission_callback( array( 'operation' => 'plan' ) ) || static_site_importer_ability_import_permission_callback( array( 'operation' => 'apply' ) ) ) {
 	throw new RuntimeException( 'plan and apply must use distinct capabilities' ); }
+Static_Site_Importer_URL_Import_Runtime::$summary = array( 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ) );
+$choice_url = Static_Site_Importer_Canonical_Import_Service::import_url_operation( array( 'operation' => 'apply' ), array( 'url' => 'https://example.com/' ) );
+$assert_service( false === $choice_url['success'] && 'static_site_importer_quality_failed' === ( $choice_url['error']['code'] ?? '' ), 'URL completion cannot overwrite a missing form handler failure' );
 echo "Canonical import ability smoke passed.\n";

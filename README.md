@@ -540,6 +540,14 @@ npm run test:validation -- --json
 
 PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
+Submitted choice forms can stay editable while still needing a working way to save answers. Those imports fail with `form_submission_setup_required`, including when `fail_on_quality` is off. Their reports explain the setup needed, and the importer does not send a successful completion signal. Forms without a submit control keep their existing handling.
+
+The normal tests cover this check with the released engine. To also test editable preservation with the paired engine change, run:
+
+```bash
+STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH=/path/to/blocks-engine/php-transformer php tests/smoke-choice-submission-form.php
+```
+
 Running every `tests/form-*.php` and `tests/smoke-form-*.php` also includes the real-provider rendering test, `smoke-form-repeated-instance-ids.php`. Its WordPress runtime must have Jetpack installed, active, and its Forms module enabled (installing the plugin alone is insufficient):
 
 ```bash

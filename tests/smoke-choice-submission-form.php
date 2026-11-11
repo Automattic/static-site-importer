@@ -1,5 +1,5 @@
 <?php
-/** A choices-only form with a submit stays editable and is counted on the receipt. */
+/** Paired engine check: submitted choices stay editable but require remediation. */
 // phpcs:ignoreFile -- Standalone CLI regression.
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 function sanitize_key( $key ) { // phpcs:ignore Universal.NamingConventions.NoReservedKeywordParameterNames.keyFound
@@ -12,6 +12,11 @@ function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed { //
 	return $value;
 }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+$engine_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' );
+if ( ! $engine_root ) {
+	throw new RuntimeException( 'Set STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH to the engine checkout containing the choice-submission fix.' );
+}
+require_once rtrim( $engine_root, '/\\' ) . '/php-transformer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
@@ -22,7 +27,7 @@ $assert   = static function ( bool $condition, string $label ) use ( &$failures 
 		$failures[] = $label;
 	}
 };
-$finalize = static function ( string $html ): array {
+$finalize = static function ( string $html, array $args = array() ): array {
 	$compiled = ( new ArtifactCompiler() )->compile(
 		array(
 			'entrypoint' => 'index.html',
@@ -35,21 +40,24 @@ $finalize = static function ( string $html ): array {
 			'diagnostics' => $compiled['source_reports']['wordpress_site_plan']['diagnostics'] ?? array(),
 		)
 	);
-	$quality  = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array( 'fail_on_quality' => true ) );
+	$quality  = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 	return array( $compiled, $report, $quality );
 };
 
 $fixture                            = (string) file_get_contents( __DIR__ . '/fixtures/choice-submission-form.html' );
 [ $compiled, $report, $quality ]    = $finalize( $fixture );
 $blocks                             = (string) ( $compiled['serialized_blocks'] ?? '' );
-$assert( true === ( $quality['pass'] ?? false ), 'passes-quality-gate' );
-$assert( 0 === ( $quality['unsupported_fallback_count'] ?? -1 ), 'no-unsupported-fallback' );
+$assert( false === ( $quality['pass'] ?? true ) && true === ( $quality['fail_import'] ?? false ), 'requires-remediation-with-default-options' );
+$assert( 0 === ( $quality['unsupported_fallback_count'] ?? -1 ) && 0 === ( $quality['accepted_preserved_runtime_island_count'] ?? -1 ), 'choice-form-is-not-accepted-runtime' );
 $assert( ! str_contains( $blocks, 'wp:html' ), 'no-raw-html-block' );
 $assert( 2 === substr_count( $blocks, 'type="radio"' ), 'keeps-real-radios' );
 $assert( str_contains( $blocks, 'Yes, very often' ) && str_contains( $blocks, 'Not this time' ), 'keeps-choice-labels' );
 $assert( str_contains( $blocks, 'type="submit"' ), 'keeps-submit-control' );
 $assert( 1 === ( $quality['choice_submission_form_count'] ?? 0 ), 'quality-counts-form' );
 $assert( 1 === ( $report['import_validation_result']['counts']['choice_submission_forms'] ?? 0 ), 'validation-result-counts-form' );
+$assert( 'failed' === ( $report['import_validation_result']['status'] ?? '' ) && 'failed' === ( $report['compact_summary']['status'] ?? '' ), 'choice-form-cannot-complete-migration' );
+[ , , $permissive_quality ] = $finalize( $fixture, array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ) );
+$assert( true === $permissive_quality['fail_import'], 'permissive-options-cannot-accept-missing-submission-handler' );
 
 $no_submit = str_replace( '<input type="submit" class="btn" value="Submit">', '', $fixture );
 [ , , $no_submit_quality ] = $finalize( $no_submit );

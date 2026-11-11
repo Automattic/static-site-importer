@@ -36,6 +36,11 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 		return json_encode( $value, $options );
 	}
 }
+if ( ! function_exists( 'sanitize_key' ) ) {
+	function sanitize_key( $key ) { // phpcs:ignore Universal.NamingConventions.NoReservedKeywordParameterNames.keyFound
+		return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
+	}
+}
 if ( ! function_exists( 'add_filter' ) ) {
 	$GLOBALS['ssi_cli_filters'] = array();
 	function add_filter( string $hook, callable $callback ): void {
@@ -105,6 +110,29 @@ $assert( 'static_site_importer_quality_failed' === ( $failed_receipt['response']
 $assert( str_contains( $message, '3 unsupported_html_fallback failures' ), 'quality-failed-message-names-reason-with-count: ' . $message );
 $assert( str_contains( $message, '1 core_html_block failure' ) && ! str_contains( $message, '1 core_html_block failures' ), 'quality-failed-message-names-every-reason-with-singular-count: ' . $message );
 $assert( 'quality-site' === ( $failed_receipt['response']['result']['theme_slug'] ?? '' ), 'quality-failed-receipt-keeps-import-evidence' );
+
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
+$choice_report = Static_Site_Importer_Import_Report::from_array( array(
+	'quality'     => array( 'fallback_count' => 0 ),
+	'diagnostics' => array( array(
+		'code'        => 'preserved_runtime_island',
+		'kind'        => 'form',
+		'form_intent' => 'choice_submission',
+		'source_path' => 'question.html',
+		'selector'    => 'form.question',
+	) ),
+) );
+$choice_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $choice_report, array() );
+$choice_result = array(
+	'import_report_summary'    => $choice_report['compact_summary'],
+	'import_validation_result' => $choice_report['import_validation_result'],
+	'quality'                  => $choice_quality,
+);
+foreach ( array( array_merge( array( 'success' => true ), $choice_result ), array( 'success' => true, 'result' => $choice_result ) ) as $choice_response ) {
+	$choice_receipt = static_site_importer_cli_import_receipt( $choice_response, 1 );
+	$assert( 'failed' === $choice_receipt['status'] && false === $choice_receipt['response']['success'], 'editable-choice-form-never-produces-completed-cli-receipt' );
+	$assert( str_contains( $choice_receipt['response']['error']['message'] ?? '', '1 form_submission_setup_required failure' ), 'choice-receipt-names-submission-setup-and-count' );
+}
 
 // No failure reasons: the message falls back to the fallback-block count.
 $fallback_only = static_site_importer_cli_import_receipt(
