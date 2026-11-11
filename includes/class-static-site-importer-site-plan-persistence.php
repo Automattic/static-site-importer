@@ -1096,7 +1096,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return self::share_product_templates( $state );
 	}
 
-	/** Consolidate identical bound documents; exceptional layouts keep their hierarchy overrides. */
+	/**
+	 * Consolidate identical bound documents. The most common layout becomes
+	 * `single-product`; every other repeated layout becomes one assignable
+	 * custom template. Only one-off layouts keep their per-product override.
+	 */
 	private static function share_product_templates( array &$state ) {
 		$groups = array();
 		foreach ( $state['ordered_pages'] as $index => $page ) {
@@ -1106,21 +1110,48 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$markup                                = self::served_document( $state, $page );
 			$groups[ hash( 'sha256', $markup ) ][] = $index;
 		}
-		if ( empty( $groups ) ) {
-			return true;
-		}
 		// The most common layout is the default; ties are stable in source order.
-		usort( $groups, static fn( $a, $b ) => count( $b ) <=> count( $a ) );
-		$default = $groups[0];
-		if ( 1 === count( $default ) && count( $groups ) > 1 ) {
-			return true;
+		uasort( $groups, static fn( $a, $b ) => count( $b ) <=> count( $a ) );
+		$layout = 1;
+		foreach ( $groups as $hash => $members ) {
+			if ( 1 === $layout ) {
+				$slug = 1 < count( $members ) || 1 === count( $groups ) ? 'single-product' : null;
+			} else {
+				$slug = 1 < count( $members ) ? 'single-product-shared-' . substr( $hash, 0, 12 ) : null;
+			}
+			if ( null === $slug ) {
+				++$layout;
+				continue;
+			}
+			$shared = self::share_product_template( $state, $members, $slug, 1 === $layout ? null : 'Product layout ' . $layout );
+			if ( is_wp_error( $shared ) ) {
+				return $shared;
+			}
+			++$layout;
 		}
-		$target = 'templates/single-product.html';
-		$markup = self::served_document( $state, $state['ordered_pages'][ $default[0] ] );
+		return true;
+	}
+
+	/**
+	 * Serve products from one template; a titled template is assigned per product.
+	 *
+	 * @param array<mixed> $state   Materialization state.
+	 * @param int[]        $members Ordered page indexes with identical documents.
+	 * @return true|WP_Error
+	 */
+	private static function share_product_template( array &$state, array $members, string $slug, ?string $title ) {
+		$target = 'templates/' . $slug . '.html';
+		$markup = self::served_document( $state, $state['ordered_pages'][ $members[0] ] );
+		if ( null !== $title ) {
+			$registered = self::register_custom_template( $state, $slug, $title, 'product' );
+			if ( is_wp_error( $registered ) ) {
+				return $registered;
+			}
+		}
 		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
 		$written = self::write_file( $state['theme_dir'], array(
 			'target_path' => $target,
-			'source_path' => $state['ordered_pages'][ $default[0] ]['source_path'],
+			'source_path' => $state['ordered_pages'][ $members[0] ]['source_path'],
 			'payload'     => array(
 				'encoding' => 'utf8',
 				'data'     => $markup,
@@ -1130,7 +1161,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return $written;
 		}
 		$state['applied']['files'][] = $written;
-		foreach ( $default as $index ) {
+		foreach ( $members as $index ) {
 			$obsolete = $state['ordered_pages'][ $index ]['served_template'];
 			foreach ( $state['resolved']['writes'] ?? array() as $key => $write ) {
 				if ( in_array( $write['target_path'], array( $obsolete, $target ), true ) ) {
@@ -1147,8 +1178,50 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 			$state['ordered_pages'][ $index ]['served_template'] = $target;
+			$post = (int) ( $state['source_ids'][ (string) $state['ordered_pages'][ $index ]['source_path'] ] ?? 0 );
+			if ( null !== $title && ( $post <= 0 || ! self::write_post_meta( $post, '_wp_page_template', $slug ) ) ) {
+				return new WP_Error( 'whole_page_shared_template_assignment_failed' );
+			}
 		}
 		return true;
+	}
+
+	/**
+	 * Register a custom template in the pending theme.json write.
+	 *
+	 * @param array<mixed> $state Materialization state.
+	 * @return true|WP_Error
+	 */
+	private static function register_custom_template( array &$state, string $slug, string $title, string $post_type ) {
+		foreach ( $state['resolved']['writes'] ?? array() as $key => $write ) {
+			if ( 'theme.json' !== ( $write['target_path'] ?? '' ) || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) ) {
+				continue;
+			}
+			$path  = $state['theme_dir'] . '/theme.json';
+			// Decode to objects so the round trip preserves empty JSON objects.
+			$theme = json_decode( $state['composed_theme_writes'][ $path ] ?? $write['payload']['data'] );
+			if ( ! $theme instanceof stdClass ) {
+				break;
+			}
+			$theme->customTemplates   = is_array( $theme->customTemplates ?? null ) ? $theme->customTemplates : array(); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- theme.json schema key.
+			$theme->customTemplates[] = array( // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- theme.json schema key.
+				'name'      => $slug,
+				'title'     => $title,
+				'postTypes' => array( $post_type ),
+			);
+			$data = wp_json_encode( $theme, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			if ( ! is_string( $data ) ) {
+				break;
+			}
+			$data .= "\n";
+			$state['resolved']['writes'][ $key ]['payload']['data'] = $data;
+			$state['resolved']['writes'][ $key ]['payload_hash']    = hash( 'sha256', $data );
+			if ( isset( $state['composed_theme_writes'][ $path ] ) ) {
+				$state['composed_theme_writes'][ $path ] = $data;
+			}
+			return true;
+		}
+		return new WP_Error( 'whole_page_shared_template_registration_failed' );
 	}
 
 	/** Copy admitted provider template aliases after route-link rewriting, before journaled writes. */
