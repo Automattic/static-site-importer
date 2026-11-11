@@ -406,6 +406,31 @@ class Static_Site_Importer_Form_Seeder {
 		$receipt = array();
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'operations', $overlay['operations'] );
 		Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $receipt, 'losses', array_merge( $overlay['losses'], $state->control_attribute_losses ) );
+		// Accepted omissions still belong in the persisted form receipt. Never
+		// mistake an omitted control for a successfully submitted provider field.
+		foreach ( $state->field_contract as $contract ) {
+			$reason = $contract['reason_code'] ?? '';
+			if ( 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' !== $reason && 'unconditionally_hidden_control' !== $reason ) {
+				continue;
+			}
+			Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries(
+				$receipt,
+				'losses',
+				array(
+					array(
+						'dimension'     => 'semantic',
+						'reason_code'   => $reason,
+						'loss_class'    => 'omitted_unit',
+						'unit'          => 'control',
+						'acceptability' => 'accepted_reported_loss',
+						'control_index' => $contract['index'],
+						'label'         => $contract['source']['label'],
+						'name'          => $contract['source']['name'],
+						'capability'    => $contract['capability'] ?? '',
+					),
+				)
+			);
+		}
 		foreach ( $state->form['control_topology']['nodes'] ?? array() as $node ) {
 			if ( 'fieldset' === ( $node['tag'] ?? '' ) ) {
 				Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries(
@@ -568,7 +593,7 @@ class Static_Site_Importer_Form_Seeder {
 				'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
 				'control_index' => $control_index,
 			);
-			$state->record_handoff( $control_index, 'file_upload' );
+			$state->record_handoff( $control_index, 'file_upload', 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' );
 			return;
 		}
 		if ( 'select' === $tag && ( in_array( $type, array( 'select-multiple', 'multiple' ), true ) || ! empty( $control['multiple'] ) ) ) {
