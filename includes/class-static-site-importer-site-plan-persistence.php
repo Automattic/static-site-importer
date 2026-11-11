@@ -1093,7 +1093,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $ordered );
 		}
+		self::skip_orphaned_synthetic_parents( $state );
 		return self::share_product_templates( $state );
+	}
+
+	/** Skip synthetic hierarchy pages that no longer have a live descendant. */
+	private static function skip_orphaned_synthetic_parents( array &$state ): void {
+		$live_descendants = array();
+		foreach ( array_reverse( array_keys( $state['ordered_pages'] ) ) as $index ) {
+			$page   = $state['ordered_pages'][ $index ];
+			$source = (string) $page['source_path'];
+			if ( ! empty( $page['synthetic'] ) && empty( $live_descendants[ $source ] ) ) {
+				$state['ordered_pages'][ $index ]['skip_materialization'] = true;
+				continue;
+			}
+			if ( empty( $page['skip_materialization'] ) || ! empty( $live_descendants[ $source ] ) ) {
+				$parent = (string) ( $page['parent_source_path'] ?? '' );
+				if ( '' !== $parent ) {
+					$live_descendants[ $parent ] = true;
+				}
+			}
+		}
 	}
 
 	/**
