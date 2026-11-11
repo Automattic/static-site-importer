@@ -310,6 +310,8 @@ foreach ( array( 'same-layout' => false, 'structural-outlier' => true ) as $case
 	$assert( count( $files ) === ( $outlier ? 2 : 1 ), $case . ': template count' );
 	$shared = file_get_contents( $probe['theme_dir'] . '/templates/single-product.html' );
 	$assert( str_contains( $shared, 'wp:post-title' ) && str_contains( $shared, 'wp:woocommerce/product-price' ) && str_contains( $shared, 'wp:woocommerce/add-to-cart-form' ), $case . ': bound fields' );
+	// WooCommerce's product-price save() is empty only with a declared product context.
+	$assert( 1 === preg_match( '~<!-- wp:woocommerce/product-price \{[^}]*"isDescendentOfSingleProductTemplate":true[^}]*\} /-->~', $shared ), $case . ': price block valid in the editor' );
 	$assert( ! str_contains( $shared, '$27.99' ) && ! str_contains( $shared, 'Cup' ), $case . ': no frozen fields' );
 	$assert( ! $outlier || is_file( $probe['theme_dir'] . '/templates/single-product-bowl.html' ), 'Outlier retains its template' );
 	foreach ( $files as $file ) { unlink( $file ); }

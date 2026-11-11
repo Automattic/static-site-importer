@@ -37,7 +37,9 @@ final class Static_Site_Importer_Product_Field_Blocks {
 				break;
 			case 'price':
 				$name = 'woocommerce/product-price';
-				$own  = array( 'isDescendentOfQueryLoop' => $loop );
+				// WooCommerce saves no markup in either context; without one it
+				// expects an `is-loading` wrapper and rejects the dynamic block.
+				$own = $loop ? array( 'isDescendentOfQueryLoop' => true ) : array( 'isDescendentOfSingleProductTemplate' => true );
 				break;
 			case 'description':
 				if ( $loop ) {
