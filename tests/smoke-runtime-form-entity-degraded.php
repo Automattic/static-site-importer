@@ -170,7 +170,8 @@ foreach ( array( 'layout_graph', 'presentation_graph', 'sibling_relations' ) as 
 	$assert( ! is_wp_error( $graph_lifecycle ) && ! isset( $graph_lifecycle['entities'][ $graph_id ] ) && 1 === count( $graph_findings ) && '$.forms[0].' . $graph_key === ( $graph_findings[0]['path'] ?? '' ), 'graphs: an invalid ' . $graph_key . ' drops its declaration with a finding', is_wp_error( $graph_lifecycle ) ? $graph_lifecycle->get_error_message() : wp_json_encode( $graph_lifecycle['diagnostics'] ?? null ) );
 }
 
-// Collections without a source-form fallback keep rejecting a declaration with no valid row.
+// Products degrade per row like product grids and carts: a declaration whose
+// only product is invalid is dropped with a finding, and the import continues.
 $products = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle(
 	array(
 		'runtime_declarations' => array(
@@ -187,7 +188,8 @@ $products = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_life
 	),
 	array()
 );
-$assert( is_wp_error( $products ) && 'static_site_importer_runtime_entity_invalid' === $products->get_error_code(), 'scope: a products declaration with no valid row still rejects', is_wp_error( $products ) ? '' : wp_json_encode( $products['diagnostics'] ?? null ) );
+$product_findings = is_wp_error( $products ) ? array() : array_column( $products['diagnostics'] ?? array(), 'rejected_count', 'code' );
+$assert( ! is_wp_error( $products ) && ! isset( $products['entities'][ str_repeat( 'c', 64 ) ] ) && 1 === ( $product_findings['runtime_declaration_rejected'] ?? null ), 'scope: a products declaration with no valid row is dropped with a finding', is_wp_error( $products ) ? $products->get_error_message() : wp_json_encode( $products['diagnostics'] ?? null ) );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, 'FAIL: ' . implode( "\nFAIL: ", $failures ) . "\n" );

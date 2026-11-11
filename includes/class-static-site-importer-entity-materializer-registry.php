@@ -3112,7 +3112,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$text = array();
 			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
-				$candidate = $attribute[ $field ] ?? '';
+				// Label and value must be declared; only a declared-but-empty
+				// one drops its attribute below.
+				$candidate = 'value_label' === $field ? ( $attribute[ $field ] ?? '' ) : ( $attribute[ $field ] ?? null );
 				if ( ! is_string( $candidate ) || ( 'key' === $field && '' === trim( $candidate ) ) ) {
 					return null;
 				}
