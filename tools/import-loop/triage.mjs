@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, scopeKeys, collateralAtHead, collateralMode } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -215,14 +215,6 @@ function stageGateTools() {
   }
 }
 const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
-// A file the gate reads, as a path under the gate input that holds it.
-function gatePath(file) {
-  for (const [root, name] of [[reimport.capture, 'IMPORT_LOOP_CAPTURE'], [path.join(args.work, 'pages'), 'IMPORT_LOOP_PAGES']]) {
-    const relative = path.relative(root, file);
-    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return `"$${name}"/${quote(relative)}`;
-  }
-  throw new Error(`acceptance_gate_input_unmapped: ${file}`);
-}
 
 function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
@@ -245,18 +237,13 @@ function acceptanceGate(item, repo) {
     ] : []),
     // Predicates that compile a page through WordPress use the re-imported
     // site: it has the importer active with the candidate transformer.
-    ...(checked ? item.cells : []).map((cell) => {
-      const env = predicateEnv(item.subject, cell, result.site);
-      return `PREDICATE_DEBUG=1 PREDICATE_SITE_URL="$url" PREDICATE_TARGET=${quote(env.PREDICATE_TARGET)} WORDPRESS_PATH="$site" WP_CLI="php $bare/wp-cli.phar" PREDICATE_CAPTURE="$IMPORT_LOOP_CAPTURE" node "$tools/predicates/${item.check}.mjs" "$root" ${gatePath(cell.page)}; code=$?; echo "${cell.route}@${cell.width}: exit $code"; [ "$code" = 1 ] || failed=1`;
-    }),
+
     // Scope: nothing outside the finding's elements may change against the
     // import of this change's merge base with trunk.
     ...(checked ? [
       `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
       `burl=$(${reimportLine(`"$base/${repo.predicate_root}"`, '"$base/site"')}) || exit 1; burl=$(tail -n1 <<<"$burl")`,
-      `node "$tools/gates/collateral.mjs" "$burl" "$url" ${quote(scopeKeys(item))} ${quote(result.routes.join(','))} '${collateralMode(item)}'; code=$?; echo "collateral: exit $code"; [ "$code" = 0 ] || failed=1`,
-      // Editability: no new raw-HTML companion slug or invalid block either.
-      `node "$tools/gates/editability.mjs" "$base/site" "$site"; code=$?; echo "editability: exit $code"; [ "$code" = 0 ] || failed=1`,
+      `node "$tools/gates/accept.mjs" --base-url "$burl" --candidate-url "$url" --base-site "$base/site" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "$scratch/checks" || failed=1`,
     ] : []),
     'exit $failed',
   ].join('\n') + '\n');
@@ -287,7 +274,7 @@ for (const item of tracked) {
   const checkable = repo?.predicate_root && item.cells.length;
   const at = { clone: args['blocks-engine'], root: repo?.predicate_root, work: args.work, reimport, site: result.site, routes: result.routes };
   const cells = pr && checkable ? cellsAtHead(item, pr, at) : [];
-  const refuted = cells.filter((cell) => cell.exit !== 1);
+  const refuted = cells.filter((cell) => cell.exit === 'import_failed');
   const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : null;
   // confirm.mjs reuses this check when the head is unchanged after the Cooks.
   if (pr && checkable) item.head_check = { pr: pr.url, head: pr.headRefOid, cells, collateral };
@@ -327,10 +314,8 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed). Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
-        `- Nothing outside the finding's elements (\`${scopeKeys(item)}\`) changes style on any route or width: the gate re-imports this change's merge base with trunk the same way and compares every element's computed style (\`collateral.mjs\`).`,
-        ...(collateralMode(item) === 'pixels' ? ['- The whole site looks exactly as it did: this is an editability finding, so the gate also compares full-page screenshots of every route and width against the merge base. Change how the page is built, not how it renders.'] : []),
-        '- The import adds no editability debt against the merge base: no new or larger raw-HTML companion block slug and no more invalid blocks (`editability.mjs`, from the importer\'s own report). Turning one companion into another does not fix the finding.',
+        '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
+        '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
         '- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.',
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
@@ -348,6 +333,9 @@ const output = {
   site: result.site,
   reimport,
   routes: result.routes,
+  findings_path: path.resolve(args.findings),
+  url: result.url,
+  progress: result.progress,
   blocker_count: blockers.length,
   tracked,
   untracked,
