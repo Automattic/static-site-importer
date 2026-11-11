@@ -245,8 +245,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$front_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] );
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
-				$title         = $args['native_site_identity_evidence']['front_page_title'] ?? Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
-				$page['title'] = '' !== $title ? $title : 'Home';
+				// Without a document title, the compiler can fall back to heading
+				// text. Otherwise keep its segmented page name, not identity evidence.
+				$document_title = $args['native_site_identity_evidence']['front_page_title'] ?? Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+				$title          = '' !== $document_title ? trim( (string) ( $page['title'] ?? '' ) ) : '';
+				$page['title']  = '' !== $title ? $title : 'Home';
 			}
 			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
 				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
