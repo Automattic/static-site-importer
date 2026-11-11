@@ -6,6 +6,9 @@
 set -euo pipefail
 repo=$1; onto=$2; rev=$3; root=$4; out=$5
 git -C "$repo" cat-file -e "$onto^{commit}" 2>/dev/null || git -C "$repo" fetch -q origin trunk
-merged=$(git -C "$repo" merge-tree --write-tree "$onto" "$rev") || { echo "import_failed: head conflicts with trunk ${onto:0:8}" >&2; exit 3; }
+if ! merged=$(git -C "$repo" merge-tree --write-tree --name-only --no-messages "$onto" "$rev"); then
+  files=$(tail -n +2 <<<"$merged" | sort -u | paste -sd, -)
+  echo "import_failed: head conflicts with trunk ${onto:0:8} in ${files}: merge trunk ${onto} into the branch and resolve them" >&2; exit 3
+fi
 tree=${merged%%$'\n'*}
 mkdir -p "$out"; git -C "$repo" archive "$tree" "$root" | tar -x -C "$out"
