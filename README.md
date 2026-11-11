@@ -442,7 +442,7 @@ status.
 
 `tools/import-loop/loop.json` is a [Homeboy](https://github.com/Extra-Chill/homeboy) workflow (`homeboy/workflow/v1`) that drives one source URL toward a clean, editable import. It imports the way a user does: `studio create --from <url>`, which installs the latest Data Liberation Agent, Static Site Importer and Blocks Engine releases. One pass is one workflow instance. Homeboy runs the steps, Cook fan-out, the approval and the chain of passes; the scripts in this directory hold the import-specific logic.
 
-1. **import** (`import.sh`) creates a Studio site from the URL and keeps the capture.
+1. **import** (`import.sh`) captures the source once with `studio create --from --keep-source`. Every pass then re-imports that frozen capture through the latest Static Site Importer release, with the transformer from Blocks Engine `trunk` (`gates/reimport.sh`, as triage, the Cook gate and confirm do). A merged Blocks Engine fix is measured on the very next pass, with no wait for a release.
 2. **evaluate** (`evaluate.mjs`) renders every source and imported route at 390, 768 and 1440px, opens each route in the block editor, and writes `findings.json`. Each finding has a stable signature over stage, check, owning repository and subject, so a defect keeps its id across passes. Theme metrics (`restyle_coverage_low`, `theme_css_bloat`, `quality_status`, `block_nesting_deep`) are advisory; every other check is a blocker. A pass with no blockers accepts the source.
 3. **triage** (`triage.mjs`) matches each blocker to an issue that carries its signature. For a new finding with a predicate in `predicates/<check>.mjs`, it:
    - reproduces the finding against Blocks Engine `trunk`, falling back to the capture's own route document when the inlined page does not show it;
@@ -453,7 +453,6 @@ status.
 4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
 5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
 6. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
-7. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
 
 Homeboy's `next_pass` starts the next pass. The chain stops when the source is accepted, when no blocker is tracked, when three passes in a row see the same blockers, or after 60 passes. Cook and merge items may fail without ending the chain (`"join": {"min_succeeded": 0}`): the next pass sees the same findings and tries again.
 
