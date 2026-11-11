@@ -225,6 +225,7 @@
           "tests/smoke-form-control-background-image-reset.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-readable-substitution.php",
+          "tests/smoke-form-caption-presentation.php",
           "tests/smoke-shared-part-form.php",
           "tests/smoke-form-control-box-shell.php",
           "tests/smoke-form-control-box-frame-paint.php",

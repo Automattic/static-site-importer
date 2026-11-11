@@ -93,6 +93,7 @@
     { "path": "tests/smoke-form-control-background-image-reset.php", "environment": "standalone-php" },
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-readable-substitution.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-caption-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-shared-part-form.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-control-box-shell.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-control-box-frame-paint.php", "environment": "standalone-php" },
