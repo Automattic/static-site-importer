@@ -393,7 +393,8 @@
           "tests/smoke-block-theme-scorecard.php",
           "tests/smoke-wordpress-site-plan-materializer.php",
           "tests/smoke-comment-entities.php",
-          "tests/smoke-direct-artifact-recompose.php"
+          "tests/smoke-direct-artifact-recompose.php",
+          "tests/smoke-source-route-twins.php"
         ]
       }
     }

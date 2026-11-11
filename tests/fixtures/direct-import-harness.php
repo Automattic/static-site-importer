@@ -107,6 +107,7 @@ class Static_Site_Importer_Theme_Generator {
 		file_put_contents( $stored, wp_json_encode( $report->to_array() ) );
 		$GLOBALS['ssi_harness_imports'][] = array(
 			'plan'        => $plan,
+			'args'        => $args,
 			'report_path' => $stored,
 		);
 		return array(
