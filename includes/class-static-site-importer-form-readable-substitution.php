@@ -825,7 +825,8 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$children = array();
 		$slots    = array();
 		$index    = 0;
-		$legend   = self::legend_block( $block );
+		$consumed = self::field_descriptions( $block, $state );
+		$legend   = isset( $consumed['legend'] ) ? null : self::legend_block( $block );
 		// A captured listbox panel follows the trigger that opens it. A provider
 		// field that consumes the trigger renders its own popup, so the captured
 		// panel leaves with the trigger.
@@ -843,6 +844,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				continue;
 			}
 			$source = $block['innerBlocks'][ $index++ ];
+			if ( isset( $consumed[ $index - 1 ] ) ) {
+				continue;
+			}
 			if ( $consumed_trigger && self::is_captured_listbox_panel( $source ) ) {
 				$consumed_trigger = false;
 				continue;
@@ -862,6 +866,92 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
 		return $block;
+	}
+
+	/**
+	 * Move source descriptions into the provider field between label and input.
+	 * Jetpack helpText renders after the input, so it cannot own this copy.
+	 * A legend naming exactly one field is its caption, not extra group copy.
+	 *
+	 * @return array<int|string,true> Consumed child slots and legend flag.
+	 */
+	private static function field_descriptions( array $block, Static_Site_Importer_Form_Plan_State $state ): array {
+		$consumed = array();
+		$indices  = self::control_indices( $block );
+		$legend   = $block['form_field'] ?? array();
+		if ( 1 === count( $indices ) && 'group' === ( $legend['kind'] ?? null ) ) {
+			$index   = $indices[0];
+			$control = $state->form['controls'][ $index ] ?? array();
+			$html    = $legend['label'] ?? '';
+			if ( is_string( $html ) && '' !== $html && isset( $state->field_blocks[ $index ] ) && class_exists( 'DOMDocument' ) ) {
+				$doc      = new DOMDocument();
+				$previous = libxml_use_internal_errors( true );
+				$doc->loadHTML( '<?xml encoding="UTF-8"><div>' . $html . '</div>' );
+				libxml_clear_errors();
+				libxml_use_internal_errors( $previous );
+				$xpath        = new DOMXPath( $doc );
+				$descriptions = array();
+				$nodes        = $xpath->query( '//p[contains(concat(" ", normalize-space(@class), " "), " description ")]' );
+				foreach ( false === $nodes ? array() : $nodes as $node ) {
+					if ( ! $node instanceof DOMElement || null === $node->parentNode ) {
+						continue;
+					}
+					$descriptions[] = array(
+						'name'    => 'core/paragraph',
+						'attrs'   => array( 'className' => $node->getAttribute( 'class' ) ),
+						'wrapper' => 'paragraph',
+						'content' => $node->textContent,
+					);
+					$node->parentNode->removeChild( $node );
+				}
+				$text   = trim( $doc->textContent );
+				$marker = (string) ( $control['required_text'] ?? '' );
+				if ( '' !== $marker && str_ends_with( $text, $marker ) ) {
+					$text = trim( substr( $text, 0, -strlen( $marker ) ) );
+				}
+				if ( '' !== $text && trim( (string) ( $control['label'] ?? '' ) ) === $text ) {
+					$consumed['legend'] = true;
+					foreach ( $descriptions as $description ) {
+						self::insert_description( $state->field_blocks[ $index ], $description );
+					}
+				}
+			}
+		}
+		foreach ( $block['innerBlocks'] ?? array() as $slot => $child ) {
+			if ( 'core/paragraph' !== ( $child['blockName'] ?? '' ) || isset( $child['form_control_index'] ) ) {
+				continue;
+			}
+			$next    = $block['innerBlocks'][ $slot + 1 ] ?? array();
+			$indices = self::control_indices( $next );
+			if ( 1 !== count( $indices ) ) {
+				continue;
+			}
+			$index = $indices[0];
+			$field = $state->field_blocks[ $index ] ?? array();
+			$text  = trim( html_entity_decode( wp_strip_all_tags( $child['innerHTML'] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			if ( '' === $text || ( $field['attrs']['helpText'] ?? null ) !== $text ) {
+				continue;
+			}
+			self::insert_description( $state->field_blocks[ $index ], array(
+				'name'    => 'core/paragraph',
+				'attrs'   => $child['attrs'] ?? array(),
+				'wrapper' => 'paragraph',
+				'content' => $text,
+			) );
+			$consumed[ $slot ] = true;
+		}
+		return $consumed;
+	}
+
+	/** Insert visible description copy immediately after the provider caption. */
+	private static function insert_description( array &$field, array $description ): void {
+		foreach ( $field['innerBlocks'] ?? array() as $index => $child ) {
+			if ( 'jetpack/label' === ( $child['name'] ?? '' ) ) {
+				array_splice( $field['innerBlocks'], $index + 1, 0, array( $description ) );
+				unset( $field['attrs']['helpText'] );
+				return;
+			}
+		}
 	}
 
 	/**
