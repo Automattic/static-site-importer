@@ -322,6 +322,7 @@
     { "path": "tests/authored-viewport.test.mjs", "environment": "node" },
     { "path": "tests/third-party-social-image.test.mjs", "environment": "node" },
     { "path": "tests/import-time-links.test.mjs", "environment": "node" },
+    { "path": "tests/import-loop-progress.test.mjs", "environment": "node" },
     { "path": "tests/media-library-asset-degradation.test.mjs", "environment": "node" },
     { "path": "tests/request-bundle-site-title.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },

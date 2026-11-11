@@ -98,17 +98,10 @@ export function cellsAtHead(item, pr, { clone, root, work, reimport, site }) {
   // A head the importer refuses fixes nothing: every cell fails with its reason.
   const served = heads.get(dir);
   if (served instanceof Error) return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: 'import_failed', reason: served.message }));
-  const predicate = new URL(`./predicates/${item.check}.mjs`, import.meta.url).pathname;
-  return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: predicateExit(predicate, transformer, cell.page, { ...predicateEnv(item.subject, cell, site), PREDICATE_SITE_URL: served }) }));
+  // Predicate reduction is diagnostic only. Acceptance is decided by the
+  // shared whole-site comparison below, including partial count reductions.
+  return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: 'imported' }));
 }
-
-// The elements a fix of `item` may restyle (gates/collateral.mjs): its subject
-// and the media keys its evidence names, as one comma list.
-export const scopeKeys = (item) => [...new Set([item.subject, ...(item.cells || []).flatMap((cell) => [cell.evidence?.key, ...(cell.evidence?.missing || []).map((m) => m.key)])].filter(Boolean))].join(',');
-
-// Editability findings change how pages are built, not how they look: their
-// fixes are held to whole-page pixel parity (gates/collateral.mjs `pixels`).
-export const collateralMode = (item) => (item.stage === 'editability' ? 'pixels' : '');
 
 // Restyles outside `item`'s scope on a pull request's head: its whole import
 // against the import of its merge base with trunk, on every route.
@@ -127,19 +120,11 @@ export function collateralAtHead(item, pr, { clone, root, work, reimport, routes
     }
     heads.set(base, reimportSite(`${base}/${root}`, reimport, `${base}-site`));
   }
-  const gate = new URL('./gates/collateral.mjs', import.meta.url).pathname;
-  // Exit 1 is a verdict (changes outside the subject); 2 means the comparison
-  // itself failed, so it is retried and, if it persists, reported as unchecked.
-  let run;
-  for (let attempt = 0; attempt < 3 && (!run || run.status === 2); attempt++) run = spawnSync('node', [gate, heads.get(base), heads.get(head), scopeKeys(item), routes.join(','), collateralMode(item)], { encoding: 'utf8' });
-  const report = (run.stderr || '').trim().split('\n').slice(-6);
-  if (run.status === 2) return { exit: 2, report };
-  // Editability debt counts as collateral: a fix must not trade one raw-HTML
-  // companion or invalid block for another anywhere on the import.
-  const editability = spawnSync('node', [new URL('./gates/editability.mjs', import.meta.url).pathname, `${base}-site`, `${head}-site`], { encoding: 'utf8' });
-  const debt = (editability.stderr || '').trim().split('\n').slice(-6);
-  if (editability.status === 2) return { exit: 2, report: debt };
-  return { exit: Math.max(run.status, editability.status), report: [...(run.status ? report : []), ...(editability.status ? debt : [])] };
+  const gate = new URL('./gates/accept.mjs', import.meta.url).pathname;
+  const receipt = JSON.parse(fs.readFileSync(`${reimport.capture}/capture-receipt.json`, 'utf8'));
+  const url = receipt.source?.url || receipt.url;
+  const run = spawnSync('node', [gate, '--base-url', heads.get(base), '--candidate-url', heads.get(head), '--base-site', `${base}-site`, '--candidate-site', `${head}-site`, '--capture', reimport.capture, '--url', url, '--signature', item.signature, '--cells', JSON.stringify(item.cells), '--wp-cli', `php ${reimport.bare_wp}/wp-cli.phar`, '--out', `${head}-checks-${item.signature}`], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  return { exit: run.status ?? 2, report: [run.stdout || '', run.stderr || ''] };
 }
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
