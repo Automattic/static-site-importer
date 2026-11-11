@@ -267,7 +267,7 @@ function acceptanceGate(item, repo) {
   return {
     // The repository's checks and acceptance are independent: run them side
     // by side, then print acceptance's output after the repository's.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
+    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }),
   };

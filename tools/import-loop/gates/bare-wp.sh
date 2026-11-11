@@ -14,7 +14,8 @@ relocate() {
   printf '<?php require %s;\n' "'$dir/wp-load.php'" > "$dir/bootstrap.php"
 }
 if [ -n "${2:-}" ]; then
-  mkdir -p "$(dirname "$dir")"; cp -a "$2" "$dir"; dir=$(cd "$dir" && pwd); relocate; exit 0
+  # A gate input is a read-only snapshot: the copy must be writable.
+  mkdir -p "$(dirname "$dir")"; cp -R "$2" "$dir"; chmod -R u+w "$dir"; dir=$(cd "$dir" && pwd); relocate; exit 0
 fi
 mkdir -p "$dir"
 curl -fsSL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o "$dir/wp-cli.phar"
