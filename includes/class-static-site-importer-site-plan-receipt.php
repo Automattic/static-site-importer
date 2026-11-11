@@ -123,6 +123,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'receipt_instance_id'       => self::valid_receipt_instance_id( $state['receipt_instance_id'] ?? null ) ? $state['receipt_instance_id'] : self::receipt_instance_id(),
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
+			'destination'               => $state['destination'] ?? array(),
 			'applied'                   => array( 'comment_entities' => $state['applied']['comment_entities'] ?? array() ),
 			'completed'                 => array(
 				'pages'                      => $pages,
@@ -162,7 +163,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
-				'companion_asset_loading'    => $state['applied']['companion_asset_loading'] ?? array( 'status' => 'not_requested' ),
+				'global_styles'              => $state['applied']['global_styles'] ?? array( 'status' => 'not_requested' ),
 				'runtime_policy'             => array(
 					'disable_smilies'            => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,

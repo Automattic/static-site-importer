@@ -9,9 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Companion_Asset_Publication' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-companion-asset-publication.php';
-}
+
 
 /**
  * Resolves where a canonical plan materializes and what it may write there.
@@ -96,6 +94,7 @@ final class Static_Site_Importer_Import_Destination {
 	 * @return array|WP_Error
 	 */
 	private static function existing_theme_destination( array $args ) {
+		unset( $args );
 		if ( ! function_exists( 'get_stylesheet' ) || ! function_exists( 'get_stylesheet_directory' ) ) {
 			return new WP_Error( 'existing_theme_unavailable', 'The destination site has no resolvable active theme.' );
 		}
@@ -103,16 +102,6 @@ final class Static_Site_Importer_Import_Destination {
 		$theme_dir = (string) get_stylesheet_directory();
 		if ( '' === $slug || '' === $theme_dir || ! is_dir( $theme_dir ) ) {
 			return new WP_Error( 'existing_theme_unavailable', 'The destination site has no resolvable active theme.' );
-		}
-		// The import itself must not resolve its writes against the host theme,
-		// so its companion assets publish through the companion plugin primitive.
-		$publication_slug = (string) ( $args['slug'] ?? '' );
-		if ( '' === $publication_slug ) {
-			$publication_slug = $slug;
-		}
-		$publication = Static_Site_Importer_Companion_Asset_Publication::resolve( array( 'slug' => $publication_slug ) );
-		if ( is_wp_error( $publication ) ) {
-			return $publication;
 		}
 		return array(
 			'schema'             => 'static-site-importer/import-destination/v1',
@@ -122,10 +111,8 @@ final class Static_Site_Importer_Import_Destination {
 			'theme_uri'          => (string) get_stylesheet_directory_uri(),
 			'owns_theme'         => false,
 			'permits_activation' => false,
-			// Theme-independent publication surface: assets never land in the
-			// theme the host owns, so imported pages can load them scoped.
-			'asset_dir'          => (string) $publication['dir'],
-			'asset_uri'          => (string) $publication['uri'],
+			'asset_dir'          => $theme_dir,
+			'asset_uri'          => (string) get_stylesheet_directory_uri(),
 		);
 	}
 
@@ -136,10 +123,11 @@ final class Static_Site_Importer_Import_Destination {
 	 * @param string $kind        Declared write kind.
 	 */
 	public static function permits_write( array $destination, string $kind ): bool {
+		unset( $kind );
 		if ( ! empty( $destination['owns_theme'] ) ) {
 			return true;
 		}
-		return ! in_array( $kind, self::HOST_OWNED_WRITE_KINDS, true );
+		return false;
 	}
 
 	/**
@@ -163,7 +151,7 @@ final class Static_Site_Importer_Import_Destination {
 	 */
 	public static function withheld_write_diagnostic( array $destination, string $kind, string $target_path ): array {
 		return array(
-			'reason_code' => 'destination_withheld_host_theme_write',
+			'reason_code' => in_array( $kind, self::HOST_OWNED_WRITE_KINDS, true ) ? 'destination_withheld_host_theme_write' : 'destination_withheld_file_write',
 			'severity'    => 'notice',
 			'destination' => (string) ( $destination['mode'] ?? '' ),
 			'kind'        => $kind,

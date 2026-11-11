@@ -19,9 +19,7 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Import_Destination' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-import-destination.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Companion_Asset_Publication' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-companion-asset-publication.php';
-}
+
 if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-classic-theme-projection.php';
 }

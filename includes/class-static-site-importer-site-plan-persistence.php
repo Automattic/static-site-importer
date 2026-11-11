@@ -112,6 +112,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $resolutions ) ) {
 			return self::failed_receipt_from_error( $state, $resolutions );
 		}
+		$fileless_resolutions = array();
+		if ( 'existing_theme' === ( $state['destination']['mode'] ?? '' ) ) {
+			$fileless_resolutions = $resolutions;
+			$media_tokens         = array_column( array_filter( $state['plan']['assets'], static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) ), 'token' );
+			$resolutions          = array_intersect_key( $resolutions, array_flip( $media_tokens ) );
+		}
 		if ( ! empty( $resolutions ) ) {
 			$media_state  = $state;
 			$resolve_args = $state['args'];
@@ -147,6 +153,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$state['applied']['attachments']    = $media_state['applied']['attachments'] ?? array();
 			$state['media_library_unavailable'] = $media_state['media_library_unavailable'] ?? array();
+		}
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-styles.php';
+		if ( Static_Site_Importer_Existing_Theme_Styles::enabled( $state ) ) {
+			$state['existing_theme_asset_urls'] = array();
+			foreach ( $state['plan']['assets'] as $asset ) {
+				if ( isset( $fileless_resolutions[ $asset['token'] ] ) ) {
+					$state['existing_theme_asset_urls'][ $state['theme']['uri'] . '/' . $asset['target_path'] ] = $fileless_resolutions[ $asset['token'] ]['url'];
+				}
+			}
+			return Static_Site_Importer_Existing_Theme_Styles::apply( $state );
 		}
 		// The final plan is now loaded, including any media-library rebind.
 		// Reuse bootstrap coverage across all writes and the final invariant.
@@ -475,11 +491,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return self::failed_receipt( $state, $publications->get_error_code() );
 			}
 		}
-		$companion_loading = self::apply_companion_asset_loading( $state );
-		if ( is_wp_error( $companion_loading ) ) {
-			return self::failed_receipt( $state, $companion_loading->get_error_code() );
-		}
-		$state['applied']['companion_asset_loading'] = $companion_loading;
 
 		// Activation is a destination right, not a caller preference: an import
 		// into a theme the site already runs must never switch the active theme.
@@ -615,13 +626,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					continue;
 				}
 				$identity             = hash( 'sha256', self::source_origin_url( $state ) . "\n" . $path . "\n" . $entity['source_id'] );
-				$existing             = get_comments( array(
-					'post_id'    => $post_id,
-					'status'     => 'all',
-					'meta_key'   => '_static_site_importer_source_comment',
-					'meta_value' => $identity,
-					'number'     => 1,
-				) );
+				$existing             = get_comments(
+					array(
+						'post_id'    => $post_id,
+						'status'     => 'all',
+						'meta_key'   => '_static_site_importer_source_comment',
+						'meta_value' => $identity,
+						'number'     => 1,
+					)
+				);
 				$comment_id           = is_array( $existing ) && isset( $existing[0] ) && $existing[0] instanceof WP_Comment ? (int) $existing[0]->comment_ID : 0;
 				$data                 = array(
 					'comment_post_ID'      => $post_id,
@@ -1175,14 +1188,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
-		$written = self::write_file( $state['theme_dir'], array(
-			'target_path' => $target,
-			'source_path' => $state['ordered_pages'][ $members[0] ]['source_path'],
-			'payload'     => array(
-				'encoding' => 'utf8',
-				'data'     => $markup,
+		$written = self::write_file(
+			$state['theme_dir'],
+			array(
+				'target_path' => $target,
+				'source_path' => $state['ordered_pages'][ $members[0] ]['source_path'],
+				'payload'     => array(
+					'encoding' => 'utf8',
+					'data'     => $markup,
+				),
 			),
-		), null, null, $state['runtime_asset_tokens'] ?? array() );
+			null,
+			null,
+			$state['runtime_asset_tokens'] ?? array()
+		);
 		if ( is_wp_error( $written ) ) {
 			return $written;
 		}
@@ -1412,14 +1431,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$references = array_keys( array_filter( $aliases, static fn( string $value ): bool => $identity === $value ) );
 			foreach ( $references as $url ) {
 				if ( function_exists( 'get_posts' ) && ! $attachment ) {
-					$ids        = get_posts( array(
-						'post_type'      => 'attachment',
-						'post_status'    => 'inherit',
-						'fields'         => 'ids',
-						'posts_per_page' => 1,
-						'meta_key'       => '_static_site_importer_source_image',
-						'meta_value'     => $url,
-					) );
+					$ids        = get_posts(
+						array(
+							'post_type'      => 'attachment',
+							'post_status'    => 'inherit',
+							'fields'         => 'ids',
+							'posts_per_page' => 1,
+							'meta_key'       => '_static_site_importer_source_image',
+							'meta_value'     => $url,
+						)
+					);
 					$attachment = (int) ( $ids[0] ?? 0 );
 				}
 			}
@@ -1948,11 +1969,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			$type = isset( $target['fragment'] ) ? 'unresolved_fragment_link' : 'unresolved_internal_link';
-			$state['applied']['unresolved_link_targets'][ $key ] = array_merge( $target, array(
-				'type'        => $type,
-				'reason_code' => $type,
-				'source_path' => $source_path,
-			) );
+			$state['applied']['unresolved_link_targets'][ $key ] = array_merge(
+				$target,
+				array(
+					'type'        => $type,
+					'reason_code' => $type,
+					'source_path' => $source_path,
+				)
+			);
 		}
 	}
 
@@ -2051,18 +2075,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( str_starts_with( $token, '{{wordpress-site-plan:asset:' ) && isset( $runtime_asset_tokens[ $token ] ) ) {
 				continue;
 			}
-			return new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target . ': ' . $token, array(
-				'target'      => $target,
-				'token'       => $token,
-				'diagnostics' => array(
-					array(
-						'reason_code' => 'materialization_reference_unresolved',
-						'severity'    => 'error',
-						'source_path' => $target,
-						'detail'      => 'Unresolved site-plan reference ' . $token,
+			return new WP_Error(
+				'materialization_reference_unresolved',
+				'Unresolved site-plan reference in ' . $target . ': ' . $token,
+				array(
+					'target'      => $target,
+					'token'       => $token,
+					'diagnostics' => array(
+						array(
+							'reason_code' => 'materialization_reference_unresolved',
+							'severity'    => 'error',
+							'source_path' => $target,
+							'detail'      => 'Unresolved site-plan reference ' . $token,
+						),
 					),
-				),
-			) );
+				)
+			);
 		}
 		return null;
 	}
@@ -2541,89 +2569,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function asset_publication_receipt( array $destination, string $asset_dir, string $asset_uri, string $kind ): array {
 		unset( $kind );
 		$mode = Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' )
-			? Static_Site_Importer_Companion_Asset_Publication::COMPANION_PLUGIN
-			: Static_Site_Importer_Companion_Asset_Publication::GENERATED_THEME;
+			? 'global_styles'
+			: 'generated_theme';
 		return array(
 			'mode' => $mode,
 			'dir'  => $asset_dir,
 			'uri'  => $asset_uri,
 		);
-	}
-
-	/**
-	 * Deliver published stylesheets through the companion loader with page scoping.
-	 *
-	 * A companion publication home has no generated theme bootstrap to enqueue
-	 * its CSS, so the loader registers the scoped assets for the materialized
-	 * pages only — on the frontend and in the editor — leaving unrelated pages
-	 * and the host theme's global styles untouched.
-	 */
-	public static function apply_companion_asset_loading( array &$state ) {
-		$destination = $state['destination'] ?? array();
-		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME !== ( $destination['mode'] ?? '' ) ) {
-			return array(
-				'status'      => 'skipped',
-				'reason'      => 'generated_theme_theme_owned_assets',
-				'post_ids'    => array(),
-				'files'       => array(),
-				'diagnostics' => array(),
-			);
-		}
-		$stylesheet_targets = array();
-		foreach ( $state['applied']['files'] as $file ) {
-			$target = (string) ( $file['target_path'] ?? '' );
-			if ( '' !== $target && str_ends_with( strtolower( $target ), '.css' ) ) {
-				$stylesheet_targets[] = array(
-					'src'     => $target,
-					'version' => (string) ( $file['hash'] ?? '' ),
-				);
-			}
-		}
-		if ( array() === $stylesheet_targets ) {
-			return array(
-				'status'      => 'skipped',
-				'reason'      => 'no_published_stylesheets',
-				'post_ids'    => array(),
-				'files'       => array(),
-				'diagnostics' => array(),
-			);
-		}
-		$config  = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( is_array( $state['plan'] ?? null ) ? $state['plan'] : array(), $state['applied']['posts'] ?? array(), $stylesheet_targets, (string) ( $state['theme']['uri'] ?? '' ) );
-		$loading = array(
-			'status'      => 'completed',
-			'post_ids'    => array_map( 'intval', array_keys( $config['posts'] ) ),
-			'files'       => array(),
-			'diagnostics' => array(),
-		);
-		foreach ( array(
-			'scoped-assets.json' => Static_Site_Importer_Companion_Asset_Publication::scoped_assets_json( $config ),
-			'asset-loader.php'   => Static_Site_Importer_Companion_Asset_Publication::scoped_loader_source(),
-		) as $target => $content ) {
-			$path = $state['theme_dir'] . '/' . $target;
-			self::journal_file( $state, $path );
-			$result = self::write_file(
-				$state['theme_dir'],
-				array(
-					'target_path'             => $target,
-					'source_path'             => $target,
-					'payload'                 => array(
-						'encoding' => 'utf8',
-						'data'     => $content,
-					),
-					'payload_hash'            => hash( 'sha256', $content ),
-					'reconciliation_identity' => hash( 'sha256', "companion-asset-loading\n" . $target ),
-				),
-				null,
-				null,
-				$state['runtime_asset_tokens'] ?? array()
-			);
-			if ( is_wp_error( $result ) ) {
-				return new WP_Error( 'static_site_importer_companion_asset_loader_unavailable', sprintf( 'The companion asset loader could not publish %s at %s.', $target, $path ) );
-			}
-			$result['publication'] = self::asset_publication_receipt( $destination, $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), 'companion_asset_loader' );
-			$loading['files'][]    = $result;
-		}
-		return $loading;
 	}
 
 	/** Verify every canonical asset publication against its resolved write and references. */
@@ -3226,6 +3178,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Revert importer-owned runtime state, writes, and posts on a failed receipt. */
 	public static function rollback( array &$state ): void {
+		if ( isset( $state['rollback']['global_styles_section'] ) ) {
+			require_once __DIR__ . '/class-static-site-importer-existing-theme-styles.php';
+			$section = $state['rollback']['global_styles_section'];
+			Static_Site_Importer_Existing_Theme_Styles::save( $section['id'], (string) ( $section['previous'] ?? '' ), (int) $section['post_id'] );
+		}
 		if ( ! empty( $state['rollback']['done'] ) ) {
 			return; }
 		$state['rollback']['done'] = true;

@@ -628,7 +628,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				return new WP_Error( 'image_resource_unresolved', 'The compiler must declare each recorded resource its consumer-owned destination.', array( 'source_path' => $source ) );
 			}
 		}
-		$assets = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) );
+		$existing_theme = 'existing_theme' === ( $state['destination']['mode'] ?? '' );
+		$assets         = array_filter( $state['plan']['assets'] ?? array(), static fn( array $asset ): bool => 'media_library' === ( $asset['destination'] ?? '' ) || ( $existing_theme && preg_match( '/\.(?:png|jpe?g|gif|webp|avif)$/i', (string) ( $asset['target_path'] ?? '' ) ) ) );
 		if ( 'blocks-engine/wordpress-site-plan/v3' !== ( $state['plan']['schema'] ?? '' ) || empty( $assets ) || ! function_exists( 'wp_insert_attachment' ) ) {
 			return array();
 		}
@@ -649,10 +650,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		add_filter( 'wp_unique_post_slug_is_bad_attachment_slug', $reserve_page_slugs, 10, 2 );
 		try {
 			$writes = array_column( $state['resolved']['writes'], null, 'target_path' );
-			foreach ( $state['plan']['assets'] as $asset ) {
-				if ( 'media_library' !== ( $asset['destination'] ?? '' ) ) {
-					continue;
-				}
+			foreach ( $assets as $asset ) {
 				$relative = $asset['target_path'];
 				$write    = $writes[ $relative ] ?? null;
 				if ( ! is_array( $write ) || ! Static_Site_Importer_Site_Plan_Persistence::safe_destination( $dir, $relative ) ) {
@@ -1344,10 +1342,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * Keep untouched values byte-identical; decode JSON before looking for tags
 	 * so escaped quotes and Unicode escapes cannot hide image references.
 	 *
-	 * @param mixed $value Attribute value.
-	 * @param array<mixed> $state Transaction state.
-	 * @param array<string,int> $attachments Attachment identities.
-	 * @param array<string,int> $by_hash Attachment hashes.
+	 * @param mixed                                                                         $value Attribute value.
+	 * @param array<mixed>                                                                  $state Transaction state.
+	 * @param array<string,int>                                                             $attachments Attachment identities.
+	 * @param array<string,int>                                                             $by_hash Attachment hashes.
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report Binding report.
 	 * @return array{html:mixed,ids:array<int,int>}
 	 */

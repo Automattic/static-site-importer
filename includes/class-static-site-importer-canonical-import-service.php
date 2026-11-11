@@ -364,9 +364,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_object( $payload_reader ) ) {
 			$input['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		$input['plan'] = $plan;
-		$receipt       = self::materialize_wordpress_site_plan( $input );
-		$success       = 'completed' === ( $receipt['status'] ?? '' );
+		$input['destination'] = $approved['destination'] ?? ( $input['destination'] ?? 'generated_theme' );
+		$input['plan']        = $plan;
+		$receipt              = self::materialize_wordpress_site_plan( $input );
+		$success              = 'completed' === ( $receipt['status'] ?? '' );
 		if ( $success ) {
 			require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
 			require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
@@ -485,11 +486,18 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_wp_error( $compiled ) ) {
 			return self::error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
 		}
+		$destination_diagnostics = array();
+		if ( 'existing_theme' === ( $args['destination'] ?? '' ) ) {
+			$prepared                = Static_Site_Importer_Site_Plan_Preparation::prepare( $compiled['plan'], $compiled['args'] );
+			$destination_diagnostics = $prepared['diagnostics'] ?? $prepared['receipt']['diagnostics'] ?? array();
+		}
 		$response = array(
 			'success'     => true,
 			'operation'   => 'plan',
+			'destination' => $args['destination'] ?? 'generated_theme',
 			'plan'        => $compiled['plan'],
 			'diagnostics' => array_merge(
+				$destination_diagnostics,
 				is_array( $compiled['plan']['diagnostics'] ?? null ) ? $compiled['plan']['diagnostics'] : array(),
 				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['args']['compiler_diagnostics'] ?? null ) ? $compiled['args']['compiler_diagnostics'] : array() )
 			),
@@ -1016,7 +1024,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 						}
 					}
 				}
+				// Paths are executable handles for CLI callers, not display snippets.
 				$bounded[ $key ] = self::bounded_inline_value( $value, $remaining );
+				if ( is_string( $value ) && ( str_ends_with( $key, '_path' ) || 'theme_dir' === $key ) ) {
+					$bounded[ $key ] = $value;
+				}
 				if ( array() !== $verdict ) {
 					$bounded[ $key ] = array_merge( $verdict, is_array( $bounded[ $key ] ) ? $bounded[ $key ] : array() );
 				}

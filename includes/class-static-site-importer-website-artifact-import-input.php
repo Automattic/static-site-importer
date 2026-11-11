@@ -16,6 +16,11 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 
 	/** @var array<string,array<string,mixed>> */
 	public const SCHEMA_PROPERTIES = array(
+		'destination'                          => array(
+			'type'    => 'string',
+			'enum'    => array( 'generated_theme', 'existing_theme' ),
+			'default' => 'generated_theme',
+		),
 		'slug'                                 => array( 'type' => 'string' ),
 		'name'                                 => array( 'type' => 'string' ),
 		'site_title'                           => array( 'type' => 'string' ),
@@ -74,6 +79,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 	public static function normalize( array $input, array $defaults = array() ): array {
 		$values = array_merge(
 			array(
+				'destination'                          => 'generated_theme',
 				'slug'                                 => '',
 				'name'                                 => '',
 				'site_title'                           => '',
@@ -115,7 +121,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			}
 		}
 
-		foreach ( array( 'slug', 'name', 'site_title', 'site_tagline', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy', 'theme_materialization' ) as $field ) {
+		foreach ( array( 'destination', 'slug', 'name', 'site_title', 'site_tagline', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy', 'theme_materialization' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
 		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'remove_default_content', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {

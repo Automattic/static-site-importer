@@ -127,6 +127,7 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 };
 
 $input  = array(
+	'destination'                          => 'existing_theme',
 	'slug'                                 => 'contract-theme',
 	'name'                                 => 'Contract Theme',
 	'site_title'                           => 'Contract Site',
@@ -163,6 +164,8 @@ $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input 
 
 // disable_smilies (issue #780) defaults on so ordinary imports keep literal text.
 $default_input = Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'slug' => 'default-theme' ) );
+$assert( 'generated_theme' === $default_input['destination'], 'destination-defaults-generated-theme' );
+$assert( array( 'generated_theme', 'existing_theme' ) === Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES['destination']['enum'], 'destination-schema-enum' );
 $assert( 'report_only' === $default_input['stale_page_action'], 'stale-page-action-defaults-report-only' );
 $assert( '' === $default_input['runtime_lifecycle_phase'], 'runtime-lifecycle-phase-defaults-direct-apply' );
 $assert( 'copy_to_theme' === $default_input['asset_materialization_policy'], 'asset-materialization-policy-defaults-copy-to-theme' );

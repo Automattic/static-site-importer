@@ -286,15 +286,17 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
-			$state['theme_dir']                = $theme_dir;
-			$state['destination']              = $destination;
-			$state['theme']                    = array(
+			$state['theme_dir']   = $theme_dir;
+			$state['destination'] = $destination;
+			$state['theme']       = array(
 				'name'              => $identity['name'],
 				'slug'              => $slug,
 				'dir'               => $theme_dir,
 				'uri'               => $theme_uri,
 				'asset_publication' => Static_Site_Importer_Site_Plan_Persistence::asset_publication_receipt( $destination, $theme_dir, $theme_uri, '' ),
 			);
+			require_once __DIR__ . '/class-static-site-importer-existing-theme-styles.php';
+			Static_Site_Importer_Existing_Theme_Styles::diagnose( $state );
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
@@ -333,12 +335,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	public static function with_report_destinations( array $args ): array {
 		$theme_dir = trailingslashit( get_theme_root() ) . sanitize_key( (string) ( $args['slug'] ?? '' ) );
 		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $args['destination'] ?? '' ) ) {
-			// An existing-theme destination keeps its report artifacts with the
-			// companion assets instead of writing them into the host theme.
-			$publication = Static_Site_Importer_Companion_Asset_Publication::resolve( $args );
-			if ( ! is_wp_error( $publication ) ) {
-				$theme_dir = (string) $publication['dir'];
-			}
+			$args['report_destinations']          = array();
+			$args['external_report_destinations'] = array();
+			return $args;
 		}
 		$reports = array( $theme_dir . '/static-site-importer-manifest.json' );
 		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
@@ -772,6 +771,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'payload_reference_invalid' );
+			}
+			if ( ! Static_Site_Importer_Import_Destination::permits_write( $state['destination'], (string) ( $write['kind'] ?? '' ) ) ) {
+				continue;
 			}
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			if ( ! Static_Site_Importer_Site_Plan_Persistence::safe_destination( $state['theme_dir'], $write['target_path'] ) ) {
@@ -1231,7 +1233,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * replacements from the resolved markup, so each asset URL the plan resolved
 	 * returns to its token: theme files never carry build-host URLs.
 	 *
-	 * @param array<string,mixed>                                               $plan    Resolved site plan.
+	 * @param array<string,mixed>                                                $plan    Resolved site plan.
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
 	 */
 	private static function splice_canonical_markup( array $plan, string $resolved, string $canonical, array $patches ): string {
