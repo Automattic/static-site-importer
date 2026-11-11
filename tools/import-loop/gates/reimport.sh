@@ -58,7 +58,8 @@ $file = __DIR__ . parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH );
 if ( is_file( $file ) ) return false;
 require __DIR__ . '/index.php';
 PHP
-setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
+# The block editor fires dozens of parallel requests; one worker serializes them.
+PHP_CLI_SERVER_WORKERS=8 setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
 echo $! > "$site/.server.pid"
 for _ in $(seq 50); do curl -fs -o /dev/null "$url/" && break; sleep 0.2; done
 echo "$url"

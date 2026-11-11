@@ -67,6 +67,14 @@
         "import"
       ],
       "timeout": "45m",
+      "retry": {
+        "max": 2,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "1m"
+      },
       "exec": {
         "program": "node",
         "cwd": "{{inputs.loop_dir}}",
