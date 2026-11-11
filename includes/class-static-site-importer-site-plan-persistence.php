@@ -1197,7 +1197,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( 'theme.json' !== ( $write['target_path'] ?? '' ) || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) ) {
 				continue;
 			}
-			$path  = $state['theme_dir'] . '/theme.json';
+			$path = $state['theme_dir'] . '/theme.json';
 			// Decode to objects so the round trip preserves empty JSON objects.
 			$theme = json_decode( $state['composed_theme_writes'][ $path ] ?? $write['payload']['data'] );
 			if ( ! $theme instanceof stdClass ) {
@@ -1209,6 +1209,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'title'     => $title,
 				'postTypes' => array( $post_type ),
 			);
+
 			$data = wp_json_encode( $theme, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 			if ( ! is_string( $data ) ) {
 				break;
