@@ -617,6 +617,14 @@ namespace {
 	$legacy_lifecycle = array( 'entities' => array( 'legacy' => array( 'manifest' => array( 'forms' => array( $manifest_entity ) ) ) ) );
 	$assert( $legacy_lifecycle === Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $legacy_lifecycle, array( 'runtime_declarations' => array() ) ), 'direct-payload-entity-lifecycle-remains-unchanged-without-manifests' );
 
+	$redirect_failure = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+		'redirects',
+		array( 'provider' => 'redirection' ),
+		array(),
+		array( 'status' => 'failed', 'code' => 'static_site_importer_redirect_materialization_failed', 'error' => 'The native write response did not identify its committed rule.' )
+	);
+	$assert( str_contains( $redirect_failure[0]['message'] ?? '', 'The native write response did not identify its committed rule.' ), 'redirect-exception-reaches-failure-diagnostics' );
+
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 		exit( 1 );

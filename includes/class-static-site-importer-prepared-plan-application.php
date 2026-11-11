@@ -207,7 +207,8 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$entities                           = array_replace( $entities, $late['reports'] );
 			$receipt['completed']['runtime_declarations']['entities'] = $entities;
 			if ( null !== $late['error'] ) {
-				$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, (string) $late['error']['code'] );
+				$receipt['diagnostics'] = array_merge( $receipt['diagnostics'] ?? array(), $late['error']['diagnostics'] ?? array() );
+				$receipt                = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, (string) $late['error']['code'] );
 				Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'after_pages', (string) $late['error']['code'] );
 				// ssi-error-class: propagated
 				return new WP_Error( (string) $late['error']['code'], (string) $late['error']['message'], $receipt );

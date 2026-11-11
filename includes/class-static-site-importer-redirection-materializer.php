@@ -190,23 +190,19 @@ final class Static_Site_Importer_Redirection_Materializer {
 		$alias_paths = array();
 		foreach ( $aliases as $source => $paths ) {
 			foreach ( $paths as $path ) {
-				$alias_paths[ '/' . ltrim( rawurldecode( $path ), '/' ) ] = $source;
+				$alias_paths[ '/' . ltrim( self::canonical_source_route( $path ), '/' ) ] = $source;
 			}
 		}
 		// Plan paths are home-relative; Redirection matches the full request path.
-		$home_path = rtrim( rawurldecode( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
+		$home_path = rtrim( self::canonical_source_route( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ), '/' );
 		$routes    = array();
 		foreach ( $pages as $page ) {
 			$source = (string) ( $page['source_path'] ?? '' );
 			$id     = (int) ( $ids[ $source ] ?? 0 );
 			if ( $id <= 0 ) {
 				continue; }
-			// Redirection stores every source after rawurldecode (its own
-			// sanitizer) and its matcher decodes requests the same way. Express
-			// each route once in that canonical decoded form here, so inventory
-			// matching, native writes, committed-rule identification and the
-			// ownership option all key the identical rule.
-			$route_path = rawurldecode( (string) ( $page['route']['path'] ?? '' ) );
+			// Inventory, writes, identification and ownership use the provider's stored form.
+			$route_path = self::canonical_source_route( (string) ( $page['route']['path'] ?? '' ) );
 			if ( ! empty( $page['synthetic'] ) && 'draft' === ( $page['materialized_post_status'] ?? '' ) && ( ! isset( $page['alias_target_source_path'] ) || ( $alias_paths[ $route_path ] ?? null ) === $page['alias_target_source_path'] ) && 'draft' === get_post_status( $id ) ) {
 				// This native row supplies descendant ancestry; its exact public URL
 				// is owned by the alias bound to a different page receipt, or by no
@@ -265,7 +261,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( is_wp_error( $result ) ) {
 					return $result;
 				}
-				$request_path = $home_path . '/' . ltrim( rawurldecode( $from ), '/' );
+				$request_path = $home_path . '/' . ltrim( self::canonical_source_route( $from ), '/' );
 				$target_path  = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
 				if ( trim( $request_path, '/' ) !== trim( $target_path, '/' ) ) {
 					// Redirection owns the entire paged family, not a theme or WP rewrite.
@@ -308,9 +304,15 @@ final class Static_Site_Importer_Redirection_Materializer {
 		return str_starts_with( $from, '^' ) ? str_replace( array( '\\', '([1-9][0-9]*)/?$' ), array( '', '2/' ), substr( $from, 1 ) ) : $from;
 	}
 
+	/** Decode captured paths before applying Redirection's storage sanitizer. */
+	private static function canonical_source_route( string $route ): string {
+		$route = rawurldecode( $route );
+		return class_exists( 'Red_Item_Sanitize' ) ? ( new Red_Item_Sanitize() )->sanitize_url( $route, false ) : $route;
+	}
+
 	/** Apply the same canonical source and collision checks to every native entity. */
 	private static function add_route( array &$routes, string $from, string $target, string $home_path, int $post_id = 0 ) {
-		$from         = '/' . ltrim( rawurldecode( $from ), '/' );
+		$from         = '/' . ltrim( self::canonical_source_route( $from ), '/' );
 		$request_path = $home_path . $from;
 		$target_path  = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );
 		if ( trim( $request_path, '/' ) === trim( $target_path, '/' ) || ( $post_id > 0 && self::core_route_id( $from ) === $post_id ) ) {
