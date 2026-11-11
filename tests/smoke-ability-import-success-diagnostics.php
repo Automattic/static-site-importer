@@ -165,6 +165,37 @@ $assert( ( $fired[0]['args'][0] ?? null ) === $contract, 'hook-arg-contract' );
 $assert( ( $fired[0]['args'][1] ?? null ) === $result, 'hook-arg-result' );
 $assert( ( $fired[0]['args'][2] ?? null ) === $input, 'hook-arg-input' );
 
+$choice_result = array(
+	'theme_slug'               => 'question-preview',
+	'import_report_summary'    => array( 'status' => 'failed', 'failure_reasons' => array( 'form_submission_setup_required' ) ),
+	'import_validation_result' => array( 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ), 'counts' => array( 'choice_submission_forms' => 1 ) ),
+);
+$choice_hooks_before = count( $GLOBALS['ssi_smoke_fired_hooks'] );
+$choice_envelope = static_site_importer_ability_import_success( $choice_result, $input );
+$assert( false === $choice_envelope['success'], 'choice-form-is-not-an-api-success' );
+$assert( 'static_site_importer_quality_failed' === ( $choice_envelope['error']['code'] ?? '' ), 'choice-form-api-explains-quality-failure' );
+$assert( $choice_result === $choice_envelope['result'], 'choice-form-keeps-editable-preview-evidence' );
+$assert( $choice_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'choice-form-does-not-fire-completion-hook' );
+
+$prepare_hooks_before = count( $GLOBALS['ssi_smoke_fired_hooks'] );
+$prepared = array( 'status' => 'dependencies_prepared', 'runtime_lifecycle_checkpoint' => 'example-checkpoint' );
+$prepare_envelope = static_site_importer_ability_import_success( $prepared, $input );
+$assert( true === $prepare_envelope['success'], 'preparation-still-succeeds-as-an-intermediate-step' );
+$assert( $prepare_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'preparation-does-not-announce-import-completion' );
+$continuation = static_site_importer_ability_import_success( array( 'continuation' => true ), $input );
+$assert( true === $continuation['success'] && $prepare_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'continuation-does-not-announce-import-completion' );
+
+$url_terminal = $choice_result;
+$url_terminal['quality'] = array( 'choice_submission_form_count' => 1 );
+$url_terminal['import_validation_result']['diagnostics'] = array( array( 'code' => 'preserved_runtime_island', 'kind' => 'form', 'form_intent' => 'choice_submission', 'source_path' => 'question.html', 'selector' => 'form.question' ) );
+$url_result = array( 'import_report_summary' => array( 'status' => 'completed' ), 'terminal_batch_result' => $url_terminal, 'fixture_diagnostics' => $contract );
+$url_envelope = static_site_importer_ability_import_success( $url_result, $input );
+$assert( false === $url_envelope['success'] && false === $url_envelope['fixture_diagnostics']['success'], 'failed-url-import-and-diagnostic-contract-agree' );
+$assert( 'failed' === $url_envelope['fixture_diagnostics']['status'], 'url-diagnostics-use-final-materialization-status' );
+$assert( 1 === $url_envelope['fixture_diagnostics']['quality_counts']['choice_submission_form_count'], 'url-diagnostics-keep-submission-setup-count' );
+$assert( ! empty( $url_envelope['fixture_diagnostics']['diagnostics'] ), 'url-diagnostics-keep-form-remediation-evidence' );
+$assert( $prepare_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'failed-url-import-does-not-announce-completion' );
+
 $failed_validation_result = array(
 	'theme_slug'               => 'failed-validation-site',
 	'import_report_summary'    => array( 'status' => 'failed' ),

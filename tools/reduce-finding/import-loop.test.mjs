@@ -11,13 +11,42 @@ const root = path.resolve(import.meta.dirname, '../..');
 test('import continues only for a preserved quality-failed preview', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'preview-import-'));
   try {
-    fs.writeFileSync(path.join(dir, 'gh'), '#!/bin/sh\necho token\n', { mode: 0o755 });
+    const engine = path.join(dir, 'engine');
+    fs.mkdirSync(path.join(engine, 'php-transformer'), { recursive: true });
+    fs.writeFileSync(path.join(engine, 'php-transformer', 'example.php'), '<?php');
+    fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/bash
+case "$1 $2" in
+  'auth token') echo example-token ;;
+  'api repos/Automattic/static-site-importer/releases?per_page=10') echo v-example ;;
+  'release download') touch "\${@: -1}" ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'git'), `#!/bin/bash
+case "$3" in
+  fetch) exit 0 ;;
+  rev-parse) echo example-engine-sha ;;
+  archive) tar -cf - -C "$ENGINE_ROOT" php-transformer ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'bash'), `#!/bin/bash
+if [[ "$1" == */gates/reimport.sh ]]; then
+  [[ -f "$SSI_ZIP" ]] || exit 1
+  mkdir -p "$4"
+  echo reimported >> "$START_LOG"
+  echo http://localhost:9000
+  exit 0
+fi
+exec /bin/bash "$@"
+`, { mode: 0o755 });
     fs.writeFileSync(path.join(dir, 'studio'), `#!/bin/bash
 if [[ "$1 $2" == 'site list' ]]; then echo '[]'; exit 0; fi
-if [[ "$1 $2" == 'site start' ]]; then echo started >> "$START_LOG"; exit 0; fi
 if [[ "$1" == create ]]; then
-  [[ "$CREATE_SITE" == yes ]] && mkdir -p "$3"
-  echo "$URL_LABEL: http://localhost:9000"
+  if [[ "$CREATE_CAPTURE" == yes ]]; then
+    mkdir -p "$3-source/example.org"
+    echo '{}' > "$3-source/example.org/capture-receipt.json"
+  fi
   echo "$FAILURE"
   exit 1
 fi
@@ -25,15 +54,22 @@ exit 1
 `, { mode: 0o755 });
     const site = path.join(dir, 'site');
     const output = path.join(dir, 'output.json');
-    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), CREATE_SITE: 'yes', URL_LABEL: 'URL', FAILURE: 'static_site_importer_quality_failed' };
-    const run = () => spawnSync('bash', ['tools/import-loop/import.sh', 'https://example.org/', site], { cwd: root, env, encoding: 'utf8' });
-    assert.equal(run().status, 0);
-    assert.deepEqual(JSON.parse(fs.readFileSync(output)), { url: 'https://example.org/', site, site_url: 'http://localhost:9000', log: `${site}.log`, source: `${site}-source` });
-    assert.equal(fs.readFileSync(env.START_LOG, 'utf8'), 'started\n');
-    env.URL_LABEL = 'Site URL';
-    assert.equal(run().status, 0);
-    env.CREATE_SITE = 'no';
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), ENGINE_ROOT: engine, CREATE_CAPTURE: 'yes', FAILURE: 'static_site_importer_quality_failed' };
+    let attempt = 0;
+    const run = () => {
+      const capture = path.join(dir, `capture-${attempt++}`);
+      return spawnSync('/bin/bash', ['tools/import-loop/import.sh', 'https://example.org/', site, capture, engine], { cwd: root, env, encoding: 'utf8' });
+    };
+    const preserved = run();
+    assert.equal(preserved.status, 0, preserved.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(output)), {
+      url: 'https://example.org/', site: `${site}/site`, site_url: 'http://localhost:9000', log: `${site}/reimport.log`, source: `${site}/source`,
+      wp_cli: `php ${dir}/bare-wp/wp-cli.phar`, blocks_engine: 'example-engine-sha', ssi_zip: `${site}/static-site-importer.zip`, ssi_release: 'v-example',
+    });
+    assert.equal(fs.readFileSync(env.START_LOG, 'utf8'), 'reimported\n');
+    env.CREATE_CAPTURE = 'no';
     assert.notEqual(run().status, 0);
+    env.CREATE_CAPTURE = 'yes';
     env.FAILURE = 'unrelated failure';
     assert.notEqual(run().status, 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

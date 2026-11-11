@@ -350,14 +350,15 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( is_wp_error( $result ) ) {
 				return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 			}
-			return array(
-				'success'               => true,
-				'operation'             => 'apply',
-				'plan'                  => $plan,
-				'applied_plan'          => $plan,
-				'applied_plan_identity' => $classic['plan_identity'],
-				'result'                => $result,
-				'error'                 => null,
+			return array_merge(
+				array(
+					'operation'             => 'apply',
+					'plan'                  => $plan,
+					'applied_plan'          => $plan,
+					'applied_plan_identity' => $classic['plan_identity'],
+					'error'                 => null,
+				),
+				self::success( $result, $input, false )
 			);
 		}
 		if ( is_object( $payload_reader ) ) {
@@ -366,6 +367,20 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$input['plan'] = $plan;
 		$receipt       = self::materialize_wordpress_site_plan( $input );
 		$success       = 'completed' === ( $receipt['status'] ?? '' );
+		if ( $success ) {
+			require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
+			require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
+			require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
+			$projection                         = Static_Site_Importer_Receipt_Projection::compose( $receipt, $input, array(), array(), array(), '', array(), array() );
+			$report                             = $projection['report'];
+			$receipt['quality']                  = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $input );
+			$receipt['import_report_summary']    = $report['compact_summary'];
+			$receipt['import_validation_result'] = $report['import_validation_result'];
+			return array_merge(
+				array( 'operation' => 'apply', 'plan' => $plan, 'error' => null ),
+				self::success( $receipt, $input, false )
+			);
+		}
 		return array(
 			'success'   => $success,
 			'operation' => 'apply',
@@ -534,7 +549,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		}
 		$terminal = is_array( $result['terminal_batch_result'] ?? null ) ? $result['terminal_batch_result'] : array();
 		if ( 'plan' !== ( $input['operation'] ?? 'apply' ) ) {
-			return array_merge( self::success( $result, $input ), $continuation );
+			return array_merge( $continuation, self::success( $result, $input ) );
 		}
 		if ( ! is_array( $terminal['plan'] ?? null ) ) {
 			return self::error( 'static_site_importer_url_plan_missing', 'The completed URL acquisition did not produce a canonical plan.' );
@@ -761,7 +776,15 @@ class Static_Site_Importer_Canonical_Import_Service {
 	}
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
-	public static function success( array $result, array $input ): array {
+	public static function success( array $result, array $input, bool $notify_completion = true ): array {
+		$requires_form_setup = false;
+		foreach ( array( $result, $result['terminal_batch_result'] ?? array() ) as $level ) {
+			foreach ( array( 'quality', 'import_report_summary', 'import_validation_result' ) as $field ) {
+				if ( in_array( 'form_submission_setup_required', $level[ $field ]['failure_reasons'] ?? array(), true ) ) {
+					$requires_form_setup = true;
+				}
+			}
+		}
 		$contract               = self::success_diagnostics_contract( $result );
 		$figma_transform_report = isset( $input['source_metadata']['figma_transform_report'] ) && is_array( $input['source_metadata']['figma_transform_report'] ) ? $input['source_metadata']['figma_transform_report'] : array();
 		$result                 = self::bound_success_result( $result, empty( $figma_transform_report ) ? array() : array( 'figma_transform_report' => $figma_transform_report ) );
@@ -776,15 +799,22 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$remaining_items                 = 1000;
 		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
-		if ( function_exists( 'do_action' ) ) {
+		$is_terminal = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
+		if ( $notify_completion && $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
 		$response = array(
-			'success'             => true,
+			'success'             => ! $requires_form_setup,
 			'result'              => $result,
 			'diagnostics'         => $bounded_contract['diagnostics'],
 			'fixture_diagnostics' => $bounded_contract,
 		);
+		if ( $requires_form_setup ) {
+			$response['error'] = array(
+				'code'    => 'static_site_importer_quality_failed',
+				'message' => 'These forms need a working submission handler before this import is ready.',
+			);
+		}
 		if ( ! empty( $figma_transform_report ) ) {
 			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $result['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
 		}
@@ -1126,6 +1156,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @return array<string,mixed> */
 	public static function success_diagnostics_contract( array $result ): array {
+		if ( empty( $result['continuation'] ) && is_array( $result['terminal_batch_result'] ?? null ) ) {
+			unset( $result['fixture_diagnostics'] );
+			$result = array_merge( $result, $result['terminal_batch_result'] );
+		}
 		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
 			$validation = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 			if ( self::fixture_diagnostics_match_validation_counts( $result['fixture_diagnostics'], $validation ) ) {

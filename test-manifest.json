@@ -36,6 +36,7 @@
     { "path": "tests/acceptance/multilingual-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-multilingual-acceptance.sh"], "reason": "Real TranslatePress browser proof at desktop and phone widths; click the visible native selector and reload the target language route." },
     { "path": "tests/smoke-multilingual-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-intent-routing.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-choice-submission-form.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-add-to-cart-form-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-form-binding-placement.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-presentation.php", "environment": "wordpress-runtime" },

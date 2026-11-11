@@ -64,8 +64,12 @@ final class Static_Site_Importer_Quality_Gates {
 			(int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			self::interaction_candidate_count( $report['diagnostics'] ?? array() )
 		);
+		$quality['choice_submission_form_count']            = self::choice_submission_form_count( $report['diagnostics'] ?? array() );
 		// Reviewed exception: raw-HTML companions are reported, not gated, until structured editors ship.
 		$reasons = array();
+		if ( $quality['choice_submission_form_count'] > 0 ) {
+			$reasons[] = 'form_submission_setup_required';
+		}
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
 		}
@@ -127,6 +131,9 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
 			$quality['fail_import'] = true;
 		}
+		if ( $quality['choice_submission_form_count'] > 0 ) {
+			$quality['fail_import'] = true;
+		}
 		// Dropped artifact files are reported losses: they stay a quality reason,
 		// so a caller's acceptance policy (fail_on_quality) can still refuse them.
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
@@ -176,6 +183,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'commerce_dependency_failures'            => 0,
 			'companion_plugin_dependency_failures'    => 0,
 			'interaction_candidate_count'             => 0,
+			'choice_submission_form_count'            => 0,
 			'runtime_dependency_parity_issue_count'   => 0,
 			'semantic_parity_failure_count'           => 0,
 			'unsafe_layout_constraint_count'          => 0,
@@ -288,12 +296,43 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
+	 * Count imported forms of bounded choices whose submit control needs a handler
+	 * the source site owned, such as a poll. They stay editable but save no answers.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 */
+	private static function choice_submission_form_count( array $diagnostics ): int {
+		$preserved = array();
+		$blocked   = array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || 'choice_submission' !== ( $diagnostic['form_intent'] ?? '' ) ) {
+				continue;
+			}
+			$source   = $diagnostic['source_path'] ?? '';
+			$selector = $diagnostic['selector'] ?? '';
+			if ( ! is_string( $source ) || '' === $source || ! is_string( $selector ) || '' === $selector ) {
+				continue;
+			}
+			$identity = wp_json_encode( array( $source, $selector ) );
+			if ( 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) ) {
+				$blocked[ $identity ] = true;
+			} elseif ( 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) ) {
+				$preserved[ $identity ] = true;
+			}
+		}
+		return count( array_diff_key( $preserved, $blocked ) );
+	}
+
+	/**
 	 * Require a complete generic runtime-preservation contract before admitting a
 	 * fallback. Raw HTML and unsafe or unbounded payloads always remain gated.
 	 *
 	 * @param array<string,mixed> $diagnostic Normalized diagnostic.
 	 */
 	public static function is_accepted_preserved_runtime_island( array $diagnostic ): bool {
+		if ( 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) ) {
+			return false;
+		}
 		if ( 'unsupported_html_fallback' !== ( $diagnostic['type'] ?? '' ) ) {
 			return false;
 		}
@@ -725,8 +764,10 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 		$resolved    = 0;
 		$resolutions = array();
-		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) {
+		$diagnostics = $report->diagnostics();
+		foreach ( $diagnostics as $index => $diagnostic ) {
+			$choice_submission = is_array( $diagnostic ) && 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) && 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' );
+			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && ( $choice_submission || in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) ) {
 				// These handlers have no contact-form equivalent. Keep the source
 				// and report the runtime requirement, not a form-provider decline.
 				$diagnostic['recoverability']         = 'recoverable_with_runtime_mapping';
@@ -734,7 +775,10 @@ final class Static_Site_Importer_Quality_Gates {
 				$diagnostic['actionability']          = 'map_form_runtime_or_preserve_handler';
 				$diagnostic['suggested_repair_class'] = 'preserve_runtime_island';
 				$diagnostic['materialization_hint']   = 'preserve_form_runtime_source_until_controls_can_be_mapped';
-				$report->replace_diagnostic( $index, $diagnostic );
+				if ( $choice_submission ) {
+					$diagnostic['message'] = 'Form choices are editable, but a working submission handler must be configured before this import is ready.';
+				}
+				$diagnostics[ $index ] = $diagnostic;
 			}
 			if ( ! is_array( $diagnostic ) || ! ( self::is_form_fallback_diagnostic( $diagnostic ) || self::is_listing_owned_form( $diagnostic, $receipts_by_fallback ) ) ) {
 				continue;
@@ -795,7 +839,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
-			$report->replace_diagnostic( $index, $diagnostic );
+			$diagnostics[ $index ] = $diagnostic;
 			if ( $resolved_by_provider ) {
 				++$resolved;
 			}
@@ -807,6 +851,8 @@ final class Static_Site_Importer_Quality_Gates {
 				'receipt'                          => $receipt,
 			);
 		}
+
+		$report->set_diagnostics( $diagnostics );
 
 		// Product-grid fallbacks reconcile against the same completed-receipt
 		// contract as forms above, joined on the canonical source page plus the
