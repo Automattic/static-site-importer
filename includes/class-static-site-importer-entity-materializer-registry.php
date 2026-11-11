@@ -1051,7 +1051,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$location              = '' === $source_path ? 'the declared entity' : $source_path . ( '' === $selector ? '' : ' (' . $selector . ')' );
 		$availability          = null === $available ? 'availability was not reported' : ( $available ? 'provider is available' : 'provider is unavailable' );
 		$loss                  = null === $loss_count ? '' : ' Losses reported: ' . $loss_count . '.';
-		$diagnostic['message'] = self::failure_text( sprintf( '%s failed to materialize %s; %s%s.%s', '' === $provider ? 'The provider' : $provider, $location, $availability, '' === $reason ? '' : '; reason: ' . $reason, $loss ), self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		$detail                = is_scalar( $row['error'] ?? null ) ? self::failure_text( $row['error'], self::FAILURE_DIAGNOSTIC_MAX_BYTES ) : '';
+		$diagnostic['message'] = self::failure_text( sprintf( '%s failed to materialize %s; %s%s.%s', '' === $provider ? 'The provider' : $provider, $location, $availability, '' === $reason ? '' : '; reason: ' . $reason, $loss ) . ( '' === $detail ? '' : ' ' . $detail ), self::FAILURE_DIAGNOSTIC_MAX_BYTES );
 		return $diagnostic;
 	}
 
