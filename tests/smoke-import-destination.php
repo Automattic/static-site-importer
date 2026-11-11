@@ -103,19 +103,9 @@ foreach ( array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ) as $kin
 	);
 }
 
-// Imported presentation still reaches the page — through a theme-independent home.
 $assert(
-	Static_Site_Importer_Import_Destination::permits_write( $existing, 'theme_asset' ),
-	'an existing-theme import still publishes the assets its pages need'
-);
-$assert(
-	str_starts_with( (string) ( $existing['asset_dir'] ?? '' ), WP_PLUGIN_DIR )
-	&& ! str_starts_with( (string) ( $existing['asset_dir'] ?? '' ), trailingslashit( get_stylesheet_directory() ) ),
-	"an existing-theme import's assets publish outside the theme the host owns"
-);
-$assert(
-	WP_PLUGIN_URL . '/ssi-host-theme/assets' === ( $existing['asset_uri'] ?? '' ),
-	"an existing-theme import's assets resolve against the companion publication URI"
+	! Static_Site_Importer_Import_Destination::permits_write( $existing, 'theme_asset' ),
+	'existing-theme imports never publish files'
 );
 $assert(
 	is_string( $generated['asset_dir'] ?? '' ) && $generated['asset_dir'] === $generated['theme_dir'],

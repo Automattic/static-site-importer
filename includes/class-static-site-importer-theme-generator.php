@@ -185,7 +185,9 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $handle ) ) {
 				return $handle;
 			}
-			$dependencies = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_runtime_dependencies( $lifecycle, $args );
+			$dependencies = 'existing_theme' === ( $args['destination'] ?? '' )
+				? array()
+				: Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_runtime_dependencies( $lifecycle, $args );
 			if ( is_wp_error( $dependencies ) ) {
 				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
 				return $dependencies;
@@ -219,6 +221,18 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $claimed ) ) {
 				return $claimed;
 			}
+		}
+		if ( 'existing_theme' === ( $args['destination'] ?? '' ) ) {
+			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
+			if ( 'completed' !== ( $receipt['status'] ?? '' ) ) {
+				$error = $receipt['errors'][0] ?? array();
+				// ssi-error-class: propagated
+				return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'Existing-theme materialization failed.' ), $receipt );
+			}
+			if ( is_array( $checkpoint ) ) {
+				$checkpoint['workspace']->cleanup( 'success' );
+			}
+			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args );
 		}
 		$result = Static_Site_Importer_Prepared_Plan_Application::materialize( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization );
 		if ( is_array( $checkpoint ) ) {
@@ -362,7 +376,8 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
-		$cleanup = Static_Site_Importer_Generated_State_Reconciliation::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
+		$existing_theme = 'existing_theme' === ( $args['destination'] ?? '' );
+		$cleanup = $existing_theme ? array() : Static_Site_Importer_Generated_State_Reconciliation::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
 		if ( is_wp_error( $cleanup ) ) {
 			// ssi-error-class: propagated
 			throw new RuntimeException( $cleanup->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
@@ -372,12 +387,15 @@ class Static_Site_Importer_Theme_Generator {
 		$validation = $final['validation'];
 		$findings = $final['findings'];
 		$theme_dir     = $theme['dir'];
-		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
-		Static_Site_Importer_Journaled_Report_Writer::write( $manifest_path, $manifest, $receipt );
+		$manifest_path = '';
+		if ( ! $existing_theme ) {
+			$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
+			Static_Site_Importer_Journaled_Report_Writer::write( $manifest_path, $manifest, $receipt );
+		}
 		$report_path     = '';
 		$validation_path = '';
 		$findings_path   = '';
-		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
+		if ( ! $existing_theme && ! empty( $args['write_theme_report_artifacts'] ) ) {
 			$report_path     = $theme_dir . '/import-report.json';
 			$validation_path = $theme_dir . '/import-validation-result.json';
 			$findings_path   = $theme_dir . '/finding-packets.json';
@@ -388,7 +406,7 @@ class Static_Site_Importer_Theme_Generator {
 		$external_report_path            = '';
 		$external_validation_result_path = '';
 		$external_finding_packets_path   = '';
-		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
+		if ( ! $existing_theme && '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
 			$external_report_path            = (string) $args['report'];
 			$external_dir                    = dirname( $external_report_path );
 			$external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json';
