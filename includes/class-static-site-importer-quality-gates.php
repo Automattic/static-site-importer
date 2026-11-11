@@ -839,7 +839,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
-			$diagnostics[ $index ] = $diagnostic;
+			$diagnostics[ $index ]                          = $diagnostic;
 			if ( $resolved_by_provider ) {
 				++$resolved;
 			}
