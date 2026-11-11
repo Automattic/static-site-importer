@@ -4,8 +4,8 @@
  *
  * The capture producer records images, fonts, documents and video under one
  * contract; this class keeps that single intake, identity and verification
- * path. Fonts stay theme-owned; every other recorded resource becomes one
- * Media Library attachment.
+ * path. Fonts stay theme-owned; eligible non-font resources become Media
+ * Library attachments, while refused artwork retains its theme destination.
  *
  * @package StaticSiteImporter
  */
@@ -234,7 +234,7 @@ final class Static_Site_Importer_Image_Assets {
 		return \Automattic\BlocksEngine\PhpTransformer\Path\ArtifactPath::resolveRelativePath( $url, $document );
 	}
 
-	/** Validate staged bytes again immediately before writing: digest, byte-sniffed MIME and every size the record declares. */
+	/** Verify capture integrity before writing, not destination eligibility (SVG dimensions only when inspectable). */
 	public static function verify( string $file, array $record ): bool {
 		$original = $record['original'];
 		if ( hash_file( 'sha256', $file ) !== $original['sha256'] || filesize( $file ) < 1 ) {
@@ -251,7 +251,7 @@ final class Static_Site_Importer_Image_Assets {
 		return self::verify_bytes( $bytes, $record );
 	}
 
-	/** Validate one record's declared bytes against its digest, byte-sniffed MIME and image dimensions. */
+	/** Verify digest and inspectable type/dimensions; SVG policy refusal is not an integrity fault. */
 	public static function verify_bytes( string $bytes, array $record ): bool {
 		$original = $record['original'];
 		if ( '' === $bytes || ! hash_equals( $original['sha256'], hash( 'sha256', $bytes ) ) ) {
@@ -260,7 +260,9 @@ final class Static_Site_Importer_Image_Assets {
 		if ( 'image' === self::kind( $record ) ) {
 			if ( 'image/svg+xml' === $original['content_type'] ) {
 				$svg = strlen( $bytes ) <= 2 * 1024 * 1024 ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array();
-				return 'supported' === ( $svg['status'] ?? '' ) && ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'];
+				// Unsupported artwork has no inspectable dimensions. Its digest still
+				// proves capture identity; Media Library eligibility is separate.
+				return 'supported' !== ( $svg['status'] ?? '' ) || ( ( $svg['width'] ?? null ) === $original['width'] && ( $svg['height'] ?? null ) === $original['height'] );
 			}
 			$size = @getimagesizefromstring( $bytes ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid captured image bytes fail verification.
 			return is_array( $size ) && $size[0] === $original['width'] && $size[1] === $original['height'] && $size['mime'] === $original['content_type'] && ( ! $original['alpha'] || 'image/jpeg' !== $original['content_type'] );
@@ -274,6 +276,19 @@ final class Static_Site_Importer_Image_Assets {
 		// Response headers and extensions are not evidence; the declared MIME must
 		// match what the bytes themselves announce.
 		return $sniffed === $original['content_type'];
+	}
+
+	/** Refusal reason for intact recorded artwork, or null when attachment-eligible. */
+	public static function media_library_unavailable_reason( string $file, array $record ): ?string {
+		if ( 'image' !== self::kind( $record ) || 'image/svg+xml' !== $record['original']['content_type'] ) {
+			return null;
+		}
+		if ( filesize( $file ) > 2 * 1024 * 1024 ) {
+			return 'svg_size_limit_exceeded';
+		}
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verified staged capture bytes.
+		$svg   = is_string( $bytes ) ? \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes ) : array( 'status' => 'invalid_svg' );
+		return 'supported' === $svg['status'] ? null : $svg['status'];
 	}
 
 	/** First value unpacked from a fixed-width binary field, or -1 when unreadable. */

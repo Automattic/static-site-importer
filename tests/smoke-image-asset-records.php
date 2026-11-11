@@ -40,6 +40,21 @@ $artifact = array(
 	),
 );
 $extracted = Static_Site_Importer_Image_Assets::extract( $artifact );
+// Ineligible SVG bytes retain capture identity without becoming attachments.
+$svg_bytes  = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><animateTransform attributeName="transform" type="rotate"/></svg>';
+$svg_record = array_merge( $record, array( 'original' => array_merge( $record['original'], array( 'content_type' => 'image/svg+xml', 'width' => 28, 'height' => 28, 'sha256' => hash( 'sha256', $svg_bytes ) ) ) ) );
+$svg_file   = tempnam( sys_get_temp_dir(), 'ssi-svg-' );
+try {
+	file_put_contents( $svg_file, $svg_bytes );
+	$assert( Static_Site_Importer_Image_Assets::verify( $svg_file, $svg_record ), 'Intact unsupported SVG must pass staged integrity verification.' );
+	$assert( Static_Site_Importer_Image_Assets::verify_bytes( $svg_bytes, $svg_record ), 'Intact unsupported SVG must pass theme byte verification.' );
+	$assert( 'unsupported_svg_content' === Static_Site_Importer_Image_Assets::media_library_unavailable_reason( $svg_file, $svg_record ), 'Eligibility must retain the specific SVG refusal reason.' );
+	$assert( ! Static_Site_Importer_Image_Assets::verify_bytes( $svg_bytes . ' ', $svg_record ), 'A changed SVG digest must fail theme verification.' );
+	file_put_contents( $svg_file, $svg_bytes . ' ' );
+	$assert( ! Static_Site_Importer_Image_Assets::verify( $svg_file, $svg_record ), 'A changed SVG digest must fail staged verification.' );
+} finally {
+	unlink( $svg_file );
+}
 $document_cases = array(
 	'.txt citation'       => array( "A citation from a source document.\n", 'https://example.org/citation.txt', 'text/plain' ),
 	'same bytes as .pdf'  => array( "A citation from a source document.\n", 'https://example.org/citation.pdf', null ),
