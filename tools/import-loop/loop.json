@@ -55,7 +55,9 @@
         "args": [
           "import.sh",
           "{{inputs.url}}",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}"
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-capture",
+          "{{inputs.blocks_engine}}"
         ]
       }
     },
@@ -65,6 +67,14 @@
         "import"
       ],
       "timeout": "45m",
+      "retry": {
+        "max": 2,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "1m"
+      },
       "exec": {
         "program": "node",
         "cwd": "{{inputs.loop_dir}}",
@@ -81,7 +91,7 @@
           "--out",
           "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval",
           "--wp-cli",
-          "{{inputs.wp_cli}}"
+          "{{steps.import.output/wp_cli}}"
         ]
       }
     },
@@ -105,6 +115,8 @@
           "{{steps.evaluate.output/findings_path}}",
           "--source",
           "{{steps.import.output/source}}",
+          "--ssi-zip",
+          "{{steps.import.output/ssi_zip}}",
           "--work",
           "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage",
           "--blocks-engine",
@@ -179,7 +191,7 @@
       }
     },
     {
-      "id": "approve_merge",
+      "id": "merge",
       "needs": [
         "confirm"
       ],
@@ -197,21 +209,6 @@
             "gt": 0
           }
         ]
-      },
-      "approval": {
-        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges each PR in confirm's merge list (not refuted, non-draft) at the head confirm checked, once its checks are green; a PR whose checks fail, conflicts or moves holds until the next pass."
-      }
-    },
-    {
-      "id": "merge",
-      "needs": [
-        "approve_merge"
-      ],
-      "always": true,
-      "when": {
-        "step": "approve_merge",
-        "output": "/decision",
-        "equals": "approved"
       },
       "foreach": "{{steps.confirm.output/merge}}",
       "join": {
@@ -231,28 +228,6 @@
         "--wait-seconds",
         "3600"
       ]
-    },
-    {
-      "id": "shipped",
-      "needs": [
-        "merge"
-      ],
-      "timeout": "24h",
-      "when": {
-        "step": "merge",
-        "output": "/succeeded",
-        "gt": 0
-      },
-      "exec": {
-        "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
-        "args": [
-          "shipped.mjs",
-          "--merge",
-          "{{steps.merge.output/items}}"
-        ]
-      },
-      "always": true
     }
   ],
   "next_pass": {

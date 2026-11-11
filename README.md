@@ -259,6 +259,14 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 ## CLI Usage
 
+Replay composition after a direct-artifact import fails at composition or later:
+
+```bash
+wp static-site-importer recompose --import-id=<id> [--output=/path/to/result.json]
+```
+
+This uses retained compile receipts with the installed Blocks Engine, without recompiling pages or materializing the site. It writes the compact plan view (default: `recomposed-result.json` in the run workspace) and prints JSON diagnostic counts by code plus content-loss source paths. Successful runs still prune replay inputs; expired or missing checkpoints cannot be replayed.
+
 The canonical ability uses `source.type` (`html`, `files`, `zip`, `url`, or `figma`) and `operation` (`plan` or `apply`). Figma sources accept a raw `figma_file`, scenegraph, or artifact bundle and normalize through the Blocks Engine Figma transformer before canonical materialization. Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths. All source HTML is preserved: SSI has no provider or platform axis and offers no option to strip source markup.
 
 Direct artifact imports bound each step by `max_invocation_seconds`; reaching it yields a resumable continuation, so a host that relaunches steps compiles every page. A host that stops relaunching at a wall-clock limit sets `import_deadline_seconds` through the `static_site_importer_direct_artifact_run_policy` filter, measured from the run's start. When that deadline passes, the import finishes with the pages already compiled: the entrypoint is compiled first, and each unstarted page is reported as a `page_compile_omitted` warning with reason `deadline` and its source path in the import report's loss ledger. A missing entrypoint remains fatal.
@@ -434,7 +442,7 @@ status.
 
 `tools/import-loop/loop.json` is a [Homeboy](https://github.com/Extra-Chill/homeboy) workflow (`homeboy/workflow/v1`) that drives one source URL toward a clean, editable import. It imports the way a user does: `studio create --from <url>`, which installs the latest Data Liberation Agent, Static Site Importer and Blocks Engine releases. One pass is one workflow instance. Homeboy runs the steps, Cook fan-out, the approval and the chain of passes; the scripts in this directory hold the import-specific logic.
 
-1. **import** (`import.sh`) creates a Studio site from the URL and keeps the capture.
+1. **import** (`import.sh`) captures the source once with `studio create --from --keep-source`. Every pass then re-imports that frozen capture through the latest Static Site Importer release, with the transformer from Blocks Engine `trunk` (`gates/reimport.sh`, as triage, the Cook gate and confirm do). A merged Blocks Engine fix is measured on the very next pass, with no wait for a release.
 2. **evaluate** (`evaluate.mjs`) renders every source and imported route at 390, 768 and 1440px, opens each route in the block editor, and writes `findings.json`. Each finding has a stable signature over stage, check, owning repository and subject, so a defect keeps its id across passes. Theme metrics (`restyle_coverage_low`, `theme_css_bloat`, `quality_status`, `block_nesting_deep`) are advisory; every other check is a blocker. A pass with no blockers accepts the source.
 3. **triage** (`triage.mjs`) matches each blocker to an issue that carries its signature. For a new finding with a predicate in `predicates/<check>.mjs`, it:
    - reproduces the finding against Blocks Engine `trunk`, falling back to the capture's own route document when the inlined page does not show it;
@@ -444,9 +452,7 @@ status.
    It reopens a closed issue whose finding still reproduces. Findings without a predicate are reported as untracked.
 4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
 5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
-6. **approve_merge** waits for a human: `homeboy workflow approve <instance> approve_merge`, or `reject`. With `--notification-transport`/`--notification-route`, the prompt is posted there.
-7. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
-8. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
+6. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
 
 Homeboy's `next_pass` starts the next pass. The chain stops when the source is accepted, when no blocker is tracked, when three passes in a row see the same blockers, or after 60 passes. Cook and merge items may fail without ending the chain (`"join": {"min_succeeded": 0}`): the next pass sees the same findings and tries again.
 
@@ -461,7 +467,6 @@ homeboy workflow run "$PWD/tools/import-loop/loop.json" \
   [--input cook_placement=auto] [--input wp_cli='studio wp'] \
   [--notification-transport <transport> --notification-route <route>]
 homeboy runs show <instance>
-homeboy workflow approve <instance> approve_merge
 ```
 
 `blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_model` chooses the Cook's Pi model (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.

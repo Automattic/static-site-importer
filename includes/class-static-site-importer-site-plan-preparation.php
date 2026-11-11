@@ -1216,7 +1216,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
 		}
-		$canonical = self::splice_canonical_markup( (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
+		$canonical = self::splice_canonical_markup( $plan, (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
 
 		$plan['writes'][ $write ]['payload']['data'] = $canonical;
 		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
@@ -1227,11 +1227,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * the same document. Asset tokens live inside attribute values, so both
 	 * serializations have the same blocks in the same order: each binding's
 	 * resolved block maps to the canonical block at the same index, and the
-	 * provider replacement is spliced there, last offset first.
+	 * provider replacement is spliced there, last offset first. Providers build
+	 * replacements from the resolved markup, so each asset URL the plan resolved
+	 * returns to its token: theme files never carry build-host URLs.
 	 *
+	 * @param array<string,mixed>                                               $plan    Resolved site plan.
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
 	 */
-	private static function splice_canonical_markup( string $resolved, string $canonical, array $patches ): string {
+	private static function splice_canonical_markup( array $plan, string $resolved, string $canonical, array $patches ): string {
+		$tokens           = array_flip( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $plan['resolution']['attachment_resolutions'] ?? array() ) );
 		$resolved_ranges  = ( new BlockMarkupIndex( $resolved ) )->ranges();
 		$canonical_ranges = ( new BlockMarkupIndex( $canonical ) )->ranges();
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
@@ -1251,7 +1255,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
 			}
-			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => $patch['replacement'] );
+			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => strtr( $patch['replacement'], $tokens ) );
 		}
 		usort( $splices, static fn( array $left, array $right ): int => $right['offset'] <=> $left['offset'] );
 		foreach ( $splices as $splice ) {
@@ -1296,8 +1300,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$existing        = null;
 		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
 			$target = is_array( $candidate ) ? ( $candidate['target_path'] ?? null ) : null;
-			if ( $template_target === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
-				$template = $candidate['payload']['data'];
+			if ( $template_target === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['canonical_payload'] ?? null ) ) {
+				$template = $candidate['canonical_payload'];
 			}
 			if ( Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE === $target ) {
 				$existing = $write_index;
@@ -1306,23 +1310,16 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		if ( null === $template ) {
 			return;
 		}
-		// Keep the source page's final asset projection (including de-duplicated
-		// targets and Media Library IDs/URLs), changing only provider fragments.
-		$resolved = (string) ( $page['resolved_block_markup'] ?? '' );
-		$content  = self::splice_canonical_markup( $resolved, $resolved, $patches );
-		$count    = 0;
-		$markup   = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
+		// Theme files publish like every other template write: the canonical
+		// (token-bearing) page markup in the page template's canonical shell,
+		// resolved through the plan's portable template projection. The page's
+		// resolved markup holds build-host Media Library and theme URLs, which
+		// only the database search-replace rewrites on export.
+		$content = self::splice_canonical_markup( $plan, (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
+		$count   = 0;
+		$markup  = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
 		if ( 1 !== $count || '' === $content ) {
 			return;
-		}
-		$attachments = $plan['resolution']['attachment_resolutions'] ?? array();
-		$references  = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), $attachments );
-		try {
-			$markup = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolveMarkup( $markup, $references, $attachments );
-		} catch ( InvalidArgumentException $error ) {
-			// The plan's own reference table must cover every token it emitted.
-			// ssi-error-class: integrity
-			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
 		}
 		// The source page's portable identity travels with the template as block
 		// metadata on its first block, never a destination-specific post ID.
@@ -1340,15 +1337,24 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				1
 			);
 		}
+		try {
+			$published = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolveWritePayload( $markup, $plan['reference_tokens'] ?? array(), (string) ( $plan['resolution']['theme_uri'] ?? '' ), Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE, $plan['resolution']['attachment_resolutions'] ?? array() );
+		} catch ( InvalidArgumentException $error ) {
+			// The plan's own reference table must cover every token it emitted.
+			// ssi-error-class: integrity
+			throw new InvalidArgumentException( 'product_archive_asset_token_unresolved', 0, $error ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserve the internal resolver exception, not browser output.
+		}
 		$write = array(
 			'kind'                    => 'theme_template',
 			'source_path'             => (string) $page['source_path'],
 			'target_path'             => Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE,
 			'payload'                 => array(
 				'encoding' => 'utf8',
-				'data'     => $markup,
+				'data'     => $published,
 			),
-			'payload_hash'            => hash( 'sha256', $markup ),
+			'payload_hash'            => hash( 'sha256', $published ),
+			'canonical_payload'       => $markup,
+			'canonical_payload_hash'  => hash( 'sha256', $markup ),
 			'reconciliation_identity' => hash( 'sha256', 'theme-template:' . Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE ),
 		);
 		if ( null === $existing ) {

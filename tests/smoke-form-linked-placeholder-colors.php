@@ -50,6 +50,19 @@ $repeat = Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet
 foreach ( $assets as $target => $css ) {
 	$checks[ $target . ' is idempotent' ] = ( $repeat[ $state['theme_dir'] . '/' . $target ] ?? $css ) === $css;
 }
+$style  = $writes[ $state['theme_dir'] . '/style.css' ] ?? '';
+$editor = $writes[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ?? '';
+$checks['style.css carries one theme header'] = 1 === substr_count( $style, 'Theme Name:' ) && str_contains( $style, 'Theme Name: linked-placeholder' );
+$checks['editor-style.css carries no theme header'] = ! str_contains( $editor, 'Theme Name:' );
+$resolved_state = $state;
+foreach ( $resolved_state['resolved']['writes'] as &$write ) {
+	if ( 'style.css' === $write['target_path'] ) {
+		$write['payload']['data'] = Static_Site_Importer_Stylesheet_Materializer::scaffold_style_css( 'linked-placeholder', 'linked-placeholder' );
+	}
+}
+unset( $write );
+$resolved_style = Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes( $resolved_state, array( $overlay ) )[ $state['theme_dir'] . '/style.css' ] ?? '';
+$checks['a resolved scaffold header is kept once with its text domain'] = 1 === substr_count( $resolved_style, 'Theme Name:' ) && str_contains( $resolved_style, 'Text Domain: linked-placeholder' );
 $checks['no forms leave assets alone'] = array() === Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes( $state, array() );
 if ( in_array( '--json', $argv, true ) ) {
 	echo json_encode( array( 'assets' => $assets, 'css' => $writes[ $state['theme_dir'] . '/style.css' ], 'editor' => $writes[ $state['theme_dir'] . '/assets/css/editor-style.css' ], 'overlay' => $overlay['css'], 'markup' => $row['block_markup'] ) );

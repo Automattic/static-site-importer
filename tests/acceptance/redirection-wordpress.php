@@ -260,7 +260,7 @@ $request['source']['files'][] = array(
 	'path'    => 'website/_redirects',
 	// Redirection stores sources decoded; a percent-encoded UTF-8 alias must
 	// own one decoded rule that the encoded request still reaches (#2384).
-	'content' => "/old /destination.html 301\n/blogi/ik%C3%A4ihmisen /destination.html 301\n",
+	'content' => "/old /destination.html 301\n/blogi/ik%C3%A4ihmisen /destination.html 301\n/tag/time+%26amp%3B+place /destination.html 301\n",
 );
 $result                       = $import( $request );
 $assert( true === ( $result['success'] ?? false ), 'The identity-less CLI operator installs, prepares and configures native Redirection from typed captured aliases: ' . wp_json_encode( $result ) );
@@ -276,7 +276,7 @@ $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::availabl
 $groups       = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'group', array( 'per_page' => 200 ) );
 $native_group = array_values( array_filter( $groups['items'] ?? array(), static fn( array $group ): bool => (int) $group['id'] === (int) $scope['group_id'] ) );
 $assert( 1 === count( $native_group ) && 50 === strlen( $native_group[0]['name'] ) && 'Imported source routes: ' . substr( hash( 'sha256', $scope_name ), 0, 26 ) === $native_group[0]['name'], 'Long scope identity is preserved within the native provider name bound.' );
-$assert( array( '/blogi/ikäihmisen', '/destination.html', '/old' ) === array_keys( $scope['rules'] ), 'Served HTML and explicit aliases, the percent-encoded one in the provider canonical decoded form, are the native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
+$assert( array( '/blogi/ikäihmisen', '/destination.html', '/old', '/tag/time+&+place' ) === array_keys( $scope['rules'] ), 'Served HTML and explicit aliases, the percent-encoded one in the provider canonical decoded form, are the native Redirection rules: ' . wp_json_encode( array_keys( $scope['rules'] ) ) );
 $nested = get_page_by_path( 'notes/deep', OBJECT, 'page' );
 $assert( $nested instanceof WP_Post && '/notes/deep/' === wp_parse_url( get_permalink( $nested->ID ), PHP_URL_PATH ), 'Nested documents are committed at their own nested permalink and need no native rule.' );
 $assert( ! isset( $scope['rules']['/index.html'] ) && ! isset( $scope['rules']['/notes/deep/index.html'] ) && ! isset( $scope['rules']['/tag/topic/page/1/index.html'] ), 'Capture index filenames do not create public aliases.' );
@@ -289,6 +289,14 @@ $anonymous = rest_do_request( new WP_REST_Request( 'GET', '/redirection/v1/redir
 $assert( $anonymous->is_error() && in_array( $anonymous->get_status(), array( 401, 403 ), true ), 'A direct provider REST call without a user is still refused: ' . $anonymous->get_status() );
 $destination = get_page_by_path( 'destination', OBJECT, 'page' );
 $assert( $destination instanceof WP_Post, 'Native destination page exists.' );
+$entity_probe = wp_remote_get(
+	getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' ) . '/tag/time+%26+place',
+	array(
+		'redirection' => 0,
+		'headers'     => array( 'Host' => wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT ) ),
+	)
+);
+$assert( 301 === wp_remote_retrieve_response_code( $entity_probe ) && get_permalink( $destination->ID ) === wp_remote_retrieve_header( $entity_probe, 'location' ), 'The entity source in Redirection canonical request form reaches the committed page permalink.' );
 $receipt = array(
 	'theme'     => array( 'slug' => $scope_name ),
 	'plan'      => array(
@@ -327,6 +335,10 @@ $temporary = Static_Site_Importer_Redirection_Materializer::materialize(
 			),
 			array(
 				'from' => 'blogi/ik%C3%A4ihmisen',
+				'to'   => 'destination.html',
+			),
+			array(
+				'from' => 'tag/time+%26amp%3B+place',
 				'to'   => 'destination.html',
 			),
 			array(

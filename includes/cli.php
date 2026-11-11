@@ -1940,6 +1940,18 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
 
 	WP_CLI::add_command(
+		'static-site-importer recompose',
+		static function ( array $args, array $assoc_args ): void {
+			$result = Static_Site_Importer_Direct_Artifact_Import::recompose( (string) ( $assoc_args['import-id'] ?? '' ), (string) ( $assoc_args['output'] ?? '' ) );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_code() . ': ' . $result->get_error_message() );
+				return;
+			}
+			WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer project-layout',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );

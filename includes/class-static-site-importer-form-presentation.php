@@ -189,9 +189,11 @@ final class Static_Site_Importer_Form_Presentation {
 	/**
 	 * Inactive field errors take no space, and a placeholder without an
 	 * authored colour keeps the browser default over the provider's `inherit`.
+	 * Labels inherit source weight instead of the provider's bold default;
+	 * authored node weights keep their higher specificity.
 	 */
 	private static function provider_base_rules( string $scope ): array {
-		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' );
+		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}', '.' . $scope . ' label{font-weight:inherit}' );
 	}
 
 	/**
@@ -238,6 +240,9 @@ final class Static_Site_Importer_Form_Presentation {
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
 	public static function layout_scope( array $form ): string {
+		if ( is_string( $form['layout_scope'] ?? null ) && 1 === preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $form['layout_scope'] ) ) {
+			return $form['layout_scope'];
+		}
 		$identity = $form['fallback_identity'] ?? '';
 		if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $identity ) ) {
 			return 'ssi-form-' . substr( $identity, 0, 12 );
@@ -260,7 +265,7 @@ final class Static_Site_Importer_Form_Presentation {
 	 * parent-referencing item sizing the parent reads.
 	 *
 	 * @param mixed $graph Producer computed layout graph.
-	 * @return array{nodes:array<int,array<string,mixed>>}
+	 * @return array{nodes:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>}
 	 * @internal
 	 */
 	public static function form_item_layout_graph( mixed $graph ): array {
@@ -271,7 +276,10 @@ final class Static_Site_Importer_Form_Presentation {
 				break;
 			}
 		}
-		return array( 'nodes' => $nodes );
+		return array(
+			'nodes'    => $nodes,
+			'variants' => array_values( array_filter( is_array( $graph['variants'] ?? null ) ? $graph['variants'] : array(), static fn( $variant ): bool => is_array( $variant ) && 'form' === ( $variant['node'] ?? null ) ) ),
+		);
 	}
 
 	/**

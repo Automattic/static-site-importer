@@ -31,6 +31,9 @@ $fixture['reference_tokens']        = array(
 		'target_path' => 'assets/logo.png',
 	),
 );
+// Exercise the existing resolver-enabled bootstrap contract; the real import
+// regression separately covers archives created without a producer resolver.
+$fixture['templates']               = array( array( 'canonical_block_markup' => '<!-- wp:image --><img src="' . $token . '"><!-- /wp:image -->' ) );
 $fixture['resolution']              = array( 'theme_uri' => 'https://example.test/theme' );
 $fixture['pages'][0]['source_path'] = 'large.html';
 $fixture['pages'][0]['reconciliation_identity'] = str_repeat( 'b', 64 );
@@ -55,7 +58,7 @@ foreach ( array( array( $large, $small ), array( $small, $large ) ) as $ordered 
 	$archives = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
 	$data     = $archives[0]['payload']['data'];
 	$assert( 'large.html' === $archives[0]['source_path'], 'largest-listing-independent-of-order' );
-	$assert( ! str_contains( $data, '{{wordpress-site-plan:asset:' ) && str_contains( $data, $url ), 'archive-assets-resolved-like-source-page' );
+	$assert( str_contains( $data, $token ) && ! str_contains( $data, 'https://example.test/' ), 'archive-assets-stay-portable-template-tokens' );
 	$first = parse_blocks( $data )[0] ?? array();
 	$assert( 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ) ) && ! str_contains( $data, '<!-- ssi-' ), 'archive-identity-is-first-block-metadata-not-freeform-markup' );
 	$assert( $fixture['pages'][0]['resolved_block_markup'] === $prepared['pages'][0]['resolved_block_markup'] && $fixture['writes'][0] === $prepared['writes'][0], 'source-content-and-other-template-unchanged' );
@@ -94,7 +97,7 @@ foreach ( array(
 	$first = parse_blocks( $archive_markup )[0] ?? array();
 	$assert( 1 === count( $archives ) && $expected[1] === $archives[0]['source_path'], $case . '-archive-source' );
 	$assert( $expected[2] === ( $first['attrs']['metadata']['staticSiteImporterArchiveDocument'] ?? '' ), $case . '-archive-page-identity' );
-	$assert( str_contains( $archive_markup, $url ) && ! str_contains( $archive_markup, $token ), $case . '-archive-assets-resolved' );
+	$assert( str_contains( $archive_markup, $token ) && ! str_contains( $archive_markup, 'https://example.test/' ), $case . '-archive-assets-portable' );
 	if ( 'grid-only' === $case ) {
 		$temp = tempnam( sys_get_temp_dir(), 'ssi-grid-archive-' );
 		// Block attribute JSON permits whitespace, including in saved templates.
@@ -106,9 +109,6 @@ foreach ( array(
 		Static_Site_Importer_Product_Grid_Runtime::register();
 		$assert( 73 === apply_filters( 'blocks_engine_document_id', 0 ), 'grid-archive-resolves-source-page-for-page-scoped-styles' );
 		unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Temporary fixture cleanup.
-		preg_match_all( '/<img src="([^"]+)"/', $archive_markup, $archive_assets );
-		preg_match_all( '/<img src="([^"]+)"/', $prepared['pages'][0]['materialized_block_markup'], $page_assets );
-		$assert( $page_assets[1] === $archive_assets[1] && in_array( $url, $archive_assets[1], true ), 'grid-archive-uses-source-deduplicated-asset-urls' );
 		preg_match( '/<!-- wp:woocommerce\/product-collection (\{.*?\}) -->/s', $archive_markup, $collection );
 		$attrs = json_decode( $collection[1] ?? '{}', true );
 		$assert( true === ( $attrs['query']['inherit'] ?? false ) && ! isset( $attrs['query']['woocommerceHandPickedProducts'] ) && 'woocommerce/product-collection/product-catalog' === ( $attrs['collection'] ?? '' ), 'grid-archive-inherits-main-query' );
@@ -116,20 +116,35 @@ foreach ( array(
 	}
 }
 
-// A final source projection may differ from the canonical token table. It
-// includes materialized SVG targets and Media Library URLs/attachment IDs.
-$prepared = $fixture;
-$media_url = 'https://example.test/uploads/logo.png';
-$svg_url = 'https://example.test/theme/assets/materialized-svg/inline-2.svg';
-$prepared['resolution']['attachment_resolutions'] = array( 'logo' => array( 'id' => 91, 'url' => $media_url ) );
-$prepared['pages'][0]['resolved_block_markup'] = str_replace( $url, $media_url, $prepared['pages'][0]['resolved_block_markup'] );
-$prepared['pages'][0]['resolved_block_markup'] .= '<!-- wp:html --><img src="' . $svg_url . '"><!-- /wp:html -->';
-$reports = array();
-$diagnostics = array();
-Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, array( $grid_binding ), $reports, $diagnostics );
-$archives = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
-$archive_markup = $archives[0]['payload']['data'];
-$assert( str_contains( $archive_markup, $media_url ) && str_contains( $archive_markup, $svg_url ) && ! str_contains( $archive_markup, $url ), 'grid-archive-keeps-final-media-and-materialized-svg-resolution' );
+// Theme files never carry build-host URLs: the export search-replace rewrites
+// only the database. A Media Library image keeps its token and attachment ID,
+// exactly as the plan's portable template projection publishes it (#2769).
+$media_url = 'https://example.test/wp-content/uploads/logo.png';
+$resolver  = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::class;
+$image     = '<!-- wp:image --><figure class="wp-block-image"><img src="' . $token . '" alt=""/></figure><!-- /wp:image -->';
+$media     = array( 'logo' => array( 'id' => 91, 'url' => $media_url ) );
+$resolved  = static fn( string $markup ): string => $resolver::resolveMarkup( $markup, $resolver::references( $fixture['reference_tokens'], $fixture['resolution']['theme_uri'], $media ), $media );
+// The image sits beside the grid, or inside the region a provider replaces:
+// providers build replacements from the page's resolved markup.
+foreach ( array( 'beside-grid', 'inside-binding' ) as $placement ) {
+	$prepared = $fixture;
+	$binding  = $grid_binding;
+	$prepared['resolution']['attachment_resolutions'] = $media;
+	if ( 'beside-grid' === $placement ) {
+		$prepared['pages'][0]['canonical_block_markup'] .= $image;
+	} else {
+		$binding['replacement_block_markup'] .= $resolved( $image );
+	}
+	$prepared['pages'][0]['resolved_block_markup'] = $resolved( $prepared['pages'][0]['canonical_block_markup'] );
+	$reports     = array();
+	$diagnostics = array();
+	Static_Site_Importer_Site_Plan_Preparation::apply_runtime_entity_bindings( $prepared, array( $binding ), $reports, $diagnostics );
+	$archives       = array_values( array_filter( $prepared['writes'], static fn( array $write ): bool => 'templates/archive-product.html' === $write['target_path'] ) );
+	$archive_markup = $archives[0]['payload']['data'];
+	$assert( str_contains( $prepared['pages'][0]['materialized_block_markup'], $media_url ), $placement . '-page-content-holds-build-host-media-url' );
+	$assert( ! str_contains( $archive_markup, 'https://example.test/' ) && str_contains( $archive_markup, 'wp-image-91' ) && str_contains( $archive_markup, $token ), $placement . '-archive-media-keeps-token-and-attachment-id', $archive_markup );
+	$assert( is_string( $archives[0]['canonical_payload'] ?? null ) && $resolver::resolveWritePayload( $archives[0]['canonical_payload'], $prepared['reference_tokens'], $prepared['resolution']['theme_uri'], 'templates/archive-product.html', $media ) === $archive_markup, $placement . '-archive-write-is-its-canonical-portable-projection' );
+}
 
 $temp = tempnam( sys_get_temp_dir(), 'ssi-archive-' );
 file_put_contents( $temp, $data ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary theme fixture.

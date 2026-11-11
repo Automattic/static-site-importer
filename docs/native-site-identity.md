@@ -10,6 +10,10 @@ of `site <separator> tagline` supplies the tagline and the generated theme's
 the fallback. Existing nonempty `blogdescription` values are preserved; headings
 are not tagline evidence.
 
+Front-page post titles use the compiler's segmented plan title, not the raw
+source title used for site identity. When the source document has no title or
+the plan title is empty, the post title falls back to `Home`.
+
 Branding changes are authorized only when SSI activates its generated theme.
 Existing owner values are preserved. The site icon uses WordPress `site_icon`;
 the tagline uses `blogdescription`. Theme templates and captured header markup

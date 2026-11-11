@@ -1,6 +1,6 @@
 <?php
 /**
- * Netlify `_redirects` subset used as import-time source-route aliases.
+ * Import-time source-route aliases, including the `_redirects` subset.
  *
  * @package StaticSiteImporter
  */
@@ -18,7 +18,7 @@ if ( ! class_exists( 'Static_Site_Importer_Source_Route' ) ) {
 
 final class Static_Site_Importer_Redirects_Manifest {
 	/**
-	 * Remove a root `_redirects` file from an artifact and return its aliases.
+	 * Extract manifest aliases and collapse served HTML twins before compilation.
 	 *
 	 * @param array<string,mixed> $artifact Website artifact.
 	 * @param object|null         $payload_reader Opaque payload reference reader.
@@ -47,7 +47,49 @@ final class Static_Site_Importer_Redirects_Manifest {
 			}
 			$aliases = array_merge( $aliases, self::parse( (string) $content ) );
 		}
-		$artifact['files'] = $kept;
+		// A served HTML file and its directory default document name the same
+		// page. Collapse before compilation assigns a collision suffix; retain
+		// the other served address through the existing alias contract.
+		$by_path = array();
+		foreach ( $kept as $index => $file ) {
+			if ( is_array( $file ) && is_string( $file['path'] ?? null ) ) {
+				$by_path[ $file['path'] ] = $index;
+			}
+		}
+		$removed = array();
+		$targets = array();
+		foreach ( $by_path as $path => $index ) {
+			if ( ! preg_match( '#^(.+)/index\.html?$#', $path, $match ) ) {
+				continue;
+			}
+			foreach ( array( '.html', '.htm' ) as $extension ) {
+				$flat = $match[1] . $extension;
+				if ( ! isset( $by_path[ $flat ] ) ) {
+					continue;
+				}
+				// Explicit producer routes are authoritative, not inferred aliases.
+				if ( ! empty( $kept[ $index ]['metadata']['route_path'] ) || ! empty( $kept[ $by_path[ $flat ] ]['metadata']['route_path'] ) ) {
+					continue;
+				}
+				$target = $path;
+				$source = $flat;
+				if ( ( $artifact['entry_path'] ?? '' ) === $flat ) {
+					$target = $flat;
+					$source = $path;
+				}
+				$targets[ Static_Site_Importer_Source_Route::public_source_route( $source ) ] = Static_Site_Importer_Source_Route::public_source_route( $target );
+				$removed[ $by_path[ $source ] ] = true;
+				$aliases[]                      = array(
+					'from' => Static_Site_Importer_Source_Route::public_source_route( $source ),
+					'to'   => Static_Site_Importer_Source_Route::public_source_route( $target ),
+				);
+			}
+		}
+		foreach ( $aliases as &$alias ) {
+			$alias['to'] = $targets[ $alias['to'] ] ?? $alias['to'];
+		}
+		unset( $alias );
+		$artifact['files'] = array_values( array_diff_key( $kept, $removed ) );
 
 		return array(
 			'artifact' => $artifact,

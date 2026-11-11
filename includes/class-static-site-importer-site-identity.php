@@ -275,7 +275,7 @@ class Static_Site_Importer_Site_Identity {
 
 	/** Derive a unique majority edge segment, retaining the entry title otherwise. */
 	private static function majority_route_title( array $artifact, ?object $payload_reader, string $title ): string {
-		$counts  = array( array(), array() );
+		$counts  = array();
 		$routes  = 0;
 		$pattern = '/\s+(?:' . implode( '|', array_map( static fn( string $separator ): string => preg_quote( $separator, '/' ), self::TITLE_SEPARATORS ) ) . ')\s+/u';
 		$parts   = preg_split( $pattern, $title );
@@ -289,17 +289,15 @@ class Static_Site_Importer_Site_Identity {
 			$route_edges    = is_array( $parts ) && count( $parts ) >= 2 ? array( trim( $parts[0] ), trim( $parts[ count( $parts ) - 1 ] ) ) : array();
 			if ( $route_edges ) {
 				++$routes;
-				foreach ( $route_edges as $edge => $segment ) {
-					$counts[ $edge ][ $segment ] = ( $counts[ $edge ][ $segment ] ?? 0 ) + 1;
+				foreach ( array_unique( $route_edges ) as $segment ) {
+					$counts[ $segment ] = ( $counts[ $segment ] ?? 0 ) + 1;
 				}
 			}
 		}
 		$candidates = array();
-		foreach ( $counts as $edge_counts ) {
-			foreach ( $edge_counts as $segment => $count ) {
-				if ( '' !== (string) $segment && $count >= 2 && $count * 2 > $routes && in_array( (string) $segment, $edges, true ) ) {
-					$candidates[ $segment ] = (string) $segment;
-				}
+		foreach ( $counts as $segment => $count ) {
+			if ( '' !== (string) $segment && $count >= 2 && $count * 2 > $routes && in_array( (string) $segment, $edges, true ) ) {
+				$candidates[ $segment ] = (string) $segment;
 			}
 		}
 		if ( 1 === count( $candidates ) ) {

@@ -245,8 +245,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$front_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] );
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
-				$title         = $args['native_site_identity_evidence']['front_page_title'] ?? Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
-				$page['title'] = '' !== $title ? $title : 'Home';
+				// Without a document title, the compiler can fall back to heading
+				// text. Otherwise keep its segmented page name, not identity evidence.
+				$document_title = $args['native_site_identity_evidence']['front_page_title'] ?? Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+				$title          = '' !== $document_title ? trim( (string) ( $page['title'] ?? '' ) ) : '';
+				$page['title']  = '' !== $title ? $title : 'Home';
 			}
 			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
 				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
@@ -357,6 +360,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				$state['applied']['operations'][] = $result;
 			}
+		}
+		if ( ! self::serve_post_source_routes( $state ) ) {
+			return self::failed_receipt( $state, 'post_source_routes_not_applied' );
 		}
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
@@ -1093,10 +1099,34 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $ordered );
 		}
+		self::skip_orphaned_synthetic_parents( $state );
 		return self::share_product_templates( $state );
 	}
 
-	/** Consolidate identical bound documents; exceptional layouts keep their hierarchy overrides. */
+	/** Skip synthetic hierarchy pages that no longer have a live descendant. */
+	private static function skip_orphaned_synthetic_parents( array &$state ): void {
+		$live_descendants = array();
+		foreach ( array_reverse( array_keys( $state['ordered_pages'] ) ) as $index ) {
+			$page   = $state['ordered_pages'][ $index ];
+			$source = (string) $page['source_path'];
+			if ( ! empty( $page['synthetic'] ) && empty( $live_descendants[ $source ] ) ) {
+				$state['ordered_pages'][ $index ]['skip_materialization'] = true;
+				continue;
+			}
+			if ( empty( $page['skip_materialization'] ) || ! empty( $live_descendants[ $source ] ) ) {
+				$parent = (string) ( $page['parent_source_path'] ?? '' );
+				if ( '' !== $parent ) {
+					$live_descendants[ $parent ] = true;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Consolidate identical bound documents. The most common layout becomes
+	 * `single-product`; every other repeated layout becomes one assignable
+	 * custom template. Only one-off layouts keep their per-product override.
+	 */
 	private static function share_product_templates( array &$state ) {
 		$groups = array();
 		foreach ( $state['ordered_pages'] as $index => $page ) {
@@ -1106,21 +1136,48 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$markup                                = self::served_document( $state, $page );
 			$groups[ hash( 'sha256', $markup ) ][] = $index;
 		}
-		if ( empty( $groups ) ) {
-			return true;
-		}
 		// The most common layout is the default; ties are stable in source order.
-		usort( $groups, static fn( $a, $b ) => count( $b ) <=> count( $a ) );
-		$default = $groups[0];
-		if ( 1 === count( $default ) && count( $groups ) > 1 ) {
-			return true;
+		uasort( $groups, static fn( $a, $b ) => count( $b ) <=> count( $a ) );
+		$layout = 1;
+		foreach ( $groups as $hash => $members ) {
+			if ( 1 === $layout ) {
+				$slug = 1 < count( $members ) || 1 === count( $groups ) ? 'single-product' : null;
+			} else {
+				$slug = 1 < count( $members ) ? 'single-product-shared-' . substr( $hash, 0, 12 ) : null;
+			}
+			if ( null === $slug ) {
+				++$layout;
+				continue;
+			}
+			$shared = self::share_product_template( $state, $members, $slug, 1 === $layout ? null : 'Product layout ' . $layout );
+			if ( is_wp_error( $shared ) ) {
+				return $shared;
+			}
+			++$layout;
 		}
-		$target = 'templates/single-product.html';
-		$markup = self::served_document( $state, $state['ordered_pages'][ $default[0] ] );
+		return true;
+	}
+
+	/**
+	 * Serve products from one template; a titled template is assigned per product.
+	 *
+	 * @param array<mixed> $state   Materialization state.
+	 * @param int[]        $members Ordered page indexes with identical documents.
+	 * @return true|WP_Error
+	 */
+	private static function share_product_template( array &$state, array $members, string $slug, ?string $title ) {
+		$target = 'templates/' . $slug . '.html';
+		$markup = self::served_document( $state, $state['ordered_pages'][ $members[0] ] );
+		if ( null !== $title ) {
+			$registered = self::register_custom_template( $state, $slug, $title, 'product' );
+			if ( is_wp_error( $registered ) ) {
+				return $registered;
+			}
+		}
 		self::journal_file( $state, $state['theme_dir'] . '/' . $target );
 		$written = self::write_file( $state['theme_dir'], array(
 			'target_path' => $target,
-			'source_path' => $state['ordered_pages'][ $default[0] ]['source_path'],
+			'source_path' => $state['ordered_pages'][ $members[0] ]['source_path'],
 			'payload'     => array(
 				'encoding' => 'utf8',
 				'data'     => $markup,
@@ -1130,7 +1187,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return $written;
 		}
 		$state['applied']['files'][] = $written;
-		foreach ( $default as $index ) {
+		foreach ( $members as $index ) {
 			$obsolete = $state['ordered_pages'][ $index ]['served_template'];
 			foreach ( $state['resolved']['writes'] ?? array() as $key => $write ) {
 				if ( in_array( $write['target_path'], array( $obsolete, $target ), true ) ) {
@@ -1147,8 +1204,51 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 			$state['ordered_pages'][ $index ]['served_template'] = $target;
+			$post = (int) ( $state['source_ids'][ (string) $state['ordered_pages'][ $index ]['source_path'] ] ?? 0 );
+			if ( null !== $title && ( $post <= 0 || ! self::write_post_meta( $post, '_wp_page_template', $slug ) ) ) {
+				return new WP_Error( 'whole_page_shared_template_assignment_failed' );
+			}
 		}
 		return true;
+	}
+
+	/**
+	 * Register a custom template in the pending theme.json write.
+	 *
+	 * @param array<mixed> $state Materialization state.
+	 * @return true|WP_Error
+	 */
+	private static function register_custom_template( array &$state, string $slug, string $title, string $post_type ) {
+		foreach ( $state['resolved']['writes'] ?? array() as $key => $write ) {
+			if ( 'theme.json' !== ( $write['target_path'] ?? '' ) || 'utf8' !== ( $write['payload']['encoding'] ?? '' ) ) {
+				continue;
+			}
+			$path = $state['theme_dir'] . '/theme.json';
+			// Decode to objects so the round trip preserves empty JSON objects.
+			$theme = json_decode( $state['composed_theme_writes'][ $path ] ?? $write['payload']['data'] );
+			if ( ! $theme instanceof stdClass ) {
+				break;
+			}
+			$theme->customTemplates   = is_array( $theme->customTemplates ?? null ) ? $theme->customTemplates : array(); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- theme.json schema key.
+			$theme->customTemplates[] = array( // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- theme.json schema key.
+				'name'      => $slug,
+				'title'     => $title,
+				'postTypes' => array( $post_type ),
+			);
+
+			$data = wp_json_encode( $theme, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			if ( ! is_string( $data ) ) {
+				break;
+			}
+			$data .= "\n";
+			$state['resolved']['writes'][ $key ]['payload']['data'] = $data;
+			$state['resolved']['writes'][ $key ]['payload_hash']    = hash( 'sha256', $data );
+			if ( isset( $state['composed_theme_writes'][ $path ] ) ) {
+				$state['composed_theme_writes'][ $path ] = $data;
+			}
+			return true;
+		}
+		return new WP_Error( 'whole_page_shared_template_registration_failed' );
 	}
 
 	/** Copy admitted provider template aliases after route-link rewriting, before journaled writes. */
@@ -1927,21 +2027,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Derive the map keys using the same inputs and activation condition as WordPressSitePlan::bootstrap(). */
+	/** Derive the map keys exactly as WordPressSitePlan::bootstrap(): the asset tokens its documents reference. */
 	public static function template_asset_tokens( array $plan ): array {
-		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array() ) as $document ) {
-			if ( ! str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' ) ) {
-				continue;
+		$referenced = array();
+		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() ) as $document ) {
+			if ( preg_match_all( '/\{\{wordpress-site-plan:asset:([^}]+)\}\}/', (string) ( $document['canonical_block_markup'] ?? '' ), $matches ) ) {
+				$referenced += array_fill_keys( $matches[1], true );
 			}
-			$covered = array();
-			foreach ( $plan['reference_tokens'] ?? array() as $token ) {
-				if ( is_string( $token['token'] ?? null ) && is_string( $token['target_path'] ?? null ) ) {
-					$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
-				}
-			}
-			return $covered;
 		}
-		return array();
+		$covered = array();
+		foreach ( $plan['reference_tokens'] ?? array() as $token ) {
+			if ( is_string( $token['token'] ?? null ) && isset( $referenced[ $token['token'] ] ) && is_string( $token['target_path'] ?? null ) ) {
+				$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
+			}
+		}
+		return $covered;
 	}
 
 	/** Reject references with no runtime resolver; posts never receive a covered set. */
@@ -1952,8 +2052,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			return new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target . ': ' . $token, array(
-				'target' => $target,
-				'token'  => $token,
+				'target'      => $target,
+				'token'       => $token,
+				'diagnostics' => array(
+					array(
+						'reason_code' => 'materialization_reference_unresolved',
+						'severity'    => 'error',
+						'source_path' => $target,
+						'detail'      => 'Unresolved site-plan reference ' . $token,
+					),
+				),
 			) );
 		}
 		return null;
@@ -2943,6 +3051,45 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return $wp_rewrite->using_permalinks();
 	}
 
+	/**
+	 * Own exact post routes without changing other posts' permalink structure.
+	 * Store IDs, not slugs: core may suffix a duplicate slug across source folders.
+	 * The option and core's generated rules survive fresh requests and reimports.
+	 */
+	public static function serve_post_source_routes( array &$state ): bool {
+		$routes = get_option( 'static_site_importer_post_routes', array() );
+		$routes = is_array( $routes ) ? $routes : array();
+		$before = $routes;
+		foreach ( $state['ordered_pages'] as $page ) {
+			$id = (int) ( $state['source_ids'][ $page['source_path'] ] ?? 0 );
+			if ( $id <= 0 || ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
+			unset( $routes[ $id ] );
+			if ( 'post' !== get_post_type( $id ) ) {
+				continue;
+			}
+			$route = self::normalized_route_path( '/' . Static_Site_Importer_Source_Route::public_source_route( $page['source_path'] ) );
+			if ( '' !== $route ) {
+				$routes[ $id ] = $route;
+			}
+		}
+		if ( $routes === $before ) {
+			return true;
+		}
+		self::journal_option( $state, 'static_site_importer_post_routes' );
+		if ( ! self::write_option( 'static_site_importer_post_routes', $routes ) ) {
+			return false;
+		}
+		flush_rewrite_rules( false );
+		$state['applied']['operations'][] = array(
+			'kind'        => 'set_post_source_routes',
+			'reason_code' => 'imported_posts_keep_source_routes',
+			'routes'      => $routes,
+		);
+		return true;
+	}
+
 	/** Move core rewrite bases that would route an imported page path to an archive. */
 	public static function keep_page_routes_reachable( array &$state ): bool {
 		// Without a rewrite engine there are no pretty routes to shadow.
@@ -3311,7 +3458,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				self::record_rollback_failure( $state, 'option', (string) $option, $error );
 			}
 		}
-		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) || isset( $options['permalink_structure'] ) ) {
+		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) || isset( $options['permalink_structure'] ) || isset( $options['static_site_importer_post_routes'] ) ) {
 			delete_option( 'rewrite_rules' );
 		}
 	}

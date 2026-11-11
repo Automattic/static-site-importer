@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contact</title>
+<style>
+body { font-family: sans-serif; margin: 2rem; }
+.contact-form input:not([type="submit"]), .contact-form textarea { background-color: #fff; background-image: none; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<main>
+<h1>Contact</h1>
+<form class="contact-form" method="post" action="/contact">
+  <p><label for="name">Name</label><input type="text" id="name" name="name"></p>
+  <p><label for="email">Email</label><input type="email" id="email" name="email"></p>
+  <p><label for="message">Message</label><textarea id="message" name="message"></textarea></p>
+  <p><input type="submit" value="Send"></p>
+</form>
+</main>
+</body>
+</html>

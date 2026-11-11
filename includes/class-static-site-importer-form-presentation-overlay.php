@@ -317,10 +317,34 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( null === $node ) {
 			return;
 		}
+		self::compile_form_item_rule( $pass, $node['layout'] );
+		foreach ( $graph['variants'] ?? array() as $variant ) {
+			if ( 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
+				continue;
+			}
+			$condition = $variant['condition'] ?? null;
+			if ( self::is_media_all( $condition ) ) {
+				$condition = null;
+			} elseif ( ! self::safe_condition( $condition ) || 'state' === ( $condition['kind'] ?? null ) ) {
+				continue;
+			}
+			self::compile_form_item_rule( $pass, $variant['layout_patch'], $condition );
+		}
+	}
+
+	/**
+	 * Emit the same bounded item facts for base layout and conditional patches.
+	 *
+	 * @param array                  $pass      Compile pass.
+	 * @param array<string,string>   $layout    Source item facts.
+	 * @param array<string,mixed>|null $condition Variant condition.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_form_item_rule( array &$pass, array $layout, ?array $condition = null ): void {
 		$declared     = $pass['declared'];
 		$map          = self::form_item_fact_map();
 		$declarations = array();
-		foreach ( array_intersect_key( $node['layout'], $map ) as $fact => $value ) {
+		foreach ( array_intersect_key( $layout, $map ) as $fact => $value ) {
 			// Length margins would arrive twice, once here and once through the
 			// box's own copy of the source stylesheet; only the free-space kind
 			// can be restated safely, and it only consumes free space once.
@@ -336,7 +360,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			return;
 		}
 		$target               = $pass['scope'] . $declared['form_item']['suffix'];
-		$pass['rules'][]      = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $target ) ) . '{' . implode( ';', $declarations ) . '}';
+		$rule                 = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $target ) ) . '{' . implode( ';', $declarations ) . '}';
+		$pass['rules'][]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 		$pass['operations'][] = array(
 			'dimension'   => 'layout',
 			'strategy'    => $declared['form_item']['strategy'],
@@ -355,6 +380,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		return array(
 			'width'        => 'width',
 			'max_width'    => 'max-width',
+			'min_width'    => 'min-width',
 			'margin_left'  => 'margin-left',
 			'margin_right' => 'margin-right',
 			'flex'         => 'flex',
@@ -925,6 +951,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
+		// Admit only the scoped label-weight reset, not arbitrary label styling.
+		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} label\{font-weight:inherit\}$/D', $rule ) ) {
+			return true;
+		}
 		// Provider dropdown chrome may only be suppressed within a generated
 		// select hook. Do not admit arbitrary declarations on provider icons.
 		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
@@ -1265,12 +1295,15 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	/** Adapter maps may select only these captured presentation properties. */
 	public static function presentation_property_map(): array {
 		$keys = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'inset', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width', 'flex_shrink', 'position', 'transform' );
-		$keys = array_merge( $keys, array( 'font', 'align_items', 'flex_direction', 'flex_wrap', 'gap', 'justify_content' ) );
+		$keys = array_merge( $keys, array( 'font', 'align_items', 'flex_direction', 'flex_wrap', 'gap', 'column_gap', 'justify_content' ) );
 		$keys = array_merge( $keys, array( 'align_self', 'justify_self', 'top', 'right', 'bottom', 'left' ) );
 		$keys = array_merge( $keys, array( 'flex', 'flex_basis', 'flex_grow', 'margin_block', 'margin_inline', 'order', 'z_index' ) );
 		// A source can author vertical/horizontal padding through the same two-value
 		// logical shorthand already admitted for margin above.
 		$keys = array_merge( $keys, array( 'padding_block', 'padding_inline', 'grid_column', 'grid_row', 'grid_area' ) );
+		// The producer reports a control's background longhands alongside its fill
+		// (a `background-image:none` reset, say); url() values stay unsafe values.
+		$keys = array_merge( $keys, array( 'background_image', 'background_position', 'background_repeat', 'background_size' ) );
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
@@ -1321,7 +1354,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$ranks[ str_replace( '-', '_', $property ) ] = array( $rank['important'], $rank['specificity'], $rank['source_order'] );
 		}
 		$shorthands = array(
-			'background'    => array( 'background_color' ),
+			'background'    => array( 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size' ),
 			'border'        => array( 'border_color', 'border_style', 'border_width' ),
 			'border_color'  => array(),
 			'border_style'  => array(),

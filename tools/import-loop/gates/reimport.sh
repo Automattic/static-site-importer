@@ -8,7 +8,8 @@
 # Usage: reimport.sh <php-transformer dir> <capture root> <site dir>
 # Env: BARE_WP (template from bare-wp.sh), SSI_ZIP (Static Site Importer release zip)
 set -euo pipefail
-transformer=$(cd "$1" && pwd); capture=$(cd "$2" && pwd); site=$3
+# The capture resolves to its physical path: the importer refuses a symlinked source.
+transformer=$(cd "$1" && pwd); capture=$(cd "$2" && pwd -P); site=$3
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 here=$(cd "$(dirname "$0")" && pwd)
 bash "$here/bare-wp.sh" "${BARE_WP:?}"
@@ -57,7 +58,8 @@ $file = __DIR__ . parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH );
 if ( is_file( $file ) ) return false;
 require __DIR__ . '/index.php';
 PHP
-setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
+# The block editor fires dozens of parallel requests; one worker serializes them.
+PHP_CLI_SERVER_WORKERS=8 setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
 echo $! > "$site/.server.pid"
 for _ in $(seq 50); do curl -fs -o /dev/null "$url/" && break; sleep 0.2; done
 echo "$url"

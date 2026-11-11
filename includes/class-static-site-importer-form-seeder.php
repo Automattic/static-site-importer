@@ -255,7 +255,55 @@ class Static_Site_Importer_Form_Seeder {
 		if ( 'donation' === Static_Site_Importer_Form_Fallback_Contract::intent( $form ) ) {
 			return Static_Site_Importer_Jetpack_Donations::seed_form( $form, $available );
 		}
-		return self::plan_form( $form, $available )->to_report();
+		$report = self::plan_form( $form, $available )->to_report();
+		$scope  = self::presentation_scope( $report, Static_Site_Importer_Form_Presentation::layout_scope( $form ) );
+		if ( null === $scope || isset( $form['layout_scope'] ) ) {
+			return $report;
+		}
+		return self::plan_form( array_merge( $form, array( 'layout_scope' => $scope ) ), $available )->to_report();
+	}
+
+	/**
+	 * Name a form's generated classes after its presentation, not its route.
+	 *
+	 * The same form captured on many routes then shares one class and one
+	 * stylesheet rule set, and templates that hold it stay identical. The
+	 * markup and every overlay rule are hashed with the route-derived classes
+	 * relabeled in first-use order, so equal names imply equal output.
+	 */
+	private static function presentation_scope( array $report, string $scope ): ?string {
+		if ( empty( $report['runtime_mapped'] ) || ! is_string( $report['block_markup'] ?? null ) ) {
+			return null;
+		}
+		// Digests and labels are derived from the scoped rules; leave them out.
+		$without_digests = static function ( $value ) use ( &$without_digests ) {
+			if ( ! is_array( $value ) ) {
+				return $value;
+			}
+			foreach ( $value as $key => $item ) {
+				if ( is_string( $key ) && preg_match( '/(?:sha256|_hash)$/', $key ) ) {
+					unset( $value[ $key ] );
+					continue;
+				}
+				$value[ $key ] = $without_digests( $item );
+			}
+			return $value;
+		};
+
+		$presentation = $without_digests( array( $report['provider_layout_overlay_css'] ?? null, $report['provider_layout_target_map'] ?? null ) );
+		$output       = str_replace( $scope, 'ssi-form', $report['block_markup'] . "\n" . json_encode( $presentation, JSON_UNESCAPED_SLASHES ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Deterministic standalone contract.
+		$output       = (string) preg_replace( '#/\*.*?\*/#s', '', $output );
+
+		$nodes  = array();
+		$output = (string) preg_replace_callback(
+			'/ssi-node-[a-f0-9]{12}/',
+			static function ( array $node ) use ( &$nodes ): string {
+				$nodes[ $node[0] ] ??= 'ssi-node-' . count( $nodes );
+				return $nodes[ $node[0] ];
+			},
+			$output
+		);
+		return 'ssi-form-' . substr( hash( 'sha256', $output ), 0, 12 );
 	}
 
 	/** Prepare readable fields, presentation destinations and the support decision. */

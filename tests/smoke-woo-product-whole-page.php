@@ -117,6 +117,24 @@ file_put_contents( $state['theme_dir'] . '/templates/page-mug.html', $route_temp
 $apply = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'apply_whole_page_handoffs' );
 $arguments = array( &$state );
 $assert( true === $apply->invokeArgs( null, $arguments ), 'Product handoff commits.' );
+$hierarchy = array(
+	array( 'source_path' => 'item/index.html', 'parent_source_path' => '', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/index.html', 'parent_source_path' => 'item/index.html', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/abc123/index.html', 'parent_source_path' => 'item/mug/index.html', 'skip_materialization' => true, 'provider_owned' => true ),
+);
+$hierarchy_state = array( 'ordered_pages' => $hierarchy );
+$prune = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'skip_orphaned_synthetic_parents' );
+$prune_args = array( &$hierarchy_state );
+$prune->invokeArgs( null, $prune_args );
+$assert( ! empty( $hierarchy_state['ordered_pages'][0]['skip_materialization'] ) && ! empty( $hierarchy_state['ordered_pages'][1]['skip_materialization'] ), 'Handoff retires synthetic ancestors with no live descendant.' );
+$hierarchy_state = array( 'ordered_pages' => array(
+	array( 'source_path' => 'item/index.html', 'parent_source_path' => '', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/index.html', 'parent_source_path' => 'item/index.html', 'synthetic' => true ),
+	array( 'source_path' => 'item/mug/catalog/index.html', 'parent_source_path' => 'item/mug/index.html' ),
+) );
+$prune_args = array( &$hierarchy_state );
+$prune->invokeArgs( null, $prune_args );
+$assert( empty( $hierarchy_state['ordered_pages'][0]['skip_materialization'] ) && empty( $hierarchy_state['ordered_pages'][1]['skip_materialization'] ), 'Synthetic ancestors remain when a live descendant exists.' );
 $assert( 'A sturdy mug.' === get_post_field( 'post_content', $id ), 'Handoff leaves the product description intact.' );
 $assert( 'completed' === $state['applied']['runtime_declarations']['entity_bindings'][0]['status'], 'Add-to-cart binding completes on the product that serves the page.' );
 $assert( 'draft' === get_post( 10 )->post_status, 'Captured page is no longer published.' );
@@ -278,12 +296,12 @@ foreach ( array( 'gallery only' => false, 'shared design reference' => true ) as
 }
 $unknown = '<!-- wp:paragraph --><p>Unbacked promotion</p><!-- /wp:paragraph -->';
 $assert( $unknown === Static_Site_Importer_Product_Field_Blocks::bind_document( $unknown, $row ), 'Unbacked source stays editable source markup' );
-// Table: a shared layout and a structural outlier.
-foreach ( array( 'same-layout' => false, 'structural-outlier' => true ) as $case => $outlier ) {
+// Table: one shared layout, a one-off outlier, and a repeated second layout.
+foreach ( array( 'same-layout' => array( 'cup', 'plate' ), 'structural-outlier' => array( 'cup', 'plate', 'bowl' ), 'repeated-layout' => array( 'cup', 'plate', 'bowl', 'saucer' ) ) as $case => $slugs ) {
+	$outlier = 2 < count( $slugs );
 	$rows = array();
 	$documents = array();
-	foreach ( array( 'cup', 'plate', 'bowl' ) as $index => $slug ) {
-		if ( ! $outlier && 2 === $index ) { continue; }
+	foreach ( $slugs as $index => $slug ) {
 		$product = $row;
 		$product['id'] = $slug;
 		$product['slug'] = $slug;
@@ -293,7 +311,7 @@ foreach ( array( 'same-layout' => false, 'structural-outlier' => true ) as $case
 		$product['source_route'] = '/products/' . $slug;
 		$body = '<!-- wp:heading {"level":3,"className":"source-title"} --><h3 class="source-title">' . $product['name'] . '</h3><!-- /wp:heading -->'
 			. '<!-- wp:paragraph --><p>$' . $product['regular_price'] . '</p><!-- /wp:paragraph -->';
-		if ( $outlier && 2 === $index ) { $body .= '<!-- wp:paragraph --><p>Special layout</p><!-- /wp:paragraph -->'; }
+		if ( 2 <= $index ) { $body .= '<!-- wp:paragraph --><p>Special layout</p><!-- /wp:paragraph -->'; }
 		$documents[] = array( 'source_path' => $product['source_path'], 'route' => array( 'path' => $product['source_route'] ), 'reconciliation_identity' => $slug, 'post_type' => 'page', 'resolved_block_markup' => $body );
 		$rows[] = $product;
 	}
@@ -304,14 +322,26 @@ foreach ( array( 'same-layout' => false, 'structural-outlier' => true ) as $case
 	}
 	unset( $document );
 	$probe = array( 'resolved' => array( 'writes' => array() ), 'args' => array( 'whole_page_provider_results' => $seeded['whole_page_results'] ), 'ordered_pages' => $documents, 'diagnostics' => array(), 'source_route_aliases' => array(), 'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array() ) ), 'theme_dir' => sys_get_temp_dir() . '/ssi-bound-' . uniqid() );
+	$probe['resolved']['writes'][] = array( 'kind' => 'theme_scaffold', 'target_path' => 'theme.json', 'payload' => array( 'encoding' => 'utf8', 'data' => '{"version":3,"styles":{"elements":{}}}' . "\n" ) );
 	$args = array( &$probe );
 	$assert( true === $apply->invokeArgs( null, $args ), $case . ': commits' );
 	$files = glob( $probe['theme_dir'] . '/templates/*.html' );
 	$assert( count( $files ) === ( $outlier ? 2 : 1 ), $case . ': template count' );
 	$shared = file_get_contents( $probe['theme_dir'] . '/templates/single-product.html' );
 	$assert( str_contains( $shared, 'wp:post-title' ) && str_contains( $shared, 'wp:woocommerce/product-price' ) && str_contains( $shared, 'wp:woocommerce/add-to-cart-form' ), $case . ': bound fields' );
+	// WooCommerce's product-price save() is empty only with a declared product context.
+	$assert( 1 === preg_match( '~<!-- wp:woocommerce/product-price \{[^}]*"isDescendentOfSingleProductTemplate":true[^}]*\} /-->~', $shared ), $case . ': price block valid in the editor' );
 	$assert( ! str_contains( $shared, '$27.99' ) && ! str_contains( $shared, 'Cup' ), $case . ': no frozen fields' );
-	$assert( ! $outlier || is_file( $probe['theme_dir'] . '/templates/single-product-bowl.html' ), 'Outlier retains its template' );
+	$theme_json = end( $probe['resolved']['writes'] )['payload']['data'];
+	if ( 4 === count( $slugs ) ) {
+		$alternate = basename( (string) current( preg_grep( '~/single-product-shared-[0-9a-f]{12}\.html$~', $files ) ), '.html' );
+		$assigned  = array_map( static fn( array $product ): string => (string) get_post_meta( $product['id'], '_wp_page_template', true ), $seeded['products'] );
+		$assert( '' !== $alternate && array( '', '', $alternate, $alternate ) === $assigned, $case . ': repeated layout is one assigned template' );
+		$assert( str_contains( $theme_json, '{"name":"' . $alternate . '","title":"Product layout 2","postTypes":["product"]}' ) && str_contains( $theme_json, '"elements":{}' ), $case . ': layout registered in theme.json' );
+	} else {
+		$assert( ! $outlier || is_file( $probe['theme_dir'] . '/templates/single-product-bowl.html' ), 'Outlier retains its template' );
+		$assert( ! str_contains( $theme_json, 'customTemplates' ), $case . ': no custom template registered' );
+	}
 	foreach ( $files as $file ) { unlink( $file ); }
 	rmdir( $probe['theme_dir'] . '/templates' );
 	rmdir( $probe['theme_dir'] );

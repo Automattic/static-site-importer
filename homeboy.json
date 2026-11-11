@@ -201,6 +201,7 @@
           }
         ],
         "standalone_php_test_paths": [
+          "tests/smoke-product-grid-inline-svg-import.php",
           "tests/smoke-media-rebind-error.php",
           "tests/smoke-raw-html-companion-quality.php",
           "tests/smoke-product-summary-readability.php",
@@ -218,13 +219,19 @@
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-contract.php",
           "tests/smoke-form-responsive-border.php",
+          "tests/smoke-form-responsive-item-sizing.php",
+          "tests/smoke-form-scope-shared-across-routes.php",
           "tests/smoke-form-input-border-reset.php",
+          "tests/smoke-form-control-background-image-reset.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-readable-substitution.php",
+          "tests/smoke-form-caption-presentation.php",
           "tests/smoke-shared-part-form.php",
           "tests/smoke-form-control-box-shell.php",
           "tests/smoke-form-control-box-frame-paint.php",
           "tests/smoke-form-wrapping-choice-label.php",
+          "tests/smoke-form-label-equals-description.php",
+          "tests/smoke-form-visible-copy.php",
           "tests/smoke-form-button-parent.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/smoke-form-linked-placeholder-colors.php",
@@ -248,6 +255,7 @@
           "tests/smoke-companion-inventory-readme.php",
           "tests/smoke-companion-plugin-js.php",
           "tests/smoke-companion-plugin.php",
+          "tests/smoke-post-source-routes.php",
           "tests/smoke-companion-text-shadow-real-kses.php",
           "tests/smoke-compiler-file-limits.php",
           "tests/smoke-contact-layout-transformer.php",
@@ -285,6 +293,7 @@
           "tests/smoke-google-fonts-request-budget.php",
           "tests/smoke-google-fonts-retry-determinism.php",
           "tests/smoke-html-runtime-capabilities.php",
+          "tests/smoke-markdown-html-entrypoint.php",
           "tests/smoke-ico-site-identity.php",
           "tests/smoke-import-destination.php",
           "tests/smoke-import-diagnostic-contract.php",
@@ -327,6 +336,7 @@
           "tests/smoke-provider-overlay-compaction.php",
           "tests/smoke-provider-presentation.php",
           "tests/smoke-provider-presentation-cascade.php",
+          "tests/smoke-provider-presentation-label-weight.php",
           "tests/smoke-provider-submission-evidence.php",
           "tests/smoke-quality-budget-admission.php",
           "tests/smoke-product-materializer.php",
@@ -346,6 +356,7 @@
           "tests/smoke-product-grid-runtime-flatten.php",
           "tests/smoke-source-normalizer.php",
           "tests/smoke-submit-caption-color.php",
+          "tests/smoke-form-label-gap.php",
           "tests/smoke-synced-pattern-materializer.php",
           "tests/smoke-tec-event-seeder.php",
           "tests/smoke-tec-whole-page-media.php",
@@ -383,7 +394,9 @@
           "tests/source-local-post-date.php",
           "tests/smoke-block-theme-scorecard.php",
           "tests/smoke-wordpress-site-plan-materializer.php",
-          "tests/smoke-comment-entities.php"
+          "tests/smoke-comment-entities.php",
+          "tests/smoke-direct-artifact-recompose.php",
+          "tests/smoke-source-route-twins.php"
         ]
       }
     }

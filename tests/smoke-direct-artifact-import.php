@@ -538,7 +538,7 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
-$assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && null === $frozen_workspace->read_raw( 'artifact.json' ) && null === $frozen_workspace->read_raw( 'shared-plan.json' ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a completed run prunes resume-only checkpoints and keeps its terminal response' );
+$assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && is_string( $frozen_workspace->read_raw( 'artifact.json' ) ) && is_string( $frozen_workspace->read_raw( 'shared-plan.json' ) ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a quality-failed completed run retains composition inputs and its terminal response' );
 $completed_run = json_decode( (string) $frozen_workspace->read_raw( 'run.json' ), true );
 $assert( $timed_run['payload']['step_timings'] === ( $completed_run['payload']['step_timings'] ?? null ), 'compile and compose step timings must survive resume and terminal checkpoint pruning' );
 $replayed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
@@ -942,7 +942,7 @@ $ambiguous_request['source'] = array( 'type' => 'files', 'import_id' => $interru
 $ambiguous = Static_Site_Importer_Canonical_Import_Service::import( $ambiguous_request );
 $assert( 'static_site_importer_direct_artifact_materialization_ambiguous' === ( $ambiguous['error']['code'] ?? '' ) && $mutations_before_interruption + 1 === $GLOBALS['ssi_direct_mutations'], 'resume across the mutation receipt boundary must fail closed instead of repeating WordPress mutation' );
 $kept = array_values( array_diff( (array) scandir( $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' . $interrupted_id ), array( '.', '..' ) ) );
-$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' ) ) && in_array( 'materialization-claim', $kept, true ), 'a terminal materialization failure keeps only its evidence: ' . implode( ',', $kept ) );
+$assert( array() === array_diff( $kept, array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan', 'artifact.json', 'artifact-files', 'shared-plan.json', 'shared-files', 'page-plans', 'receipts', 'payloads' ) ) && in_array( 'materialization-claim', $kept, true ), 'a terminal materialization failure keeps evidence and composition inputs: ' . implode( ',', $kept ) );
 
 $fail_run_after_receipt = true;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_checkpoint_publish'][] = static function ( $allowed, string $kind, string $relative, array $evidence ) use ( &$fail_run_after_receipt ) {
@@ -1100,6 +1100,25 @@ foreach (
 	$assert( ! empty( $recovered['success'] ) && empty( $recovered['continuation'] ), 'a composition failing with ' . $label . ' must remain resumable' );
 }
 
+// Exercise the real canonical build boundary, not fail() or the projector in isolation.
+$type_error_line = 0;
+$type_error_hook = static function ( string $phase ) use ( &$type_error_line ): void {
+	if ( 'compose' === $phase ) {
+		$type_error_line = __LINE__ + 1;
+		throw new TypeError( 'Known build failure at /private/server/input; api_key=hidden.' );
+	}
+};
+add_action( 'static_site_importer_direct_artifact_before_phase', $type_error_hook );
+$type_failed = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+remove_action( 'static_site_importer_direct_artifact_before_phase', $type_error_hook );
+$type_message = (string) ( $type_failed['error']['message'] ?? '' );
+$assert( str_contains( $type_message, 'TypeError:' ) && str_contains( $type_message, 'tests/smoke-direct-artifact-import.php:' . $type_error_line ), 'the public build failure must name the TypeError file and line: ' . $type_message );
+$assert( str_contains( $type_message, 'includes/class-static-site-importer-direct-artifact-import.php:' ), 'the public build failure must include importer call frames' );
+$type_diagnostic = $type_failed['diagnostics'][0] ?? array();
+$assert( $type_message === ( $type_diagnostic['message'] ?? '' ) && $type_message === ( $type_failed['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['message'] ?? '' ), 'exception locations must survive every public projection unchanged' );
+$type_json = (string) wp_json_encode( $type_failed, JSON_UNESCAPED_SLASHES );
+$assert( ! str_contains( $type_json, dirname( __DIR__ ) ) && ! str_contains( $type_json, '/private/server' ) && ! str_contains( $type_json, 'hidden' ), 'exception evidence must not expose absolute paths or secrets' );
+
 $throw_detailed_compose = true;
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( &$throw_detailed_compose ): void {
 	if ( $throw_detailed_compose && 'compose' === $phase ) {
@@ -1109,7 +1128,7 @@ $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phas
 };
 $detailed_throw      = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $detailed_throw_json = (string) wp_json_encode( $detailed_throw );
-$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $detailed_throw['error']['code'] ?? '' ) && 'Materialization failed (static_site_importer_direct_artifact_phase_failed): InvalidArgumentException: Entity declaration at [path] is invalid; api_key=[redacted] rejected.' === ( $detailed_throw['error']['message'] ?? '' ), 'a thrown phase failure must surface its redacted exception class and message: ' . ( $detailed_throw['error']['message'] ?? '' ) );
+$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $detailed_throw['error']['code'] ?? '' ) && str_starts_with( ( $detailed_throw['error']['message'] ?? '' ), 'Materialization failed (static_site_importer_direct_artifact_phase_failed): InvalidArgumentException: Entity declaration at [path] is invalid; api_key=[redacted] rejected. at tests/smoke-direct-artifact-import.php:' ), 'a thrown phase failure must surface its redacted exception class and message: ' . ( $detailed_throw['error']['message'] ?? '' ) );
 $assert( 'InvalidArgumentException' === ( $detailed_throw['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['exception_class'] ?? '' ) && 'compose' === ( $detailed_throw['diagnostics'][0]['phase'] ?? '' ) && ! str_contains( $detailed_throw_json, '/var/www' ) && ! str_contains( $detailed_throw_json, 'abc123' ), 'thrown phase failure evidence must be redacted and bounded' );
 
 $quality_failure_data = array(
@@ -1490,9 +1509,11 @@ $capture_documents = array_merge(
 	$capture_compiled['wordpress_site_plan']['template_parts'] ?? array()
 );
 $capture_markup = implode( '\n', array_column( $capture_documents, 'canonical_block_markup' ) );
-$assert( str_contains( $capture_markup, '<dialog' ) && str_contains( $capture_markup, 'data-blocks-engine-triggers="menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
-$capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), 'data-blocks-engine-triggers="menu-toggle"' ) ) );
-$assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '<dialog' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
+// Blocks Engine lowers a captured dialog to a core group whose metadata
+// carries the dialog element and its trigger binding.
+$assert( str_contains( $capture_markup, '"blocksEngineDialog":{"tagName":"dialog"' ) && str_contains( $capture_markup, '"data-blocks-engine-triggers":"menu-toggle"' ), 'capture request-bundle must project a dialog bound to the source menu toggle' );
+$capture_dialog_documents = array_values( array_filter( $capture_documents, static fn ( $document ): bool => is_array( $document ) && str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '"data-blocks-engine-triggers":"menu-toggle"' ) ) );
+$assert( 1 === count( $capture_dialog_documents ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), '"blocksEngineDialog":{"tagName":"dialog"' ) && str_contains( (string) ( $capture_dialog_documents[0]['canonical_block_markup'] ?? '' ), 'id="menu-toggle"' ), 'the captured dialog must stay in one document with its menu-toggle trigger so a shared header keeps the binding after template-part extraction' );
 
 $GLOBALS['ssi_direct_test_retained_plan'] = true;
 $retained_result = $drive_apply( $input() );

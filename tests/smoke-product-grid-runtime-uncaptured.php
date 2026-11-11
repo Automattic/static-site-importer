@@ -285,6 +285,26 @@ foreach ( array( 'wrapper', 'image', 'native' ) as $crop_source ) {
 	$single = Static_Site_Importer_Product_Field_Blocks::field( parse_blocks( $image )[0], 'image' );
 	$assert( 'woocommerce/product-image-gallery' === $single['blockName'], 'single-product gallery mapping unchanged' );
 }
+// A card whose root already links to the product keeps one anchor: its loop
+// image must not render a second, nested link.
+$linked_card = '<!-- wp:group {"tagName":"a"} --><a class="item" href="/products/alpha/"><!-- wp:group --><div class="img"><!-- wp:image --><figure><img src="/a.jpg"></figure><!-- /wp:image --></div><!-- /wp:group --><!-- wp:heading {"level":3} --><h3>Alpha</h3><!-- /wp:heading --></a><!-- /wp:group -->';
+$linked_grid = array(
+	'source_path'   => 'index.html',
+	'selector'      => '.items',
+	'bindings'      => array( array( 'search_block_markup' => '<!-- wp:group --><div class="items">' . $linked_card . '</div><!-- /wp:group -->' ) ),
+	'items'         => array( array( 'product' => 'alpha' ), array( 'product' => 'beta' ) ),
+	'item_template' => array(
+		'block_markup' => $linked_card,
+		'slots'        => array(
+			array( 'id' => 'image', 'role' => 'image', 'path' => array( 0, 0 ) ),
+			array( 'id' => 'name', 'role' => 'name', 'path' => array( 1 ) ),
+		),
+	),
+);
+$linked_item = parse_blocks( Static_Site_Importer_Woo_Product_Grid_Materializer::binding_block_markup( $linked_grid, array( 'status' => 'mapped' ) ) )[0]['innerBlocks'][0]['innerBlocks'][0]['innerBlocks'][0] ?? array();
+$linked_img  = $linked_item['innerBlocks'][0]['innerBlocks'][0] ?? array();
+$assert( str_starts_with( (string) ( $linked_item['innerContent'][0] ?? '' ), '<a class="item"' ), 'linked card keeps its source anchor' );
+$assert( 'woocommerce/product-image' === ( $linked_img['blockName'] ?? '' ) && false === ( $linked_img['attrs']['isLink'] ?? null ), 'loop image inside a linked card does not link again' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

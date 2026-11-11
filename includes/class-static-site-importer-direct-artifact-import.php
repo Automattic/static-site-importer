@@ -1071,16 +1071,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $final_ref ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $final_ref );
 			}
-			$run['refs'] = array( 'final' => $final_ref );
-			$write       = self::write_run( $workspace, $run );
+			$retain_composition = empty( $response['success'] ) || false === ( $response['fixture_diagnostics']['success'] ?? true );
+			$run['refs']        = $retain_composition ? array_merge( $run['refs'], array( 'final' => $final_ref ) ) : array( 'final' => $final_ref );
+			$write              = self::write_run( $workspace, $run );
 			if ( is_wp_error( $write ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $write );
 			}
-			// A completed run replays only its terminal response. Intermediate
-			// checkpoints (source artifact, plans, receipts, the composed site)
-			// exist to resume work and would otherwise stay on disk until expiry.
+			// A clean completed run replays only its terminal response. Failed
+			// quality verdicts retain composition inputs for diagnostic replay.
 			// A returned plan still references retained payloads by identity.
-			$retained = self::terminal_retention( 'plan' === $run['binding']['operation'] );
+			$retained = self::terminal_retention( 'plan' === $run['binding']['operation'], $retain_composition );
 			if ( isset( $response['result']['response_artifacts']['artifacts']['wordpress_site_plan']['json_pointer'] ) ) {
 				$retained[] = 'composed-result.json';
 			}
@@ -1156,6 +1156,82 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$input          = array_intersect_key( $plan, array_flip( array( 'shared_digest', 'page_id', 'artifact', 'layout_geometry_proof', 'receipt_schema', 'compiled_documents', 'owned_document_paths', 'shared_reduction_digest', 'terminal_reduction', 'compiler_options', 'output_schema' ) ) );
 		$plan['digest'] = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::hash( $input, 512 );
 		return $plan;
+	}
+
+	/** Replay only composition with the currently installed compiler, never materialization. */
+	public static function recompose( string $import_id, string $output = '' ) {
+		if ( 1 !== preg_match( '/^[a-f0-9]{64}$/', $import_id ) ) {
+			return new WP_Error( 'static_site_importer_recompose_import_id_invalid', 'Recompose requires a valid --import-id.' );
+		}
+		$workspace = self::workspace( $import_id, false );
+		if ( is_wp_error( $workspace ) ) {
+			return $workspace;
+		}
+		self::$checkpoint_read_cache = array();
+		try {
+			$run = self::read_run( $workspace, $import_id );
+			if ( is_wp_error( $run ) ) {
+				return $run;
+			}
+			$shared   = self::read_checkpoint( $workspace, $run, $run['refs']['shared'] ?? array(), 'shared' );
+			$artifact = self::read_checkpoint( $workspace, $run, $run['refs']['artifact'] ?? array(), 'artifact' );
+			if ( is_wp_error( $shared ) || is_wp_error( $artifact ) ) {
+				return new WP_Error( 'static_site_importer_recompose_checkpoints_unavailable', 'Recompose requires retained shared-plan.json, artifact.json and their file shards. Successful or expired runs may have pruned them.' );
+			}
+			$receipts = self::complete_receipts( $workspace, $run, $shared['plan'] );
+			if ( is_wp_error( $receipts ) ) {
+				return new WP_Error( 'static_site_importer_recompose_checkpoints_unavailable', 'Recompose requires valid retained page-plans and one compiled receipt per frozen page. ' . $receipts->get_error_message() );
+			}
+			/** @var \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader $reader */
+			$reader = self::payload_reader( $workspace );
+			foreach ( $artifact['artifact']['files'] as $file ) {
+				$reference = $file['payload_reference'] ?? $file['payload']['reference'] ?? null;
+				if ( is_array( $reference ) ) {
+					/** @var array{schema: string, id: string, bytes: int, sha256: string} $reference */
+					$reader->read( $reference );
+				}
+			}
+			$compiler = self::compiler();
+			if ( is_wp_error( $compiler ) ) {
+				return $compiler;
+			}
+			$result  = $compiler->compose( $shared['plan'], array_values( $receipts ), $reader );
+			$compact = $result->toCompactWordPressSitePlanView();
+			if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $compact['schema'] ?? '' ) ) {
+				return new WP_Error( 'static_site_importer_recompose_result_invalid', 'The compiler did not return a compact WordPress site plan view.' );
+			}
+			$output = '' !== $output ? $output : $workspace->path( 'recomposed-result.json' );
+			$json   = wp_json_encode( $compact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes an operator-selected local replay artifact.
+			if ( false === $json || false === file_put_contents( $output, $json . "\n" ) ) {
+				return new WP_Error( 'static_site_importer_recompose_output_failed', 'Could not write the recomposed result to ' . $output );
+			}
+			return self::composition_diagnostics_summary( $compact );
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'static_site_importer_recompose_failed', 'Recompose failed: ' . $error->getMessage() );
+		} finally {
+			self::$checkpoint_read_cache = array();
+		}
+	}
+
+	/** Counts are deterministic; content-loss rows retain the affected source path. */
+	public static function composition_diagnostics_summary( array $compact ): array {
+		$summary = array(
+			'counts_by_code' => array(),
+			'content_loss'   => array(),
+		);
+		foreach ( $compact['wordpress_site_plan']['diagnostics'] ?? array() as $diagnostic ) {
+			$code                               = (string) ( $diagnostic['code'] ?? 'unknown' );
+			$summary['counts_by_code'][ $code ] = ( $summary['counts_by_code'][ $code ] ?? 0 ) + 1;
+			if ( str_contains( $code, 'content_lost' ) || str_contains( $code, 'content_loss' ) ) {
+				$summary['content_loss'][] = array(
+					'code'        => $code,
+					'source_path' => (string) ( $diagnostic['source_path'] ?? '' ),
+				);
+			}
+		}
+		ksort( $summary['counts_by_code'] );
+		return $summary;
 	}
 
 	private static function complete_receipts( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $shared ) {
@@ -1414,12 +1490,46 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	/** Shared terminal evidence set; resumable materialization failures retain their required workspace data. */
-	private static function terminal_retention( bool $retain_payloads ): array {
+	private static function terminal_retention( bool $retain_payloads, bool $retain_composition = false ): array {
 		$keep = array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' );
-		if ( $retain_payloads ) {
+		// Failed composition or later keeps the complete replay boundary; success prunes as before.
+		if ( $retain_composition ) {
+			$keep = array_merge( $keep, array( 'artifact.json', 'artifact-files', 'shared-plan.json', 'shared-files', 'page-plans', 'receipts' ) );
+		}
+		if ( $retain_payloads || $retain_composition ) {
 			$keep[] = 'payloads';
 		}
 		return $keep;
+	}
+
+	/** Keep the throw site and first three owned call sites, without arguments or host paths. */
+	private static function exception_locations( Throwable $error ): array {
+		$root      = str_replace( '\\', '/', dirname( __DIR__ ) ) . '/';
+		$locations = array();
+		$sites     = array_merge( array(
+			array(
+				'file' => $error->getFile(),
+				'line' => $error->getLine(),
+			),
+		), $error->getTrace() );
+		foreach ( $sites as $index => $site ) {
+			$file = str_replace( '\\', '/', (string) ( $site['file'] ?? '' ) );
+			if ( ! str_starts_with( $file, $root ) || empty( $site['line'] ) ) {
+				continue;
+			}
+			$path = substr( $file, strlen( $root ) );
+			if ( 0 !== $index && ! preg_match( '#^(?:includes|lib|vendor)/#', $path ) ) {
+				continue;
+			}
+			$locations[] = array(
+				'path' => $path,
+				'line' => (int) $site['line'],
+			);
+			if ( 4 <= count( $locations ) ) {
+				break;
+			}
+		}
+		return $locations;
 	}
 
 	private static function fail( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $phase, Throwable|WP_Error $error, array $page_ids = array() ) {
@@ -1441,14 +1551,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				array(
 					array_merge(
 						array(
-							'type'            => 'validation_error',
-							'kind'            => 'validation_error',
-							'severity'        => 'error',
-							'code'            => $code,
-							'reason_code'     => $code,
-							'phase'           => $phase,
-							'exception_class' => $error instanceof Throwable ? get_class( $error ) : '',
-							'message'         => $message,
+							'type'                => 'validation_error',
+							'kind'                => 'validation_error',
+							'severity'            => 'error',
+							'code'                => $code,
+							'reason_code'         => $code,
+							'phase'               => $phase,
+							'exception_class'     => $error instanceof Throwable ? get_class( $error ) : '',
+							'exception_locations' => $error instanceof Throwable ? self::exception_locations( $error ) : array(),
+							'message'             => $message,
 						),
 						$evidence
 					),
@@ -1483,7 +1594,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$write                         = self::write_run( $workspace, $run );
 		// Other failure phases are resumable; materialization failures are terminal (see resumable receipt below).
 		if ( in_array( $phase, array( 'materialize', 'materialization_claim' ), true ) ) {
-			$workspace->prune_except( self::terminal_retention( false ) );
+			$workspace->prune_except( self::terminal_retention( false, true ) );
 		}
 		$error_data = array(
 			'import_id'    => (string) ( $run['import_id'] ?? '' ),

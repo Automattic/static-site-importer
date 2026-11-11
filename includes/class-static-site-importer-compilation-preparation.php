@@ -84,9 +84,10 @@ final class Static_Site_Importer_Compilation_Preparation {
 				(string) ( $args['site_title'] ?? '' )
 			);
 		}
-		if ( empty( $args['source_route_aliases'] ) || ! is_array( $args['source_route_aliases'] ) ) {
-			$args['source_route_aliases'] = $redirects['aliases'];
-		}
+		$args['source_route_aliases']        = array_merge(
+			is_array( $args['source_route_aliases'] ?? null ) ? $args['source_route_aliases'] : array(),
+			$redirects['aliases']
+		);
 		$script_policy                       = $precompiled ? array(
 			'artifact' => $artifact,
 			'report'   => $args['source_metadata']['collection']['script_policy'] ?? array(),
