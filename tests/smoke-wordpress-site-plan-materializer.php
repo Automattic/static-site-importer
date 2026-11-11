@@ -4613,8 +4613,8 @@ foreach ( array( 'source-title' => $title_html, 'meta-description' => str_replac
 	$assert( ! is_wp_error( $title_compiled ), $title_case . ' compiles' );
 	$title_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $title_compiled['plan'], $title_compiled['args'] );
 	$title_page_id = $title_receipt['completed']['pages']['index.html'] ?? 0;
-	$expected_title = 'source-title' === $title_case ? 'Example Site | Example tagline' : ( 'no-title' === $title_case ? 'Home' : 'Example Site' );
-	$assert( 'completed' === $title_receipt['status'] && $expected_title === ( $GLOBALS['ssi_plan_posts'][ $title_page_id ]['post_title'] ?? '' ), $title_case . ' uses document title or Home, not heading spans' );
+	$expected_title = 'Home';
+	$assert( 'completed' === $title_receipt['status'] && $expected_title === ( $GLOBALS['ssi_plan_posts'][ $title_page_id ]['post_title'] ?? '' ), $title_case . ' uses the segmented plan title or Home, not heading spans or site identity' );
 	$expected_tagline = 'source-title' === $title_case ? 'Example tagline' : ( 'meta-description' === $title_case ? 'Example description.' : '' );
 	$assert( $expected_tagline === get_option( 'blogdescription', '' ), $title_case . ' native tagline' );
 	if ( 'source-title' === $title_case ) {
@@ -5041,5 +5041,24 @@ $runtime_plan['templates'] = array();
 $assert( array() === Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan ), 'Reference rows alone do not activate the runtime map.' );
 $runtime_plan['template_parts'] = array( array( 'canonical_block_markup' => $runtime_token ) );
 $assert( $runtime_covered === Static_Site_Importer_Site_Plan_Persistence::template_asset_tokens( $runtime_plan ), 'Template parts activate the same runtime map.' );
+
+$segmented_saved_posts = $GLOBALS['ssi_plan_posts'];
+$GLOBALS['ssi_plan_posts'] = array();
+$segmented_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array_map(
+		static fn( string $path ): array => array( 'path' => $path, 'content' => file_get_contents( __DIR__ . '/fixtures/segmented-front-page/' . $path ) ),
+		array( 'index.html', 'about/index.html' )
+	),
+);
+$segmented_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $segmented_artifact, array( 'slug' => 'segmented-front-page', 'activate' => true ) );
+$assert( ! is_wp_error( $segmented_compiled ), 'segmented front-page artifact compiles' );
+$segmented_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $segmented_compiled['plan'], $segmented_compiled['args'] );
+$assert( 'completed' === $segmented_receipt['status'], 'segmented front-page import completes: ' . wp_json_encode( $segmented_receipt['errors'] ?? $segmented_receipt ) );
+foreach ( array( 'index.html' => 'Home', 'about/index.html' => 'About' ) as $source_path => $expected_title ) {
+	$page_id = $segmented_receipt['completed']['pages'][ $source_path ] ?? 0;
+	$assert( $expected_title === ( $GLOBALS['ssi_plan_posts'][ $page_id ]['post_title'] ?? '' ), $source_path . ' keeps its segmented plan title' );
+}
+$GLOBALS['ssi_plan_posts'] = $segmented_saved_posts;
 
 echo "WordPress site plan materializer smoke passed.\n";
