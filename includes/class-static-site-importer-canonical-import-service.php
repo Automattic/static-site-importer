@@ -784,7 +784,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$remaining_items                 = 1000;
 		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
-		if ( ! $requires_form_setup && function_exists( 'do_action' ) ) {
+		$is_terminal = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
+		if ( $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
 		$response = array(
@@ -1140,6 +1141,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @return array<string,mixed> */
 	public static function success_diagnostics_contract( array $result ): array {
+		if ( empty( $result['continuation'] ) && is_array( $result['terminal_batch_result'] ?? null ) ) {
+			unset( $result['fixture_diagnostics'] );
+			$result = array_merge( $result, $result['terminal_batch_result'] );
+		}
 		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
 			$validation = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 			if ( self::fixture_diagnostics_match_validation_counts( $result['fixture_diagnostics'], $validation ) ) {
