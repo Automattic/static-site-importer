@@ -55,7 +55,9 @@
         "args": [
           "import.sh",
           "{{inputs.url}}",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}"
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-capture",
+          "{{inputs.blocks_engine}}"
         ]
       }
     },
@@ -81,7 +83,7 @@
           "--out",
           "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-eval",
           "--wp-cli",
-          "{{inputs.wp_cli}}"
+          "{{steps.import.output/wp_cli}}"
         ]
       }
     },
@@ -216,28 +218,6 @@
         "--wait-seconds",
         "3600"
       ]
-    },
-    {
-      "id": "shipped",
-      "needs": [
-        "merge"
-      ],
-      "timeout": "24h",
-      "when": {
-        "step": "merge",
-        "output": "/succeeded",
-        "gt": 0
-      },
-      "exec": {
-        "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
-        "args": [
-          "shipped.mjs",
-          "--merge",
-          "{{steps.merge.output/items}}"
-        ]
-      },
-      "always": true
     }
   ],
   "next_pass": {

@@ -1,28 +1,52 @@
 #!/usr/bin/env bash
-# Loop step: import one source with Studio and report where the evidence lives.
+# Loop step: materialize the source at Blocks Engine trunk and report where the
+# evidence lives.
+#
+# The first pass captures the source with `studio create --from --keep-source`
+# and keeps the capture. Every pass, including the first, re-imports that frozen
+# capture through the latest Static Site Importer release with the transformer
+# from Blocks Engine `trunk` (gates/reimport.sh, as triage, the Cook gate and
+# confirm do). A merged fix is therefore measured on the very next pass, without
+# waiting for a release to carry it into Studio.
+#
+# Usage: import.sh <url> <pass dir> <capture dir> <blocks-engine clone>
 set -euo pipefail
-url=$1; site=$2
+url=$1; pass=$2; capture=$3; be=$4
+here=$(cd "$(dirname "$0")" && pwd)
+host=$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$url")
 export GITHUB_TOKEN="$(gh auth token)"
-mkdir -p "$(dirname "$site")"
-# Each pass starts one Studio site, and Studio caps running sites. Only the
-# current pass's site serves the evaluation; stop the loop's earlier ones.
-runs=$(cd "$(dirname "$site")" && pwd)
-studio site list --format json 2>/dev/null | jq -r --arg runs "$runs/" '.[] | select(.running and (.path | startswith($runs))) | .path' |
-  while read -r old; do studio site stop --path "$old" > /dev/null 2>&1 || echo "could not stop $old" >&2; done
-# A retried import starts clean: an earlier attempt may have left this pass's
-# site half-created. An import fails for a while when the environment is full
-# or an upstream release regressed; the step retries hourly until it recovers.
-studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$site")" '.[] | select(.path == $site)' > /dev/null &&
-  studio site delete "$runs/$(basename "$site")" > /dev/null 2>&1
-rm -rf "$site" "$site-source"
-status=0
-studio create --path "$site" --from "$url" --keep-source --skip-browser 2>&1 | tee "$site.log" || status=$?
-# Only a preserved quality-failed preview is a usable non-zero result.
-if (( status != 0 )) && ! grep -q 'static_site_importer_quality_failed' "$site.log"; then
-  exit "$status"
+mkdir -p "$(dirname "$pass")"
+runs=$(cd "$(dirname "$pass")" && pwd)
+bare="$runs/bare-wp"
+
+# Earlier passes served their sites from `php -S`; stop them.
+for pid in "$runs"/*/.server.pid; do [ -f "$pid" ] && kill "$(cat "$pid")" 2> /dev/null || true; done
+
+if [ ! -f "$capture/capture-receipt.json" ]; then
+  first="$pass-capture"
+  studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$first")" '.[] | select(.path == $site)' > /dev/null &&
+    studio site delete "$runs/$(basename "$first")" > /dev/null 2>&1
+  rm -rf "$first" "$first-source"
+  status=0
+  studio create --path "$first" --from "$url" --keep-source --skip-browser 2>&1 | tee "$first.log" || status=$?
+  # Only a preserved quality-failed preview is a usable non-zero result.
+  if (( status != 0 )) && ! grep -q 'static_site_importer_quality_failed' "$first.log"; then exit "$status"; fi
+  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "studio create kept no capture for $host" >&2; exit 1; }
+  rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; cp -a "$first-source/$host" "$capture"
+  studio site stop --path "$first" > /dev/null 2>&1 || true
 fi
-site_url=$(grep -oE '(Site URL|URL): +https?://[^[:space:]]+' "$site.log" | tail -1 | awk '{print $NF}' || true)
-[ -n "$site_url" ] && [ -d "$site" ] || { echo "import produced no site URL or site" >&2; exit 1; }
-studio site start --path "$site" >&2
-jq -n --arg url "$url" --arg site "$site" --arg site_url "$site_url" --arg log "$site.log" --arg source "$site-source" \
-  '{url:$url, site:$site, site_url:$site_url, log:$log, source:$source}' > "${HOMEBOY_STEP_OUTPUT:-/dev/stdout}"
+
+# The transformer at Blocks Engine trunk, and the importer release Studio installs.
+rm -rf "$pass"; mkdir -p "$pass/source"
+git -C "$be" fetch -q origin trunk
+trunk=$(git -C "$be" rev-parse FETCH_HEAD)
+git -C "$be" archive "$trunk" php-transformer | tar -x -C "$pass"
+gh release download -R Automattic/static-site-importer -p static-site-importer.zip -O "$pass/static-site-importer.zip"
+ln -s "$capture" "$pass/source/$host"
+
+site_url=$(SSI_ZIP="$pass/static-site-importer.zip" BARE_WP="$bare" bash "$here/gates/reimport.sh" "$pass/php-transformer" "$capture" "$pass/site" 2> "$pass/reimport.log" | tail -1) ||
+  { tail -c 2000 "$pass/reimport.log" >&2; exit 1; }
+[ -n "$site_url" ] || { echo "re-import produced no site URL" >&2; exit 1; }
+jq -n --arg url "$url" --arg site "$pass/site" --arg site_url "$site_url" --arg log "$pass/reimport.log" --arg source "$pass/source" \
+  --arg wp_cli "php $bare/wp-cli.phar" --arg blocks_engine "$trunk" \
+  '{url:$url, site:$site, site_url:$site_url, log:$log, source:$source, wp_cli:$wp_cli, blocks_engine:$blocks_engine}' > "${HOMEBOY_STEP_OUTPUT:-/dev/stdout}"
