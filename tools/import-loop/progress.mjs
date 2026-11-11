@@ -5,6 +5,9 @@ export function occurrences(finding, cells) {
     .reduce((sum, o) => sum + (Number.isInteger(o.evidence?.count) ? o.evidence.count : 1), 0);
 }
 
+// A check that could not run: its findings are missing, not fixed.
+export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
+
 export function compareImports(before, after, signature, cells) {
   const blockers = { removed: [], added: [], unchanged: [] };
   const a = new Map(before.findings.filter((f) => f.severity === 'blocker').map((f) => [f.signature, f]));
@@ -29,7 +32,7 @@ export function compareImports(before, after, signature, cells) {
     }
   }
   const own = { before: occurrences(a.get(signature), cells), after: occurrences(b.get(signature), cells) };
-  const unchecked = [...before.findings, ...after.findings].filter((f) => /unverified|unreachable|missing/.test(f.check || '') && ['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing'].includes(f.check));
+  const unchecked = [...before.findings, ...after.findings].filter((f) => UNCHECKED.has(f.check));
   const measured = (before.visual || []).length > unmeasured.length;
   const pass = Boolean(signature && own.before > own.after && !unchecked.length && !blockers.added.some((f) => f.signature !== signature) && !regressions.length && measured && after.visual?.length);
   return { pass, own, blockers, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };

@@ -41,12 +41,15 @@ rm -rf "$pass"; mkdir -p "$pass/source"
 git -C "$be" fetch -q origin trunk
 trunk=$(git -C "$be" rev-parse FETCH_HEAD)
 git -C "$be" archive "$trunk" php-transformer | tar -x -C "$pass"
-gh release download -R Automattic/static-site-importer -p static-site-importer.zip -O "$pass/static-site-importer.zip"
+# The newest release whose zip is uploaded: auto-release publishes the tag a
+# few minutes before its asset.
+tag=$(gh api 'repos/Automattic/static-site-importer/releases?per_page=10' --jq '[.[] | select(.draft | not) | select(any(.assets[]; .name == "static-site-importer.zip" and .state == "uploaded"))][0].tag_name')
+gh release download "$tag" -R Automattic/static-site-importer -p static-site-importer.zip -O "$pass/static-site-importer.zip"
 ln -s "$capture" "$pass/source/$host"
 
 site_url=$(SSI_ZIP="$pass/static-site-importer.zip" BARE_WP="$bare" bash "$here/gates/reimport.sh" "$pass/php-transformer" "$capture" "$pass/site" 2> "$pass/reimport.log" | tail -1) ||
   { tail -c 2000 "$pass/reimport.log" >&2; exit 1; }
 [ -n "$site_url" ] || { echo "re-import produced no site URL" >&2; exit 1; }
 jq -n --arg url "$url" --arg site "$pass/site" --arg site_url "$site_url" --arg log "$pass/reimport.log" --arg source "$pass/source" \
-  --arg wp_cli "php $bare/wp-cli.phar" --arg blocks_engine "$trunk" \
-  '{url:$url, site:$site, site_url:$site_url, log:$log, source:$source, wp_cli:$wp_cli, blocks_engine:$blocks_engine}' > "${HOMEBOY_STEP_OUTPUT:-/dev/stdout}"
+  --arg wp_cli "php $bare/wp-cli.phar" --arg blocks_engine "$trunk" --arg ssi_zip "$pass/static-site-importer.zip" --arg ssi_release "$tag" \
+  '{url:$url, site:$site, site_url:$site_url, log:$log, source:$source, wp_cli:$wp_cli, blocks_engine:$blocks_engine, ssi_zip:$ssi_zip, ssi_release:$ssi_release}' > "${HOMEBOY_STEP_OUTPUT:-/dev/stdout}"
