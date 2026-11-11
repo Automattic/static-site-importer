@@ -60,11 +60,21 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			}
 			return $writes;
 		}
+		// A source led by a theme header is the plan's style.css scaffold. Its
+		// header is written once: kept when it names this theme, otherwise
+		// replaced by the generated one; the editor stylesheet needs none.
+		$header = '';
+		if ( preg_match( '/\A\s*\/\*((?:(?!\*\/).)*)\*\/\s*/s', $css, $match ) && preg_match( '/^[ \t*]*Theme Name:[ \t]*(.+?)[ \t]*$/m', $match[1], $name ) ) {
+			$css = substr( $css, strlen( $match[0] ) );
+			if ( Static_Site_Importer_Generated_File::comment_header_value( $theme_name ) === $name[1] ) {
+				$header = trim( $match[0] ) . "\n";
+			}
+		}
 		$css                 = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
 		$provider_layout_css = $provider( 'css', '' );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider( 'context_css', '' ) . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider( 'context_css', '' ) . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance, $header ),
 			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $provider( 'editor_context_css', '../../' ) . $css . $provider( 'css', '../../' ) . $provider( 'editor_css', '../../' ), $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
@@ -236,14 +246,15 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param string                          $css                  Source CSS.
 	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
 	 * @param array<string,mixed>             $artifact_provenance  Producer artifact provenance, when carried.
+	 * @param string                          $header               Resolved theme header to keep, or '' to generate one.
 	 * @return string
 	 */
-	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array(), array $artifact_provenance = array() ): string {
+	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array(), array $artifact_provenance = array(), string $header = '' ): string {
 		$theme_name       = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );
 
-		return self::theme_header( $theme_name, '', $theme_name, $artifact_provenance ) . "\n" . $css . "\n" . $body_class_guard . $repair_css;
+		return ( '' !== $header ? $header : self::theme_header( $theme_name, '', $theme_name, $artifact_provenance ) ) . "\n" . $css . "\n" . $body_class_guard . $repair_css;
 	}
 
 	/**
