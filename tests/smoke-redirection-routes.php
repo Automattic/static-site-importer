@@ -169,23 +169,4 @@ $assert( $GLOBALS['dependency_report'] === ( $pending->data['dependency_reports'
 $GLOBALS['dependency_report']['status'] = 'failed';
 $failed = Static_Site_Importer_Redirection_Materializer::materialize( array(), array( 'slug' => 'deferred', 'materialized_receipt' => $scoped_receipt, 'materialize_dependencies' => true ) );
 $assert( $failed instanceof WP_Error && $GLOBALS['dependency_report'] === ( $failed->data['dependency'] ?? null ), 'Terminal readiness failure also preserves the real report.' );
-$GLOBALS['permalinks'][1] = home_url( '/' );
-// A late-loaded provider double leaves the preceding rawurldecode-only proof intact.
-// Real kses and request matching are covered by the WordPress acceptance proof.
-if ( ! class_exists( 'Red_Item_Sanitize' ) ) {
-	class Red_Item_Sanitize {
-		public function sanitize_url( $url, $regex ) {
-			return str_replace( array( '&amp;', '<' ), array( '&', '&lt;' ), rawurldecode( $url ) );
-		}
-	}
-}
-foreach ( array(
-	'tag/time+%26amp%3B+place' => '/tag/time+&+place',
-	'tag/a%3Cb' => '/tag/a&lt;b',
-) as $captured => $stored ) {
-	$source = 'website/' . $captured . '/index.html';
-	$canonical_receipt = array( 'plan' => array( 'pages' => array( array( 'source_path' => $source, 'route' => array( 'path' => '/' . $captured ) ) ) ), 'completed' => array( 'pages' => array( $source => 2 ) ) );
-	$assert( array( $stored => get_permalink( 2 ) ) === Static_Site_Importer_Redirection_Materializer::routes( $canonical_receipt, array() ), 'Provider sanitizer keys declared and served entity/markup sources identically.' );
-	$assert( array( $stored => get_permalink( 1 ) ) === Static_Site_Importer_Redirection_Materializer::routes( $alias_receipt, array( 'source_route_aliases' => array( array( 'from' => $captured, 'to' => 'index.html' ) ) ) ), 'Provider sanitizer also keys aliases.' );
-}
 echo "Redirection source route contract passed.\n";
