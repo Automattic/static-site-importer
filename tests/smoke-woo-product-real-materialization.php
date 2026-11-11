@@ -64,6 +64,9 @@ foreach ( array_keys( $files ) as $path ) {
 		$files[ $source ] .= '<img src="/' . $path . '">';
 	}
 }
+// The home page shows the same photos, so they stay referenced
+// once the captured markup below replaces this page.
+$files['index.html'] .= substr( $files[ $source ], strlen( "<main><h1>Real product</h1></main>" ) );
 // The JSON-LD lead is a separate capture, referenced only by a link.
 $lead_path = 'media/lead-full-size.webp';
 $files[ $lead_path ] = 'independent lead image bytes';
