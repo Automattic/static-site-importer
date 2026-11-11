@@ -39,7 +39,7 @@ for (const item of triage.tracked) {
     const root = repos[item.repo]?.predicate_root;
     if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
-    const at = { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes };
+    const at = { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path };
     // A head no Cook moved since triage was checked there, on this capture and release.
     const prior = item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid ? item.head_check : null;
     const cells = (prior?.cells || cellsAtHead(item, pr, at)).map((cell) => ({ signature: item.signature, ...cell }));
