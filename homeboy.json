@@ -286,6 +286,7 @@
           "tests/smoke-google-fonts-request-budget.php",
           "tests/smoke-google-fonts-retry-determinism.php",
           "tests/smoke-html-runtime-capabilities.php",
+          "tests/smoke-markdown-html-entrypoint.php",
           "tests/smoke-ico-site-identity.php",
           "tests/smoke-import-destination.php",
           "tests/smoke-import-diagnostic-contract.php",

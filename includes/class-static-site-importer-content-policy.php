@@ -150,9 +150,18 @@ final class Static_Site_Importer_Content_Policy {
 		if ( ! is_array( $files ) ) {
 			return new WP_Error( 'static_site_importer_artifact_files_invalid', 'Website artifacts must declare files as an array.' );
 		}
-		$entrypoint = is_scalar( $artifact['entrypoint'] ?? null ) ? (string) $artifact['entrypoint'] : '';
-		$admitted   = array();
-		$findings   = array();
+		$entrypoint     = is_scalar( $artifact['entrypoint'] ?? null ) ? (string) $artifact['entrypoint'] : '';
+		$has_html_entry = false;
+		foreach ( $files as $file ) {
+			$path = is_array( $file ) && is_scalar( $file['path'] ?? null ) ? (string) $file['path'] : '';
+			if ( in_array( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ), array( 'html', 'htm' ), true ) && self::fails_closed( $path, $entrypoint ) ) {
+				$has_html_entry = true;
+				break;
+			}
+		}
+
+		$admitted = array();
+		$findings = array();
 		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
 		require_once __DIR__ . '/cli.php';
 		$reports = static_site_importer_cli_request_bundle_declared_reports( is_array( $artifact['reports'] ?? null ) ? $artifact['reports'] : array() );
@@ -163,7 +172,9 @@ final class Static_Site_Importer_Content_Policy {
 			$path   = (string) $file['path'];
 			$format = self::source_format( $path );
 			if ( null !== $format && ! Static_Site_Importer_Runtime_Capabilities::supports_source_format( $format ) ) {
-				if ( self::fails_closed( $path, $entrypoint ) ) {
+				// Unsupported source twins are optional when HTML supplies the entry
+				// document. An explicitly declared unsupported entry still fails.
+				if ( self::fails_closed( $path, $entrypoint ) && ( ! $has_html_entry || ( '' !== $entrypoint && self::site_path( $entrypoint ) === self::site_path( $path ) ) ) ) {
 					return new WP_Error(
 						'static_site_importer_source_format_unsupported',
 						sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ),
