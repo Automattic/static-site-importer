@@ -2024,21 +2024,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Derive the map keys using the same inputs and activation condition as WordPressSitePlan::bootstrap(). */
+	/** Derive the map keys exactly as WordPressSitePlan::bootstrap(): the asset tokens its documents reference. */
 	public static function template_asset_tokens( array $plan ): array {
+		$referenced = array();
 		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() ) as $document ) {
-			if ( ! str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' ) ) {
-				continue;
+			if ( preg_match_all( '/\{\{wordpress-site-plan:asset:([^}]+)\}\}/', (string) ( $document['canonical_block_markup'] ?? '' ), $matches ) ) {
+				$referenced += array_fill_keys( $matches[1], true );
 			}
-			$covered = array();
-			foreach ( $plan['reference_tokens'] ?? array() as $token ) {
-				if ( is_string( $token['token'] ?? null ) && is_string( $token['target_path'] ?? null ) ) {
-					$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
-				}
-			}
-			return $covered;
 		}
-		return array();
+		$covered = array();
+		foreach ( $plan['reference_tokens'] ?? array() as $token ) {
+			if ( is_string( $token['token'] ?? null ) && isset( $referenced[ $token['token'] ] ) && is_string( $token['target_path'] ?? null ) ) {
+				$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
+			}
+		}
+		return $covered;
 	}
 
 	/** Reject references with no runtime resolver; posts never receive a covered set. */
