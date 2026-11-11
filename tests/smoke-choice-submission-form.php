@@ -53,6 +53,12 @@ $assert( ! str_contains( $blocks, 'wp:html' ), 'no-raw-html-block' );
 $assert( 2 === substr_count( $blocks, 'type="radio"' ), 'keeps-real-radios' );
 $assert( str_contains( $blocks, 'Yes, very often' ) && str_contains( $blocks, 'Not this time' ), 'keeps-choice-labels' );
 $assert( str_contains( $blocks, 'type="submit"' ), 'keeps-submit-control' );
+$dom = new DOMDocument();
+@$dom->loadHTML( $blocks );
+foreach ( ( new DOMXPath( $dom ) )->query( '//input | //button' ) as $control ) {
+	$assert( $control->hasAttribute( 'disabled' ), 'unresolved-choice-form-control-is-disabled' );
+}
+$assert( str_contains( $blocks, 'This form is not accepting responses yet.' ), 'visitor-sees-inactive-form-message' );
 $assert( 1 === ( $quality['choice_submission_form_count'] ?? 0 ), 'quality-counts-form' );
 $assert( 1 === ( $report['import_validation_result']['counts']['choice_submission_forms'] ?? 0 ), 'validation-result-counts-form' );
 $assert( 'failed' === ( $report['import_validation_result']['status'] ?? '' ) && 'failed' === ( $report['compact_summary']['status'] ?? '' ), 'choice-form-cannot-complete-migration' );
