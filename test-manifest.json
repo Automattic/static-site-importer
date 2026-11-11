@@ -216,6 +216,7 @@
     { "path": "tests/smoke-provider-overlay-compaction.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation-cascade.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-provider-presentation-label-weight.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
     { "path": "tests/smoke-title-tagline.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-language.php", "environment": "standalone-php" },
