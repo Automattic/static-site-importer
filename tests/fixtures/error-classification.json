@@ -608,6 +608,8 @@
     "whole_page_destination_provenance_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "whole_page_destination_route_metadata_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "whole_page_route_template_remove_failed": { "class": "operational", "owning_layer": "static-site-importer" },
+    "whole_page_shared_template_assignment_failed": { "class": "operational", "owning_layer": "static-site-importer" },
+    "whole_page_shared_template_registration_failed": { "class": "integrity", "owning_layer": "static-site-importer" },
     "whole_page_source_page_update_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "whole_page_source_route_occupied": { "class": "integrity", "owning_layer": "static-site-importer" },
     "whole_page_template_target_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
