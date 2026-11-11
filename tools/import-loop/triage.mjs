@@ -288,7 +288,10 @@ for (const item of tracked) {
   if (pr && checkable) item.head_check = { pr: pr.url, head: pr.headRefOid, cells, collateral };
   // Failed CI or a conflict with trunk refutes a head as surely as a predicate.
   const health = pr ? prHealth(pr) : { failed: [] };
-  const conflicting = health.mergeable === 'CONFLICTING';
+  // A head that cannot merge onto the pass's trunk is judged nowhere: say so
+  // first, with the commit and files, whatever GitHub's mergeability says.
+  const trunkConflict = refuted.find((c) => /conflicts with trunk/.test(c.reason || ''));
+  const conflicting = health.mergeable === 'CONFLICTING' || Boolean(trunkConflict);
   if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
   if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
@@ -298,7 +301,7 @@ for (const item of tracked) {
       `Fix ${item.issue_url}.`,
       '',
       `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces. Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
-      ...(refuted.length ? [
+      ...(refuted.length && !trunkConflict ? [
         '',
         refuted[0].exit === 'import_failed'
           ? `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) breaks the import: a whole re-import of the capture with that head fails (${refuted[0].reason}), so the site cannot be imported at all. Continue on its branch and keep the import succeeding.`
@@ -306,7 +309,7 @@ for (const item of tracked) {
       ] : []),
       ...(conflicting ? [
         '',
-        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since. Continue on its branch: merge trunk in, resolve the conflicts keeping both trunk's behavior and this fix, and keep every acceptance check passing.`,
+        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since${trunkConflict ? ` (${trunkConflict.reason.replace(/^import_failed: /, '')})` : ''}. The acceptance gate measures your branch merged onto trunk \`${trunk}\`, so it fails until that merge is clean. First: \`git fetch origin trunk && git merge ${trunk}\`, resolve the conflicts keeping both trunk's behavior and this fix, and commit the merge. Then continue on the fix.`,
       ] : []),
       ...(health.failed.length ? [
         '',
@@ -322,7 +325,7 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It re-imports the capture through the Static Site Importer release with your transformer, serves it, and runs the predicate on each cell (exit 1 per cell means fixed). Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
+        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it, and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Those gate inputs exist only inside the gate: `IMPORT_LOOP_*` is unset in your session by design, so the whole-site run is not yours to reproduce. Once the root-cause fix and its regression test are in place, declare your review form complete; Cook then runs the gate, and its verdict decides publication.',
         '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
@@ -330,6 +333,9 @@ for (const item of tracked) {
         '',
         ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
+      // Auto-release rewrites these on every trunk release: a branch that
+      // carries its own copy conflicts with each new release.
+      ...(repo.release_owned?.length ? [`- Release automation owns ${repo.release_owned.map((f) => `\`${f}\``).join(', ')} and rewrites them on every trunk release. Leave them exactly as trunk has them: after merging trunk, run \`git checkout ${trunk} -- ${repo.release_owned.join(' ')}\` and commit. Never add changelog entries or bump versions.`] : []),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
     // Cook resolves the issue itself: it reworks the one open linked PR on

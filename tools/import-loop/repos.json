@@ -4,6 +4,7 @@
     "verify": "cd php-transformer && composer test:canonical && cd tools/visual-parity && npm ci --silent && npm test",
     "predicate_root": "php-transformer",
     "contracts": "gates/blocks-engine-contracts.sh",
+    "release_owned": ["php-transformer/VERSION", "php-transformer/CHANGELOG.md", "php-transformer/php-transformer.php"],
     "stage": "materialization"
   },
   "static-site-importer": {
