@@ -764,7 +764,8 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 		$resolved    = 0;
 		$resolutions = array();
-		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
+		$diagnostics = $report->diagnostics();
+		foreach ( $diagnostics as $index => $diagnostic ) {
 			$choice_submission = is_array( $diagnostic ) && 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) && 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' );
 			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && ( $choice_submission || in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) ) {
 				// These handlers have no contact-form equivalent. Keep the source
@@ -777,7 +778,7 @@ final class Static_Site_Importer_Quality_Gates {
 				if ( $choice_submission ) {
 					$diagnostic['message'] = 'Form choices are editable, but a working submission handler must be configured before this import is ready.';
 				}
-				$report->replace_diagnostic( $index, $diagnostic );
+				$diagnostics[ $index ] = $diagnostic;
 			}
 			if ( ! is_array( $diagnostic ) || ! ( self::is_form_fallback_diagnostic( $diagnostic ) || self::is_listing_owned_form( $diagnostic, $receipts_by_fallback ) ) ) {
 				continue;
@@ -838,7 +839,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
-			$report->replace_diagnostic( $index, $diagnostic );
+			$diagnostics[ $index ] = $diagnostic;
 			if ( $resolved_by_provider ) {
 				++$resolved;
 			}
@@ -850,6 +851,8 @@ final class Static_Site_Importer_Quality_Gates {
 				'receipt'                          => $receipt,
 			);
 		}
+
+		$report->set_diagnostics( $diagnostics );
 
 		// Product-grid fallbacks reconcile against the same completed-receipt
 		// contract as forms above, joined on the canonical source page plus the
