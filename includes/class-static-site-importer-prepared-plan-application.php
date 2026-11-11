@@ -45,7 +45,20 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		// Keep the established companion/dependency transaction ordering. A companion
 		// failure must occur before any runtime dependency can require compensation.
 		$runtime_payload = self::with_runtime_companion_configuration( $companion_payload, $lifecycle, $args );
-		$theme_owned     = Static_Site_Importer_Import_Destination::GENERATED_THEME === ( $prepared['destination']['mode'] ?? Static_Site_Importer_Import_Destination::GENERATED_THEME );
+		// Routing is a runtime dependency even when the import declares no blocks.
+		foreach ( $prepared['resolved']['pages'] ?? array() as $page ) {
+			if ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) ) {
+				$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : array(
+					'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+					'site_slug' => $prepared['theme']['slug'],
+					'site_name' => $prepared['theme']['name'],
+					'blocks'    => array(),
+				);
+				$runtime_payload['post_source_routes'] = true;
+				break;
+			}
+		}
+		$theme_owned = Static_Site_Importer_Import_Destination::GENERATED_THEME === ( $prepared['destination']['mode'] ?? Static_Site_Importer_Import_Destination::GENERATED_THEME );
 		if ( $theme_owned ) {
 			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
 			$runtime_payload = is_array( $runtime_payload ) ? $runtime_payload : array(

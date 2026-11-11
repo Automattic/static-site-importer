@@ -332,6 +332,12 @@ if ( ! function_exists( 'update_option' ) ) {
 	}
 }
 
+// Route runtime smoke reuses only the standalone doubles, not this suite's imports.
+if ( defined( 'SSI_COMPANION_DOUBLES_ONLY' ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
+	return;
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';

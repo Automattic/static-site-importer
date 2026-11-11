@@ -3090,37 +3090,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return true;
 	}
 
-	/** Exact rules precede archive and slug-guess routing, including mixed shapes. */
-	public static function post_source_rewrite_rules( array $rules ): array {
-		$exact = array();
-		foreach ( (array) get_option( 'static_site_importer_post_routes', array() ) as $id => $route ) {
-			$exact[ '^' . preg_quote( ltrim( $route, '/' ), '#' ) . '/?$' ] = 'index.php?p=' . (int) $id;
-		}
-		return $exact + $rules;
-	}
-
-	/** Core canonical redirects and importer link rewriting use the same owner. */
-	public static function post_source_permalink( string $url, WP_Post $post ): string {
-		$routes = get_option( 'static_site_importer_post_routes', array() );
-		if ( 'post' !== $post->post_type || ! isset( $routes[ $post->ID ] ) ) {
-			return $url;
-		}
-		$route = $routes[ $post->ID ];
-		return home_url( str_contains( basename( $route ), '.' ) ? $route : user_trailingslashit( $route, 'single' ) );
-	}
-
-	/** Core otherwise appends the site's trailing slash even to a source .html URL. */
-	public static function post_source_canonical( $redirect, string $requested ) {
-		if ( is_singular( 'post' ) ) {
-			$id     = get_queried_object_id();
-			$routes = get_option( 'static_site_importer_post_routes', array() );
-			if ( isset( $routes[ $id ] ) && wp_parse_url( $requested, PHP_URL_PATH ) === wp_parse_url( (string) get_permalink( $id ), PHP_URL_PATH ) ) {
-				return false;
-			}
-		}
-		return $redirect;
-	}
-
 	/** Move core rewrite bases that would route an imported page path to an archive. */
 	public static function keep_page_routes_reachable( array &$state ): bool {
 		// Without a rewrite engine there are no pretty routes to shadow.
@@ -3522,10 +3491,4 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			throw new RuntimeException( 'materialization_rollback_file_restore_failed' );
 		}
 	}
-}
-
-if ( function_exists( 'add_filter' ) ) {
-	add_filter( 'rewrite_rules_array', array( Static_Site_Importer_Site_Plan_Persistence::class, 'post_source_rewrite_rules' ) );
-	add_filter( 'post_link', array( Static_Site_Importer_Site_Plan_Persistence::class, 'post_source_permalink' ), 10, 2 );
-	add_filter( 'redirect_canonical', array( Static_Site_Importer_Site_Plan_Persistence::class, 'post_source_canonical' ), 10, 2 );
 }

@@ -242,7 +242,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$block_namespace = self::block_namespace( $payload );
 		$preserved       = self::preserved_js( $payload, $block_namespace );
 		$editor_scripts  = self::editor_scripts( $payload );
-		if ( 'plugin' === $owner && empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $payload['external_metrics'] ) ) {
+		if ( 'plugin' === $owner && empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $payload['external_metrics'] ) && empty( $payload['post_source_routes'] ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
 				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
@@ -299,6 +299,11 @@ class Static_Site_Importer_Companion_Plugin {
 			return new WP_Error( 'static_site_importer_companion_plugin_product_grid_runtime_missing', 'Product grid runtime projection file is unavailable.' );
 		}
 
+		$post_route_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-post-source-route-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Generated packages own source routing independently.
+		if ( ! is_string( $post_route_runtime ) || '' === $post_route_runtime ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_post_route_runtime_missing', 'Post source route runtime projection file is unavailable.' );
+		}
+
 		$external_metrics = is_array( $payload['external_metrics'] ?? null ) ? array_values( $payload['external_metrics'] ) : array();
 		if ( ! empty( $external_metrics ) ) {
 			$validated_metrics = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $external_metrics ) );
@@ -306,7 +311,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
 		$listing_runtime  = (string) file_get_contents( __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Package listing controls independently of the importer.
-		$inventory_source = array( hash( 'sha256', $listing_runtime ), $block_names, $preserved, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ) );
+		$inventory_source = array( hash( 'sha256', $listing_runtime ), $block_names, $preserved, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ), hash( 'sha256', $product_grid_runtime ), hash( 'sha256', $post_route_runtime ) );
 		if ( 'theme' === $owner ) {
 			$inventory_source[] = array( 'theme', $owner_slug );
 		}
@@ -319,6 +324,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$link_runtime_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
 		$metric_runtime_class  = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
 		$ip_classifier_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_IP_Classifier';
+		$route_runtime_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Post_Source_Route_Runtime';
 		$grid_runtime_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Product_Grid_Runtime';
 		if ( 'theme' === $owner ) {
 			$class_prefix         = 'SSI_THEME_' . strtoupper( str_replace( '-', '_', $owner_slug ) );
@@ -326,6 +332,7 @@ class Static_Site_Importer_Companion_Plugin {
 			$link_runtime_class   = $class_prefix . '_Internal_Link_Runtime';
 			$metric_runtime_class = $class_prefix . '_External_Metric_Runtime';
 			$ip_classifier_class  = $class_prefix . '_IP_Classifier';
+			$route_runtime_class  = $class_prefix . '_Post_Source_Route_Runtime';
 			$grid_runtime_class   = $class_prefix . '_Product_Grid_Runtime';
 		}
 		$main_file = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
@@ -361,15 +368,16 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( false === $config ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_config_invalid', 'Companion configuration could not be encoded as JSON.' );
 		}
-		$files[ $plugin_slug . '/editor/imported-media-replace.js' ]      = self::imported_media_replace_script();
-		$files[ $plugin_slug . '/editor/external-metric-controls.js' ]    = self::external_metric_editor_script();
-		$files[ $plugin_slug . '/companion.json' ]                        = $config . "\n";
-		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
-		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]    = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
-		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]  = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class, $ip_classifier_class );
-		$files[ $plugin_slug . '/includes/ip-classifier.php' ]            = self::ip_classifier_runtime_file( $ip_classifier_runtime, $ip_classifier_class );
-		$files[ $plugin_slug . '/includes/product-grid-runtime.php' ]     = str_replace( 'Static_Site_Importer_Product_Grid_Runtime', $grid_runtime_class, $product_grid_runtime );
-		$files[ $plugin_slug . '/includes/product-listing-runtime.php' ]  = str_replace( 'Static_Site_Importer_Woo_Product_Listing_Materializer', $grid_runtime_class . '_Listing', $listing_runtime );
+		$files[ $plugin_slug . '/editor/imported-media-replace.js' ]       = self::imported_media_replace_script();
+		$files[ $plugin_slug . '/editor/external-metric-controls.js' ]     = self::external_metric_editor_script();
+		$files[ $plugin_slug . '/companion.json' ]                         = $config . "\n";
+		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ]  = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
+		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]     = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
+		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]   = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class, $ip_classifier_class );
+		$files[ $plugin_slug . '/includes/ip-classifier.php' ]             = self::ip_classifier_runtime_file( $ip_classifier_runtime, $ip_classifier_class );
+		$files[ $plugin_slug . '/includes/product-grid-runtime.php' ]      = str_replace( 'Static_Site_Importer_Product_Grid_Runtime', $grid_runtime_class, $product_grid_runtime );
+		$files[ $plugin_slug . '/includes/product-listing-runtime.php' ]   = str_replace( 'Static_Site_Importer_Woo_Product_Listing_Materializer', $grid_runtime_class . '_Listing', $listing_runtime );
+		$files[ $plugin_slug . '/includes/post-source-route-runtime.php' ] = str_replace( 'Static_Site_Importer_Post_Source_Route_Runtime', $route_runtime_class, $post_route_runtime );
 		$artifact_provenance = self::artifact_provenance( $payload );
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
@@ -389,7 +397,7 @@ class Static_Site_Importer_Companion_Plugin {
 		);
 		$files               = array_merge(
 			array(
-				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $metric_runtime_class, $grid_runtime_class, $artifact_provenance, $owner ),
+				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $metric_runtime_class, $grid_runtime_class, $route_runtime_class, $artifact_provenance, $owner ),
 				$plugin_slug . '/README.md' => Static_Site_Importer_Companion_Inventory::render_readme( $inventory ),
 			),
 			$files
@@ -512,7 +520,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return true;
 			}
 		}
-		if ( ! empty( $payload['external_metrics'] ) ) {
+		if ( ! empty( $payload['external_metrics'] ) || ! empty( $payload['post_source_routes'] ) ) {
 			return true; }
 
 		return false;
@@ -802,6 +810,7 @@ class Static_Site_Importer_Companion_Plugin {
 		string $link_runtime_class,
 		string $metric_runtime_class,
 		string $grid_runtime_class,
+		string $route_runtime_class,
 		array $artifact_provenance = array(),
 		string $owner = 'plugin'
 	): string {
@@ -878,6 +887,8 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
 		$lines[] = $metric_runtime_class . '::register();';
 		$lines[] = $grid_runtime_class . '::register();';
+		$lines[] = "require_once __DIR__ . '/includes/post-source-route-runtime.php';";
+		$lines[] = $route_runtime_class . '::register();';
 		$lines[] = "require_once __DIR__ . '/includes/product-listing-runtime.php';";
 		$lines[] = $grid_runtime_class . '_Listing::register();';
 		$lines[] = '';
