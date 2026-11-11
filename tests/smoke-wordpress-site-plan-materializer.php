@@ -5032,7 +5032,9 @@ foreach ( array(
 	$assert( $runtime_fails === is_wp_error( $runtime_error ), 'Final output invariant validates runtime coverage: ' . $runtime_case );
 	if ( $runtime_fails ) {
 		$offending_token = $runtime_post ? $runtime_content : substr( $runtime_content, strlen( $runtime_token ) );
-		$assert( array( 'target' => $runtime_target, 'token' => $offending_token ) === $runtime_error->get_error_data() && str_contains( $runtime_error->get_error_message(), $runtime_target ) && str_contains( $runtime_error->get_error_message(), $offending_token ), 'Failure identifies target and first offending token: ' . $runtime_case );
+		$runtime_data = $runtime_error->get_error_data();
+		$runtime_state_failed = Static_Site_Importer_Site_Plan_Receipt::with_error_diagnostics( $runtime_state, $runtime_error );
+		$assert( $runtime_target === $runtime_data['target'] && $offending_token === $runtime_data['token'] && str_contains( Static_Site_Importer_Public_Error_Projection::project_public_error_message( 'materialization_reference_unresolved', Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( array_slice( $runtime_state_failed['diagnostics'], -1 ) ) ), $offending_token ) && str_contains( $runtime_error->get_error_message(), $runtime_target ) && str_contains( $runtime_error->get_error_message(), $offending_token ), 'Failure identifies target and first offending token: ' . $runtime_case );
 	}
 }
 $runtime_plan['templates'] = array();
