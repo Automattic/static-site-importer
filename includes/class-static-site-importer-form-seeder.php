@@ -297,9 +297,9 @@ class Static_Site_Importer_Form_Seeder {
 		$nodes  = array();
 		$output = (string) preg_replace_callback(
 			'/ssi-node-[a-f0-9]{12}/',
-			static function ( array $match ) use ( &$nodes ): string {
-				$nodes[ $match[0] ] ??= 'ssi-node-' . count( $nodes );
-				return $nodes[ $match[0] ];
+			static function ( array $node ) use ( &$nodes ): string {
+				$nodes[ $node[0] ] ??= 'ssi-node-' . count( $nodes );
+				return $nodes[ $node[0] ];
 			},
 			$output
 		);
