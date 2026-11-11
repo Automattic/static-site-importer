@@ -588,6 +588,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$error = new WP_Error( 'image_resource_unresolved', 'The staged resource does not match its capture record.' );
 				return 0;
 			}
+			$reason = Static_Site_Importer_Image_Assets::media_library_unavailable_reason( $file, $record );
+			if ( null !== $reason ) {
+				$error = new WP_Error( 'media_library_asset_ineligible', $reason );
+				return 0;
+			}
 			$identity                 = basename( $theme_dir ) . '#resource#' . hash( 'sha256', $record['original']['source_url'] . '#' . $record['original']['sha256'] );
 			$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, $alt, $state, $error, $record );
 			return $attachments[ $relative ];
@@ -720,8 +725,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				// One image the Media Library refuses degrades alone: it keeps its
 				// verified theme destination and is reported. Integrity faults
 				// (bytes that do not match their capture record) still fail.
-				if ( $error && in_array( $error->get_error_code(), array( 'media_library_upload_failed', 'media_library_attachment_failed' ), true ) ) {
-					$state['media_library_unavailable'][ $asset['target_path'] ] = self::asset_unavailable( $asset, $error->get_error_code() );
+				if ( $error && in_array( $error->get_error_code(), array( 'media_library_upload_failed', 'media_library_attachment_failed', 'media_library_asset_ineligible' ), true ) ) {
+					$reason = 'media_library_asset_ineligible' === $error->get_error_code() ? $error->get_error_message() : $error->get_error_code();
+					$state['media_library_unavailable'][ $asset['target_path'] ] = self::asset_unavailable( $asset, $reason );
 					$error = null;
 					continue;
 				}
