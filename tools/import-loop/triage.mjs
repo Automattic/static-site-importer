@@ -233,17 +233,23 @@ function acceptanceGate(item, repo) {
     checked
       ? `# Acceptance for ${item.issue_url}: the ${item.check} predicate exits 1 (defect gone) on every recorded cell.`
       : `# ${item.issue_url}: the predicates do not run ${item.repo} code; the next pass's import checks this fix.`,
+    // The change is judged as it would ship: applied onto current trunk, against
+    // trunk. A branch's own merge base can predate the release importer and
+    // fail to import whatever the change does.
     ...(checked ? [
-      `root="$PWD/${repo.predicate_root}"`,
-      `url=$(${reimportLine('"$root"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url")`,
+      `root=${quote(repo.predicate_root)}; cand="$scratch/cand"; mkdir -p "$cand"`,
+      'git fetch -q origin trunk && trunk=$(git rev-parse FETCH_HEAD) || exit 1',
+      // Committed and uncommitted work alike, staged on a scratch index.
+      'cp "$(git rev-parse --git-path index)" "$scratch/index" && GIT_INDEX_FILE="$scratch/index" git add -A "$root" && GIT_INDEX_FILE="$scratch/index" git diff --cached --binary "$(git merge-base HEAD "$trunk")" -- "$root" > "$scratch/change.patch" || exit 1',
+      'git archive "$trunk" "$root" | tar -x -C "$cand" && git archive "$trunk" "$root" | tar -x -C "$base" || exit 1',
+      'if ! git -C "$cand" apply --whitespace=nowarn "$scratch/change.patch" 2>"$scratch/apply.err"; then echo "import-loop gate: this change does not apply onto current trunk ${trunk:0:8}. Merge origin/trunk into the branch, resolve the conflicts keeping trunk\'s behavior and this fix, then re-run the gate." >&2; cat "$scratch/apply.err" >&2; exit 1; fi',
+      `url=$(${reimportLine('"$cand/$root"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url")`,
     ] : []),
     // Predicates that compile a page through WordPress use the re-imported
     // site: it has the importer active with the candidate transformer.
 
-    // Scope: nothing outside the finding's elements may change against the
-    // import of this change's merge base with trunk.
+    // Scope: nothing outside the finding's elements may change against trunk.
     ...(checked ? [
-      `git fetch -q origin trunk && git archive "$(git merge-base HEAD FETCH_HEAD)" '${repo.predicate_root}' | tar -x -C "$base" || exit 1`,
       `burl=$(${reimportLine(`"$base/${repo.predicate_root}"`, '"$base/site"')}) || exit 1; burl=$(tail -n1 <<<"$burl")`,
       `node "$tools/gates/accept.mjs" --base-url "$burl" --candidate-url "$url" --base-site "$base/site" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "$scratch/checks" || failed=1`,
     ] : []),
