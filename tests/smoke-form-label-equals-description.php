@@ -25,7 +25,7 @@ $checks = array(
 	'form maps'                  => 'mapped' === $row['status'] && empty( $validated['errors'] ),
 	'email label keeps its text'  => 'Email' === trim( $label['label'] ?? '' ),
 	'email label stays visible'   => false !== ( $label['metadata']['blockVisibility'] ?? true ),
-	'description stays helpText'  => str_contains( $markup, '"helpText":"Email"' ),
+	'description stays visible once' => ! str_contains( $markup, '"helpText":"Email"' ) && 1 === substr_count( $markup, '>Email</p>' ),
 );
 
 // Keep the existing appended-description behavior at the field-markup boundary.
