@@ -77,6 +77,12 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 
 	/** Keep receipt overflow accounting and the support decision on the same policy. */
 	public static function requires_gate( array $loss ): bool {
+		// These named provider omissions are accepted, not erased from the
+		// receipt. Keep this policy shared with bounded overflow accounting.
+		if ( 'unconditionally_hidden_control' === ( $loss['reason_code'] ?? '' )
+			|| ( 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' === ( $loss['reason_code'] ?? '' ) && 'file_upload' === ( $loss['capability'] ?? '' ) ) ) {
+			return false;
+		}
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
 			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
 			|| 'textarea_height_omitted' === ( $loss['reason_code'] ?? '' )

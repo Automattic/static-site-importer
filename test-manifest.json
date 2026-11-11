@@ -81,6 +81,7 @@
     { "path": "tests/editor-presentation-browser.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/smoke-form-submit-box.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-hidden-controls.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-accepted-provider-loss.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-submit-icon-sides.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-submit-colors.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-context-spacing.php", "environment": "standalone-php" },
