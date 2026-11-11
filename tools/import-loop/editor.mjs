@@ -11,6 +11,11 @@ import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 import { themeChecks } from './theme.mjs';
 
+// Text the user can edit: Gutenberg marks template and template-part blocks
+// shown around the post as inert, and a rich-text block is itself the
+// contenteditable element.
+const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/heading"])[contenteditable="true"]:not([inert])';
+
 export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const [command, ...prefix] = wpCli.split(/\s+/);
   const wp = (...argv) => execFileSync(command, [...prefix, `--path=${site}`, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -55,7 +60,7 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         } finally { await front.close(); }
       });
       await check('editor_real_controls', async () => {
-        await frame.locator('[data-type="core/paragraph"], [data-type="core/heading"]').first().click();
+        await frame.locator(EDITABLE_TEXT).first().click();
         if (!await page.locator('.block-editor-block-toolbar, .block-editor-block-inspector').count()) throw new Error('No block toolbar or inspector for selected text');
       });
       await check('editor_list_view', async () => {
@@ -69,7 +74,7 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
       const marker = `Import loop edit ${randomBytes(5).toString('hex')}`;
       try {
         await check('editor_saved_text', async () => {
-          const text = frame.locator('[data-type="core/paragraph"] [contenteditable="true"], [data-type="core/heading"][contenteditable="true"]').first();
+          const text = frame.locator(EDITABLE_TEXT).first();
           await text.fill(marker);
           await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
           const front = await browser.newPage();
@@ -79,11 +84,13 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
           } finally { await front.close(); }
         });
         if (blocks.some((b) => b.name === 'core/image')) await check('editor_saved_image', async () => {
-          await frame.locator('[data-type="core/image"]').first().click();
+          await frame.locator('[data-type="core/image"]:not([inert])').first().click();
           await page.getByRole('button', { name: /replace/i }).first().click();
           await page.getByRole('menuitem', { name: /media library/i }).click();
           const dialog = page.getByRole('dialog');
           await dialog.waitFor();
+          // The modal can open on "Upload files"; choosing from the library is a tab away.
+          await dialog.getByRole('tab', { name: /media library/i }).click();
           const choices = dialog.locator('.attachment');
           await choices.nth(1).waitFor();
           await choices.nth(1).click();

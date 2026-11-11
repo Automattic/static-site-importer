@@ -13,12 +13,15 @@ export function compareImports(before, after, signature, cells) {
     const was = occurrences(a.get(key)), now = occurrences(b.get(key));
     blockers[now < was ? 'removed' : now > was ? 'added' : 'unchanged'].push({ signature: key, before: was, after: now, delta: now - was });
   }
-  const regressions = [];
+  const regressions = [], unmeasured = [];
   const current = new Map((after.visual || []).map((v) => [`${v.route}@${v.width}`, v]));
   for (const v of before.visual || []) {
     const key = `${v.route}@${v.width}`, next = current.get(key);
     // Compare each state/profile, not just route-wide pass/fail. A newly
-    // unmeasured cell is a regression, never an improvement.
+    // unmeasured cell is a regression, never an improvement. A cell the
+    // compare could not measure on either side (e.g. no frozen reference for
+    // that route) has nothing to regress from: it is reported, not failed.
+    if (!v.verified && !next?.verified) { unmeasured.push(key); continue; }
     if (!next?.verified || !v.verified) { regressions.push(key); continue; }
     for (const score of v.scores) {
       const n = next.scores.find((s) => s.state === score.state && s.profile === score.profile);
@@ -27,6 +30,7 @@ export function compareImports(before, after, signature, cells) {
   }
   const own = { before: occurrences(a.get(signature), cells), after: occurrences(b.get(signature), cells) };
   const unchecked = [...before.findings, ...after.findings].filter((f) => /unverified|unreachable|missing/.test(f.check || '') && ['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing'].includes(f.check));
-  const pass = Boolean(signature && own.before > own.after && !unchecked.length && !blockers.added.some((f) => f.signature !== signature) && !regressions.length && before.visual?.length && after.visual?.length);
-  return { pass, own, blockers, visual_regressions: [...new Set(regressions)] };
+  const measured = (before.visual || []).length > unmeasured.length;
+  const pass = Boolean(signature && own.before > own.after && !unchecked.length && !blockers.added.some((f) => f.signature !== signature) && !regressions.length && measured && after.visual?.length);
+  return { pass, own, blockers, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };
 }
