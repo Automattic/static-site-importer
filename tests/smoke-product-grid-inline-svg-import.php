@@ -65,9 +65,13 @@ $archive = $root . '/templates/archive-product.html';
 $assert( is_file( $archive ), 'The real build creates the product archive.' );
 $markup = file_get_contents( $archive );
 $assert( str_contains( $markup, 'woocommerce/product-collection' ), 'Archive contains the adopted product grid.' );
-$assert( 1 === preg_match( '~src="(/wp-content/themes/product-grid-inline-svg/([^"]+\\.svg))"~', $markup, $svg ), 'Review star resolves to a host-independent theme asset.' );
-$assert( is_file( $root . '/' . $svg[2] ), 'The referenced review star asset is written.' );
-foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
-	$assert( ! str_contains( file_get_contents( $file->getPathname() ), '{{wordpress-site-plan:' ), 'No unresolved placeholder in ' . $file->getPathname() );
+// Archive placeholders resolve at render through the theme's published asset map.
+$assert( 1 === preg_match( '~src="(\{\{wordpress-site-plan:asset:[^}]+\}\})"~', $markup, $svg ), 'Review star carries its theme asset reference.' );
+preg_match_all( "~'(\{\{wordpress-site-plan:asset:[^}]+\}\})' => '([^']+)'~", (string) file_get_contents( $root . '/functions.php' ), $map );
+$resolver = array_combine( $map[1], $map[2] );
+$assert( str_ends_with( $resolver[ $svg[1] ] ?? '', '.svg' ) && is_file( $root . '/' . $resolver[ $svg[1] ] ), 'The theme resolver maps the review star to its written asset.' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root . '/templates', FilesystemIterator::SKIP_DOTS ) ) as $file ) {
+	preg_match_all( '~\{\{wordpress-site-plan:[^}]+\}\}~', (string) file_get_contents( $file->getPathname() ), $tokens );
+	$assert( array() === array_diff( $tokens[0], array_keys( $resolver ) ), 'Every placeholder in ' . $file->getFilename() . ' has a theme resolver entry.' );
 }
 echo "PASS: product grid and inline SVG import\n";
