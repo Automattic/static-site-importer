@@ -910,7 +910,8 @@ class Static_Site_Importer_Form_Readable_Substitution {
 					$text = trim( substr( $text, 0, -strlen( $marker ) ) );
 				}
 				if ( '' !== $text && trim( (string) ( $control['label'] ?? '' ) ) === $text ) {
-					$consumed['legend'] = true;
+					$consumed['legend']            = true;
+					$state->field_blocks[ $index ] = self::with_legend_caption( $state->field_blocks[ $index ], $html );
 					foreach ( $descriptions as $description ) {
 						self::insert_description( $state->field_blocks[ $index ], $description );
 					}
@@ -941,6 +942,37 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			$consumed[ $slot ] = true;
 		}
 		return $consumed;
+	}
+
+	/**
+	 * A legend that captions a single control may frame a title element. That
+	 * title, not the control's empty binding label, owns the caption's classes.
+	 */
+	private static function with_legend_caption( array $field, string $html ): array {
+		if ( '' === $html || ! class_exists( 'DOMDocument' ) ) {
+			return $field;
+		}
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="UTF-8"><div>' . $html . '</div>', LIBXML_NONET );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$root  = $doc->getElementsByTagName( 'div' )->item( 0 );
+		$title = $root ? $root->firstElementChild : null; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+		if ( ! $title instanceof DOMElement || trim( $title->textContent ) !== trim( $root->textContent ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+			return $field;
+		}
+		$class = trim( $title->getAttribute( 'class' ) );
+		foreach ( $field['innerBlocks'] ?? array() as $key => $child ) {
+			if ( 'jetpack/label' !== ( $child['name'] ?? '' ) ) {
+				continue;
+			}
+			unset( $field['innerBlocks'][ $key ]['attrs']['className'] );
+			if ( '' !== $class ) {
+				$field['innerBlocks'][ $key ]['attrs']['className'] = $class;
+			}
+		}
+		return $field;
 	}
 
 	/** Insert visible description copy immediately after the provider caption. */
