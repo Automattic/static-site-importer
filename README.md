@@ -542,7 +542,7 @@ PHP smokes are declared in `test-manifest.json`; run the standalone lane with `n
 
 Submitted choice forms can stay editable while still needing a working way to save answers. Those imports fail with `form_submission_setup_required`, including when `fail_on_quality` is off. Their reports explain the setup needed, and the importer does not send a successful completion signal. Forms without a submit control keep their existing handling.
 
-The normal tests cover this check with the released engine. To also test editable preservation with the paired engine change, run:
+The normal tests and automatic engine-upgrade checks run this form test with the installed engine. Older engines must retain the unsupported form fallback. Engines that preserve editable choice forms must disable their controls, show the visitor message, and keep the import marked as needing repair. To require the editable-form checks against a specific engine checkout, run:
 
 ```bash
 STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH=/path/to/blocks-engine/php-transformer php tests/smoke-choice-submission-form.php

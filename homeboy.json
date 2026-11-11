@@ -280,6 +280,7 @@
           "tests/smoke-final-hydration-effects.php",
           "tests/smoke-font-face-unavailable.php",
           "tests/smoke-form-intent-routing.php",
+          "tests/smoke-choice-submission-form.php",
           "tests/smoke-woo-add-to-cart-form-binding.php",
           "tests/smoke-woo-variable-product.php",
           "tests/smoke-woo-storefront-readiness.php",

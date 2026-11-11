@@ -13,9 +13,8 @@ function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed { //
 }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 $engine_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' );
-if ( ! $engine_root ) {
-	throw new RuntimeException( 'Set STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH to the engine checkout containing the choice-submission fix.' );
-}
+$paired_engine = false !== $engine_root && '' !== $engine_root;
+$engine_root   = $paired_engine ? $engine_root : dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer';
 require_once rtrim( $engine_root, '/\\' ) . '/php-transformer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
@@ -47,6 +46,20 @@ $finalize = static function ( string $html, array $args = array() ): array {
 $fixture                            = (string) file_get_contents( __DIR__ . '/fixtures/choice-submission-form.html' );
 [ $compiled, $report, $quality ]    = $finalize( $fixture );
 $blocks                             = (string) ( $compiled['serialized_blocks'] ?? '' );
+if ( ! $paired_engine && 0 === $quality['choice_submission_form_count'] ) {
+	$legacy_forms = array_filter( $compiled['fallbacks'] ?? array(), static fn( array $finding ): bool => 'html_form_fallback' === ( $finding['diagnostic_code'] ?? '' ) );
+	$assert( 1 === count( $legacy_forms ), 'legacy-engine-retains-form-fallback' );
+	$assert( str_contains( $blocks, 'wp:html' ), 'legacy-engine-retains-original-form' );
+	$assert( false === $quality['pass'] && $quality['unsupported_fallback_count'] > 0, 'legacy-form-is-not-accepted-as-working' );
+	[ , , $strict_quality ] = $finalize( $fixture, array( 'fail_on_quality' => true ) );
+	$assert( true === $strict_quality['fail_import'], 'legacy-form-fails-strict-quality' );
+	foreach ( $failures as $failure ) {
+		fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
+	}
+	echo empty( $failures ) ? "Choice submission form: legacy fallback verified\n" : '';
+	exit( empty( $failures ) ? 0 : 1 );
+}
+
 $assert( false === ( $quality['pass'] ?? true ) && true === ( $quality['fail_import'] ?? false ), 'requires-remediation-with-default-options' );
 $assert( 0 === ( $quality['unsupported_fallback_count'] ?? -1 ) && 0 === ( $quality['accepted_preserved_runtime_island_count'] ?? -1 ), 'choice-form-is-not-accepted-runtime' );
 $assert( ! str_contains( $blocks, 'wp:html' ), 'no-raw-html-block' );
