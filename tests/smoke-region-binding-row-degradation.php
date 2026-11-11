@@ -112,7 +112,19 @@ if ( ! is_wp_error( $dropped ) ) {
 	$assert( 'runtime_declaration_rejected' === ( $dropped['diagnostics'][0]['code'] ?? '' ), 'Dropped declaration is diagnosed' );
 }
 $assert( is_wp_error( $resolve( 'product_listings', array( 'not-a-list' => $valid ) ) ), 'Non-list manifest fails closed' );
-$assert( is_wp_error( $resolve( 'products', array( array() ) ) ), 'Invalid product rows still fail closed' );
+$product = array( 'name' => 'Valid', 'slug' => 'valid', 'regular_price' => '10.00', 'source_route' => 'products/valid', 'attributes' => array( array( 'key' => 'size', 'label' => '', 'value' => 'Large' ) ) );
+$bad_route                 = $product;
+$bad_route['slug']         = 'bad-route';
+$bad_route['source_route'] = '/products?id=1';
+$products                  = $resolve( 'products', array( $product, $bad_route ) );
+$assert( ! is_wp_error( $products ), 'One invalid product must not fail the declaration' );
+if ( ! is_wp_error( $products ) ) {
+	$rows       = $products['entities'][ $declaration_id ]['manifest']['products'] ?? array();
+	$diagnostic = $products['diagnostics'][0] ?? array();
+	$assert( array( 'valid' ) === array_column( $rows, 'slug' ), 'Only the valid product reaches materialization' );
+	$assert( '/products/valid' === ( $rows[0]['source_route'] ?? '' ) && array() === ( $rows[0]['attributes'] ?? null ), 'A source-relative route is rooted and the empty attribute is dropped' );
+	$assert( 'runtime_entity_rows_rejected' === ( $diagnostic['code'] ?? '' ) && 1 === ( $diagnostic['rejected_count'] ?? 0 ) && '$.products[1].source_route' === ( $diagnostic['path'] ?? '' ), 'The rejected product is reported with its failing field' );
+}
 foreach ( array( 'product_grids', 'carts' ) as $collection ) {
 	$rejected = $resolve( $collection, array( array() ) );
 	$assert( ! is_wp_error( $rejected ), $collection . ' opts in to row degradation' );

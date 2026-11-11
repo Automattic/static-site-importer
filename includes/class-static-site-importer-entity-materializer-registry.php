@@ -2315,7 +2315,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 
 		foreach ( $data['products'] as $index => $product ) {
-			$path_prefix = '$.products[' . $index . ']';
+			$path_prefix     = '$.products[' . $index . ']';
+			$row_error_count = count( $errors );
 			if ( ! is_array( $product ) || array_is_list( $product ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix,
@@ -2534,7 +2535,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$url_path = parse_url( self::manifest_string( $product, 'url', false ), PHP_URL_PATH ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Manifest validation also runs before WordPress loads.
 				$route    = is_string( $url_path ) && '' !== trim( $url_path, '/' ) ? $url_path : '/products/' . $slug;
 			}
-			if ( ! preg_match( '~^/(?!/)[^?#\s]+$~', $route ) ) {
+			if ( ! preg_match( '~^/(?!/)[^?#\s]+$~', $route ) && ! preg_match( '~^[a-zA-Z0-9_./-]+$~', $route ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.source_route',
 					'message' => 'source_route must be a root-relative path.',
@@ -2542,11 +2543,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			} else {
 				$summary['source_route'] = '/' . trim( $route, '/' );
 			}
-			$products[] = $summary;
+			if ( count( $errors ) === $row_error_count ) {
+				$products[] = $summary;
+			}
 		}
 
 		return array(
-			'products' => empty( $errors ) ? $products : array(),
+			'products' => $products,
 			'errors'   => $errors,
 		);
 	}
@@ -3109,11 +3112,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$text = array();
 			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
-				$candidate = $attribute[ $field ] ?? '';
-				if ( ! is_string( $candidate ) || ( 'value_label' !== $field && '' === trim( $candidate ) ) ) {
+				// Label and value must be declared; only a declared-but-empty
+				// one drops its attribute below.
+				$candidate = 'value_label' === $field ? ( $attribute[ $field ] ?? '' ) : ( $attribute[ $field ] ?? null );
+				if ( ! is_string( $candidate ) || ( 'key' === $field && '' === trim( $candidate ) ) ) {
 					return null;
 				}
 				$text[ $field ] = trim( $candidate );
+			}
+			if ( '' === $text['label'] || '' === $text['value'] ) {
+				// An attribute without a shopper-facing label or value is left
+				// out; its product is kept.
+				continue;
 			}
 			$attributes[] = array(
 				'key'         => $text['key'],
