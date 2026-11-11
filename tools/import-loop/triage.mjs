@@ -94,8 +94,11 @@ function findingPage(finding, cell, env = predicateEnv(finding.subject, cell, re
 // it reproduces on the whole import at trunk: a cell trunk already clears
 // cannot tell a fix apart.
 let trunkSite = null;
+// A site finding (a whole-site check with no page predicate) is accepted on
+// its recorded occurrences by the whole-site gate alone.
+const siteFinding = (finding) => !fs.existsSync(predicatePath(finding.check));
 function acceptanceCells(finding) {
-  if (!fs.existsSync(predicatePath(finding.check))) return [];
+  if (siteFinding(finding)) return finding.occurrences.map((o) => ({ route: o.route ?? null, width: o.width ?? null, evidence: o.evidence }));
   const cells = finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: findingPage(finding, o) }));
   if (!repos[finding.owner_repo]?.predicate_root) return cells;
   if (!trunkSite) {
@@ -108,9 +111,9 @@ function acceptanceCells(finding) {
 const git = (dir, ...command) => execFileSync('git', ['-C', dir, ...command], { encoding: 'utf8' }).trim();
 function reduceAndFile(finding) {
   const predicate = predicatePath(finding.check);
-  if (!fs.existsSync(predicate)) return { status: 'untracked', reason: `no predicate for ${finding.check}` };
   const repo = repos[finding.owner_repo];
   if (!repo) return { status: 'untracked', reason: `no repository config for ${finding.owner_repo}` };
+  if (!fs.existsSync(predicate)) return fileIssue(finding, repo, siteFindingBody(finding));
   const dir = path.join(args.work, finding.signature);
   fs.mkdirSync(dir, { recursive: true });
   const occurrence = finding.occurrences.find((o) => o.route) || finding.occurrences[0];
@@ -128,8 +131,7 @@ function reduceAndFile(finding) {
     '',
     `\`${finding.stage}/${finding.check}\` on \`${finding.subject}\`, seen in ${finding.occurrences.length} route/width cell(s) of an imported site:`,
     '',
-    '| route | width | evidence |', '| --- | --- | --- |',
-    ...finding.occurrences.map((o) => `| \`${o.route ?? '-'}\` | ${o.width ?? '-'} | \`${JSON.stringify(o.evidence).slice(0, 200)}\` |`),
+    ...occurrenceTable(finding),
     '',
     `## Reduced page (${Buffer.byteLength(html)} bytes)`,
     '',
@@ -158,12 +160,50 @@ function reduceAndFile(finding) {
     '---',
     disclosure,
   ].join('\n');
+  return fileIssue(finding, repo, body, { reduced });
+}
+
+// Evidence as a reader needs it: a scored check's failures, else its JSON.
+const failuresOf = (evidence) => [...new Set((evidence?.scores || []).flatMap((score) => score.failures || []))];
+const evidenceText = (evidence) => {
+  const failures = failuresOf(evidence);
+  return failures.length ? failures.join('; ') : JSON.stringify(evidence);
+};
+const occurrenceTable = (finding) => [
+  '| route | width | evidence |', '| --- | --- | --- |',
+  ...finding.occurrences.map((o) => `| \`${o.route ?? '-'}\` | ${o.width ?? '-'} | \`${evidenceText(o.evidence).replace(/\|/g, '\\|').slice(0, 600)}\` |`),
+];
+
+// A whole-site check has no page to reduce: the issue carries its occurrences,
+// and the whole-site acceptance gate decides a fix.
+function siteFindingBody(finding) {
+  return [
+    '## Finding',
+    '',
+    `\`${finding.stage}/${finding.check}\` on \`${finding.subject}\`, seen in ${finding.occurrences.length} cell(s) of an imported site:`,
+    '',
+    ...occurrenceTable(finding),
+    '',
+    '## Acceptance',
+    '',
+    `This is a whole-site check: it measures the imported site, so there is no reduced page. A fix is accepted when a whole re-import of the capture with the change lowers this finding's occurrence count, with no other blocker appearing or growing and no visual parity regression on any route or width. The import loop's acceptance gate measures exactly that (\`static-site-importer\` \`tools/import-loop/gates/accept.mjs\`, at \`${git(here, 'rev-parse', '--short', 'HEAD')}\`).`,
+    '',
+    `Loop signature: \`${finding.signature}\``,
+    '',
+    '---',
+    disclosure,
+  ].join('\n');
+}
+
+function fileIssue(finding, repo, body, extra = {}) {
+  const dir = path.join(args.work, finding.signature);
+  fs.mkdirSync(dir, { recursive: true });
   const title = `${finding.check.replace(/_/g, ' ')}: ${finding.subject}`.slice(0, 120);
   fs.writeFileSync(path.join(dir, 'issue.md'), body);
-  if (args['dry-run']) return { status: 'untracked', reason: `dry run: would file "${title}" in ${repo.github}`, reduced };
+  if (args['dry-run']) return { status: 'untracked', reason: `dry run: would file "${title}" in ${repo.github}`, ...extra };
   const url = gh('issue', 'create', '-R', repo.github, '--title', title, '--body-file', path.join(dir, 'issue.md')).trim();
   log(`filed ${url}`);
-  return { status: 'tracked', issue_url: url, number: Number(url.split('/').pop()), filed: true, reduced: reduced };
+  return { status: 'tracked', issue_url: url, number: Number(url.split('/').pop()), filed: true, ...extra };
 }
 
 const tracked = [];
@@ -187,6 +227,7 @@ for (const finding of blockers) {
   else entry = reduceAndFile(finding);
   const record = { signature: finding.signature, stage: finding.stage, check: finding.check, repo: finding.owner_repo, subject: finding.subject, ...entry };
   if (record.status === 'tracked') {
+    record.site = siteFinding(finding);
     record.cells = acceptanceCells(finding);
     // The import shows the defect but the predicate cannot: a fix gated on it
     // would pass vacuously, so the finding waits for a faithful predicate.
@@ -251,6 +292,8 @@ function acceptanceGate(item, repo) {
     ] : []),
     'exit $failed',
   ].join('\n') + '\n');
+  // Site findings render no route page: the input directory still exists.
+  fs.mkdirSync(path.join(args.work, 'pages'), { recursive: true });
   const inputs = [
     { id: 'acceptance-gate', source: gate, env: 'IMPORT_LOOP_GATE' },
     { id: 'import-loop-tools', source: gateTools, env: 'IMPORT_LOOP_TOOLS' },
@@ -300,7 +343,7 @@ for (const item of tracked) {
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
       '',
-      `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces. Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
+      `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. ${item.site ? 'It is a whole-site check: the issue holds its occurrences and evidence, and there is no reduced page; the whole re-import is the reproduction.' : 'The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.'} Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
       ...(refuted.length && !trunkConflict ? [
         '',
         refuted[0].exit === 'import_failed'
@@ -329,9 +372,9 @@ for (const item of tracked) {
         '- Those gate inputs exist only inside the gate: `IMPORT_LOOP_*` is unset in your session by design, so the whole-site run is not yours to reproduce. Once the root-cause fix and its regression test are in place, declare your review form complete; Cook then runs the gate, and its verdict decides publication.',
         '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
-        '- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.',
+        ...(item.site ? [] : ['- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.']),
         '',
-        ...item.cells.map((cell) => `  - \`${cell.route}\` at ${cell.width}px: \`${JSON.stringify(cell.evidence).slice(0, 200)}\``),
+        ...item.cells.map((cell) => `  - ${cell.route ? `\`${cell.route}\`` : 'site-wide'}${cell.width ? ` at ${cell.width}px` : ''}: \`${evidenceText(cell.evidence).slice(0, 600)}\``),
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
       // Auto-release rewrites these on every trunk release: a branch that
       // carries its own copy conflicts with each new release.
