@@ -221,6 +221,7 @@
           "tests/smoke-form-responsive-item-sizing.php",
           "tests/smoke-form-scope-shared-across-routes.php",
           "tests/smoke-form-input-border-reset.php",
+          "tests/smoke-form-control-background-image-reset.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-readable-substitution.php",
           "tests/smoke-shared-part-form.php",

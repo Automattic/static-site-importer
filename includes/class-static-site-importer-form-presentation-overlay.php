@@ -1297,6 +1297,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		// A source can author vertical/horizontal padding through the same two-value
 		// logical shorthand already admitted for margin above.
 		$keys = array_merge( $keys, array( 'padding_block', 'padding_inline', 'grid_column', 'grid_row', 'grid_area' ) );
+		// The producer reports a control's background longhands alongside its fill
+		// (a `background-image:none` reset, say); url() values stay unsafe values.
+		$keys = array_merge( $keys, array( 'background_image', 'background_position', 'background_repeat', 'background_size' ) );
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
@@ -1347,7 +1350,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$ranks[ str_replace( '-', '_', $property ) ] = array( $rank['important'], $rank['specificity'], $rank['source_order'] );
 		}
 		$shorthands = array(
-			'background'    => array( 'background_color' ),
+			'background'    => array( 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size' ),
 			'border'        => array( 'border_color', 'border_style', 'border_width' ),
 			'border_color'  => array(),
 			'border_style'  => array(),
