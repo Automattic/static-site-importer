@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Loop step, before the merge approval: re-check every open fix on its head.
+// Loop step, before merge: re-check every open fix on its head.
 //
 // A tracked finding lists acceptance cells, one per route/width it was seen
 // in, each on the full captured page. Each head re-imports the capture as
@@ -14,8 +14,8 @@
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
 //          merge:[{github, number, sha}], merge_count, confirm_path}
-// `merge` is what approval merges, each at the head checked here: every PR not
-// refuted. A confirmed draft (an incomplete Cook that a later pass finished) is
+// `merge` is what the merge step merges once its checks are green, each at the
+// head checked here: every PR not refuted. A confirmed draft (an incomplete Cook that a later pass finished) is
 // marked ready, since confirm just proved it; an unconfirmed draft waits.
 
 import fs from 'node:fs';

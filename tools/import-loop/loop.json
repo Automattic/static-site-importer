@@ -179,7 +179,7 @@
       }
     },
     {
-      "id": "approve_merge",
+      "id": "merge",
       "needs": [
         "confirm"
       ],
@@ -197,21 +197,6 @@
             "gt": 0
           }
         ]
-      },
-      "approval": {
-        "prompt": "Review this pass's fix PRs. The confirm step re-ran each finding's predicate on every recorded route/width of the full captured pages at each PR's head: confirmed PRs cleared every cell, refuted PRs still reproduce, and unconfirmed PRs change code the predicates do not run (the next pass's import checks them). Approving merges each PR in confirm's merge list (not refuted, non-draft) at the head confirm checked, once its checks are green; a PR whose checks fail, conflicts or moves holds until the next pass."
-      }
-    },
-    {
-      "id": "merge",
-      "needs": [
-        "approve_merge"
-      ],
-      "always": true,
-      "when": {
-        "step": "approve_merge",
-        "output": "/decision",
-        "equals": "approved"
       },
       "foreach": "{{steps.confirm.output/merge}}",
       "join": {

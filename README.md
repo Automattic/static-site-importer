@@ -452,9 +452,8 @@ status.
    It reopens a closed issue whose finding still reproduces. Findings without a predicate are reported as untracked.
 4. **cook** runs up to three Homeboy Cooks in parallel, one per tracked issue. A Cook opens a fix PR, or reworks the existing one. Its gate is the repository's `verify` command from `repos.json` plus the finding's acceptance check.
 5. **confirm** (`confirm.mjs`) re-imports the capture at each fix PR's head and re-runs the finding's predicate on every route and width where the finding was seen. The fix is **refuted** if the predicate still reproduces, if the head restyles elements outside the finding, if it breaks the import, or if it conflicts with `trunk`.
-6. **approve_merge** waits for a human: `homeboy workflow approve <instance> approve_merge`, or `reject`. With `--notification-transport`/`--notification-route`, the prompt is posted there.
-7. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
-8. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
+6. **merge** runs [`homeboy git pr merge-when-green`](https://github.com/Extra-Chill/homeboy/blob/main/docs/commands/git.md#exact-head-green-merge) for each PR in confirm's merge list: each PR that is not refuted, at the head confirm checked, once its checks are green. A merge that holds (failed checks, conflict, a moved head) is reworked by the next pass.
+7. **shipped** (`shipped.mjs`) waits until each merged fix is in the release Studio installs. A Blocks Engine fix ships once the latest Static Site Importer release locks a transformer commit that contains it.
 
 Homeboy's `next_pass` starts the next pass. The chain stops when the source is accepted, when no blocker is tracked, when three passes in a row see the same blockers, or after 60 passes. Cook and merge items may fail without ending the chain (`"join": {"min_succeeded": 0}`): the next pass sees the same findings and tries again.
 
@@ -469,7 +468,6 @@ homeboy workflow run "$PWD/tools/import-loop/loop.json" \
   [--input cook_placement=auto] [--input wp_cli='studio wp'] \
   [--notification-transport <transport> --notification-route <route>]
 homeboy runs show <instance>
-homeboy workflow approve <instance> approve_merge
 ```
 
 `blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_model` chooses the Cook's Pi model (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
