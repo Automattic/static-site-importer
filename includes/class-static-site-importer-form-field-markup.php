@@ -324,7 +324,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$label = self::control_text( $control );
 		}
 		$description = self::control_description( $control );
-		if ( '' !== $description && '' !== $label && str_ends_with( $label, $description ) ) {
+		if ( '' !== $description && strlen( $label ) > strlen( $description ) && str_ends_with( $label, $description ) ) {
 			$label = trim( substr( $label, 0, -strlen( $description ) ) );
 		}
 		if ( '' !== $label && isset( $control['required_text'] ) && is_scalar( $control['label'] ?? null ) && 1 === preg_match( '/\s$/u', (string) $control['label'] ) ) {
