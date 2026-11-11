@@ -355,6 +355,7 @@
           "tests/smoke-product-grid-runtime-flatten.php",
           "tests/smoke-source-normalizer.php",
           "tests/smoke-submit-caption-color.php",
+          "tests/smoke-form-label-gap.php",
           "tests/smoke-synced-pattern-materializer.php",
           "tests/smoke-tec-event-seeder.php",
           "tests/smoke-tec-whole-page-media.php",
