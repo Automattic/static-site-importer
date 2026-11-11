@@ -288,7 +288,7 @@ function acceptanceGate(item, repo) {
       'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" -p HEAD -m candidate) || exit 1',
       `bash "$tools/gates/merge-onto.sh" . ${quote(trunk)} "$candidate" '${repo.predicate_root}' "$scratch/merged" || exit 1; phase merge_onto_trunk`,
       `url=$(${reimportLine(`"$scratch/merged/${repo.predicate_root}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
-      `node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "$scratch/checks" || failed=1; phase accept`,
+      `node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
     ] : []),
     'exit $failed',
   ].join('\n') + '\n');
@@ -305,14 +305,16 @@ function acceptanceGate(item, repo) {
       { id: 'base', source: path.resolve(args.findings), env: 'IMPORT_LOOP_BASE' },
     ] : []),
   ];
-  // Prompts stay free of machine-local paths: the agent receives the gate as
-  // declared provider evidence, and Cook's gates receive it as a gate input.
+  // Prompts stay free of machine-local paths. Cook's gates receive the inputs
+  // as gate inputs; the agent receives the same files as provider evidence
+  // under the same ids, so it can run the whole-site check itself. Bare
+  // WordPress is over the evidence size limit: without it the gate installs one.
   return {
     // The repository's checks and acceptance are independent: run them side
     // by side, then print acceptance's output after the repository's.
     verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
-    provider_evidence: JSON.stringify({ id: 'acceptance-gate', source: gate }),
+    provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source, ...(id === 'capture' ? { include: ['**'] } : {}) })),
   };
 }
 
@@ -369,7 +371,7 @@ for (const item of tracked) {
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
         '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it, and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
-        '- Those gate inputs exist only inside the gate: `IMPORT_LOOP_*` is unset in your session by design, so the whole-site run is not yours to reproduce. Once the root-cause fix and its regression test are in place, declare your review form complete; Cook then runs the gate, and its verdict decides publication.',
+        '- Run that whole-site check yourself, first to reproduce the finding on trunk and again on your change, before declaring the review form complete. Its inputs are the declared provider evidence under the same ids. From your worktree root, set each variable to its evidence path: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
         '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
         ...(item.site ? [] : ['- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.']),
