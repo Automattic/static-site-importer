@@ -390,7 +390,6 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				return null;
 			}
 			$field = $state->field_blocks[ $index ];
-			$field = self::with_source_caption( $field, $block['form_field']['label'] ?? '', $state->form['controls'][ $index ] ?? array() );
 			if ( 'core/button' === $field['name'] && preg_match_all( '/(?:^|\s)ssi-source-submit--(\S+)/', $field['attrs']['className'] ?? '', $source ) ) {
 				// The wrapper is the source button's box (with_source_box_submit_wrapper()).
 				$field['attrs']['className'] .= ' ' . implode( ' ', $source[1] );
@@ -912,7 +911,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				}
 				if ( '' !== $text && trim( (string) ( $control['label'] ?? '' ) ) === $text ) {
 					$consumed['legend']            = true;
-					$state->field_blocks[ $index ] = self::with_source_caption( $state->field_blocks[ $index ], $html, $control, true );
+					$state->field_blocks[ $index ] = self::with_legend_caption( $state->field_blocks[ $index ], $html );
 					foreach ( $descriptions as $description ) {
 						self::insert_description( $state->field_blocks[ $index ], $description );
 					}
@@ -945,8 +944,11 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		return $consumed;
 	}
 
-	/** Carry the presentation of the caption that supplies the provider's text. */
-	private static function with_source_caption( array $field, string $html, array $control, bool $legend = false ): array {
+	/**
+	 * A legend that captions a single control may frame a title element. That
+	 * title, not the control's empty binding label, owns the caption's classes.
+	 */
+	private static function with_legend_caption( array $field, string $html ): array {
 		if ( '' === $html || ! class_exists( 'DOMDocument' ) ) {
 			return $field;
 		}
@@ -955,52 +957,22 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		$doc->loadHTML( '<?xml encoding="UTF-8"><div>' . $html . '</div>', LIBXML_NONET );
 		libxml_clear_errors();
 		libxml_use_internal_errors( $previous );
-		$marker = trim( (string) ( $control['required_text'] ?? '' ) );
-		$found  = false;
-		foreach ( $doc->getElementsByTagName( '*' ) as $element ) {
-			if ( '' !== $marker && 0 === $element->childElementCount && trim( $element->textContent ) === $marker ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
-				$found = '' !== $element->getAttribute( 'class' );
-				break;
-			}
+		$root  = $doc->getElementsByTagName( 'div' )->item( 0 );
+		$title = $root ? $root->firstElementChild : null; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+		if ( ! $title instanceof DOMElement || trim( $title->textContent ) !== trim( $root->textContent ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+			return $field;
 		}
+		$class = trim( $title->getAttribute( 'class' ) );
 		foreach ( $field['innerBlocks'] ?? array() as $key => $child ) {
 			if ( 'jetpack/label' !== ( $child['name'] ?? '' ) ) {
 				continue;
 			}
-			if ( $legend ) {
-				// The legend may frame a title element; that title, not an empty
-				// control-binding label, owns the caption's presentation.
-				$root  = $doc->getElementsByTagName( 'div' )->item( 0 );
-				$title = $root->firstElementChild; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
-				if ( $title instanceof DOMElement && trim( $title->textContent ) === trim( $root->textContent ) ) {
-					$child['attrs']['className'] = $title->getAttribute( 'class' );
-				}
+			unset( $field['innerBlocks'][ $key ]['attrs']['className'] );
+			if ( '' !== $class ) {
+				$field['innerBlocks'][ $key ]['attrs']['className'] = $class;
 			}
-			if ( $found ) {
-				// Keep the marker and its arrangement wrapper together. Jetpack's
-				// synthesized indicator would lose both classes and flex-row gap.
-				$child['attrs']['label'] = self::caption_markup( $doc->getElementsByTagName( 'div' )->item( 0 ) );
-				unset( $child['attrs']['requiredText'] );
-				$child['attrs']['requiredIndicator'] = false;
-				$field['attrs']['requiredIndicator'] = false;
-			}
-			$field['innerBlocks'][ $key ] = $child;
 		}
 		return $field;
-	}
-
-	/** Rebuild caption copy with only inline containers and escaped class hooks. */
-	private static function caption_markup( DOMNode $node ): string {
-		$html = '';
-		foreach ( $node->childNodes as $child ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
-			if ( $child instanceof DOMText ) {
-				$html .= esc_html( $child->textContent ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
-			} elseif ( $child instanceof DOMElement && ! in_array( strtolower( $child->tagName ), array( 'script', 'style', 'input', 'select', 'textarea', 'button' ), true ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
-				$class = trim( $child->getAttribute( 'class' ) );
-				$html .= '<span' . ( '' === $class ? '' : ' class="' . htmlspecialchars( $class, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' ) . '>' . self::caption_markup( $child ) . '</span>';
-			}
-		}
-		return $html;
 	}
 
 	/** Insert visible description copy immediately after the provider caption. */
