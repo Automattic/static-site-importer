@@ -105,7 +105,7 @@ class Static_Site_Importer_Consent_Banner {
 	public static function markup( array $fact ): string {
 		$text = esc_html( $fact['text'] );
 		$link = $fact['policy_link'] ?? null;
-		if ( is_array( $link ) && is_string( $link['label'] ?? null ) && '' !== $link['label'] && is_string( $link['href'] ?? null ) && preg_match( '#^https?://#i', $link['href'] ) ) {
+		if ( is_array( $link ) && is_string( $link['label'] ?? null ) && '' !== $link['label'] && is_string( $link['href'] ?? null ) && preg_match( '#^(?:https?://|/(?!/))#i', $link['href'] ) ) {
 			$anchor   = '<a href="' . esc_url( $link['href'] ) . '">' . esc_html( $link['label'] ) . '</a>';
 			$position = strpos( $fact['text'], $link['label'] );
 			if ( false === $position ) {
