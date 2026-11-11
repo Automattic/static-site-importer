@@ -2023,7 +2023,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Derive the map keys using the same inputs and activation condition as WordPressSitePlan::bootstrap(). */
 	public static function template_asset_tokens( array $plan ): array {
-		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array() ) as $document ) {
+		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() ) as $document ) {
 			if ( ! str_contains( (string) ( $document['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' ) ) {
 				continue;
 			}
@@ -2046,8 +2046,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			return new WP_Error( 'materialization_reference_unresolved', 'Unresolved site-plan reference in ' . $target . ': ' . $token, array(
-				'target' => $target,
-				'token'  => $token,
+				'target'      => $target,
+				'token'       => $token,
+				'diagnostics' => array(
+					array(
+						'reason_code' => 'materialization_reference_unresolved',
+						'severity'    => 'error',
+						'source_path' => $target,
+						'detail'      => 'Unresolved site-plan reference ' . $token,
+					),
+				),
 			) );
 		}
 		return null;
