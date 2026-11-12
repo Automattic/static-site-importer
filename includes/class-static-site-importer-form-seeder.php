@@ -578,7 +578,8 @@ class Static_Site_Importer_Form_Seeder {
 			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::button_block(
 				Static_Site_Importer_Form_Field_Markup::control_text( $control ),
 				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] ),
-				self::control_icons( $state->form, $control_index )
+				self::control_icons( $state->form, $control_index ),
+				Static_Site_Importer_Form_Field_Markup::control_label( $control )
 			);
 			$state->record_mapped( $control_index, 'core/button' );
 			return;
@@ -627,6 +628,10 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		if ( ! isset( $state->submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
 			$state->submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
+		}
+		$label = Static_Site_Importer_Form_Field_Markup::control_label( $control );
+		if ( ! isset( $state->submit_presentation['label_classes'] ) && ! isset( $state->submit_presentation['label_parts'] ) && isset( $label['parts'] ) ) {
+			$state->submit_presentation['label_parts'] = $label['parts'];
 		}
 		// The provider emits every submit as a `<button>`; a retagged control
 		// carries the marker the projected stylesheet excludes with its tag.

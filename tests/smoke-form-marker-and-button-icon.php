@@ -2,7 +2,9 @@
 /**
  * Regression for #2422: a visible required marker on a `novalidate` form, with
  * no `required` validation, survives into the Jetpack field label, and a plain
- * (non-submit) button keeps its captured inline icon.
+ * (non-submit) button keeps its captured inline icon. A plain button is
+ * one source box like a submit: its paint reaches the link, and a caption
+ * built from sibling spans keeps each span.
  *
  * @package StaticSiteImporter
  */
@@ -18,8 +20,9 @@ $form   = '<form novalidate action="/contact" method="post">'
 	. '<div><label for="naam">Naam <span class="text-accent" aria-hidden="true">*</span></label><input id="naam" name="naam" type="text"></div>'
 	. '<div><label for="note">Note</label><input id="note" name="note" type="text"></div>'
 	. '<button type="button" class="attach"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>Add file</button>'
+	. '<button type="button" class="day"><span class="day__month">Nov</span><span class="day__weekday">Thu</span><span class="day__number">12</span></button>'
 	. '<button type="submit">Send</button></form>';
-$html   = '<!doctype html><html><head><style>.text-accent{color:#c00}</style></head><body><main>' . $form . '</main></body></html>';
+$html   = '<!doctype html><html><head><style>.text-accent{color:#c00}.day{display:flex;flex-direction:column;padding:8px;border-radius:4px;background:#222}</style></head><body><main>' . $form . '</main></body></html>';
 $result = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray();
 $plan   = $result['source_reports']['wordpress_site_plan'];
 $declaration = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
@@ -34,6 +37,8 @@ $checks = array(
 	'unmarked label stays plain'       => str_contains( $markup, '"label":"Note"' ),
 	'field is not made required'       => ! str_contains( $markup, '"required":true' ),
 	'marker keeps its source color'    => (bool) preg_match( '/> \.grunion-label-required\{[^}]*color:#c00/', $overlay ),
+	'plain button paints its link'     => (bool) preg_match( '/ > \.wp-block-button__link[^{]*\{[^}]*padding:8px/', $overlay ),
+	'plain button keeps caption spans' => str_contains( $markup, '<span class="day__month"' ) && str_contains( $markup, '<span class="day__number"' ),
 	'plain button keeps its icon'      => (bool) preg_match( '#<button type="button" class="wp-block-button__link wp-element-button"><svg[^>]*><path d="M12 5v14M5 12h14"></path></svg>Add file</button>#', $markup ),
 );
 foreach ( $checks as $name => $ok ) {
