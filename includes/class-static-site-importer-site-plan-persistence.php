@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -611,6 +612,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $references ) ) {
 			return self::failed_receipt_from_error( $state, $references );
 		}
+		$state['deferred_media'] = Static_Site_Importer_Deferred_Media_Stage::register( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 

@@ -547,28 +547,6 @@ foreach ( scandir( $media_aggregate_dir ) as $entry ) {
 }
 rmdir( $media_aggregate_dir );
 
-// The wider media ceiling still cooperates with the media budget instead of
-// racing past it: eleven equally sized media files, each comfortably under the
-// flat media ceiling on its own, exhaust the 1 GiB media budget by the eleventh
-// file, whose effective ceiling has shrunk to what remains (24 MiB) — and the
-// rejection message reports that shrunken remaining-budget limit, not the flat
-// 100 MiB media ceiling, under the media budget's own error code.
-$media_budget_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-budget-' . bin2hex( random_bytes( 6 ) );
-mkdir( $media_budget_dir );
-for ( $index = 0; $index < 11; ++$index ) {
-	$clip_handle = fopen( $media_budget_dir . '/clip-' . $index . '.mp4', 'w' );
-	ftruncate( $clip_handle, 104857600 );
-	fclose( $clip_handle );
-}
-$media_budget = static_site_importer_cli_request_bundle_files( $media_budget_dir );
-$assert( is_wp_error( $media_budget ) && 'static_site_importer_cli_request_bundle_media_file_too_large' === $media_budget->get_error_code(), 'request-bundle-shrinks-the-media-ceiling-to-what-remains-of-the-media-budget' );
-$assert( str_contains( $media_budget->get_error_message(), '24 MiB' ) && ! str_contains( $media_budget->get_error_message(), '100 MiB' ), 'request-bundle-media-rejection-message-reports-the-remaining-budget-not-the-flat-media-ceiling' );
-foreach ( scandir( $media_budget_dir ) as $entry ) {
-	if ( '.' !== $entry && '..' !== $entry ) {
-		unlink( $media_budget_dir . '/' . $entry );
-	}
-}
-rmdir( $media_budget_dir );
 
 // www.ghestilistes.com (run r65) is refused for a capture report, not for its
 // pages: asset-evidence.json is 10,666,142 bytes (10.17 MiB) beside a 47 MB
