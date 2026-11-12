@@ -132,7 +132,8 @@ final class Static_Site_Importer_Compilation_Preparation {
 		// namespace is the artifact's block_namespace input, so the producer
 		// emits generated-block names under exactly this namespace instead of
 		// independently re-deriving ssi-<site_slug>.
-		$artifact['block_namespace'] = $identity['block_namespace'];
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+		$artifact['block_namespace'] = Static_Site_Importer_Existing_Theme_Runtime::namespace_for( $args, $identity['block_namespace'] );
 
 		// A URL batch run composes this canonical compiler result before the one
 		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
@@ -240,6 +241,10 @@ final class Static_Site_Importer_Compilation_Preparation {
 					return $companion_validation;
 				}
 			}
+		}
+		if ( is_array( $companion_payload ) && 'existing_theme' === ( $args['destination'] ?? '' ) && Static_Site_Importer_Existing_Theme_Runtime::host() ) {
+			$args['theme_runtime_payload']          = $companion_payload;
+			$args['existing_theme_runtime_payload'] = $companion_payload;
 		}
 		if ( null !== $artifact_provenance && null !== $companion_payload ) {
 			// The validated producer provenance travels with the import args so

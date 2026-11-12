@@ -111,7 +111,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			(string) ( $args['site_tagline'] ?? '' ),
 			(string) ( ! empty( $args['site_title'] ) ? $args['site_title'] : Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact, self::payload_reader( $workspace ) ) )
 		);
-		$artifact['block_namespace']           = $site_identity['block_namespace'];
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+		$artifact['block_namespace'] = Static_Site_Importer_Existing_Theme_Runtime::namespace_for( $args, $site_identity['block_namespace'] );
 		unset( $args['_static_site_importer_payload_reader'] );
 		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                              = $policy['artifact'];

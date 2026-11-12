@@ -3217,6 +3217,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				self::record_rollback_failure( $state, 'file', (string) $path, $error );
 			}
 		}
+		$runtime_directories = array_values( $state['rollback']['existing_theme_runtime_directories'] ?? array() );
+		usort( $runtime_directories, static fn( string $a, string $b ): int => strlen( $b ) <=> strlen( $a ) );
+		foreach ( $runtime_directories as $directory ) {
+			if ( is_dir( $directory ) ) {
+				rmdir( $directory ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only empty directories created by this runtime transaction.
+			}
+		}
 		foreach ( array_reverse( $state['applied']['attachments'] ?? array() ) as $attachment_id ) {
 			try {
 				if ( function_exists( 'wp_delete_attachment' ) && ! wp_delete_attachment( (int) $attachment_id, true ) ) {
