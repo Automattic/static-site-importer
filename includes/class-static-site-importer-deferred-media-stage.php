@@ -15,7 +15,7 @@
 final class Static_Site_Importer_Deferred_Media_Stage {
 	/** Any producer's media queue: `<producer>/media-queue/v1`. */
 	const QUEUE_SCHEMA_PATTERN = '~^[a-z0-9][a-z0-9._-]*/media-queue/v1$~';
-	const MAX_BATCH    = 500;
+	const MAX_BATCH            = 500;
 
 	/**
 	 * Read and validate a local capture queue without loading its media.
@@ -68,11 +68,11 @@ final class Static_Site_Importer_Deferred_Media_Stage {
 		if ( ! is_string( $root ) || '' === $root ) {
 			return array();
 		}
-		$ref              = 'ssi-media-' . hash( 'sha256', $root );
-		$journal          = get_option( $ref, array() );
-		$journal          = is_array( $journal ) ? $journal : array();
-		$journal['root']  = $root;
-		$journal['posts'] = array_values( array_unique( array_merge( $journal['posts'] ?? array(), array_map( 'intval', array_column( $state['applied']['posts'] ?? array(), 'id' ) ) ) ) );
+		$ref                = 'ssi-media-' . hash( 'sha256', $root );
+		$journal            = get_option( $ref, array() );
+		$journal            = is_array( $journal ) ? $journal : array();
+		$journal['root']    = $root;
+		$journal['posts']   = array_values( array_unique( array_merge( $journal['posts'] ?? array(), array_map( 'intval', array_column( $state['applied']['posts'] ?? array(), 'id' ) ) ) ) );
 		$journal['entries'] = $journal['entries'] ?? array();
 		update_option( $ref, $journal, false );
 		return self::receipt( $ref, $journal, self::queue( $root ) );

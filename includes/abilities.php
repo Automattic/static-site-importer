@@ -365,7 +365,7 @@ if ( ! function_exists( 'static_site_importer_ability_validate_artifact' ) ) {
 	function static_site_importer_ability_validate_artifact( array $input ): array {
 		$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 		if ( is_wp_error( $result ) ) {
-			/* @var WP_Error $result */
+			/** @var WP_Error $result */
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 
@@ -394,7 +394,7 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 
 		$result = Static_Site_Importer_Theme_Exporter::export_theme( $args );
 		if ( is_wp_error( $result ) ) {
-			/* @var WP_Error $result */
+			/** @var WP_Error $result */
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 
