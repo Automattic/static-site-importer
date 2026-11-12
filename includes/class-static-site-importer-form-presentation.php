@@ -189,11 +189,14 @@ final class Static_Site_Importer_Form_Presentation {
 	/**
 	 * Inactive field errors take no space, and a placeholder without an
 	 * authored colour keeps the browser default over the provider's `inherit`.
-	 * Labels inherit source weight instead of the provider's bold default;
-	 * authored node weights keep their higher specificity.
+	 * Labels the provider renders, and classless labels its bold default
+	 * would capture, inherit source weight instead; authored node weights
+	 * keep their higher specificity. Source labels with their own classes
+	 * stay with the source cascade, whose class rules already follow the
+	 * provider stylesheet.
 	 */
 	private static function provider_base_rules( string $scope ): array {
-		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}', '.' . $scope . ' label{font-weight:inherit}' );
+		return array( '.' . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}', '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}', '.' . $scope . ' label:where([class*="grunion-"],[class*="jetpack-field"],:not([class])){font-weight:inherit}' );
 	}
 
 	/**

@@ -952,7 +952,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			return true;
 		}
 		// Admit only the scoped label-weight reset, not arbitrary label styling.
-		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} label\{font-weight:inherit\}$/D', $rule ) ) {
+		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} label:where\(\[class\*="grunion-"\],\[class\*="jetpack-field"\],:not\(\[class\]\)\)\{font-weight:inherit\}$/D', $rule ) ) {
 			return true;
 		}
 		// Provider dropdown chrome may only be suppressed within a generated
