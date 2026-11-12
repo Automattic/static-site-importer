@@ -872,6 +872,22 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
+	/** Reuse attachment creation for a queued capture file. */
+	public static function deferred_attachment( string $file, string $path, string $identity, array &$state, ?WP_Error &$error ): int {
+		$type   = (string) wp_check_filetype( $file )['type'];
+		$record = null;
+		if ( ! str_starts_with( $type, 'image/' ) ) {
+			$record = array(
+				'kind'     => str_starts_with( $type, 'video/' ) ? 'video' : 'document',
+				'original' => array(
+					'content_type' => $type,
+					'source_url'   => $path,
+				),
+			);
+		}
+		return self::attachment_for( $file, $path, $identity, '', $state, $error, $record );
+	}
+
 	private static function attachment_for( string $file, string $relative, string $identity, string $alt, array &$state, ?WP_Error &$error, ?array $record = null ): int {
 		$existing = get_posts(
 			array(
@@ -963,6 +979,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		// posts as page content. Rollback deletes these with their files.
 		$state['applied']['attachments'][] = (int) $attachment_id;
 
+		update_post_meta( $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
 		foreach ( array( 'wp-admin/includes/image.php', 'wp-admin/includes/media.php', 'wp-admin/includes/file.php' ) as $include ) {
 			if ( ! function_exists( 'wp_generate_attachment_metadata' ) && is_readable( ABSPATH . $include ) ) {
 				require_once ABSPATH . $include;

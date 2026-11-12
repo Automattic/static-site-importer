@@ -8,6 +8,8 @@
 use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
 use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
 
+require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
+
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	/**
 	 * Write validation output to a file when requested, otherwise stdout.
@@ -523,7 +525,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * a capture of any shape is still refused once it passes an aggregate.
 	 */
 	function static_site_importer_cli_request_bundle_limits(): array {
-		return array(
+		$limits = array(
 			'max_files'                => 5000,
 			'max_media_files'          => 20000,
 			'max_file_bytes'           => 10485760,
@@ -535,6 +537,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
+		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_cli_request_bundle_limits', $limits ) : $limits;
 	}
 
 	/**
@@ -753,9 +756,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$limits  = static_site_importer_cli_request_bundle_limits();
-		$reports = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
-		$walk    = array( array( $directory, false ) );
+		$queue_root = is_file( $directory . '/media-queue.json' ) ? $directory : dirname( $directory );
+		$deferred   = Static_Site_Importer_Deferred_Media_Stage::queue( $queue_root );
+		$limits     = static_site_importer_cli_request_bundle_limits();
+		$reports    = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$walk       = array( array( $directory, false ) );
 		if ( '' !== $report_root && $report_root !== $directory ) {
 			$walk = array( array( $directory, true ) );
 			foreach ( array_keys( $reports ) as $report_path ) {
@@ -803,6 +808,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				}
 				$absolute = $item->getRealPath();
 				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $root ) + 1 ) ) : '';
+				if ( isset( $deferred[ $relative ] ) || 'media-queue.json' === $relative ) {
+					continue;
+				}
 				// Declared reports come from the capture root, never the website tree.
 				if ( $reports_elsewhere && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
 					continue;
@@ -819,6 +827,12 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
 				$report          = $read_source && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports );
 				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes, $report_bytes, $reports );
+				if ( ! $read_source && $bytes > max( 0, $limits['max_media_total_bytes'] - $media_bytes ) ) {
+					return new WP_Error(
+						'static_site_importer_cli_request_bundle_media_total_too_large',
+						sprintf( 'The request bundle\'s media passes the %s media budget at %s. Capture large media sets with a media queue and import them with `wp static-site-importer media`.', static_site_importer_cli_request_bundle_mib( $limits['max_media_total_bytes'] ), $relative )
+					);
+				}
 				if ( $bytes > $file_byte_limit ) {
 					if ( $report ) {
 						return new WP_Error(
@@ -864,6 +878,12 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						'sha256' => $digest,
 					),
 				);
+				if ( $deferred && preg_match( '/\.html?$/i', $relative ) ) {
+					$files[ array_key_last( $files ) ] = array(
+						'path'    => $relative,
+						'content' => Static_Site_Importer_Deferred_Media_Stage::source_references( (string) file_get_contents( $absolute ), $deferred ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Bounded document only; never media bytes.
+					);
+				}
 				if ( $report ) {
 					$report_bytes += $bytes;
 				} elseif ( $read_source ) {
@@ -1027,6 +1047,10 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 			if ( '' !== $capture_source_url && ! isset( $metadata['provenance']['source_url'] ) ) {
 				$metadata['provenance'] = array( 'source_url' => $capture_source_url ) + ( isset( $metadata['provenance'] ) && is_array( $metadata['provenance'] ) ? $metadata['provenance'] : array() );
 			}
+		}
+		$queue_root = isset( $capture_root ) ? $capture_root : dirname( $resolved_path );
+		if ( 'files' === $type && Static_Site_Importer_Deferred_Media_Stage::queue( $queue_root ) ) {
+			$input['source_metadata']['deferred_media'] = array( 'root' => $queue_root );
 		}
 		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array(), $report_root ) : null;
 		if ( '' !== $report_root && is_array( $bundle ) ) {
@@ -1949,6 +1973,13 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
+	WP_CLI::add_command( 'static-site-importer media', static function ( array $args, array $assoc_args ): void {
+		$result = Static_Site_Importer_Deferred_Media_Stage::run( array( 'ref' => $args[0] ?? '', 'batch' => $assoc_args['batch'] ?? 20 ) );
+		if ( is_wp_error( $result ) ) {
+			WP_CLI::error( $result->get_error_message() );
+		}
+		WP_CLI::line( (string) wp_json_encode( array( 'media' => $result ), JSON_UNESCAPED_SLASHES ) );
+	} );
 
 	WP_CLI::add_command(
 		'static-site-importer recompose',
