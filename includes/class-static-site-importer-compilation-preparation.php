@@ -15,6 +15,7 @@ foreach ( array(
 	'Static_Site_Importer_Consent_Banner'                 => 'class-static-site-importer-consent-banner.php',
 	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
 	'Static_Site_Importer_Redirects_Manifest'             => 'class-static-site-importer-redirects-manifest.php',
+	'Static_Site_Importer_Content_Index'                  => 'class-static-site-importer-content-index.php',
 	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',
 	'Static_Site_Importer_Site_Identity'                  => 'class-static-site-importer-site-identity.php',
 	'Static_Site_Importer_Compiler_Diagnostic_Normalizer' => 'class-static-site-importer-compiler-diagnostic-normalizer.php',
@@ -59,6 +60,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( ! empty( $images['records'] ) ) {
 			$args['image_asset_records'] = $images['records'];
 		}
+		// Declared routes must be on the files before served HTML twins collapse.
+		$content_index = Static_Site_Importer_Content_Index::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
+		if ( is_wp_error( $content_index ) ) {
+			return $content_index;
+		}
+		$artifact  = $content_index['artifact'];
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		if ( is_wp_error( $redirects ) ) {
 			return $redirects;
@@ -84,9 +91,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 				(string) ( $args['site_title'] ?? '' )
 			);
 		}
-		$args['source_route_aliases']        = array_merge(
-			is_array( $args['source_route_aliases'] ?? null ) ? $args['source_route_aliases'] : array(),
-			$redirects['aliases']
+		$args['source_route_aliases']        = Static_Site_Importer_Content_Index::append_aliases(
+			array_merge(
+				is_array( $args['source_route_aliases'] ?? null ) ? $args['source_route_aliases'] : array(),
+				$redirects['aliases']
+			),
+			$content_index['aliases']
 		);
 		$script_policy                       = $precompiled ? array(
 			'artifact' => $artifact,

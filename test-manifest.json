@@ -181,6 +181,8 @@
     { "path": "tests/smoke-font-face-unavailable.php", "environment": "standalone-php" },
     { "path": "tests/smoke-runtime-form-entity-degraded.php", "environment": "standalone-php" },
     { "path": "tests/smoke-redirection-routes.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-content-index-import.php", "environment": "standalone-php" },
+    { "path": "tests/acceptance/content-index-wordpress.php", "environment": "operator-only", "reason": "Disposable WordPress store acceptance for a data-liberation-agent content index (declared slugs, post_date/post_modified, label terms, redirects); mount this plugin and a declared-content Blocks Engine php-transformer at wp-content/plugins/blocks-engine-candidate, define SSI_CONTENT_INDEX_DISPOSABLE_TEST and require the file after wp-load.php." },
     { "path": "tests/smoke-redirection-theme-permalinks.php", "environment": "wordpress-runtime" },
     { "path": "tests/woo-authored-shop-page-portable.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-product-listing-page-collection.php", "environment": "wordpress-runtime" },

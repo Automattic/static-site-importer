@@ -228,6 +228,15 @@ final class Static_Site_Importer_Redirection_Materializer {
 				}
 			}
 		}
+		// A term archive document is not a page, so aliases naming it bind to
+		// the applied term instead (a content index's old label URLs).
+		$archive_sources = array();
+		foreach ( $receipt['plan']['taxonomy_entities'] ?? array() as $entity ) {
+			if ( is_string( $entity['archive']['source_path'] ?? null ) && '' !== $entity['archive']['source_path'] ) {
+				$archive_sources[ ( $entity['taxonomy'] ?? '' ) . ':' . ( $entity['slug'] ?? '' ) ] = $entity['archive']['source_path'];
+			}
+		}
+		$archive_aliases = array() === $archive_sources ? array() : Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $args['source_route_aliases'] ?? array(), array_values( $archive_sources ) );
 		// Only applied entities may claim archive routes. Terms carry their
 		// source route in the receipt; authors bind the plan archive by slug.
 		foreach ( array( 'taxonomy_entities', 'author_entities' ) as $collection ) {
@@ -260,6 +269,15 @@ final class Static_Site_Importer_Redirection_Materializer {
 				$result = self::add_route( $routes, $from, $target, $home_path );
 				if ( is_wp_error( $result ) ) {
 					return $result;
+				}
+				if ( 'taxonomy_entities' === $collection ) {
+					$archive_source = $archive_sources[ ( $entity['taxonomy'] ?? '' ) . ':' . ( $entity['slug'] ?? '' ) ] ?? '';
+					foreach ( $archive_aliases[ $archive_source ] ?? array() as $alias ) {
+						$result = self::add_route( $routes, (string) $alias, $target, $home_path );
+						if ( is_wp_error( $result ) ) {
+							return $result;
+						}
+					}
 				}
 				$request_path = $home_path . '/' . ltrim( self::canonical_source_route( $from ), '/' );
 				$target_path  = rawurldecode( (string) wp_parse_url( $target, PHP_URL_PATH ) );

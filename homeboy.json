@@ -354,6 +354,7 @@
           "tests/smoke-source-findings-equivalence.php",
           "tests/smoke-source-findings.php",
           "tests/smoke-redirection-routes.php",
+          "tests/smoke-content-index-import.php",
           "tests/smoke-product-grid-runtime-flatten.php",
           "tests/smoke-source-normalizer.php",
           "tests/smoke-submit-caption-color.php",
