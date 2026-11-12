@@ -187,7 +187,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 				if ( '' !== $inner_suffix ) {
 					// The wrapper is the item of the source container, so the
 					// control's own placement in that container belongs on it.
-					$wrapper_properties = array( 'display', 'width', 'min_width', 'align_self', 'justify_self', 'order', 'flex', 'flex_basis', 'flex_grow' );
+					$wrapper_properties = array( 'display', 'width', 'min_width', 'max_width', 'align_self', 'justify_self', 'order', 'flex', 'flex_basis', 'flex_grow' );
 					if ( $core_button ) {
 						// Gutenberg's `is-layout-flex > * { margin:0 }` zeros a submit
 						// wrapper's authored class margin. Carry vertical spacing onto

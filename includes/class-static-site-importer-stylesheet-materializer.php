@@ -80,6 +80,13 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	}
 
 	/**
+	 * A selector's trailing placeholder pseudo-element, standard or vendor-prefixed.
+	 * A prefixed rule stays valid only in its own engine, and so does the
+	 * standard alternative appended to its selector list.
+	 */
+	private const PLACEHOLDER_PSEUDO = '/(?:::placeholder|::?-(?:webkit-input|moz|ms-input)-placeholder)\s*$/i';
+
+	/**
 	 * Keep authored placeholder rules above provider chrome and fallback resets.
 	 *
 	 * `revert` is still useful for controls without authored placeholder styles,
@@ -94,7 +101,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @return string
 	 */
 	public static function preserve_form_placeholders( string $css, array $overlays ): string {
-		if ( ! str_contains( $css, '::placeholder' ) ) {
+		if ( false === stripos( $css, 'placeholder' ) ) {
 			return $css;
 		}
 		$scopes = array();
@@ -117,8 +124,8 @@ class Static_Site_Importer_Stylesheet_Materializer {
 				$selectors = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevel( $prelude, array( ',' ) );
 				$projected = array();
 				foreach ( $selectors as $selector ) {
-					if ( preg_match( '/::placeholder\s*$/', $selector ) && ! str_contains( $selector, '.ssi-form-' ) ) {
-						$projected[] = preg_replace( '/::placeholder\s*$/', $scope . '::placeholder', $selector );
+					if ( preg_match( self::PLACEHOLDER_PSEUDO, $selector ) && ! str_contains( $selector, '.ssi-form-' ) ) {
+						$projected[] = preg_replace( self::PLACEHOLDER_PSEUDO, $scope . '::placeholder', $selector );
 					}
 				}
 				return empty( $projected ) ? $prelude : $prelude . ',' . implode( ',', $projected );

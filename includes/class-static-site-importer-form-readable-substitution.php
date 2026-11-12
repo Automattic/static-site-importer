@@ -291,8 +291,8 @@ class Static_Site_Importer_Form_Readable_Substitution {
 				$descriptor['destinations'][ $index ]['properties'] = array_merge( $destination['properties'], array( 'grid_column', 'grid_row', 'grid_area' ), self::SUBMIT_OFFSET_FACTS );
 				$descriptor['destinations'][ $index ]['resets']     = array(
 					'display'     => 'inline-block',
-					// A source button is never capped by its container; Jetpack's
-					// editor caps every field block at 100%.
+					// Jetpack's editor caps every field block at 100%; a source
+					// button's own max-width replaces this reset.
 					'max-width'   => 'none',
 					'padding'     => '0',
 					'border'      => '0',
