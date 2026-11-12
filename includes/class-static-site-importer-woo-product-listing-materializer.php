@@ -423,13 +423,13 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	/**
-	 * The archive query parameter a facet or a price range sets. A facet
+	 * The archive query parameter a sort, facet or price range sets. A facet
 	 * lists each source option's parameter value in source order, `''` for
 	 * its reset option; a range names the bound that clears the parameter.
 	 *
 	 * @return array<string,mixed>|null
 	 */
-	private static function control_parameter( array $control, string $source ): ?array {
+	public static function control_parameter( array $control, string $source = '' ): ?array {
 		$kind = (string) ( $control['kind'] ?? '' );
 		if ( 'range' === $kind && 'price' === ( $control['field'] ?? '' ) && is_numeric( $control['min'] ?? null ) && is_numeric( $control['max'] ?? null ) ) {
 			$max = 'min' !== ( $control['bound'] ?? 'max' );

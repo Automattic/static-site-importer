@@ -260,6 +260,69 @@ $prepared = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_prod
 $nested   = $prepared['entities'][0]['manifest']['product_listings'][0];
 $assert( ! empty( $nested['replaced_fallback_identities'] ), 'A sort select inside its single-select form reconciles the form.' );
 
+// Every form control must be bound before the listing can retire its fallback.
+$price_inputs = array(
+	'<!-- wp:html --><input type="number" name="min_price" /><!-- /wp:html -->',
+	'<!-- wp:html --><input type="number" name="max_price" /><!-- /wp:html -->',
+);
+$price_controls = array();
+foreach ( array( 'min', 'max' ) as $bound ) {
+	$price_controls[] = array(
+		'id'    => $bound . '_price',
+		'kind'  => 'range',
+		'field' => 'price',
+		'bound' => $bound,
+		'min'   => 0,
+		'max'   => 100,
+	);
+}
+foreach ( array(
+	'price bounds' => array( $price_inputs, $price_controls, '', true ),
+	'single sort'  => array( array( $select ), $nested['controls'], '', true ),
+	'unbound text' => array( $price_inputs, $price_controls, '<input type="text" name="search" />', false ),
+) as $case => list( $inputs, $controls, $unbound, $replaced ) ) {
+	$case_form   = '<!-- wp:group {"tagName":"form"} --><form class="wp-block-group">' . implode( '', $inputs ) . $unbound . '</form><!-- /wp:group -->';
+	$case_region = str_replace( $form, $case_form, $region );
+	$case_listing = $listing;
+	$case_listing['controls'] = $controls;
+	$case_listing['bindings'] = array( $binding( $case_region, 'commerce_listing' ) );
+	foreach ( $inputs as $index => $input ) {
+		$control_binding = $binding( $input, 'commerce_listing_control' );
+		$control_binding['control'] = $controls[ $index ]['id'];
+		$control_binding['projected_anchor'] = $anchor( $case_region, $input );
+		$case_listing['bindings'][] = $control_binding;
+	}
+	$case_lifecycle = $lifecycle;
+	$case_lifecycle['entities'][0]['manifest']['product_listings'] = array( $case_listing );
+	$case_plan = $plan;
+	$case_plan['pages'][0]['resolved_block_markup'] = $case_region;
+	$case_fallback = $fallback;
+	$case_fallback['control_count'] = count( $inputs ) + ( '' === $unbound ? 0 : 1 );
+	$case_fallback['binding']['search_block_markup'] = $case_form;
+	$case_fallback['binding']['position'] = $span( $case_region, $case_form );
+	$case_entity = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $case_lifecycle, $case_plan, array( $case_fallback ) )['entities'][0]['manifest']['product_listings'][0];
+	$case_markup = Static_Site_Importer_Woo_Product_Listing_Materializer::archive_block_markup( $case_entity );
+	$case_receipt = $record_method->invoke( null, 'listing', $case_listing['bindings'][0], $case_markup, $case_entity, array( 'provider' => 'woocommerce' ) );
+	$assert( $replaced === in_array( Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $case_fallback ), $case_receipt['replaced_fallback_identities'], true ), $case . ': only fully bound forms are replaced.' );
+	if ( $controls === $price_controls ) {
+		$wired_params = array();
+		$check_inputs = static function ( array $blocks ) use ( &$check_inputs, &$wired_params, $assert, $case ): void {
+			foreach ( $blocks as $input_block ) {
+				$param = $input_block['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ]['param'] ?? '';
+				if ( in_array( $param, array( 'min_price', 'max_price' ), true ) ) {
+					$rendered_input = Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( $input_block['innerHTML'], $input_block );
+					$assert( str_contains( $rendered_input, 'data-ssi-listing-param="' . $param . '"' ), $case . ': price input is wired to ' . $param . '.' );
+					$wired_params[] = $param;
+				}
+				$check_inputs( $input_block['innerBlocks'] ?? array() );
+			}
+		};
+		$check_inputs( parse_blocks( $case_markup ) );
+		$assert( array( 'min_price', 'max_price' ) === $wired_params, $case . ': both price bounds are wired.' );
+		unset( $wired_params );
+	}
+}
+
 class WP_Block {
 	public array $context = array();
 }
