@@ -398,9 +398,6 @@ for (const item of tracked) {
         '',
         ...item.cells.map((cell) => `  - ${cell.route ? `\`${cell.route}\`` : 'site-wide'}${cell.width ? ` at ${cell.width}px` : ''}: \`${evidenceText(cell.evidence).slice(0, 600)}\``),
       ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
-      // Auto-release rewrites these on every trunk release: a branch that
-      // carries its own copy conflicts with each new release.
-      ...(repo.release_owned?.length ? [`- Release automation owns ${repo.release_owned.map((f) => `\`${f}\``).join(', ')} and rewrites them on every trunk release. Leave them exactly as trunk has them: after merging trunk, run \`git checkout ${trunk} -- ${repo.release_owned.join(' ')}\` and commit. Never add changelog entries or bump versions.`] : []),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
     // Cook resolves the issue itself: it reworks the one open linked PR on
