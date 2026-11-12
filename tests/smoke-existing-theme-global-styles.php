@@ -101,7 +101,7 @@ try {
 	$assert( str_contains( $css, '@media(min-width:700px)' ) && str_contains( $css, '@supports' ) && str_contains( $css, '@container' ), 'conditional CSS survives core storage' );
 	$assert( ! preg_match( '/(?:^|[{}])\s*(?:body|h1)\s*\{/', $css ), 'no unscoped body or h1 rule' );
 	$assert( str_contains( $css, wp_upload_dir()['baseurl'] ), 'CSS image URL points to a Media Library upload' );
-	$posts = get_posts( array( 'post_type' => 'page', 'posts_per_page' => -1, 'meta_key' => '_static_site_importer_provenance' ) );
+	$posts = get_posts( array( 'post_type' => 'page', 'post_status' => 'any', 'posts_per_page' => -1, 'meta_key' => '_static_site_importer_provenance' ) );
 	$imported = array();
 	foreach ( $posts as $post ) {
 		if ( ! str_contains( $post->post_content, 'ssi-page-' ) || ! str_contains( $post->post_title, $slug ) ) {

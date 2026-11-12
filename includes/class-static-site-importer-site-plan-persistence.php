@@ -1573,7 +1573,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'post_status'  => (string) ( $page['materialized_post_status'] ?? 'publish' ),
 			'post_title'   => (string) $page['title'],
 			'post_name'    => (string) $page['slug'],
-			'post_parent'  => $parent,
+			'post_parent'  => $page['chosen_parent_id'] ?? $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
 		$description = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
@@ -1651,9 +1651,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! self::is_valid_post_type( $post_type ) ) {
 				$post_type = 'page';
 			}
+			if ( false === ( $page['selected'] ?? true ) ) {
+				$occupant         = Static_Site_Importer_Route_Occupant::find( $route, $post_type );
+				$reference        = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
+				$routes[ $route ] = $reference;
+				$routes[ self::normalized_route_path( '/' . $source_path ) ]                = $reference;
+				$routes[ self::normalized_route_path( $page['original_route'] ?? $route ) ] = $reference;
+				continue;
+			}
 			if ( '' !== $route && $post_id > 0 ) {
 				$reference        = wp_make_link_relative( (string) get_permalink( $post_id ) );
 				$routes[ $route ] = $reference;
+				if ( isset( $page['original_route'] ) ) {
+					$routes[ self::normalized_route_path( $page['original_route'] ) ] = $reference;
+				}
 				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
@@ -2988,6 +2999,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * destination canonicalizes back into a redirect loop.
 	 */
 	public static function serve_source_routes( array &$state ): bool {
+		if ( 'existing_theme' === ( $state['args']['destination'] ?? '' ) ) {
+			return true;
+		}
 		global $wp_rewrite;
 		if ( ! $wp_rewrite instanceof WP_Rewrite || $wp_rewrite->using_permalinks() ) {
 			return true;
@@ -3044,6 +3058,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Move core rewrite bases that would route an imported page path to an archive. */
 	public static function keep_page_routes_reachable( array &$state ): bool {
+		if ( 'existing_theme' === ( $state['args']['destination'] ?? '' ) ) {
+			return true;
+		}
 		// Without a rewrite engine there are no pretty routes to shadow.
 		if ( ! ( $GLOBALS['wp_rewrite'] ?? null ) instanceof WP_Rewrite ) {
 			return true;

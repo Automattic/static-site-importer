@@ -648,6 +648,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( esc_html( (string) $entity_error->get_error_code() ) );
 			}
 		}
+		require_once __DIR__ . '/class-static-site-importer-page-choices.php';
+		Static_Site_Importer_Page_Choices::prepare( $state );
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
@@ -659,6 +661,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
 			$route = (string) ( $page['route']['path'] ?? '' );
+			if ( false === ( $page['selected'] ?? true ) ) {
+				continue;
+			}
 			if ( isset( $pages_by_route[ $route ] ) ) {
 				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'duplicate_page_route' );
@@ -680,12 +685,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$page['metadata']['detected_date']         = $classification['date'];
 			$page['metadata']['classification_signal'] = $classification['signal'];
 			$existing                                  = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $page['reconciliation_identity'] );
-			if ( $existing ) {
+			$route_occupant                            = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
+			if ( $existing && ( ! $route_occupant || (int) $route_occupant->ID === (int) $existing->ID ) ) {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
 				continue;
 			}
 			$conflict             = '' === trim( $route, '/' ) ? null : Static_Site_Importer_Route_Occupant::find( $route, $page['post_type'] );
-			$default_content_seed = $conflict && Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict );
+			$default_content_seed = $conflict && 'existing_theme' !== ( $state['args']['destination'] ?? '' ) && Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict );
 			// A required dependency's install or activation may have created this
 			// page earlier in the same run (a commerce dependency seeds its own
 			// checkout page). The run owns that content, so admit it without an
@@ -703,15 +709,33 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					'declined_adoption_reason' => $reason,
 				);
 				// ssi-error-class: integrity
-				$state['preflight_error'] = new WP_Error( 'post_conflict', $message, array( 'diagnostics' => array( $diagnostic ) ) );
-				// ssi-error-class: integrity
-				throw new InvalidArgumentException( 'post_conflict' );
+				$state['conflict_messages'][] = $message;
+				$state['diagnostics'][]       = $diagnostic;
+				$page['action']               = 'conflict';
+				$page['occupying_post']       = array(
+					'ID'     => (int) $conflict->ID,
+					'type'   => $conflict->post_type,
+					'status' => $conflict->post_status,
+					'title'  => $conflict->post_title,
+				);
+				$suffix                       = 2;
+				$base                         = trailingslashit( dirname( rtrim( $route, '/' ) ) );
+				do {
+					$suggestion = $page['slug'] . '-' . ( $suffix++ );
+				} while ( Static_Site_Importer_Route_Occupant::find( $base . $suggestion . '/', $page['post_type'] ) );
+				$page['suggested_slug'] = $suggestion;
+				continue;
 			}
 			if ( $conflict ) {
 				$page = self::plan_existing_page( $state, $page, $conflict, $default_content_seed ? 'default_content_seed_match' : ( $dependency_created ? 'dependency_created_match' : 'canonical_route_match' ) );
 			}
 		}
 		unset( $page );
+		if ( in_array( 'conflict', array_column( $state['resolved']['pages'], 'action' ), true ) ) {
+			$state['preflight_error'] = new WP_Error( 'post_conflict', implode( ' ', $state['conflict_messages'] ), array( 'diagnostics' => array_values( array_filter( $state['diagnostics'], static fn( array $row ): bool => 'post_conflict' === ( $row['reason_code'] ?? '' ) ) ) ) );
+			// ssi-error-class: integrity
+			throw new InvalidArgumentException( 'post_conflict' );
+		}
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'], $import_run_id );
 		if ( null === $state['ordered_pages'] ) {
 			// ssi-error-class: representability:page
@@ -1577,9 +1601,12 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */
 	public static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
-		$id                          = (int) $existing->ID;
-		$protected                   = Static_Site_Importer_Protected_Page_Policy::is_protected_page( $existing );
-		$page['planned_existing_id'] = $id;
+		$id                               = (int) $existing->ID;
+		$protected                        = Static_Site_Importer_Protected_Page_Policy::is_protected_page( $existing );
+		$page['planned_existing_id']      = $id;
+		$page['action']                   = 'update';
+		$page['materialized_post_status'] = $state['args']['post_status'] ?? ( ! empty( $page['synthetic'] ) ? $page['materialized_post_status'] : $existing->post_status );
+		$page['post_status']              = $page['materialized_post_status'];
 		$state['page_ids'][ $page['reconciliation_identity'] ] = $id;
 		$state['source_ids'][ $page['source_path'] ]           = $id;
 		$row                                  = array(
@@ -1596,6 +1623,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		);
 		$state['existing_matches']['pages'][] = $row;
 		if ( $protected ) {
+			$page['action']               = 'skip';
 			$page['skip_materialization'] = true;
 			$state['skipped'][]           = $row;
 		}

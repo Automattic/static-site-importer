@@ -364,6 +364,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_object( $payload_reader ) ) {
 			$input['_static_site_importer_payload_reader'] = $payload_reader;
 		}
+		$input                = array_merge( $approved['page_choices'] ?? array(), $input );
 		$input['destination'] = $approved['destination'] ?? ( $input['destination'] ?? 'generated_theme' );
 		$input['plan']        = $plan;
 		$receipt              = self::materialize_wordpress_site_plan( $input );
@@ -487,22 +488,28 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return self::error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
 		}
 		$destination_diagnostics = array();
-		if ( 'existing_theme' === ( $args['destination'] ?? '' ) ) {
+		if ( class_exists( 'Static_Site_Importer_Site_Plan_Preparation' ) ) {
 			$prepared                = Static_Site_Importer_Site_Plan_Preparation::prepare( $compiled['plan'], $compiled['args'] );
 			$destination_diagnostics = $prepared['diagnostics'] ?? $prepared['receipt']['diagnostics'] ?? array();
+			if ( 'rejected' === ( $prepared['status'] ?? '' ) && 'post_conflict' !== ( $prepared['receipt']['errors'][0]['code'] ?? '' ) ) {
+				$error = $prepared['receipt']['errors'][0] ?? array();
+				return self::error( (string) ( $error['code'] ?? 'invalid_page_choices' ), (string) ( $error['code'] ?? 'Invalid page choices.' ), $prepared['receipt'] );
+			}
 		}
 		$response = array(
-			'success'     => true,
-			'operation'   => 'plan',
-			'destination' => $args['destination'] ?? 'generated_theme',
-			'plan'        => $compiled['plan'],
-			'diagnostics' => array_merge(
+			'success'      => true,
+			'operation'    => 'plan',
+			'pages'        => class_exists( 'Static_Site_Importer_Page_Choices' ) ? Static_Site_Importer_Page_Choices::rows( $prepared['resolved']['pages'] ?? $prepared['receipt']['plan']['pages'] ?? $compiled['plan']['pages'] ) : array(),
+			'page_choices' => array_intersect_key( $args, array_flip( array( 'pages', 'page_routes', 'post_status', 'slug' ) ) ),
+			'destination'  => $args['destination'] ?? 'generated_theme',
+			'plan'         => $compiled['plan'],
+			'diagnostics'  => array_merge(
 				$destination_diagnostics,
 				is_array( $compiled['plan']['diagnostics'] ?? null ) ? $compiled['plan']['diagnostics'] : array(),
 				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['args']['compiler_diagnostics'] ?? null ) ? $compiled['args']['compiler_diagnostics'] : array() )
 			),
-			'quality'     => $compiled['plan']['quality'] ?? array(),
-			'source'      => array(
+			'quality'      => $compiled['plan']['quality'] ?? array(),
+			'source'       => array(
 				'type'       => $type,
 				'identity'   => hash( 'sha256', (string) wp_json_encode( $artifact ) ),
 				'provenance' => $provenance,

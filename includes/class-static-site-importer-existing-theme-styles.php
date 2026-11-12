@@ -365,6 +365,9 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		}
 		$css = self::stylesheet( $state );
 		foreach ( $state['ordered_pages'] as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
 			$markup                            = strtr( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ), $state['existing_theme_asset_urls'] ?? array() );
 			$class                             = self::page_class( $state, (string) $page['source_path'] );
 			$page['materialized_block_markup'] = '<!-- wp:group {"className":"' . $class . '","layout":{"type":"default"}} --><div class="wp-block-group ' . $class . '">' . $markup . '</div><!-- /wp:group -->';
@@ -397,6 +400,10 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 				'id'          => $post,
 				'source_path' => $page['source_path'],
 			);
+		}
+		$links = Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state );
+		if ( is_wp_error( $links ) ) {
+			return Static_Site_Importer_Site_Plan_Persistence::failed_receipt_from_error( $state, $links );
 		}
 		$user         = WP_Theme_JSON_Resolver::get_user_data_from_wp_global_styles( wp_get_theme(), false );
 		$raw          = ! empty( $user['ID'] ) ? json_decode( get_post( $user['ID'] )->post_content, true ) : array();
