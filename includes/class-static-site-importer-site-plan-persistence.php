@@ -595,6 +595,18 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			Static_Site_Importer_Build_Provenance::record_artifact_identity( Static_Site_Importer_Build_Provenance::describe_artifact( $artifact_provenance ) );
 		}
 
+		// Later content rewrites (route links, overlays) went through
+		// wp_update_post(), which stamps post_modified; declared dates win last.
+		foreach ( $state['ordered_pages'] as $page ) {
+			$post_id = (int) ( $state['source_ids'][ (string) ( $page['source_path'] ?? '' ) ] ?? 0 );
+			if ( $post_id > 0 && empty( $page['skip_materialization'] ) ) {
+				$modified = self::write_declared_modified_date( $post_id, $page );
+				if ( is_wp_error( $modified ) ) {
+					return self::failed_receipt_from_error( $state, $modified );
+				}
+			}
+		}
+
 		$references = self::validate_output_references( $state );
 		if ( is_wp_error( $references ) ) {
 			return self::failed_receipt_from_error( $state, $references );
@@ -1617,7 +1629,51 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
+		$modified = self::write_declared_modified_date( (int) $id, $page );
+		if ( is_wp_error( $modified ) ) {
+			return $modified;
+		}
 		return (int) $id;
+	}
+
+	/**
+	 * Persist a producer-declared modification instant (`modified_timestamp`).
+	 *
+	 * Core stamps post_modified on every insert or update, so the declared
+	 * value is written after the insert and again after the last content
+	 * rewrite. The post was journaled before its insert, so rollback restores
+	 * or deletes it with this write included.
+	 *
+	 * @param array<string,mixed> $page Plan page row.
+	 * @return true|WP_Error
+	 */
+	private static function write_declared_modified_date( int $id, array $page ) {
+		$declared = $page['modified_timestamp'] ?? null;
+		if ( ! is_string( $declared ) || 1 !== preg_match( '/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})Z$/', $declared, $match ) ) {
+			return true;
+		}
+		$gmt = $match[1] . ' ' . $match[2];
+		// A captured document was already public: a future instant is not its edit.
+		if ( $gmt > gmdate( 'Y-m-d H:i:s' ) ) {
+			return true;
+		}
+		global $wpdb;
+		$local = get_date_from_gmt( $gmt );
+		$wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Core offers no API that keeps a declared post_modified; the cache is cleaned below.
+			$wpdb->posts,
+			array(
+				'post_modified'     => $local,
+				'post_modified_gmt' => $gmt,
+			),
+			array( 'ID' => $id )
+		);
+		clean_post_cache( $id );
+		$stored = get_post( $id );
+		if ( ! $stored || $stored->post_modified_gmt !== $gmt ) {
+			// ssi-error-class: operational
+			return new WP_Error( 'materialization_post_modified_write_failed', 'The declared modification date could not be persisted.', array( 'source_path' => $page['source_path'] ?? '' ) );
+		}
+		return true;
 	}
 
 	/** Persist and verify importer-owned post metadata. */

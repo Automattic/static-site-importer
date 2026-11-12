@@ -83,13 +83,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
 		}
+		if ( ! class_exists( 'Static_Site_Importer_Content_Index' ) ) {
+			require_once __DIR__ . '/class-static-site-importer-content-index.php';
+		}
+		// Declared routes must be on the files before served HTML twins collapse.
+		$content_index = Static_Site_Importer_Content_Index::extract( $artifact, $payload_reader );
+		if ( is_wp_error( $content_index ) ) {
+			$workspace->purge();
+			return $content_index;
+		}
+		$artifact  = $content_index['artifact'];
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, $payload_reader );
 		if ( is_wp_error( $redirects ) ) {
 			$workspace->purge();
 			return $redirects;
 		}
 		$artifact                     = $redirects['artifact'];
-		$args['source_route_aliases'] = $redirects['aliases'];
+		$args['source_route_aliases'] = Static_Site_Importer_Content_Index::append_aliases( $redirects['aliases'], $content_index['aliases'] );
 
 		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace, $verified_text );
 		if ( is_wp_error( $retained ) ) {
