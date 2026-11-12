@@ -15,6 +15,7 @@
     { "path": "tests/smoke-direct-artifact-recompose.php", "environment": "standalone-php" },
     { "path": "tests/smoke-media-rebind-error.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-grid-inline-svg-import.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-woo-cart-links.php", "environment": "standalone-php" },
     { "path": "tests/smoke-raw-html-companion-quality.php", "environment": "standalone-php" },
     { "path": "tests/smoke-plan-content-loss-quality.php", "environment": "standalone-php" },
     { "path": "tests/smoke-dependency-created-route-adoption.php", "environment": "standalone-php" },
