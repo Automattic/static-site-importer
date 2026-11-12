@@ -198,6 +198,7 @@
     { "path": "tests/smoke-companion-renderer-real-kses.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-companion-empty-comments-real-kses.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-planned-page-templates-materialization.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-current-page-template-materialization.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-managed-classic-theme-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-portable-source-manifest.php", "environment": "standalone-php" },
     { "path": "tests/smoke-post-meta-rollback.php", "environment": "standalone-php" },

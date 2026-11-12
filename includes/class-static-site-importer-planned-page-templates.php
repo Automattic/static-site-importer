@@ -14,12 +14,14 @@ defined( 'ABSPATH' ) || exit;
  * activated, and wp_update_post() validates `_wp_page_template` against the
  * active theme's templates. The templates the plan both ships and assigns are
  * the ones the incoming theme registers, so they are added through core's
- * `theme_templates` filter for exactly the materialization window.
+ * `theme_templates` filter for exactly the materialization window. A post's
+ * current template is also accepted, including virtual templates reported by
+ * metadata filters, so content-only re-saves preserve existing assignments.
  */
 final class Static_Site_Importer_Planned_Page_Templates {
 
 	/**
-	 * Run a callback with the plan's assigned custom templates registered.
+	 * Run a callback with planned and current post templates accepted.
 	 *
 	 * @template T
 	 * @param mixed           $plan     WordPress site plan.
@@ -27,13 +29,17 @@ final class Static_Site_Importer_Planned_Page_Templates {
 	 * @return T
 	 */
 	public static function during( $plan, callable $callback ) {
-		$planned = self::assigned( $plan );
-		if ( array() === $planned ) {
-			return $callback();
-		}
+		$planned  = self::assigned( $plan );
 		$register = static function ( array $templates, $theme, $post, string $post_type ) use ( $planned ): array {
-			unset( $theme, $post );
-			return $templates + ( $planned[ $post_type ] ?? array() );
+			unset( $theme );
+			$templates += $planned[ $post_type ] ?? array();
+			// Core sets $post->page_template to the proposed value before this
+			// filter. Read metadata to accept only the existing assignment.
+			$current = $post instanceof WP_Post ? get_post_meta( $post->ID, '_wp_page_template', true ) : '';
+			if ( is_string( $current ) && '' !== $current ) {
+				$templates += array( $current => $current );
+			}
+			return $templates;
 		};
 		add_filter( 'theme_templates', $register, 10, 4 );
 		try {
