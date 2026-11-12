@@ -658,6 +658,43 @@ $prepare_overrun = $drive_slow( Static_Site_Importer_Canonical_Import_Service::i
 array_pop( $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'] );
 $assert( ! empty( $prepare_overrun['success'] ) && array() === Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $prepare_overrun['plan']['diagnostics'] ?? array() ), 'page preparation that overruns the invocation budget continues into compilation' );
 
+// Request deadlines survive opaque continuations and fresh-runtime request files.
+unset( $_SERVER['argv'][0] ); // Exercise the slow in-process compiler, not receipt workers.
+foreach ( array( 'absent', 20, '20', null, 0, -1, 'nope', false, array(), '', '1e999' ) as $deadline ) {
+	$slow_clock = 0.0;
+	$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = $slow_policy( null );
+	$request = $input( 'plan' );
+	if ( 'absent' !== $deadline ) {
+		$request['import_deadline_seconds'] = $deadline;
+	}
+	$path = static_site_importer_cli_write_step_request( $request );
+	$request = static_site_importer_cli_import_input( array(), array( 'request' => $path ) );
+	unlink( $path );
+	if ( 'absent' !== $deadline && ( ! is_numeric( $deadline ) || ! is_finite( (float) $deadline ) || $deadline <= 0 ) ) {
+		$assert( is_wp_error( $request ) && 'static_site_importer_invalid_import_deadline' === $request->get_error_code(), 'CLI rejects invalid request deadline: ' . wp_json_encode( $deadline ) );
+		continue;
+	}
+	$steps = 0;
+	do {
+		$result = static_site_importer_cli_import( $request );
+		if ( empty( $result['continuation'] ) ) {
+			break;
+		}
+		$request = static_site_importer_cli_next_import_input( $request, $result );
+		$path = static_site_importer_cli_write_step_request( $request );
+		$request = static_site_importer_cli_import_input( array(), array( 'request' => $path ) );
+		unlink( $path );
+	} while ( ++$steps < 10 );
+	$omitted = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $result['plan']['diagnostics'] ?? array() );
+	$assert( ! empty( $result['success'] ) && empty( $result['continuation'] ) && $steps > 0, 'CLI slow compiler completes across request-file continuations' );
+	$assert( ( 'absent' === $deadline ? 3 : 2 ) === count( $result['plan']['pages'] ?? array() ), 'CLI request deadline retains compiled pages: ' . wp_json_encode( $deadline ) );
+	$assert( ( 'absent' === $deadline ? 0 : 1 ) === count( $omitted ) && ( 'absent' === $deadline || array( 'deadline' ) === array_column( $omitted, 'reason_code' ) ), 'CLI request deadline reports remaining pages as deadline omissions' );
+}
+
+if ( null !== $original_argv_zero ) {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
+
 // The host's import deadline ends the import with the pages it compiled.
 $slow_clock = 0.0;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = $slow_policy( 10.0 );
