@@ -985,11 +985,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'files'      => array_values( $files ),
 		);
 		if ( null !== $identity_args ) {
-			$site_identity               = Static_Site_Importer_Site_Identity::resolve( array_merge( $identity_args, array(
+			$site_identity = Static_Site_Importer_Site_Identity::resolve( array_merge( $identity_args, array(
 				'artifact'       => $artifact,
 				'payload_reader' => $payload_reader,
 			) ) );
-			$artifact['block_namespace'] = $site_identity['block_namespace'];
+			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+			$artifact['block_namespace'] = Static_Site_Importer_Existing_Theme_Runtime::namespace_for( $identity_args, $site_identity['block_namespace'] );
 		}
 		$staged = self::prepare_staged_plans(
 			$workspace,

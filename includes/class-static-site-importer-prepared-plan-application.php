@@ -104,7 +104,16 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'runtime_scripts' => $package['runtime_scripts'],
 			);
 		} else {
-			$companion = self::materialize_companion_dependency( $runtime_payload, $prepared );
+			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+			if ( is_array( $runtime_payload ) && Static_Site_Importer_Existing_Theme_Runtime::host() ) {
+				$projection = Static_Site_Importer_Existing_Theme_Runtime::project( $runtime_payload );
+				if ( is_wp_error( $projection ) ) {
+					return $projection;
+				}
+				$prepared['args']['existing_theme_runtime_payload'] = $runtime_payload;
+				$prepared['args']['theme_runtime_payload']          = $runtime_payload;
+			}
+			$companion = isset( $prepared['args']['existing_theme_runtime_payload'] ) ? array( 'status' => 'host_runtime' ) : self::materialize_companion_dependency( $runtime_payload, $prepared );
 		}
 		if ( is_wp_error( $companion ) ) {
 			return $companion;

@@ -242,6 +242,7 @@
     "static_site_importer_batch_manifest_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_batch_run_expired": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_batch_work_dir_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
+    "existing_theme_runtime_block_conflict": { "class": "integrity", "owning_layer": "static-site-importer" },
     "existing_theme_removal_forbidden": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_capability_forbidden": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_capability_plan_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },

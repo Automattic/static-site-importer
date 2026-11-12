@@ -342,6 +342,7 @@ class Static_Site_Importer_Companion_Plugin {
 				'owner'             => $owner,
 				'owner_slug'        => $owner_slug,
 				'plugin_file'       => 'plugin' === $owner ? $main_file : '',
+				'block_namespace'   => $block_namespace,
 				'block_directories' => $block_directories,
 				'islands'           => array_map(
 					static fn ( array $island ): array => array(

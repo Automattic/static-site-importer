@@ -297,6 +297,14 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			);
 			require_once __DIR__ . '/class-static-site-importer-existing-theme-styles.php';
 			Static_Site_Importer_Existing_Theme_Styles::diagnose( $state );
+			if ( is_array( $args['existing_theme_runtime_payload'] ?? null ) ) {
+				$projection = Static_Site_Importer_Existing_Theme_Runtime::project( $args['existing_theme_runtime_payload'] );
+				if ( is_wp_error( $projection ) ) {
+					$state['preflight_error'] = $projection;
+					// ssi-error-class: propagated
+					throw new InvalidArgumentException( (string) $projection->get_error_code() );
+				}
+			}
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {

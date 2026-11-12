@@ -40,10 +40,20 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		foreach ( $state['resolved']['writes'] ?? array() as $write ) {
 			$state['diagnostics'][] = Static_Site_Importer_Import_Destination::withheld_write_diagnostic( $state['destination'], (string) ( $write['kind'] ?? '' ), (string) $write['target_path'] );
 		}
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+		$host = Static_Site_Importer_Existing_Theme_Runtime::host();
 		foreach ( $state['resolved']['pages'] ?? array() as $page ) {
 			$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
 			preg_match_all( '/<!-- wp:(?!core\/)([a-z0-9-]+\/[a-z0-9-]+)/', $markup, $matches );
 			foreach ( array_unique( $matches[1] ) as $name ) {
+				if ( $host && str_starts_with( $name, $host['namespace'] . '/' ) ) {
+					$state['diagnostics'][] = array(
+						'reason_code' => in_array( substr( $name, strlen( $host['namespace'] ) + 1 ), $host['config']['block_directories'], true ) ? 'existing_theme_generated_block_reused' : 'existing_theme_generated_block_added',
+						'source_path' => $page['source_path'],
+						'block'       => $name,
+					);
+					continue;
+				}
 				if ( ! class_exists( 'WP_Block_Type_Registry' ) || WP_Block_Type_Registry::get_instance()->is_registered( $name ) ) {
 					continue;
 				}
@@ -232,6 +242,40 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 			// ssi-error-class: integrity
 			return new WP_Error( 'existing_theme_removal_forbidden', 'Removing imported pages and CSS requires delete_pages and edit_css.' );
 		}
+		$ownership = get_option( 'ssi_runtime_fold_' . $id, array() );
+		if ( $ownership ) {
+			foreach ( $ownership['files'] as $path => $hash ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Never remove files edited since import.
+				if ( ! is_file( $path ) || hash( 'sha256', (string) file_get_contents( $path ) ) !== $hash ) {
+					// ssi-error-class: integrity
+					return new WP_Error( 'existing_theme_runtime_block_conflict', 'Imported runtime files were edited; removal requires review.' );
+				}
+			}
+			foreach ( $ownership['files'] as $path => $hash ) {
+				wp_delete_file( $path );
+			}
+			$directories = array_values( $ownership['directories'] );
+			usort( $directories, static fn( string $a, string $b ): int => strlen( $b ) <=> strlen( $a ) );
+			foreach ( $directories as $directory ) {
+				rmdir( $directory ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only empty importer-created block directories.
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read the latest shared config before removing only our entries.
+			$current = json_decode( (string) file_get_contents( $ownership['config_path'] ), true );
+			if ( $current === $ownership['config_after'] ) {
+				$bytes = $ownership['previous_config'];
+			} else {
+				foreach ( array( 'block_directories', 'editor_scripts' ) as $key ) {
+					foreach ( $ownership['config_after'][ $key ] ?? array() as $entry ) {
+						if ( ! in_array( $entry, $ownership['config_before'][ $key ] ?? array(), true ) ) {
+							$current[ $key ] = array_values( array_filter( $current[ $key ] ?? array(), static fn( $candidate ): bool => $candidate !== $entry ) );
+						}
+					}
+				}
+				$bytes = wp_json_encode( $current, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n";
+			}
+			file_put_contents( $ownership['config_path'], $bytes ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Restore only importer-owned runtime config entries.
+			delete_option( 'ssi_runtime_fold_' . $id );
+		}
 		$result = self::save( $id, '' );
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -259,7 +303,61 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		if ( ! current_user_can( 'edit_css' ) ) {
 			return Static_Site_Importer_Site_Plan_Persistence::failed_receipt( $state, 'existing_theme_edit_css_required' );
 		}
-		$id                                 = self::identity( $state );
+		$id = self::identity( $state );
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+		if ( is_array( $state['args']['existing_theme_runtime_payload'] ?? null ) ) {
+			$projection = Static_Site_Importer_Existing_Theme_Runtime::project( $state['args']['existing_theme_runtime_payload'] );
+			if ( is_wp_error( $projection ) ) {
+				return Static_Site_Importer_Site_Plan_Persistence::failed_receipt_from_error( $state, $projection );
+			}
+			if ( $projection ) {
+				$config_path = $projection['host']['dir'] . '/ssi-runtime/companion.json';
+				$ownership   = array(
+					'files'           => array(),
+					'directories'     => array(),
+					'config_path'     => $config_path,
+					'config_before'   => $projection['host']['config'],
+					'config_after'    => $projection['config'],
+					// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Snapshot importer-owned config for precise removal.
+					'previous_config' => file_get_contents( $config_path ),
+				);
+				foreach ( $projection['writes'] as $write ) {
+					$parent = dirname( $projection['host']['dir'] . '/' . $write['target_path'] );
+					while ( ! is_dir( $parent ) && str_starts_with( $parent, $projection['host']['dir'] . '/ssi-runtime/' ) ) {
+						$ownership['directories'][ $parent ]                                = $parent;
+						$state['rollback']['existing_theme_runtime_directories'][ $parent ] = $parent;
+						$parent = dirname( $parent );
+					}
+					Static_Site_Importer_Site_Plan_Persistence::journal_file( $state, $projection['host']['dir'] . '/' . $write['target_path'] );
+					$result = Static_Site_Importer_Site_Plan_Persistence::write_file( $projection['host']['dir'], $write );
+					if ( is_wp_error( $result ) ) {
+						return Static_Site_Importer_Site_Plan_Persistence::failed_receipt_from_error( $state, $result );
+					}
+				}
+				foreach ( $projection['writes'] as $write ) {
+					if ( 'ssi-runtime/companion.json' === $write['target_path'] ) {
+						continue;
+					}
+					$ownership['files'][ $projection['host']['dir'] . '/' . $write['target_path'] ] = $write['payload_hash'];
+				}
+				$state['rollback']['theme_runtime_registration'] = Static_Site_Importer_Generated_Runtime_Package::registration_snapshot( $projection['package'], $projection['host']['dir'] );
+				foreach ( $projection['added'] as $block ) {
+					$directory  = $projection['host']['dir'] . '/ssi-runtime/blocks/' . $block;
+					$registered = register_block_type( $directory );
+					if ( ! $registered ) {
+						return Static_Site_Importer_Site_Plan_Persistence::failed_receipt( $state, 'static_site_importer_theme_runtime_registration_incomplete' );
+					}
+					$GLOBALS['static_site_importer_runtime_block_owners'][ $registered->name ] = array(
+						'owner' => 'theme',
+						'path'  => $projection['host']['dir'] . '/ssi-runtime/runtime.php',
+					);
+				}
+				if ( $projection['writes'] ) {
+					Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'ssi_runtime_fold_' . $id );
+					update_option( 'ssi_runtime_fold_' . $id, $ownership );
+				}
+			}
+		}
 		$state['existing_theme_persisting'] = true;
 		self::diagnose( $state );
 		if ( in_array( 'existing_theme_generated_block_unavailable', array_column( $state['diagnostics'], 'reason_code' ), true ) ) {
