@@ -249,6 +249,29 @@
         "--wait-seconds",
         "3600"
       ]
+    },
+    {
+      "id": "score",
+      "needs": [
+        "merge"
+      ],
+      "always": true,
+      "timeout": "10m",
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "score.mjs",
+          "--instance",
+          "{{instance}}",
+          "--runs",
+          "{{inputs.runs_dir}}",
+          "--slug",
+          "{{inputs.slug}}",
+          "--iteration",
+          "{{inputs.iteration}}"
+        ]
+      }
     }
   ],
   "next_pass": {
