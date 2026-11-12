@@ -9,8 +9,10 @@ running. Capture evidence is copied into the output directory and never edited
 in place.
 
 Editor checks open imported pages, inspect parsed blocks, exercise selection,
-List View, saved text and Media Library replacement, and restore post content.
-Theme checks run authenticated browser REST requests and render a reversible
+List View, saved text, and bounded Media Library replacement of every non-inert
+image: each probe reports its own finding, named by the image's src path or
+anchor, so a Replace failure names its image. Theme checks run authenticated
+browser REST requests and render a reversible
 Global Styles restyle. These are disposable test imports: authentication resets
 the first administrator's password, as the previous editor checker did.
 
@@ -53,7 +55,8 @@ This implementation is not yet a completed implementation of issue #2861:
   shared-header editing and source page-type template coverage need stronger
   behavioral tests. Asset proportionality still uses report metrics.
 - Canvas parity currently compares rendered semantic text/style samples, not a
-  screenshot; full controls coverage and image selection need browser fixtures.
+  screenshot; full controls coverage and browser fixtures for the per-image
+  replacement probes are still missing.
 - Non-transformer Cook gates still require repository-specific re-import support.
 - `confirm --after` supports live counts, but the workflow does not yet invoke
   that live comparison automatically after the next import.
