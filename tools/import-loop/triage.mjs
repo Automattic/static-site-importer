@@ -300,7 +300,9 @@ function acceptanceGate(item, repo) {
     // evaluation (IMPORT_LOOP_BASE), measured once by the pass.
     ...(checked ? [
       'index="$scratch/index"; cp "$(git rev-parse --git-path index)" "$index"; GIT_INDEX_FILE="$index" git add -A || exit 1',
-      'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" -p HEAD -m candidate) || exit 1',
+      // A staged merge (MERGE_HEAD, e.g. trunk merged to resolve a conflict) ships as a merge.
+      'parents=(-p HEAD); while read -r merged; do parents+=(-p "$merged"); done < <(cat "$(git rev-parse --git-path MERGE_HEAD)" 2>/dev/null)',
+      'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" "${parents[@]}" -m candidate) || exit 1',
       `bash "$tools/gates/merge-onto.sh" . ${quote(trunk)} "$candidate" '${repo.predicate_root}' "$scratch/merged" || exit 1; phase merge_onto_trunk`,
       `url=$(${reimportLine(`"$scratch/merged/${repo.predicate_root}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
       `node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
