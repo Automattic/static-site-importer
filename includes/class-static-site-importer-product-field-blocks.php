@@ -463,6 +463,21 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		return '';
 	}
 
+	/** Hidden source roots cannot host the live product gallery. */
+	private static function hidden_root( array $node ): bool {
+		$html = $node['innerHTML'] ?? '';
+		if ( ! str_contains( strtolower( $html ), 'hidden' ) ) {
+			return false;
+		}
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="UTF-8"><body>' . $html . '</body>' );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$root = $document->getElementsByTagName( 'body' )->item( 0 )?->firstElementChild;
+		return $root && ( $root->hasAttribute( 'hidden' ) || 'true' === strtolower( $root->getAttribute( 'aria-hidden' ) ) );
+	}
+
 	/** Bind only fields backed by the admitted producer row. */
 	public static function bind_document( string $markup, array $product, ?array &$presentations = null, array $image_identities = array(), array $undisplayed_images = array(), string $source_css = '' ): string {
 		$identity = static function ( string $url ) use ( $image_identities ): string {
@@ -505,8 +520,8 @@ final class Static_Site_Importer_Product_Field_Blocks {
 			foreach ( $nodes as $index => $node ) {
 				$path        = $parent_path . '/' . $index;
 				$has_gallery = $has_gallery || 'woocommerce/product-image-gallery' === $node['blockName'];
-				// Overlays are duplicates, never the primary gallery candidate.
-				if ( preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
+				// Hidden roots and overlays are never the primary gallery candidate.
+				if ( self::hidden_root( $node ) || preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
 					continue;
 				}
 				$select( $node['innerBlocks'] ?? array(), $path );
@@ -523,7 +538,7 @@ final class Static_Site_Importer_Product_Field_Blocks {
 		};
 		$select( $blocks );
 		$visit = static function ( array $node, string $path ) use ( &$visit, $product, $gallery_path, $has_gallery, &$presentations, $images, $identity, $source_css ): ?array {
-			if ( ( $has_gallery || null !== $gallery_path ) && preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) {
+			if ( ( $has_gallery || null !== $gallery_path ) && ( self::hidden_root( $node ) || preg_match( '/lightbox/i', (string) ( $node['attrs']['className'] ?? '' ) ) ) ) {
 				preg_match_all( '/<img\b[^>]*\bsrc=["\x27]([^"\x27]+)["\x27]/i', serialize_block( $node ), $sources );
 				if ( $sources[1] && ! array_diff( array_map( $identity, $sources[1] ), $images ) ) {
 					return null;
