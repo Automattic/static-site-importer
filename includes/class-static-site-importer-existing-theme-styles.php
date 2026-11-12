@@ -74,7 +74,7 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		$css    = '';
 		foreach ( $state['resolved']['pages'] ?? array() as $page ) {
 			$source = (string) $page['source_path'];
-			foreach ( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::documentStylesheets( $state['plan'], $source ) as $row ) {
+			foreach ( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::documentStylesheets( $state['plan'], $source ) as $row ) {
 				$write = $writes[ $row['target_path'] ] ?? null;
 				if ( ! is_array( $write ) ) {
 					continue;
