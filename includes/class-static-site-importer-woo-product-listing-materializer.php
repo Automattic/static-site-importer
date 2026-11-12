@@ -439,6 +439,13 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				'clear' => (string) ( $max ? $control['max'] : $control['min'] ),
 			);
 		}
+		if ( 'range' === $kind && 'price' === ( $control['field'] ?? '' ) && in_array( $control['bound'] ?? '', array( 'min', 'max' ), true ) && ! array_key_exists( 'min', $control ) && ! array_key_exists( 'max', $control ) ) {
+			return array(
+				'param' => $control['bound'] . '_price',
+				'shape' => 'range',
+				'clear' => '',
+			);
+		}
 		if ( 'sort' === $kind ) {
 			return self::sort_parameter( $control );
 		}

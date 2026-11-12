@@ -2065,7 +2065,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/**
 	 * Filter/sort form fallbacks fully replaced by bound listing controls.
-	 * Every form control must resolve to an archive query parameter, with its
+	 * Every entry control (excluding buttons) must resolve to a query parameter, with its
 	 * projected anchor span inside the form's producer span. Both spans use
 	 * producer coordinates in the same source document, so the form may sit
 	 * inside or beside the listing region. Extra unbound controls keep it.
@@ -2091,11 +2091,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$identities = array();
 		foreach ( array() === $spans ? array() : $fallbacks as $fallback ) {
 			$form = is_array( $fallback ) ? self::source_span( $fallback['binding']['position'] ?? null ) : null;
-			if ( null === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || 1 > (int) ( $fallback['control_count'] ?? 0 ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) ) {
+			if ( null === $form || 'filter_sort' !== ( $fallback['form_intent'] ?? '' ) || ( $fallback['source'] ?? $fallback['source_path'] ?? '' ) !== ( $listing['source_path'] ?? '' ) ) {
 				continue;
 			}
+			$entries   = array_filter(
+				is_array( $fallback['controls'] ?? null ) ? $fallback['controls'] : array(),
+				static function ( mixed $control ): bool {
+					$tag  = is_array( $control ) ? strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) : '';
+					$type = is_array( $control ) ? strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) : '';
+					return 'button' !== $tag && ! ( 'input' === $tag && in_array( $type, array( 'submit', 'reset', 'button', 'image' ), true ) );
+				}
+			);
 			$contained = array_filter( $spans, static fn( array $span ): bool => $form[0] <= $span[0] && $span[1] <= $form[1] );
-			if ( count( $contained ) === (int) $fallback['control_count'] ) {
+			if ( array() !== $entries && count( $contained ) === count( $entries ) ) {
 				$identities[] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
 			}
 		}

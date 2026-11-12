@@ -88,6 +88,7 @@ $fallback = array(
 	'selector'            => '#ordering',
 	'form_intent'         => 'filter_sort',
 	'control_count'       => 1,
+	'controls'            => array( array( 'tag' => 'select', 'name' => 'sort_by' ) ),
 	'binding'             => array(
 		'schema'              => 'generic/block-binding/v1',
 		'search_block_markup' => $form,
@@ -268,12 +269,12 @@ $price_inputs = array(
 $price_controls = array();
 foreach ( array( 'min', 'max' ) as $bound ) {
 	$price_controls[] = array(
-		'id'    => $bound . '_price',
-		'kind'  => 'range',
-		'field' => 'price',
-		'bound' => $bound,
-		'min'   => 0,
-		'max'   => 100,
+		'id'       => 'range:price:' . $bound,
+		'kind'     => 'range',
+		'key'      => 'price:' . $bound,
+		'field'    => 'price',
+		'bound'    => $bound,
+		'selector' => 'main form > div > span:nth-of-type(' . ( 'min' === $bound ? '1' : '2' ) . ') > input',
 	);
 }
 foreach ( array(
@@ -281,7 +282,8 @@ foreach ( array(
 	'single sort'  => array( array( $select ), $nested['controls'], '', true ),
 	'unbound text' => array( $price_inputs, $price_controls, '<input type="text" name="search" />', false ),
 ) as $case => list( $inputs, $controls, $unbound, $replaced ) ) {
-	$case_form   = '<!-- wp:group {"tagName":"form"} --><form class="wp-block-group">' . implode( '', $inputs ) . $unbound . '</form><!-- /wp:group -->';
+	$submit = $controls === $price_controls ? '<input type="submit" value="Filtrar" />' : '';
+	$case_form   = '<!-- wp:group {"tagName":"form"} --><form class="wp-block-group">' . implode( '', $inputs ) . $submit . $unbound . '</form><!-- /wp:group -->';
 	$case_region = str_replace( $form, $case_form, $region );
 	$case_listing = $listing;
 	$case_listing['controls'] = $controls;
@@ -297,10 +299,29 @@ foreach ( array(
 	$case_plan = $plan;
 	$case_plan['pages'][0]['resolved_block_markup'] = $case_region;
 	$case_fallback = $fallback;
-	$case_fallback['control_count'] = count( $inputs ) + ( '' === $unbound ? 0 : 1 );
+	$case_fallback['controls'] = $controls === $price_controls ? array(
+		array( 'tag' => 'input', 'type' => 'number', 'name' => 'min_price' ),
+		array( 'tag' => 'input', 'type' => 'number', 'name' => 'max_price' ),
+		array( 'tag' => 'input', 'type' => 'submit' ),
+	) : $fallback['controls'];
+	if ( '' !== $unbound ) {
+		$case_fallback['controls'][] = array( 'tag' => 'input', 'type' => 'text', 'name' => 'search' );
+	}
+	$case_fallback['control_count'] = count( $case_fallback['controls'] );
 	$case_fallback['binding']['search_block_markup'] = $case_form;
 	$case_fallback['binding']['position'] = $span( $case_region, $case_form );
 	$case_entity = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $case_lifecycle, $case_plan, array( $case_fallback ) )['entities'][0]['manifest']['product_listings'][0];
+	if ( 'price bounds' === $case ) {
+		foreach ( array( 'reset', 'button', 'image' ) as $action_type ) {
+			$action_fallback = $case_fallback;
+			$action_fallback['controls'][2]['type'] = $action_type;
+			$action_entity = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $case_lifecycle, $case_plan, array( $action_fallback ) )['entities'][0]['manifest']['product_listings'][0];
+			$assert( ! empty( $action_entity['replaced_fallback_identities'] ), $action_type . ' inputs are not entry controls.' );
+		}
+		$action_fallback['controls'][2] = array( 'tag' => 'button' );
+		$action_entity = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $case_lifecycle, $case_plan, array( $action_fallback ) )['entities'][0]['manifest']['product_listings'][0];
+		$assert( ! empty( $action_entity['replaced_fallback_identities'] ), 'Buttons are not entry controls, even without a type.' );
+	}
 	$case_markup = Static_Site_Importer_Woo_Product_Listing_Materializer::archive_block_markup( $case_entity );
 	$case_receipt = $record_method->invoke( null, 'listing', $case_listing['bindings'][0], $case_markup, $case_entity, array( 'provider' => 'woocommerce' ) );
 	$assert( $replaced === in_array( Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $case_fallback ), $case_receipt['replaced_fallback_identities'], true ), $case . ': only fully bound forms are replaced.' );
@@ -310,6 +331,7 @@ foreach ( array(
 			foreach ( $blocks as $input_block ) {
 				$param = $input_block['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ]['param'] ?? '';
 				if ( in_array( $param, array( 'min_price', 'max_price' ), true ) ) {
+					$assert( '' === $input_block['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ]['clear'], $case . ': numeric bounds clear to an empty value.' );
 					$rendered_input = Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( $input_block['innerHTML'], $input_block );
 					$assert( str_contains( $rendered_input, 'data-ssi-listing-param="' . $param . '"' ), $case . ': price input is wired to ' . $param . '.' );
 					$wired_params[] = $param;
