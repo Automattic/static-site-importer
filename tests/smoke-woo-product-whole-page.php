@@ -59,9 +59,9 @@ $row = array(
 	'whole_page_candidate' => 'blocks-engine/whole-page-candidate/v1', 'description' => 'A sturdy mug.',
 );
 // Exercise the real producer attachment code, not a fabricated page candidate.
-$attach = new ReflectionMethod( Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::class, 'attachWholePageCandidates' );
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WholePageCandidates;
 $markup = '<!-- wp:group --><div class="wp-block-group original-layout"><!-- wp:paragraph --><p>Original mug layout</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
-$pages = $attach->invoke( null, array( array(
+$pages = WholePageCandidates::attach( array( array(
 	'source_path' => $row['source_path'], 'route' => array( 'path' => $row['source_route'] ),
 	'reconciliation_identity' => 'page-mug', 'post_type' => 'page', 'resolved_block_markup' => $markup,
 	'planned_existing_id' => 10,
@@ -324,7 +324,7 @@ foreach ( array( 'single-image-duplicates' => array( 'cup', 'plate' ), 'same-lay
 		$documents[] = array( 'source_path' => $product['source_path'], 'route' => array( 'path' => $product['source_route'] ), 'reconciliation_identity' => $slug, 'post_type' => 'page', 'resolved_block_markup' => $body );
 		$rows[] = $product;
 	}
-	$documents = $attach->invoke( null, $documents, array( array( 'kind' => 'entity_collection', 'reconciliation_identity' => 'declaration-products', 'payload' => array( 'entities' => $rows ) ) ), array() );
+	$documents = WholePageCandidates::attach( $documents, array( array( 'kind' => 'entity_collection', 'reconciliation_identity' => 'declaration-products', 'payload' => array( 'entities' => $rows ) ) ), array() );
 	$seeded = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => $rows ), array( 'declaration_reconciliation_identity' => 'declaration-products', 'whole_page_documents' => Static_Site_Importer_Whole_Page_Handoff::documents( $documents ) ) );
 	if ( 'single-image-duplicates' === $case ) {
 		foreach ( $seeded['whole_page_results'] as $index => &$result ) {

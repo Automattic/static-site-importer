@@ -39,12 +39,12 @@ $row = array(
 	'id' => 'sample-event', 'source_path' => 'website/events/sample-event/index.html',
 	'source_route' => '/events/sample-event', 'whole_page_candidate' => 'blocks-engine/whole-page-candidate/v1',
 );
-$attach = new ReflectionMethod( Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::class, 'attachWholePageCandidates' );
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WholePageCandidates;
 $page = array(
 	'source_path' => $row['source_path'], 'route' => array( 'path' => $row['source_route'] ),
 	'reconciliation_identity' => 'page-sample-event', 'post_type' => 'page',
 );
-$pages = $attach->invoke( null, array( $page ), array( array(
+$pages = WholePageCandidates::attach( array( $page ), array( array(
 	'kind' => 'entity_collection', 'reconciliation_identity' => 'declaration-events',
 	'payload' => array( 'entities' => array( $row ) ),
 ) ), array() );

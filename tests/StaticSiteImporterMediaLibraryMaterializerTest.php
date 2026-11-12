@@ -425,7 +425,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		// Execute the generated image hooks without loading unrelated companion runtimes.
 		$original_filters = $GLOBALS['wp_filter']['render_block_core/image'] ?? null;
 		$original_filters = null !== $original_filters ? clone $original_filters : null;
-		eval( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::IMAGE_SELECTION_RENDERER ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Actual generated theme selection renderer.
+		eval( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::IMAGE_SELECTION_RENDERER ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Actual generated theme selection renderer.
 		eval( substr( $source, $start, $end - $start ) ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Trusted generated companion PHP under test.
 		$core_sizes = array();
 		$observe    = static function ( string $image ) use ( &$core_sizes ): string {

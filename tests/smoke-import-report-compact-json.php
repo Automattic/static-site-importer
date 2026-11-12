@@ -192,6 +192,19 @@ $fixture_receipt = static function (): array {
 $receipt           = $fixture_receipt();
 $args              = array( 'artifact_hash' => hash( 'sha256', 'compact-json-smoke' ) );
 $projection        = Static_Site_Importer_Receipt_Projection::compose( $receipt, $args, array(), array(), array(), 'compact-json-smoke-run', array(), array() );
+// Compact assets have no token. Even a resolution under the empty key must
+// not hide them; only an explicitly token-matched asset becomes media-owned.
+$asset_receipt = $receipt;
+$asset_receipt['plan']['assets'][] = $receipt['plan']['assets'][0] + array( 'token' => 'media-css' );
+$asset_receipt['plan']['resolution']['attachment_resolutions'] = array( '' => array( 'id' => 12 ), 'media-css' => array( 'id' => 13 ) );
+set_error_handler( static function ( int $severity, string $message ): never { throw new RuntimeException( $message ); } );
+try {
+	$asset_projection = Static_Site_Importer_Receipt_Projection::compose( $asset_receipt, $args, array(), array(), array(), 'asset-ownership-smoke', array(), array() );
+} finally {
+	restore_error_handler();
+}
+$assert( array( array( 'source_path' => 'website/site.css', 'theme_path' => 'assets/css/site.css' ) ) === $asset_projection['manifest']['desired']['assets'], 'tokenless-assets-remain-theme-owned-and-token-matched-media-is-excluded' );
+
 $report            = $projection['report'];
 $manifest          = $projection['manifest'];
 $quality           = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );

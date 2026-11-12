@@ -2062,7 +2062,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Derive the map keys exactly as WordPressSitePlan::bootstrap(): the asset tokens its documents reference. */
+	/** Derive the map keys exactly as ThemeBootstrap::functionsPhp(): the asset tokens its documents reference. */
 	public static function template_asset_tokens( array $plan ): array {
 		$referenced = array();
 		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() ) as $document ) {

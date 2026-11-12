@@ -4699,7 +4699,7 @@ foreach ( array( 'family' => '', 'outside-srcset' => '', 'img-tag' => '', 'indep
 	$media_plan['pages'][0]['canonical_block_markup'] = $media_markup;
 	$media_plan['pages'][0]['content_hash'] = hash( 'sha256', $media_markup );
 	// Keep the producer-owned bootstrap consistent with the fixture's image metadata.
-	$media_bootstrap = ( new ReflectionMethod( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::class, 'bootstrap' ) )->invoke( null, $media_plan['assets'], array(), $media_plan['template_parts'], $media_plan['reference_tokens'], $media_plan['templates'], $media_plan['pages'], $media_plan['menus'], 'wordpress' === ( $media_plan['theme']['runtime_emoji'] ?? null ) );
+	$media_bootstrap = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::functionsPhp( $media_plan['assets'], array(), $media_plan['template_parts'], $media_plan['reference_tokens'], $media_plan['templates'], $media_plan['pages'], $media_plan['menus'], 'wordpress' === ( $media_plan['theme']['runtime_emoji'] ?? null ) );
 	foreach ( $media_plan['writes'] as &$media_write ) {
 		if ( 'functions.php' === $media_write['target_path'] ) {
 			$media_write['payload']['data'] = $media_bootstrap;
@@ -4757,7 +4757,7 @@ $nav_plan['menus'] = array( array(
 	'reconciliation_identity' => str_repeat( 'cd', 32 ),
 ) );
 $nav_plan['reference_semantics']['navigation_entities'] = 'explicit_refs/v1';
-$nav_bootstrap = ( new ReflectionMethod( WordPressSitePlan::class, 'bootstrap' ) )->invoke( null, $nav_plan['assets'], array(), $nav_plan['template_parts'], $nav_plan['reference_tokens'], $nav_plan['templates'], $nav_plan['pages'], $nav_plan['menus'], 'wordpress' === ( $nav_plan['theme']['runtime_emoji'] ?? null ) );
+$nav_bootstrap = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::functionsPhp( $nav_plan['assets'], array(), $nav_plan['template_parts'], $nav_plan['reference_tokens'], $nav_plan['templates'], $nav_plan['pages'], $nav_plan['menus'], 'wordpress' === ( $nav_plan['theme']['runtime_emoji'] ?? null ) );
 foreach ( $nav_plan['writes'] as &$nav_write ) {
 	if ( 'functions.php' === $nav_write['target_path'] ) {
 		$nav_write['payload']['data'] = $nav_bootstrap;
