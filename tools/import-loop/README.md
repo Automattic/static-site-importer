@@ -20,6 +20,12 @@ new unrelated blocker, and no new parity failure or missing evidence. Output
 contains `blockers.removed`, `added`, and `unchanged`, each with before/after
 counts. Reduction predicates are diagnostics, not acceptance gates. The old
 computed-style collateral and report-only editability gates were removed.
+Parity findings are split by the scorer's failure class (title, link, motion,
+text position, and any others it emits), each class its own finding, signature,
+and owner — title is the imported site's identity, so it is owned by
+`static-site-importer` while the rest stay with `blocks-engine`. A fix to one
+class moves its own count; a cell without measured scores stays one unverified
+finding.
 
 Run:
 
