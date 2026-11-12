@@ -29,6 +29,8 @@ function get_post_meta( $id, $key, $single = false ) {
 	return ''; }
 function wp_slash( $value ) {
 	return $value; }
+function wp_json_encode( $value, $flags = 0 ) {
+	return json_encode( $value, $flags ); }
 function wp_update_post( $post, $error = false ) {
 	$GLOBALS['entity_link_content'] = $post['post_content'];
 	return $post['ID']; }
@@ -143,6 +145,32 @@ $relative   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_referenc
 $nested     = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '{"html":"\\u005cu003ca href=\\u005cu0022https://source.example/products/field-kit\\u005cu0022\\u005cu003e"}', array(), $unresolved, 'https://source.example/', array( '/products/field-kit' => '/?p=42' ) );
 $assert( str_contains( $nested, 'href=\\u005cu0022/?p=42\\u005cu0022' ), 'HTML escaped twice inside block attributes is rewritten.' );
 $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative routes preserve query and fragment.' );
+$unresolved = array();
+foreach ( array(
+	'/oman\\u002d\\u002d-unterwegs/index.html' => '/oman---unterwegs',
+	'\\/caf\\u00e9\\u0026\\u003c\\u003e\\u0022/index.html' => '/café&<>"',
+) as $escaped_route => $route ) {
+	foreach ( array( '?page_id=7', '/local--page?label=<a>&quote="yes"' ) as $target ) {
+		$block = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references(
+			'<!-- wp:navigation-link {"label":"Oman","url":"' . $escaped_route . '"} /-->',
+			array( $route => $target ),
+			$unresolved,
+			'https://source.example'
+		);
+		if ( function_exists( 'parse_blocks' ) ) {
+			$parsed = parse_blocks( $block );
+			$assert( 'core/navigation-link' === $parsed[0]['blockName'] && $target === $parsed[0]['attrs']['url'], 'Rewritten navigation block parses with its resolved URL.' );
+		} else {
+			$assert( 1 === preg_match( '/^<!-- wp:navigation-link (\{.*\}) \/-->$/s', $block, $attributes ), 'Navigation block wrapper survives rewriting.' );
+			$decoded = json_decode( $attributes[1], true );
+			$assert( is_array( $decoded ) && array( 'label' => 'Oman', 'url' => $target ) === $decoded, 'Rewritten block attribute JSON decodes to the resolved URL.' );
+		}
+		$assert( ! str_contains( substr( $block, 4, -3 ), '--' ), 'Block attributes never contain a raw comment delimiter.' );
+	}
+}
+$plain = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="/oman---unterwegs/index.html">Oman</a>', array( '/oman---unterwegs' => '?page_id=7' ), $unresolved );
+$assert( '<a href="?page_id=7">Oman</a>' === $plain, 'Plain HTML links containing double hyphens still resolve.' );
+$assert( array() === $unresolved, 'Escaped block routes and plain HTML routes leave nothing unresolved.' );
 $assert( '/?p=42' === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/groups/tools/items/field-kit', array( '/items/field-kit' => '/?p=42' ) ), 'Scoped matching keys on the product route resource segment, not a platform.' );
 $assert( ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( 'https://source.example:444/products/field-kit', 'https://source.example/' ), 'Other ports are cross-origin.' );
 $assert( ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( 'http://source.example/products/field-kit', 'https://source.example/' ), 'Other schemes are cross-origin.' );
