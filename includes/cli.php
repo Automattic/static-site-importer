@@ -1973,13 +1973,21 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
-	WP_CLI::add_command( 'static-site-importer media', static function ( array $args, array $assoc_args ): void {
-		$result = Static_Site_Importer_Deferred_Media_Stage::run( array( 'ref' => $args[0] ?? '', 'batch' => $assoc_args['batch'] ?? 20 ) );
-		if ( is_wp_error( $result ) ) {
-			WP_CLI::error( $result->get_error_message() );
+	WP_CLI::add_command(
+		'static-site-importer media',
+		static function ( array $args, array $assoc_args ): void {
+			$result = Static_Site_Importer_Deferred_Media_Stage::run(
+				array(
+					'ref'   => $args[0] ?? '',
+					'batch' => $assoc_args['batch'] ?? 20,
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			WP_CLI::line( (string) wp_json_encode( array( 'media' => $result ), JSON_UNESCAPED_SLASHES ) );
 		}
-		WP_CLI::line( (string) wp_json_encode( array( 'media' => $result ), JSON_UNESCAPED_SLASHES ) );
-	} );
+	);
 
 	WP_CLI::add_command(
 		'static-site-importer recompose',
