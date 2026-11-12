@@ -1,14 +1,16 @@
 // What an editor gets: every imported page opened in the block editor, as the
-// editor parsed it. Each page lists its blocks with name, nesting depth, and
-// whether the editor validated it, plus the wrapper tags and attribute names a
-// generated block keeps (see shape.mjs). An invalid block shows "This block contains
-// unexpected or invalid content" and cannot be edited until recovered.
+// editor parsed it. Each page lists its blocks with name, nesting depth,
+// className and anchor, and whether the editor validated it, plus the wrapper
+// tags and attribute names a generated block keeps (see shape.mjs). An invalid
+// block shows "This block contains unexpected or invalid content" and cannot
+// be edited until recovered.
 //
 // The site is a disposable import: its first administrator gets a fresh
 // password for the session. `wpCli` runs WP-CLI against `site` by path.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
+import { listViewEvidence } from './list-view.mjs';
 import { themeChecks } from './theme.mjs';
 
 // Text the user can edit: Gutenberg marks template and template-part blocks
@@ -38,13 +40,17 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
       await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getEditorBlocks().length > 0, null, { timeout: 30_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
-        const walk = (list, depth) => list.forEach((b) => { all.push({ name: b.name, valid: b.isValid, depth, wrappers: Array.isArray(b.attributes?.wrappers) ? b.attributes.wrappers.map((w) => ({ tagName: w?.tagName, attributes: Object.fromEntries(Object.keys(w?.attributes || {}).map((n) => [n, ''])) })) : undefined }); walk(b.innerBlocks, depth + 1); });
-        walk(window.wp.data.select('core/editor').getEditorBlocks(), 1);
+        const walk = (list, depth, parent) => list.forEach((b) => {
+          const { className, anchor } = b.attributes || {};
+          const at = all.push({ name: b.name, valid: b.isValid, depth, parent, ...(className ? { className } : {}), ...(anchor ? { anchor } : {}), wrappers: Array.isArray(b.attributes?.wrappers) ? b.attributes.wrappers.map((w) => ({ tagName: w?.tagName, attributes: Object.fromEntries(Object.keys(w?.attributes || {}).map((n) => [n, ''])) })) : undefined }) - 1;
+          walk(b.innerBlocks, depth + 1, at);
+        });
+        walk(window.wp.data.select('core/editor').getEditorBlocks(), 1, -1);
         return all;
       });
       const route = new URL(url).pathname;
       const check = async (name, action) => {
-        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: String(error.message || error).slice(0, 500) }); }
+        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: error.evidence ?? String(error.message || error).slice(0, 500) }); }
       };
       await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
       const canvas = page.locator('iframe[name="editor-canvas"]');
@@ -67,7 +73,10 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         await page.getByRole('button', { name: /document overview|list view/i }).first().click();
         const tree = page.locator('.block-editor-list-view-tree');
         await tree.waitFor();
-        if (blocks.filter((b) => b.name === 'core/group').length > blocks.length / 2 && Math.max(...blocks.map((b) => b.depth)) > 8) throw new Error('List View dominated by deeply nested groups');
+        // The fixed evidence string gave an agent no path, counts, or target,
+        // so its attempts were blind (issue #2956): report the counts and the
+        // deepest chain, whose classNames and anchors map to the capture's DOM.
+        if (blocks.filter((b) => b.name === 'core/group').length > blocks.length / 2 && Math.max(...blocks.map((b) => b.depth)) > 8) throw Object.assign(new Error('List View dominated by deeply nested groups'), { evidence: listViewEvidence(blocks) });
       });
       // Save real edits, then restore the exact original post even on failure.
       const original = wp('post', 'get', String(ID), '--field=post_content');

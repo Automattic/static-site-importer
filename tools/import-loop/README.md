@@ -10,6 +10,9 @@ in place.
 
 Editor checks open imported pages, inspect parsed blocks, exercise selection,
 List View, saved text and Media Library replacement, and restore post content.
+A List View failure reports the group count, total block count, max depth, and
+the deepest root-to-leaf chain with each level's className/anchor
+(`list-view.mjs`), so the finding names the DOM chain to inspect in the capture.
 Theme checks run authenticated browser REST requests and render a reversible
 Global Styles restyle. These are disposable test imports: authentication resets
 the first administrator's password, as the previous editor checker did.
