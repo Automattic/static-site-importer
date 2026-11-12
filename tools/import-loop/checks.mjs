@@ -11,7 +11,7 @@ import { compareImports } from './progress.mjs';
 export const WIDTHS = [390, 768, 1440];
 const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
 const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
-const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep']);
+const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep', 'visual_parity_unsampled']);
 const findReport = (dir) => {
   for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
     const full = path.join(dir, entry.name);
@@ -61,12 +61,22 @@ export async function checkImport(args) {
   } catch (error) {
     report({ stage: 'materialization', check: 'visual_parity_unverified', owner_repo: compareClient.owner_repo, subject: 'compare', evidence: { command: ['npx', ...command], status: run.status, error: error.message } });
   }
+  // A capture freezes reference evidence for a sample of its routes (the
+  // capture's --reference-sample; default 1, the homepage). An unsampled route
+  // is uncompared scope by the capture's contract, not a parity failure. A
+  // sampled route without scores still fails.
+  const reference = JSON.parse(fs.readFileSync(path.join(captureRoot, 'fidelity-reference.json'), 'utf8'));
+  const sampled = reference.scope?.referenceSample === undefined ? null : new Set((reference.entries || []).map((e) => e.route));
   const visual = [];
   const sameRoute = (value, route) => new URL(value, args.url).pathname === route;
   for (const route of routes) for (const width of WIDTHS) {
     const scores = (parity?.scores || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
     const pending = (parity?.pending || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
     const cell = { route, width, scores, pending, verified: scores.length > 0 && pending.length === 0 };
+    if (sampled && !sampled.has(route) && !scores.length && !pending.length) {
+      report({ stage: 'materialization', check: 'visual_parity_unsampled', owner_repo: 'static-site-importer', subject: 'reference_sample', evidence: { route, width, reference_sample: reference.scope.referenceSample }, route, width });
+      continue;
+    }
     visual.push(cell);
     if (!cell.verified || scores.some((s) => !s.pass)) report({ stage: 'materialization', check: 'visual_parity', owner_repo: 'blocks-engine', subject: 'captured_render', evidence: cell, route, width });
   }
