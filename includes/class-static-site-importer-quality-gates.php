@@ -49,7 +49,8 @@ final class Static_Site_Importer_Quality_Gates {
 		Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics( $report );
 
 		$quality            = $report['quality'];
-		$fallback_admission = self::fallback_admission_counts( $report['diagnostics'] ?? array(), (int) $quality['fallback_count'] );
+		$fallbacks          = $report['blocks_engine']['plan_summary']['quality']['fallbacks'] ?? array();
+		$fallback_admission = self::fallback_admission_counts( $fallbacks, (int) $quality['fallback_count'] );
 		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$quality['unsafe_layout_constraint_count']          = count( array_filter( $report['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE === ( $diagnostic['type'] ?? '' ) ) );
@@ -143,7 +144,7 @@ final class Static_Site_Importer_Quality_Gates {
 			$quality['fail_import'] = true;
 		}
 
-		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
+		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array(), $fallbacks );
 		$report['quality']          = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
 		$artifact_diagnostics = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
@@ -276,13 +277,13 @@ final class Static_Site_Importer_Quality_Gates {
 	 * accepted, bounded runtime preservation. A count without matching evidence
 	 * remains unsupported so producers cannot weaken the admission gate by label.
 	 *
-	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @param array<int,mixed> $fallbacks Site plan quality fallback rows.
 	 * @param int              $fallback_count Compiler fallback count.
 	 * @return array{accepted:int,unsupported:int}
 	 */
-	public static function fallback_admission_counts( array $diagnostics, int $fallback_count ): array {
+	public static function fallback_admission_counts( array $fallbacks, int $fallback_count ): array {
 		$accepted = 0;
-		foreach ( $diagnostics as $diagnostic ) {
+		foreach ( $fallbacks as $diagnostic ) {
 			if ( is_array( $diagnostic ) && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
 				++$accepted;
 			}
@@ -975,13 +976,14 @@ final class Static_Site_Importer_Quality_Gates {
 	 * Build quality counter references into normalized diagnostics.
 	 *
 	 * @param array<int,array<string,mixed>> $diagnostics Normalized diagnostics.
+	 * @param array<int,array<string,mixed>> $fallbacks Site plan quality fallback rows.
 	 * @return array<string,array<int,string>> Diagnostic IDs keyed by quality count.
 	 */
-	public static function quality_diagnostic_refs( array $diagnostics ): array {
+	public static function quality_diagnostic_refs( array $diagnostics, array $fallbacks = array() ): array {
 		$types_by_count = array(
-			'fallback_count'                          => array( 'unsupported_html_fallback' ),
-			'unsupported_fallback_count'              => array( 'unsupported_html_fallback' ),
-			'accepted_preserved_runtime_island_count' => array( 'unsupported_html_fallback' ),
+			'fallback_count'                          => array(),
+			'unsupported_fallback_count'              => array(),
+			'accepted_preserved_runtime_island_count' => array(),
 			'content_loss_count'                      => array( 'content_loss_abort' ),
 			'empty_conversion_count'                  => array( 'empty_conversion' ),
 			'core_html_block_count'                   => array( 'core_html_block' ),
@@ -1005,14 +1007,8 @@ final class Static_Site_Importer_Quality_Gates {
 			$refs[ $count_key ] = array_values(
 				array_filter(
 					array_map(
-					static function ( array $diagnostic ) use ( $count_key, $types ): string {
+					static function ( array $diagnostic ) use ( $types ): string {
 						if ( ! in_array( $diagnostic['type'] ?? '', $types, true ) || ! isset( $diagnostic['id'] ) ) {
-							return '';
-						}
-						if ( 'accepted_preserved_runtime_island_count' === $count_key && ! self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
-							return '';
-						}
-						if ( 'unsupported_fallback_count' === $count_key && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
 							return '';
 						}
 							return (string) $diagnostic['id'];
@@ -1021,6 +1017,25 @@ final class Static_Site_Importer_Quality_Gates {
 					)
 				)
 			);
+		}
+
+		// Compiler diagnostics have codes, not fallback types. Join references to
+		// the same plan rows used for admission; never admit a diagnostic echo.
+		foreach ( array( 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count' ) as $key ) {
+			$refs[ $key ] = array();
+		}
+		foreach ( $fallbacks as $fallback ) {
+			$identity = $fallback['fallback_identity'] ?? $fallback['id'] ?? '';
+			if ( '' === $identity ) {
+				continue;
+			}
+			$split = self::is_accepted_preserved_runtime_island( $fallback ) ? 'accepted_preserved_runtime_island_count' : 'unsupported_fallback_count';
+			foreach ( $diagnostics as $diagnostic ) {
+				if ( ( $diagnostic['fallback_identity'] ?? $diagnostic['id'] ?? '' ) === $identity && ! empty( $diagnostic['id'] ) ) {
+					$refs['fallback_count'][] = (string) $diagnostic['id'];
+					$refs[ $split ][]         = (string) $diagnostic['id'];
+				}
+			}
 		}
 
 		return $refs;
