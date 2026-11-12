@@ -297,10 +297,11 @@ foreach ( array( 'gallery only' => false, 'shared design reference' => true ) as
 $unknown = '<!-- wp:paragraph --><p>Unbacked promotion</p><!-- /wp:paragraph -->';
 $assert( $unknown === Static_Site_Importer_Product_Field_Blocks::bind_document( $unknown, $row ), 'Unbacked source stays editable source markup' );
 // Table: one shared layout, a one-off outlier, and a repeated second layout.
-foreach ( array( 'same-layout' => array( 'cup', 'plate' ), 'structural-outlier' => array( 'cup', 'plate', 'bowl' ), 'repeated-layout' => array( 'cup', 'plate', 'bowl', 'saucer' ) ) as $case => $slugs ) {
+foreach ( array( 'single-image-duplicates' => array( 'cup', 'plate' ), 'same-layout' => array( 'cup', 'plate' ), 'structural-outlier' => array( 'cup', 'plate', 'bowl' ), 'repeated-layout' => array( 'cup', 'plate', 'bowl', 'saucer' ) ) as $case => $slugs ) {
 	$outlier = 2 < count( $slugs );
 	$rows = array();
 	$documents = array();
+	$assets = array();
 	foreach ( $slugs as $index => $slug ) {
 		$product = $row;
 		$product['id'] = $slug;
@@ -311,27 +312,54 @@ foreach ( array( 'same-layout' => array( 'cup', 'plate' ), 'structural-outlier' 
 		$product['source_route'] = '/products/' . $slug;
 		$body = '<!-- wp:heading {"level":3,"className":"source-title"} --><h3 class="source-title">' . $product['name'] . '</h3><!-- /wp:heading -->'
 			. '<!-- wp:paragraph --><p>$' . $product['regular_price'] . '</p><!-- /wp:paragraph -->';
+		if ( 'single-image-duplicates' === $case ) {
+			$source = 'website/media/' . $slug . '.jpg';
+			$assets[] = array( 'source_path' => $source, 'token' => $slug, 'target_path' => 'assets/' . $slug . '.jpg' );
+			$image = '<!-- wp:image --><figure><img src="{{wordpress-site-plan:asset:' . $slug . '}}" /></figure><!-- /wp:image -->';
+			$body .= '<!-- wp:group {"className":"product-gallery-slides-item"} --><div class="product-gallery-slides-item">' . $image . '</div><!-- /wp:group -->'
+				. '<!-- wp:group {"className":"product-image-zoom-duplicate"} --><div aria-hidden="true">' . $image . '</div><!-- /wp:group -->'
+				. '<!-- wp:group {"className":"gallery-lightbox"} --><div>' . $image . '</div><!-- /wp:group -->';
+		}
 		if ( 2 <= $index ) { $body .= '<!-- wp:paragraph --><p>Special layout</p><!-- /wp:paragraph -->'; }
 		$documents[] = array( 'source_path' => $product['source_path'], 'route' => array( 'path' => $product['source_route'] ), 'reconciliation_identity' => $slug, 'post_type' => 'page', 'resolved_block_markup' => $body );
 		$rows[] = $product;
 	}
 	$documents = $attach->invoke( null, $documents, array( array( 'kind' => 'entity_collection', 'reconciliation_identity' => 'declaration-products', 'payload' => array( 'entities' => $rows ) ) ), array() );
 	$seeded = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => $rows ), array( 'declaration_reconciliation_identity' => 'declaration-products', 'whole_page_documents' => Static_Site_Importer_Whole_Page_Handoff::documents( $documents ) ) );
+	if ( 'single-image-duplicates' === $case ) {
+		foreach ( $seeded['whole_page_results'] as $index => &$result ) {
+			$result['product_data']['images'] = array( array( 'src' => '/' . $assets[ $index ]['source_path'] ) );
+		}
+		unset( $result );
+	}
 	foreach ( $documents as $index => &$document ) {
 		$document['materialized_block_markup'] = $document['resolved_block_markup'] . Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => $seeded['products'][ $index ]['id'] ) );
 	}
 	unset( $document );
 	$probe = array( 'resolved' => array( 'writes' => array() ), 'args' => array( 'whole_page_provider_results' => $seeded['whole_page_results'] ), 'ordered_pages' => $documents, 'diagnostics' => array(), 'source_route_aliases' => array(), 'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array() ) ), 'theme_dir' => sys_get_temp_dir() . '/ssi-bound-' . uniqid() );
+	$probe['plan']['assets'] = $assets;
+	foreach ( $assets as $asset ) {
+		$probe['runtime_asset_tokens'][ '{{wordpress-site-plan:asset:' . $asset['token'] . '}}' ] = 'https://example.org/' . $asset['target_path'];
+	}
 	$probe['resolved']['writes'][] = array( 'kind' => 'theme_scaffold', 'target_path' => 'theme.json', 'payload' => array( 'encoding' => 'utf8', 'data' => '{"version":3,"styles":{"elements":{}}}' . "\n" ) );
 	$args = array( &$probe );
-	$assert( true === $apply->invokeArgs( null, $args ), $case . ': commits' );
+	$applied = $apply->invokeArgs( null, $args );
+	$assert( true === $applied, $case . ': commits: ' . json_encode( $applied ) );
 	$files = glob( $probe['theme_dir'] . '/templates/*.html' );
+	if ( 'single-image-duplicates' === $case ) {
+		$emitted = implode( '', array_map( 'file_get_contents', $files ) );
+		echo 'Single-image fixture: ' . count( $files ) . ' templates, ' . substr_count( $emitted, '<img ' ) . " frozen images\n";
+	}
 	$assert( count( $files ) === ( $outlier ? 2 : 1 ), $case . ': template count' );
 	$shared = file_get_contents( $probe['theme_dir'] . '/templates/single-product.html' );
 	$assert( str_contains( $shared, 'wp:post-title' ) && str_contains( $shared, 'wp:woocommerce/product-price' ) && str_contains( $shared, 'wp:woocommerce/add-to-cart-form' ), $case . ': bound fields' );
 	// WooCommerce's product-price save() is empty only with a declared product context.
 	$assert( 1 === preg_match( '~<!-- wp:woocommerce/product-price \{[^}]*"isDescendentOfSingleProductTemplate":true[^}]*\} /-->~', $shared ), $case . ': price block valid in the editor' );
 	$assert( ! str_contains( $shared, '$27.99' ) && ! str_contains( $shared, 'Cup' ), $case . ': no frozen fields' );
+	if ( 'single-image-duplicates' === $case ) {
+		$assert( (bool) preg_match( '~<div class="product-gallery-slides-item">\s*<!-- wp:woocommerce/product-image-gallery\b~', $shared ), 'Visible slide owns the bound gallery' );
+		$assert( ! str_contains( $shared, '<img ' ) && ! str_contains( $shared, 'lightbox' ) && ! str_contains( $shared, 'zoom-duplicate' ), 'Product duplicates are removed by asset identity' );
+	}
 	$theme_json = end( $probe['resolved']['writes'] )['payload']['data'];
 	if ( 4 === count( $slugs ) ) {
 		$alternate = basename( (string) current( preg_grep( '~/single-product-shared-[0-9a-f]{12}\.html$~', $files ) ), '.html' );
