@@ -80,7 +80,8 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
           const front = await browser.newPage();
           try {
             await front.goto(url);
-            if (!(await front.locator('body').innerText()).includes(marker)) throw new Error('Saved text absent from frontend');
+            // textContent is the saved text as written; innerText applies CSS such as text-transform.
+            if (!(await front.locator('body').textContent()).includes(marker)) throw new Error('Saved text absent from frontend');
           } finally { await front.close(); }
         });
         if (blocks.some((b) => b.name === 'core/image')) await check('editor_saved_image', async () => {
