@@ -38,6 +38,11 @@ namespace {
 			'*,::before,::after{box-sizing:border-box}.send{width:100%;padding:5px 10px!important}',
 			'<form style="width:100%;padding:0"><input name="name" aria-label="Name" style="width:100%"><div style="padding:0"><button class="send" type="submit">Send</button></div></form>',
 		),
+		// Carrd sizes its submit to the viewport and caps it at its container.
+		'capped_viewport_submit' => array(
+			'*,::before,::after{box-sizing:border-box}.form .actions button{max-width:100%}.form .actions button{display:inline-block;width:100vw;height:3rem;padding:0 1.5rem}',
+			'<form class="form" style="width:450px"><input name="name" aria-label="Name" style="width:100%"><div class="actions"><button type="submit">Send</button></div></form>',
+		),
 		// A stacked form whose first row is a responsive two-column grid.
 		'two_column_grid'  => array(
 			$tailwind,
