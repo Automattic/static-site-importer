@@ -29,6 +29,12 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Block metadata key on the archive template naming its source page's reconciliation identity. */
 	public const ARCHIVE_DOCUMENT_KEY = 'staticSiteImporterArchiveDocument';
 
+	/** Metadata on a native cart opener. */
+	public const CART_LINK_KEY = 'staticSiteImporterCartLink';
+
+	/** Persistent source badge templates for AJAX requests. */
+	public const CART_BADGES_OPTION = 'static_site_importer_cart_badges';
+
 	/** Class on the product collection whose loop wrappers are flattened. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
@@ -49,6 +55,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ), 20 );
 		add_filter( 'blocks_engine_served_route', array( self::class, 'served_route' ), 10, 2 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
+		add_filter( 'woocommerce_add_to_cart_fragments', array( self::class, 'cart_fragments' ) );
 		add_filter( 'render_block_woocommerce/product-price', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/breadcrumbs', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
@@ -56,6 +63,105 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'render_block_woocommerce/add-to-cart-form', array( self::class, 'render_bound_layout' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+	}
+
+	/** Fill only the declared badge, preserving the surrounding source markup. */
+	public static function cart_badge( string $html, string $selector, string $id ): string {
+		if ( '' === $selector || ! preg_match( '/^[a-f0-9]{24}$/', $id ) ) {
+			return '';
+		}
+		// The producer emits a local attribute, class or id selector, not its
+		// structural source_selector. Never interpret a selector as HTML.
+		$attribute = '';
+		$value     = null;
+		$class     = '';
+		if ( preg_match( '/^\[([a-zA-Z_:][-a-zA-Z0-9_:.]*)\]$/', $selector, $match ) ) {
+			$attribute = $match[1];
+		} elseif ( preg_match( '/^([.#])([-a-zA-Z0-9_]+)$/', $selector, $match ) ) {
+			$attribute = '#' === $match[1] ? 'id' : '';
+			$value     = $match[2];
+			$class     = '.' === $match[1] ? $value : '';
+		} else {
+			return '';
+		}
+		$tags = new WP_HTML_Tag_Processor( $html );
+		while ( $tags->next_tag() ) {
+			if ( '' !== $class ? ! $tags->has_class( $class ) : ( null === $tags->get_attribute( $attribute ) || ( null !== $value && $value !== $tags->get_attribute( $attribute ) ) ) ) {
+				continue;
+			}
+			$tag = strtolower( $tags->get_tag() );
+			$tags->set_attribute( 'data-ssi-cart-badge', $id );
+			$marked = $tags->get_updated_html();
+			if ( preg_match( '~<' . $tag . '\\b[^>]*data-ssi-cart-badge="' . $id . '"[^>]*>.*?</' . $tag . '>~s', $marked, $badge ) ) {
+				return $badge[0];
+			}
+			return '';
+		}
+		return '';
+	}
+
+	/** Render a source badge with the current WooCommerce count. */
+	private static function live_cart_badge( string $badge ): string {
+		// Woo's frontend cart may not have initialized on an early render.
+		/** @var mixed $cart */
+		$cart  = function_exists( 'WC' ) ? WC()->cart : null;
+		$count = is_object( $cart ) && method_exists( $cart, 'get_cart_contents_count' ) ? (int) $cart->get_cart_contents_count() : 0;
+		$tags  = new WP_HTML_Tag_Processor( $badge );
+		if ( ! $tags->next_tag() ) {
+			return $badge;
+		}
+		if ( $count > 0 ) {
+			$tags->remove_attribute( 'hidden' );
+		} else {
+			$tags->set_attribute( 'hidden', true );
+		}
+		$badge = $tags->get_updated_html();
+		return (string) preg_replace( '~^(<[^>]+>).*?(</[^>]+>)$~s', '${1}' . $count . '${2}', $badge );
+	}
+
+	/** Navigate at render time; the editor retains the original native block. */
+	public static function render_cart_link( string $content, array $block ): string {
+		$marker = $block['attrs']['metadata'][ self::CART_LINK_KEY ] ?? null;
+		if ( ! is_array( $marker ) || ! function_exists( 'wc_get_cart_url' ) || ! function_exists( 'WC' ) ) {
+			return $content;
+		}
+		$badge = self::cart_badge( $content, (string) ( $marker['badge_selector'] ?? '' ), (string) ( $marker['id'] ?? '' ) );
+		if ( '' !== $badge ) {
+			// Mark before replacing, so identical badges outside this control
+			// are never touched by a page-wide search.
+			// The source badge differs only by our stable marker attribute.
+			$source  = preg_replace( '/ data-ssi-cart-badge="[a-f0-9]+"/', '', $badge );
+			$content = str_replace( $source, self::live_cart_badge( $badge ), $content );
+		}
+		$tags = new WP_HTML_Tag_Processor( $content );
+		while ( $tags->next_tag() ) {
+			if ( ! in_array( $tags->get_tag(), array( 'BUTTON', 'A' ), true ) ) {
+				continue;
+			}
+			$button = 'BUTTON' === $tags->get_tag();
+			$tags->set_attribute( 'href', wc_get_cart_url() );
+			$tags->remove_attribute( 'type' );
+			$content = $tags->get_updated_html();
+			if ( $button ) {
+				$content = preg_replace( '/<button\\b/i', '<a', $content, 1 );
+				$content = preg_replace( '~</button\\s*>~i', '</a>', $content, 1 );
+			}
+			if ( function_exists( 'wp_enqueue_script' ) ) {
+				wp_enqueue_script( 'wc-cart-fragments' );
+			}
+			break;
+		}
+		return $content;
+	}
+
+	/** AJAX requests use saved templates even when no page was rendered. */
+	public static function cart_fragments( array $fragments ): array {
+		foreach ( (array) get_option( self::CART_BADGES_OPTION, array() ) as $id => $badge ) {
+			if ( is_string( $id ) && preg_match( '/^[a-f0-9]{24}$/', $id ) && is_string( $badge ) ) {
+				$fragments[ '[data-ssi-cart-badge="' . $id . '"]' ] = self::live_cart_badge( $badge );
+			}
+		}
+		return $fragments;
 	}
 
 	/** Supply source identity only for imported products without an existing route. */
@@ -298,7 +404,8 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	 * @param array<string,mixed> $block Parsed block.
 	 */
 	public static function render_slot( string $content, array $block ): string {
-		$slot = $block['attrs']['metadata'][ self::SLOT_KEY ] ?? null;
+		$content = self::render_cart_link( $content, $block );
+		$slot    = $block['attrs']['metadata'][ self::SLOT_KEY ] ?? null;
 		if ( ! is_array( $slot ) ) {
 			return $content;
 		}

@@ -201,6 +201,7 @@
           }
         ],
         "standalone_php_test_paths": [
+          "tests/smoke-woo-cart-links.php",
           "tests/smoke-product-grid-inline-svg-import.php",
           "tests/smoke-media-rebind-error.php",
           "tests/smoke-raw-html-companion-quality.php",

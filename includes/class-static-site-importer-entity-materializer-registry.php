@@ -392,6 +392,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$adapter_key = (string) ( $declaration['adapter_key'] ?? $declaration['payload']['adapter_key'] ?? '' );
 			$adapter     = '' === $adapter_key ? self::adapter_for_capability( $capability, 'entity_collection' === $kind ? $name : '' ) : self::adapter( $adapter_key );
+			if ( 'cart_links' === $name && ! $required && ! Static_Site_Importer_Woo_Cart_Links_Materializer::available() ) {
+				$lifecycle['diagnostics'][] = array(
+					'code'                    => 'unsupported_optional_runtime_declaration',
+					'severity'                => 'warning',
+					'reconciliation_identity' => $key,
+					'message'                 => 'WooCommerce is unavailable for optional declaration cart_links.',
+				);
+				continue;
+			}
 			if ( empty( $adapter ) && ! $required && 'entity_collection' === $kind && '' === $adapter_key && ! empty( self::adapter_for_capability( $capability ) ) ) {
 				// The configured provider serves the capability but not this optional collection.
 				$lifecycle['diagnostics'][] = array(
@@ -674,7 +683,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'checkout', 'checkouts', 'product_grids', 'product_listings', 'order_lookup', 'order_lookups' ), true ) ) {
+		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'checkout', 'checkouts', 'product_grids', 'product_listings', 'cart_links', 'order_lookup', 'order_lookups' ), true ) ) {
 			return 'shop';
 		}
 		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
@@ -1449,6 +1458,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						if ( 'commerce_collection' === ( $member['binding']['role'] ?? '' ) ) {
 							$entity = array_merge( $entity, $member['binding']['product_grid_fallback'] ?? array() );
 						}
+						if ( 'cart_links' === $entity_key ) {
+							$entity['bindings'] = array( $member['binding'] );
+						}
 						$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $member['result'] );
 						if ( '' === $replacement ) {
 							return new WP_Error(
@@ -1696,9 +1708,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		require_once __DIR__ . '/class-static-site-importer-woo-checkout-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-order-lookup-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-grid-materializer.php';
+		require_once __DIR__ . '/class-static-site-importer-woo-cart-links-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php';
 		// A capability's first adapter is its default; collection adapters follow it.
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Checkout_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_Consent_Banner', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Checkout_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Cart_Links_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_Consent_Banner', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -2972,7 +2985,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'commerce_checkout', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'commerce_checkout', 'commerce_cart_link', 'order_lookup', 'commerce_add_to_cart_form', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(
