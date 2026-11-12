@@ -326,8 +326,9 @@ function acceptanceGate(item, repo) {
   // WordPress is over the evidence size limit: without it the gate installs one.
   return {
     // The repository's checks and acceptance are independent: run them side
-    // by side, then print acceptance's output after the repository's.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
+    // by side, then print acceptance's output after the repository's. While
+    // acceptance outlasts them, a heartbeat keeps Cook's no-output limit away.
+    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (${repo.verify}); repo=$?; while kill -0 $gate 2>/dev/null; do echo "import-loop-gate acceptance running"; sleep 60; done; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source: evidenceFile(source, id) })),
   };
