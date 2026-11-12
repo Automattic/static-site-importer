@@ -389,15 +389,22 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 			static_site_importer_cli_constrained_runtime( true );
 		}
 		unset( $input['report'], $input['_cli_request_bundle_dir'], $input['_cli_constrained_runtime'] );
+		$run_policy   = static function ( array $policy ) use ( $input ): array {
+			$policy = static_site_importer_cli_direct_artifact_run_policy( $policy );
+			if ( array_key_exists( 'import_deadline_seconds', $input ) ) {
+				$policy['import_deadline_seconds'] = (float) $input['import_deadline_seconds'];
+			}
+			return $policy;
+		};
 		$policy_added = function_exists( 'add_filter' );
 		if ( $policy_added ) {
-			add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+			add_filter( 'static_site_importer_direct_artifact_run_policy', $run_policy );
 		}
 		try {
 			return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
 		} finally {
 			if ( $policy_added && function_exists( 'remove_filter' ) ) {
-				remove_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+				remove_filter( 'static_site_importer_direct_artifact_run_policy', $run_policy );
 			}
 		}
 	}
@@ -1182,6 +1189,9 @@ if ( ! function_exists( 'static_site_importer_cli_import_input' ) ) {
 		$operation = (string) ( $input['operation'] ?? 'apply' );
 		if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
 			return new WP_Error( 'static_site_importer_invalid_import_operation', 'operation must be plan or apply.' );
+		}
+		if ( array_key_exists( 'import_deadline_seconds', $input ) && ( ! is_numeric( $input['import_deadline_seconds'] ) || ! is_finite( (float) $input['import_deadline_seconds'] ) || 0 >= (float) $input['import_deadline_seconds'] ) ) {
+			return new WP_Error( 'static_site_importer_invalid_import_deadline', 'import_deadline_seconds must be a positive finite number of seconds from the run start.' );
 		}
 		$input['operation'] = $operation;
 		if ( isset( $assoc_args['import-id'] ) ) {

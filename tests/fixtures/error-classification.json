@@ -428,6 +428,7 @@
     "static_site_importer_invalid_batch_pages": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_invalid_direct_artifact_import_id": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_invalid_file_content": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "static_site_importer_invalid_import_deadline": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_invalid_import_operation": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_invalid_import_source": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_invalid_max_effective_batches_per_invocation": { "class": "integrity", "owning_layer": "static-site-importer" },
