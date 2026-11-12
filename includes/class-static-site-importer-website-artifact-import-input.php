@@ -21,6 +21,24 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			'enum'    => array( 'generated_theme', 'existing_theme' ),
 			'default' => 'generated_theme',
 		),
+		'pages'                                => array(
+			'type'  => 'array',
+			'items' => array( 'type' => 'string' ),
+		),
+		'page_routes'                          => array(
+			'type'                 => 'object',
+			'additionalProperties' => array(
+				'type'       => 'object',
+				'properties' => array(
+					'slug'   => array( 'type' => 'string' ),
+					'parent' => array( 'type' => array( 'integer', 'string' ) ),
+				),
+			),
+		),
+		'post_status'                          => array(
+			'type' => 'string',
+			'enum' => array( 'publish', 'draft', 'pending', 'private' ),
+		),
 		'slug'                                 => array( 'type' => 'string' ),
 		'name'                                 => array( 'type' => 'string' ),
 		'site_title'                           => array( 'type' => 'string' ),

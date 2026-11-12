@@ -10,6 +10,7 @@
     "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
+    { "path": "tests/smoke-page-choices.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-source-route-twins.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-recompose.php", "environment": "standalone-php" },
     { "path": "tests/smoke-media-rebind-error.php", "environment": "standalone-php" },

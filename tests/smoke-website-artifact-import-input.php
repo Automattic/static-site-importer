@@ -127,6 +127,9 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 };
 
 $input  = array(
+	'pages' => array( 'about.html' ),
+	'page_routes' => array( 'about.html' => array( 'slug' => 'about-us' ) ),
+	'post_status' => 'draft',
 	'destination'                          => 'existing_theme',
 	'slug'                                 => 'contract-theme',
 	'name'                                 => 'Contract Theme',

@@ -17,7 +17,17 @@ One marker-delimited section per import slug owns the CSS. Re-import replaces th
 - CSS URLs not materialized to uploads are replaced with empty data URLs and diagnosed. Unsupported fonts and resources do not silently refer to withheld theme files.
 - Importer-generated hosts are detected from their run manifest and `ssi-runtime/companion.json` ownership. Their block namespace is reused; missing block directories are journaled into `ssi-runtime/` only. Different bytes in an existing directory fail closed with `existing_theme_runtime_block_conflict`. Per-page diagnostics distinguish reused, added, and unavailable types.
 - Other hosts still reject pages needing unregistered generated typed blocks. Already registered destination blocks can be used.
-- Page selection, remapped slugs, draft/standalone choices and independent token resolution are not part of this slice.
+- Standalone choices and independent token resolution remain follow-ups.
+
+## Caller page choices
+
+`pages` selects source paths (for example `["pricing.html", "about.html"]`); omit it to import all pages, or pass `[]` to select none. `page_routes` maps source paths to a `slug` and optional `parent` (an existing page ID or site path). Internal links follow the resulting permalinks. Links to unselected pages use an existing route occupant when available; missing targets are diagnosed and retain their planned route.
+
+`post_status` accepts `publish`, `draft`, `pending`, or `private`. New existing-theme pages default to draft; generated-theme pages default to publish. Reconciled posts retain their status unless explicitly overridden. Source `index.html` is a normal `/index/` page in existing-theme mode, not the site's front page.
+
+Public plans and receipts expose `pages` rows with source path, selection, route, status and action. Conflicts include the occupying post and a free-slug suggestion. Apply rechecks every selected route before writing. Resolve conflicts with route choices, selection, or `overwrite`. Saved plan envelopes retain `page_choices` for application. Existing-theme imports withhold source site settings and navigation, reporting this in diagnostics.
+
+Runtime evidence for this slice is recorded in [page-choices-evidence.md](page-choices-evidence.md).
 
 ## Tests
 
