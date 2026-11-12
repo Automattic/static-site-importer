@@ -692,6 +692,8 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'classes' => $presentation['label_classes'],
 				'marker'  => isset( $presentation['label_marker'] ) && is_scalar( $presentation['label_marker'] ) ? (string) $presentation['label_marker'] : '',
 			);
+		} elseif ( isset( $presentation['label_parts'] ) && is_array( $presentation['label_parts'] ) ) {
+			$block['label'] = array( 'parts' => $presentation['label_parts'] );
 		}
 		// The source button can own inline icons on either side of the label
 		// inside its control box; the authored gap between them already
@@ -714,7 +716,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 *
 	 * @param array<string,array<int,string>> $icons Captured inline SVGs keyed `icon` (before the label) and `icon_after`.
 	 */
-	public static function button_block( string $text, string $class_name = '', array $icons = array() ): array {
+	public static function button_block( string $text, string $class_name = '', array $icons = array(), ?array $label = null ): array {
 		$block = array(
 			'name'    => 'core/button',
 			'attrs'   => array(
@@ -727,6 +729,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			'content' => '' !== trim( $text ) ? trim( $text ) : 'Button',
 			'wrapper' => 'button',
 		);
+		if ( null !== $label ) {
+			$block['label'] = $label;
+		}
 		foreach ( array( 'icon', 'icon_after' ) as $key ) {
 			$icon_parts = Static_Site_Importer_Provider_Form_Runtime_V1::valid_icon_parts( is_array( $icons[ $key ] ?? null ) ? $icons[ $key ] : array() );
 			if ( ! empty( $icon_parts ) ) {
@@ -776,6 +781,36 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return '';
+	}
+
+	/**
+	 * The caption elements a source button owns: one label span, or the sibling
+	 * text spans the compiler reports as label parts. Author rules address
+	 * these spans, so the serializer reproduces them inside the button.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return array<string, mixed>|null
+	 */
+	public static function control_label( array $control ): ?array {
+		$classes = static fn( string $value ): array => array_values( array_filter( (array) preg_split( '/\s+/', trim( $value ) ) ) );
+		if ( isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
+			return array(
+				'classes' => $classes( (string) $control['label_classes'] ),
+				'marker'  => is_scalar( $control['label_marker'] ?? null ) ? trim( (string) $control['label_marker'] ) : '',
+			);
+		}
+		$parts = array();
+		foreach ( is_array( $control['label_parts'] ?? null ) ? array_slice( $control['label_parts'], 0, 8 ) : array() as $part ) {
+			if ( ! is_array( $part ) || ! is_scalar( $part['text'] ?? null ) || ! is_scalar( $part['classes'] ?? '' ) ) {
+				return null;
+			}
+			$parts[] = array(
+				'classes' => $classes( (string) ( $part['classes'] ?? '' ) ),
+				'marker'  => is_scalar( $part['marker'] ?? null ) ? trim( (string) $part['marker'] ) : '',
+				'text'    => substr( trim( (string) $part['text'] ), 0, 200 ),
+			);
+		}
+		return count( $parts ) > 1 ? array( 'parts' => $parts ) : null;
 	}
 
 	/**
@@ -1045,6 +1080,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @return string
 	 */
 	private static function rich_text_markup( string $text, ?array $label = null ): string {
+		if ( isset( $label['parts'] ) && is_array( $label['parts'] ) ) {
+			$markup = '';
+			foreach ( $label['parts'] as $part ) {
+				$markup .= is_array( $part ) && is_scalar( $part['text'] ?? null ) ? self::rich_text_markup( (string) $part['text'], $part ) : '';
+			}
+			return '' !== $markup ? $markup : self::rich_text_markup( $text );
+		}
 		$markup = htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 		if ( null === $label ) {
 			return $markup;

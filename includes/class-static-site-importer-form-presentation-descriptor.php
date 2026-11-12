@@ -158,7 +158,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 	/** The declared part of a non-phone control's own (inner) destination. */
 	private static function control_part( string $type ): string {
 		return match ( $type ) {
-			'submit'   => 'submit_link',
+			'submit', 'button' => 'submit_link',
 			'select'   => 'select_control',
 			'checkbox' => 'checkbox_control',
 			default    => 'control',
@@ -173,19 +173,22 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		$label_class        = isset( $roles['label'] ) || isset( $roles['required_marker'] ) ? self::presentation_node_class( $scope, $index, 'label' ) : '';
 		$phone_destinations = array();
 		$destinations       = array();
+		// Every source <button> becomes a core/button, whose wrapper and link
+		// split the one source element; a native type=button is no different.
+		$core_button = in_array( $type, array( 'submit', 'button' ), true );
 
 		if ( '' !== $control_class ) {
 			if ( in_array( $type, array( 'phone', 'tel' ), true ) ) {
 				$phone_destinations = self::phone_presentation_destinations( $scope, $index );
 				$destinations       = $phone_destinations;
 			} else {
-				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Form_Presentation_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() );
-				$inner_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
+				$properties   = array_keys( $core_button ? Static_Site_Importer_Form_Presentation_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Form_Presentation_Overlay::presentation_property_keys() );
+				$inner_suffix = $core_button ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
 				if ( '' !== $inner_suffix ) {
 					// The wrapper is the item of the source container, so the
 					// control's own placement in that container belongs on it.
 					$wrapper_properties = array( 'display', 'width', 'min_width', 'align_self', 'justify_self', 'order', 'flex', 'flex_basis', 'flex_grow' );
-					if ( 'submit' === $type ) {
+					if ( $core_button ) {
 						// Gutenberg's `is-layout-flex > * { margin:0 }` zeros a submit
 						// wrapper's authored class margin. Carry vertical spacing onto
 						// that wrapper through the overlay so it outranks the layout
@@ -223,7 +226,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					}
 					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
-					if ( 'submit' === $type ) {
+					if ( $core_button ) {
 						// The link is the source button's inner box, so the button's own
 						// display fact reaches it too, beside the justify-content and
 						// align-items facts it already carries. The compiler blockifies it
@@ -252,7 +255,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 						),
 						// Core lets a button link break inside a word, below the
 						// width a source `<button>` keeps for its caption.
-						'submit' === $type ? array(
+						$core_button ? array(
 							'min-height' => '0',
 							'word-break' => 'normal',
 						) : array(),
@@ -286,7 +289,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 					);
 				}
 				$destinations[] = $destination;
-				if ( 'submit' === $type && $has_caption ) {
+				if ( $core_button && $has_caption ) {
 					// The caption span keeps its source classes, so a source rule
 					// that paints the label (Wix's `.mu5PoX .OR4Nv8{color:rgb(var(--txt))}`)
 					// still matches it, but the wrapper that defined its variables is
@@ -300,7 +303,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 						'properties' => $caption,
 					);
 				}
-				if ( 'submit' === $type ) {
+				if ( $core_button ) {
 					// A submit control sits as a bare direct child of its source
 					// container, unlike every other field, which is wrapped in its own
 					// box. A sibling-stacking utility (Tailwind's `space-y-*`) that
@@ -425,7 +428,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 			);
 		}
 
-		if ( isset( $roles['sibling_stacked_margin'] ) && '' !== $control_class && 'submit' !== $type ) {
+		if ( isset( $roles['sibling_stacked_margin'] ) && '' !== $control_class && ! $core_button ) {
 			// The captured sibling-stacking margin stays represented above. The
 			// provider wraps each field and spaces the wrappers with the form gap,
 			// so the same margin on the control itself would add a second gap

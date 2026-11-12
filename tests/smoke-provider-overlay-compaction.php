@@ -13,11 +13,16 @@ $method = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Overlay::
 $node_a = '.ssi-form-123456789abc .ssi-node-000000000001-wrap';
 $node_b = '.ssi-form-123456789abc .ssi-node-000000000002-wrap';
 $node_c = '.ssi-form-123456789abc .ssi-node-000000000003-wrap';
-$cases  = array(
+$link_a  = '.ssi-form-123456789abc .ssi-node-000000000001 > .wp-block-button__link';
+$field_b = '.ssi-form-123456789abc .ssi-node-000000000002';
+$link_c  = '.ssi-form-123456789abc .ssi-node-000000000003 > .wp-block-button__link';
+$cases   = array(
 	array( array( '@media (max-width:500px){' . $node_a . '{color:red}}', "$node_b{color:blue}", '@media (max-width:500px){' . $node_c . '{color:red}}' ), array( '@media (max-width:500px){' . $node_a . ', ' . $node_c . '{color:red}}', "$node_b{color:blue}" ) ),
 	array( array( "$node_a{margin:0}", "$node_a{margin-left:8px}", "$node_a{margin:0}" ), array( "$node_a{margin:0}", "$node_a{margin-left:8px}", "$node_a{margin:0}" ) ),
 	array( array( "$node_a{color:red}", '.unknown{color:blue}', "$node_c{color:red}" ), array( "$node_a{color:red}", '.unknown{color:blue}', "$node_c{color:red}" ) ),
 	array( array( "$node_a{color:red}", "$node_b{color:blue}", "$node_c{color:red}" ), array( "$node_a, $node_c{color:red}", "$node_b{color:blue}" ) ),
+	// A node's core/button link and placeholder are that node's own boxes, so they never block distinct nodes' rules from merging.
+	array( array( "$link_a{margin:0}", "$field_b::placeholder{color:red}", "$link_c{margin:0}" ), array( "$link_a, $link_c{margin:0}", "$field_b::placeholder{color:red}" ) ),
 	array( array( "$node_a{color:red}", "$node_a{color:blue}", "$node_a{color:red}" ), array( "$node_a{color:red}", "$node_a{color:blue}", "$node_a{color:red}" ) ),
 	array( array( "$node_a{color:red}", "$node_c{color:blue}", "$node_c{color:red}" ), array( "$node_a{color:red}", "$node_c{color:blue}", "$node_c{color:red}" ) ),
 	array( array( '.a{color:red}', '.b{color:red}' ), array( '.a, .b{color:red}' ) ),

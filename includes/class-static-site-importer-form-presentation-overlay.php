@@ -788,6 +788,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 
 	/**
 	 * Only simple, per-node boxes prove that two selector lists cannot compete.
+	 * A node's core/button link is its own box too: only that node's wrapper
+	 * holds it, so distinct nodes' links never share an element. A node's
+	 * placeholder belongs to that node's own control in the same way.
 	 *
 	 * @param string $left  First selector list.
 	 * @param string $right Second selector list.
@@ -798,7 +801,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		foreach ( array( $left, $right ) as $selectors ) {
 			$group = array();
 			foreach ( explode( ', ', $selectors ) as $selector ) {
-				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?$/D', $selector, $match ) ) {
+				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31})| > \.wp-block-button__link)?(?:::placeholder)?$/D', $selector, $match ) ) {
 					return false;
 				}
 				$group[] = $match[1];
