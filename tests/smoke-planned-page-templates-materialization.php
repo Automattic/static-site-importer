@@ -49,7 +49,7 @@ $ssi_plan   = array(
 	'pages'     => array(
 		array( 'post_type' => 'page', 'metadata' => array( 'post_meta' => array( '_wp_page_template' => $ssi_page ) ) ),
 		array( 'post_type' => 'post', 'metadata' => array( 'post_meta' => array( '_wp_page_template' => $ssi_single ) ) ),
-		// Assigned but not shipped by the plan: never registered.
+		// Not shipped by the plan: accepted only as a post's current assignment.
 		array( 'post_type' => 'page', 'metadata' => array( 'post_meta' => array( '_wp_page_template' => 'page-unshipped-' . $ssi_suffix ) ) ),
 	),
 );
@@ -59,7 +59,7 @@ $ssi_assert(
 		'page' => array( $ssi_page => 'About (north)' ),
 		'post' => array( $ssi_single => 'Note (north)' ),
 	) === Static_Site_Importer_Planned_Page_Templates::assigned( $ssi_plan ),
-	'Only templates the plan ships and assigns are registered, per post type.'
+	'Only templates the plan ships and assigns are pre-registered, per post type.'
 );
 
 $ssi_created = array();
@@ -100,7 +100,7 @@ $ssi_during = Static_Site_Importer_Planned_Page_Templates::during(
 );
 $ssi_assert( $ssi_page_id === $ssi_during['page'], 'A page assigned a planned template can be re-saved during materialization.' );
 $ssi_assert( $ssi_post_id === $ssi_during['post'], 'A post assigned a planned single template can be re-saved during materialization.' );
-$ssi_assert( is_wp_error( $ssi_during['orphan'] ), 'A template the plan does not ship stays invalid.' );
+$ssi_assert( $ssi_orphan_id === $ssi_during['orphan'], 'An existing assignment not shipped by the plan survives a content-only re-save.' );
 $ssi_assert( $ssi_page === get_post_meta( $ssi_page_id, '_wp_page_template', true ), 'The planned assignment is preserved.' );
 
 $ssi_after = $ssi_resave( $ssi_page_id );
