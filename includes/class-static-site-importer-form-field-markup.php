@@ -792,9 +792,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @return array<string, mixed>|null
 	 */
 	public static function control_label( array $control ): ?array {
+		$classes = static fn( string $value ): array => array_values( array_filter( (array) preg_split( '/\s+/', trim( $value ) ) ) );
 		if ( isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
 			return array(
-				'classes' => array_values( array_filter( preg_split( '/\s+/', trim( (string) $control['label_classes'] ) ) ?: array() ) ),
+				'classes' => $classes( (string) $control['label_classes'] ),
 				'marker'  => is_scalar( $control['label_marker'] ?? null ) ? trim( (string) $control['label_marker'] ) : '',
 			);
 		}
@@ -804,7 +805,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				return null;
 			}
 			$parts[] = array(
-				'classes' => array_values( array_filter( preg_split( '/\s+/', trim( (string) ( $part['classes'] ?? '' ) ) ) ?: array() ) ),
+				'classes' => $classes( (string) ( $part['classes'] ?? '' ) ),
 				'marker'  => is_scalar( $part['marker'] ?? null ) ? trim( (string) $part['marker'] ) : '',
 				'text'    => substr( trim( (string) $part['text'] ), 0, 200 ),
 			);

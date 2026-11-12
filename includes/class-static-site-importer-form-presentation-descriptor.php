@@ -175,7 +175,7 @@ final class Static_Site_Importer_Form_Presentation_Descriptor {
 		$destinations       = array();
 		// Every source <button> becomes a core/button, whose wrapper and link
 		// split the one source element; a native type=button is no different.
-		$core_button        = in_array( $type, array( 'submit', 'button' ), true );
+		$core_button = in_array( $type, array( 'submit', 'button' ), true );
 
 		if ( '' !== $control_class ) {
 			if ( in_array( $type, array( 'phone', 'tel' ), true ) ) {
