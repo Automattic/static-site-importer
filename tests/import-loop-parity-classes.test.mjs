@@ -67,6 +67,12 @@ test('a passing verified cell reports nothing; a failed state without strings st
   assert.deepEqual(parityCellReports(cell([{ state: 'baseline', profile: 'desktop', failures: [], pass: false }])).map((r) => r.subject), ['unverified']);
 });
 
+test('a route the imported site answers with 404 is the importer\'s route_missing finding', () => {
+  const reason = 'Error: Observation HTTP 404: http://127.0.0.1:52543/privacy-policy/';
+  const reports = parityCellReports(cell([], { route: '/privacy-policy/', pending: [{ state: 'baseline', reason }, { state: 'baseline', reason }] }));
+  assert.deepEqual(reports, [{ owner_repo: 'static-site-importer', subject: 'route_missing', evidence: { route: '/privacy-policy/', reasons: [reason] } }]);
+});
+
 test('per-class signatures are distinct, so each class is measured on its own', () => {
   const signature = (subject, owner) => createHash('sha1').update(JSON.stringify(['materialization', 'visual_parity', owner, subject])).digest('hex').slice(0, 12);
   const subjects = parityCellReports(cell([score([failures.title, failures.link, failures.motion, failures.textPosition])]));
