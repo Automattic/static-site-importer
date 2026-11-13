@@ -399,7 +399,9 @@ for (const item of tracked) {
         ...(item.site ? [] : ['- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.']),
         '',
         ...item.cells.map((cell) => `  - ${cell.route ? `\`${cell.route}\`` : 'site-wide'}${cell.width ? ` at ${cell.width}px` : ''}: \`${evidenceText(cell.evidence).slice(0, 600)}\``),
-      ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
+      ] : repo?.predicate_root ? ['- The issue\'s predicate exits non-zero on the reduced page with your change.'] : [
+        `- The whole-site gate rebuilds only the materializer, so it cannot run this repository's code: the acceptance gate records that and exits zero. The next pass imports the site through the released importer and measures this fix there. Done is the focused regression test below plus this repository's own checks; declare the task complete when they pass.`,
+      ]),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
     // Cook resolves the issue itself: it reworks the one open linked PR on
