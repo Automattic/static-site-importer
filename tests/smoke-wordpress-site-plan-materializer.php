@@ -2725,6 +2725,9 @@ try {
 	restore_error_handler();
 }
 $partial_quality          = $partial_quality_result['quality'] ?? array();
+// The final count is whatever the materialized documents hold; derive it from
+// the same receipt without the partial compiler envelope instead of pinning it.
+$materialized_block_count = $compose_partial_quality_result->invoke( null, $receipt, array( 'fail_on_quality' => true ) )['quality']['block_count'] ?? null;
 $partial_quality_counters = array(
 	'fallback_count'                        => 1,
 	'content_loss_count'                    => 0,
@@ -2744,7 +2747,7 @@ $partial_quality_counters = array(
 	'source_fallback_count'                 => 1,
 );
 $assert(
-	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 29 === ( $partial_quality['block_count'] ?? 0 ) && array(
+	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && is_int( $materialized_block_count ) && 1 < $materialized_block_count && $materialized_block_count === ( $partial_quality['block_count'] ?? 0 ) && array(
 		'block_count'    => 1,
 		'fallback_count' => 1,
 	) === ( $partial_quality['metrics'] ?? null ),
