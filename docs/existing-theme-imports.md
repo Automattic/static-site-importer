@@ -8,6 +8,14 @@ Each page gets one root `core/group` with a stable import/page-derived class. St
 
 One marker-delimited section per import slug owns the CSS. Re-import replaces that section, preserving surrounding user CSS and settings. Different import slugs own independent sections. `Static_Site_Importer_Existing_Theme_Styles::remove( $section_id )` removes that section and pages tagged with its ownership metadata; the section ID is reported in the materialization receipt's `completed.global_styles`. Transaction rollback restores the prior section (or removes a newly created section).
 
+## Full-width pages on block themes
+
+Existing-theme pages use an import-owned, theme-scoped user `wp_template` stored in the database. It contains the site's header and footer template parts and unconstrained full-width post content, but no post title. One template is shared by an import's pages and assigned through `_wp_page_template`; its ownership metadata uses the same section identity as the pages and CSS. Removal deletes it only after no page uses it, including owner pages that adopted it. Re-import reuses it, name collisions fail closed, and transaction rollback removes newly created templates and restores prior page assignments.
+
+A dedicated content-owned template is more reliable than `align: full` alone: arbitrary theme page templates can nest post content inside constrained groups and include a post title. No owner template or theme file is changed. Classic themes retain their existing template behavior and report `existing_theme_classic_template_unchanged`.
+
+Within each page's CSS section, zero-specificity resets roll theme element typography (headings, links, form controls, lists, tables, code) back to browser defaults, as in the source document. Scoped source selectors still win. In the editor canvas only, the root spans the canvas past the editor's root padding. All these rules stay confined to the page class.
+
 ## Deliberate limits
 
 - Global Styles belong to a theme. Styling does not follow a theme switch; plan and receipt report this limitation.

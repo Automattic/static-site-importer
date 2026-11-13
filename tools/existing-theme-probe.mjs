@@ -2,6 +2,7 @@
 import { mkdir, readdir, readFile, writeFile, symlink } from 'node:fs/promises';
 import { resolve, join, relative, extname, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { provisionWordPress } from '../lib/disposable-wordpress.mjs';
 import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-comparison.mjs';
@@ -9,7 +10,7 @@ import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-compari
 const args = process.argv.slice(2);
 const hostIndex = args.indexOf('--host');
 const host = hostIndex < 0 ? 'twentytwentyfive' : args.splice(hostIndex, 2)[1];
-if (!['generated', 'twentytwentyfive'].includes(host)) throw new Error('Unknown --host');
+if (!/^[a-z0-9-]+$/.test(host)) throw new Error('Invalid --host theme slug');
 const root = resolve(process.env.FIXTURE_ROOT || 'blocks-engine/fixtures/websites');
 const out = resolve(process.env.OUT || `probe-out/${host}`);
 await mkdir(join(out, '_cache'), { recursive: true });
@@ -39,7 +40,7 @@ try {
     try { await symlink(join(out, '_cache'), join(work, 'downloads')); } catch (e) { if (e.code !== 'EEXIST') throw e; }
     const wpPort = port++, srcPort = port++;
     const origin = `http://localhost:${wpPort}`;
-    const row = { fixture: id, host };
+    const row = { fixture: id, host, theme: host };
     const servers = [];
     let rt, context;
     try {
@@ -79,14 +80,29 @@ try {
         addedEntry = join(dirname(entry), 'mcp-added-page.html');
         addedFiles = files.filter(f => !/\.html?$/.test(f.path)).concat({ ...files.find(f => f.path === entry), path: addedEntry });
       }
+      if (host !== 'generated') {
+        const active = rt.wpRun(['theme', 'list', '--status=active', '--field=name']).stdout.trim();
+        if (active !== host) rt.wpRun(['theme', 'install', host, '--activate']);
+      }
+      row.theme = rt.wpRun(['theme', 'list', '--status=active', '--field=name']).stdout.trim();
+      const owner = Number(php(`echo wp_insert_post(array('post_type'=>'page','post_status'=>'publish','post_title'=>'Owner page','post_content'=>'<!-- wp:heading --><h2 class="wp-block-heading">Owner heading</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Owner text <a href="#owner">link</a></p><!-- /wp:paragraph -->'));`).trim());
+      servers.push(spawn('php', ['-S', `localhost:${wpPort}`, '-t', rt.wpDir], { stdio: 'ignore' }), spawn('php', ['-S', `localhost:${srcPort}`, '-t', join(root, id)], { stdio: 'ignore' }));
+      await new Promise(r => setTimeout(r, 1200));
+      context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const ownerBrowser = await context.newPage();
+      const ownerHash = async () => {
+        await ownerBrowser.goto(`${origin}/?page_id=${owner}`, { waitUntil: 'networkidle' });
+        return createHash('sha256').update(await ownerBrowser.locator('main').first().evaluate(e => e.outerHTML)).digest('hex');
+      };
+      row.owner_main_before = await ownerHash();
       const result = await apply('existing_theme', 'added', addedFiles, addedEntry);
+      row.owner_main_after = await ownerHash();
+      row.owner_main_unchanged = row.owner_main_before === row.owner_main_after;
+      await ownerBrowser.close();
       row.import = result.wp_error ? 'error' : result.success === false ? 'failed' : 'ok';
       row.failure = result.wp_error || result.failure_reason || result.error || null;
       const site = json(`$out=array(); foreach(get_posts(array('post_type'=>'page','post_status'=>'any','numberposts'=>-1,'meta_key'=>'_static_site_importer_css_section')) as $p){ $c=array('total'=>0,'html'=>0,'freeform'=>0,'missing'=>0,'unregistered'=>0); $w=function($bs)use(&$w,&$c){foreach($bs as $b){$n=$b['blockName'];if(!$n){if(trim($b['innerHTML'])!=='')$c['freeform']++;continue;} $c['total']++;if($n==='core/html')$c['html']++;if($n==='core/missing')$c['missing']++;if(!WP_Block_Type_Registry::get_instance()->is_registered($n))$c['unregistered']++;$w($b['innerBlocks']);}};$w(parse_blocks($p->post_content));$prov=json_decode(get_post_meta($p->ID,'_static_site_importer_provenance',true),true);$out[]=array('id'=>$p->ID,'source'=>$prov['source_path']??'','blocks'=>$c);} echo wp_json_encode(array('pages'=>$out,'global_css_bytes'=>strlen(wp_get_global_styles_custom_css())));`);
       Object.assign(row, site);
-      servers.push(spawn('php', ['-S', `localhost:${wpPort}`, '-t', rt.wpDir], { stdio: 'ignore' }), spawn('php', ['-S', `localhost:${srcPort}`, '-t', join(root, id)], { stdio: 'ignore' }));
-      await new Promise(r => setTimeout(r, 1200));
-      context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const page = await context.newPage();
       await page.goto(`${origin}/wp-login.php`);
       await page.fill('#user_login', 'admin'); await page.fill('#user_pass', 'password'); await page.click('#wp-submit');
@@ -100,6 +116,8 @@ try {
           await page.goto(`${origin}/?page_id=${p.id}&preview=true`, { waitUntil: 'networkidle' });
           const rootElement = page.locator('[class*="ssi-page-"]').first();
           p.root_width = (await rootElement.boundingBox())?.width;
+          p.horizontal_overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+          p.theme_title_above_root = await rootElement.evaluate(root => [...document.querySelectorAll('.wp-block-post-title, .entry-title')].some(title => !root.contains(title) && title.getBoundingClientRect().height > 0 && title.getBoundingClientRect().bottom <= root.getBoundingClientRect().top));
           await rootElement.screenshot({ path: front, animations: 'disabled', timeout: 5000 });
           p.visual = compareVisualParityPngFiles(source, front, join(dest, `${p.id}-diff.png`));
         } catch (e) { p.probe_error = e.message; }
@@ -111,6 +129,19 @@ try {
             const walk = bs => bs.forEach(b => { c.total++; if (b.isValid === false) c.invalid++; if (b.name === 'core/missing') c.missing++; if (b.name === 'core/html') c.html++; walk(b.innerBlocks || []); });
             walk(window.wp.data.select('core/block-editor').getBlocks()); return c;
           });
+          const canvas = page.frameLocator('iframe[name="editor-canvas"]');
+          const editorRoot = canvas.locator('[class*="ssi-page-"]').first();
+          if (await editorRoot.count()) {
+            await editorRoot.evaluate(async root => {
+              await document.fonts.ready;
+              // Global Styles load asynchronously after the block store opens.
+              for (let i = 0; i < 100 && Math.abs(root.getBoundingClientRect().width - document.documentElement.clientWidth) > 1; i++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            });
+            p.editor.root_width = (await editorRoot.boundingBox())?.width;
+            p.editor.canvas_width = await page.locator('iframe[name="editor-canvas"]').evaluate(e => e.contentDocument.documentElement.clientWidth);
+          }
           await page.screenshot({ path: join(dest, `${p.id}-editor.png`) });
         } catch (e) { p.probe_error = e.message; }
       }

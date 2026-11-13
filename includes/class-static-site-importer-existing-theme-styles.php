@@ -37,6 +37,12 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 				'detail'      => 'Custom CSS will not survive without edit_css; apply is blocked.',
 			);
 		}
+		if ( function_exists( 'wp_is_block_theme' ) && ! wp_is_block_theme() ) {
+			$state['diagnostics'][] = array(
+				'reason_code' => 'existing_theme_classic_template_unchanged',
+				'detail'      => 'Classic theme: the current page template is retained; full-width title-free templates require a block theme.',
+			);
+		}
 		foreach ( $state['resolved']['writes'] ?? array() as $write ) {
 			$state['diagnostics'][] = Static_Site_Importer_Import_Destination::withheld_write_diagnostic( $state['destination'], (string) ( $write['kind'] ?? '' ), (string) $write['target_path'] );
 		}
@@ -74,6 +80,10 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		$css    = '';
 		foreach ( $state['resolved']['pages'] ?? array() as $page ) {
 			$source = (string) $page['source_path'];
+			$root   = '.' . self::page_class( $state, $source );
+			// Roll theme.json element typography back to browser defaults, as in
+			// the source document. Scoped source selectors are more specific and win.
+			$css .= $root . ' :where(h1,h2,h3,h4,h5,h6,a,button,input,select,textarea,label,ul,ol,li,blockquote,cite,caption,figcaption,table,th,td,code,pre){font-family:revert;font-size:revert;font-weight:revert;font-style:revert;line-height:revert;letter-spacing:revert;text-transform:revert;color:revert;}';
 			foreach ( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::documentStylesheets( $state['plan'], $source ) as $row ) {
 				$write = $writes[ $row['target_path'] ] ?? null;
 				if ( ! is_array( $write ) ) {
@@ -124,6 +134,11 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 				$scoped = self::scope( (string) $bytes, '.' . self::page_class( $state, $source ), $state['diagnostics'] );
 				$media  = (string) ( $row['media'] );
 				$css   .= '' !== $media && 'all' !== $media ? '@media ' . $media . '{' . $scoped . "}\n" : $scoped . "\n";
+			}
+			if ( function_exists( 'wp_is_block_theme' ) && wp_is_block_theme() ) {
+				// The front end is full width through the import template. The editor
+				// canvas adds root padding, so only there the root spans the canvas.
+				$css .= '.editor-styles-wrapper ' . $root . '{box-sizing:border-box;width:100vw!important;max-width:none!important;margin-left:calc(50% - 50vw)!important;margin-right:calc(50% - 50vw)!important;}';
 			}
 		}
 		return $css;
@@ -300,7 +315,66 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 			}
 			wp_delete_post( $post->ID, true );
 		}
+		self::remove_templates( $id );
 		return $result;
+	}
+
+	/** Delete only owned templates without remaining page assignments. */
+	private static function remove_templates( string $id ): void {
+		$templates = get_posts( array(
+			'post_type'   => 'wp_template',
+			'post_status' => 'any',
+			'numberposts' => -1,
+			'meta_key'    => '_static_site_importer_css_section',
+			'meta_value'  => $id,
+		) );
+		foreach ( $templates as $template ) {
+			$users = get_posts( array(
+				'post_type'   => 'page',
+				'post_status' => 'any',
+				'numberposts' => 1,
+				'meta_key'    => '_wp_page_template',
+				'meta_value'  => $template->post_name,
+			) );
+			if ( ! $users ) {
+				wp_delete_post( $template->ID, true );
+			}
+		}
+	}
+
+	/** Site-level, theme-scoped template; owner templates are never edited. */
+	private static function page_template( array &$state, string $id ) {
+		if ( ! wp_is_block_theme() ) {
+			return '';
+		}
+		$slug     = 'ssi-import-' . $id;
+		$theme    = get_stylesheet();
+		$existing = get_block_template( $theme . '//' . $slug, 'wp_template' );
+		if ( $existing ) {
+			if ( empty( $existing->wp_id ) || get_post_meta( $existing->wp_id, '_static_site_importer_css_section', true ) !== $id ) {
+				// ssi-error-class: integrity
+				return new WP_Error( 'existing_theme_template_conflict', 'Import template name is already owner-controlled.' );
+			}
+			return $slug;
+		}
+		$content = '<!-- wp:template-part {"slug":"header","theme":' . wp_json_encode( $theme ) . ',"tagName":"header"} /-->'
+			. '<!-- wp:post-content {"align":"full","layout":{"type":"default"}} /-->'
+			. '<!-- wp:template-part {"slug":"footer","theme":' . wp_json_encode( $theme ) . ',"tagName":"footer"} /-->';
+		$post    = wp_insert_post( wp_slash( array(
+			'post_type'    => 'wp_template',
+			'post_status'  => 'publish',
+			'post_name'    => $slug,
+			'post_title'   => 'Imported pages',
+			'post_content' => $content,
+		) ), true );
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+		$state['rollback']['posts'][ $post ] = array( 'existing' => false );
+		$state['applied']['posts'][]         = array( 'id' => $post );
+		wp_set_object_terms( $post, $theme, 'wp_theme' );
+		update_post_meta( $post, '_static_site_importer_css_section', $id );
+		return $slug;
 	}
 
 	/** Database-only materialization after Media Library URL rebinding. */
@@ -368,14 +442,23 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 		if ( in_array( 'existing_theme_generated_block_unavailable', array_column( $state['diagnostics'], 'reason_code' ), true ) ) {
 			return Static_Site_Importer_Site_Plan_Persistence::failed_receipt( $state, 'existing_theme_generated_block_unavailable' );
 		}
-		$css = self::stylesheet( $state );
+		$css      = self::stylesheet( $state );
+		$template = '';
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
 			}
+			if ( '' === $template ) {
+				$template = self::page_template( $state, $id );
+				if ( is_wp_error( $template ) ) {
+					return Static_Site_Importer_Site_Plan_Persistence::failed_receipt_from_error( $state, $template );
+				}
+			}
 			$markup                            = strtr( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ), $state['existing_theme_asset_urls'] ?? array() );
 			$class                             = self::page_class( $state, (string) $page['source_path'] );
-			$page['materialized_block_markup'] = '<!-- wp:group {"className":"' . $class . '","layout":{"type":"default"}} --><div class="wp-block-group ' . $class . '">' . $markup . '</div><!-- /wp:group -->';
+			$align                             = '' !== $template ? '"align":"full",' : '';
+			$align_class                       = '' !== $template ? 'alignfull ' : '';
+			$page['materialized_block_markup'] = '<!-- wp:group {' . $align . '"className":"' . $class . '","layout":{"type":"default"}} --><div class="wp-block-group ' . $align_class . $class . '">' . $markup . '</div><!-- /wp:group -->';
 			Static_Site_Importer_Site_Plan_Persistence::journal_post( $state, $page );
 			$post = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $page, $state['source_ids'], (string) ( $state['args']['import_run_id'] ?? '' ) );
 			if ( is_wp_error( $post ) ) {
@@ -399,6 +482,9 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 					)
 				)
 			);
+			if ( '' !== $template ) {
+				update_post_meta( $post, '_wp_page_template', $template );
+			}
 			update_post_meta( $post, '_static_site_importer_css_section', $id );
 			$state['rollback']['posts'][ $post ] ??= array( 'existing' => false );
 			$state['applied']['posts'][]           = array(
