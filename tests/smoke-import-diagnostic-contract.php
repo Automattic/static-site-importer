@@ -774,33 +774,36 @@ $ambiguous_form_report = Static_Site_Importer_Import_Report::from_array(
 Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $ambiguous_form_report, array( $desktop_receipt, $desktop_receipt ) );
 $assert( 1 === ( $ambiguous_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'ambiguous-form-projection-does-not-consume-source-identity' );
 
-$safe_runtime_report = Static_Site_Importer_Import_Report::from_array(
-	array(
-	'quality' => array( 'fallback_count' => 1 ),
-	'diagnostics' => array(
-		array(
-			'type'                  => 'unsupported_html_fallback',
-			'loss_class'            => 'runtime_island_preserved',
-			'acceptability'         => 'acceptable_preservation',
-			'source_path'           => 'contact.html',
-			'selector'              => 'iframe.contact-form',
-			'reason_code'           => 'preserved_runtime_embed',
-			'source_html_preview'   => '<iframe class="contact-form" src="https://forms.hsforms.com/embed/contact" title="Contact form"></iframe>',
-			'preservation_strategy' => 'sanitized_embed_markup',
-			'runtime_requirement'   => 'third_party_embed_runtime',
-			'materialization_path'  => 'runtime_island_registry',
-		),
-	),
-	)
-);
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
+$tool_compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( array(
+	'entrypoint' => 'index.html',
+	'files' => array( 'index.html' => '<main><form id="t"><input type="search" name="q"><button type="submit">Go</button></form><p role="status">Ready</p></main><script>document.getElementById("t").addEventListener("submit",function(e){e.preventDefault();});</script>' ),
+) )->toArray();
+$tool_plan = $tool_compiled['source_reports']['wordpress_site_plan'];
+$assert( count( $tool_plan['quality']['fallbacks'] ) >= 1, 'real-engine-produces-tool-fallback' );
+$safe_runtime_report = Static_Site_Importer_Import_Report::from_array( array(
+	'quality' => $tool_plan['quality'],
+	// The persisted compiler summary carries no fallback rows; admission must not need it.
+	'blocks_engine' => array( 'plan_summary' => array( 'quality' => array( 'metrics' => $tool_plan['quality']['metrics'] ?? array() ) ) ),
+	'diagnostics' => $tool_plan['diagnostics'],
+) );
 $safe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $safe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( true === ( $safe_runtime_quality['pass'] ?? false ) && false === ( $safe_runtime_quality['fail_import'] ?? true ), 'bounded-safe-runtime-iframe-passes-quality-admission' );
 $assert( 'preserved_runtime_island' === ( $safe_runtime_report->diagnostics()[0]['loss_class'] ?? '' ), 'normalize-canonicalizes-transformer-runtime-island-spelling' );
 $assert( 1 === ( $safe_runtime_quality['accepted_preserved_runtime_island_count'] ?? 0 ) && 0 === ( $safe_runtime_quality['unsupported_fallback_count'] ?? -1 ), 'runtime-island-counts-are-separated-from-unsupported-fallbacks' );
 $assert( 1 === ( $safe_runtime_report['import_validation_result']['counts']['accepted_preserved_runtime_islands'] ?? 0 ) && 'passed' === ( $safe_runtime_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'validation-result-reports-accepted-runtime-island-without-fallback-failure' );
-$assert( 'sanitized_embed_markup' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['strategy'] ?? '' ) && 'runtime_island_registry' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['materialization_path'] ?? '' ), 'finding-packet-preserves-runtime-island-contract-evidence' );
+$assert( ! empty( $safe_runtime_quality['diagnostic_refs']['accepted_preserved_runtime_island_count'] ) && empty( $safe_runtime_quality['diagnostic_refs']['unsupported_fallback_count'] ), 'quality-refs-split-uses-plan-admission' );
+$assert( $safe_runtime_quality['diagnostic_refs']['fallback_count'] === $safe_runtime_quality['diagnostic_refs']['accepted_preserved_runtime_island_count'], 'quality-refs-link-real-compiler-fallback-diagnostic' );
 
-$choice_submission = array_merge( $safe_runtime_report->diagnostics()[0], array(
+$unjoined_runtime_report = Static_Site_Importer_Import_Report::from_array( array(
+	'quality' => array( 'fallback_count' => 1 ),
+	'diagnostics' => $safe_runtime_report->diagnostics(),
+) );
+$unjoined_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unjoined_runtime_report, array() );
+$assert( 0 === $unjoined_runtime_quality['accepted_preserved_runtime_island_count'] && 1 === $unjoined_runtime_quality['unsupported_fallback_count'], 'unjoined-diagnostics-cannot-admit-a-counted-fallback' );
+
+$choice_submission = array_merge( $tool_plan['quality']['fallbacks'][0], array(
 	'code'                  => 'preserved_runtime_island',
 	'kind'                  => 'form',
 	'form_intent'           => 'choice_submission',
@@ -813,7 +816,7 @@ $choice_submission = array_merge( $safe_runtime_report->diagnostics()[0], array(
 $assert( ! Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $choice_submission ), 'editable-choice-form-needs-handler-before-runtime-admission' );
 foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ), array( 'fail_on_quality' => true ) ) as $choice_args ) {
 	$choice_report = Static_Site_Importer_Import_Report::from_array( array(
-		'quality'     => array( 'fallback_count' => 1 ),
+		'quality'     => array( 'fallback_count' => 1, 'fallbacks' => array( $choice_submission ) ),
 		'diagnostics' => array( $choice_submission ),
 	) );
 	$choice_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $choice_report, $choice_args );
@@ -829,17 +832,17 @@ $preference = array_merge( $choice_submission, array( 'form_intent' => 'preferen
 $assert( Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $preference ), 'non-submitting-choice-state-keeps-existing-runtime-admission' );
 
 $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-$unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
-$unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
-$unsafe_runtime_report->set_diagnostics( $unsafe_diagnostics );
+$unsafe_plan = $unsafe_runtime_report['quality'];
+$unsafe_plan['fallbacks'][0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+$unsafe_runtime_report['quality'] = $unsafe_plan;
 $unsafe_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
 $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-$incomplete_diagnostics    = $incomplete_runtime_report->diagnostics();
-unset( $incomplete_diagnostics[0]['materialization_path'] );
-$incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
+$incomplete_plan = $incomplete_runtime_report['quality'];
+unset( $incomplete_plan['fallbacks'][0]['materialization_path'] );
+$incomplete_runtime_report['quality'] = $incomplete_plan;
 $incomplete_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
