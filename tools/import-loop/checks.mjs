@@ -21,6 +21,51 @@ const findReport = (dir) => {
   return null;
 };
 
+// The scorer emits each defect as one failure string whose leading words name
+// its class. One finding per class gives a fix to one class its own signature,
+// owner and count, instead of an all-defects bundle that only clears when every
+// failure is gone. Title is the imported site's identity, produced by SSI, not
+// the materializer; every other class belongs to Blocks Engine until a class
+// proves another owner.
+export const parityFailureClass = (failure) => {
+  const text = String(failure);
+  const known = [
+    [/^title /, 'title', 'static-site-importer'],
+    [/^nav /, 'link', 'blocks-engine'],
+    [/^viewport animation/, 'motion', 'blocks-engine'],
+    [/^text position/, 'text_position', 'blocks-engine'],
+    [/^text \d/, 'text_content', 'blocks-engine'],
+    [/^image geometry/, 'image_geometry', 'blocks-engine'],
+    [/^background geometry/, 'background_geometry', 'blocks-engine'],
+    [/^page height/, 'page_height', 'blocks-engine'],
+    [/^images /, 'image_decoding', 'blocks-engine'],
+  ].find(([pattern]) => pattern.test(text));
+  if (known) return { subject: known[1], owner_repo: known[2] };
+  // A class this table has not seen: its leading words still give a stable
+  // subject, so the scorer's new class is measured on its own, not bundled.
+  const words = text.toLowerCase().match(/[a-z]+/g)?.slice(0, 3).join('_');
+  return { subject: words || 'other', owner_repo: 'blocks-engine' };
+};
+
+// One per-class report per cell: deduplicated failure strings are the count,
+// so a fix that clears some instances moves the finding before the class is
+// fully gone. A cell with failures but no measured state keeps its classes; a
+// cell that failed without any failure string (pending or missing evidence)
+// stays one unverified finding.
+export const parityCellReports = (cell) => {
+  const classes = new Map();
+  for (const score of cell.scores) {
+    for (const failure of score.failures || []) {
+      const cls = parityFailureClass(failure);
+      const entry = classes.get(cls.subject) || { ...cls, failures: [] };
+      if (!entry.failures.includes(failure)) entry.failures.push(failure);
+      classes.set(cls.subject, entry);
+    }
+  }
+  if (!classes.size && (!cell.verified || cell.scores.some((s) => !s.pass))) return [{ owner_repo: 'blocks-engine', subject: 'unverified', evidence: cell }];
+  return [...classes.values()].map(({ owner_repo, subject, failures }) => ({ owner_repo, subject, evidence: { count: failures.length, failures } }));
+};
+
 export async function checkImport(args) {
   for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
   fs.mkdirSync(args.out, { recursive: true });
@@ -78,7 +123,7 @@ export async function checkImport(args) {
       continue;
     }
     visual.push(cell);
-    if (!cell.verified || scores.some((s) => !s.pass)) report({ stage: 'materialization', check: 'visual_parity', owner_repo: 'blocks-engine', subject: 'captured_render', evidence: cell, route, width });
+    for (const partial of parityCellReports(cell)) report({ stage: 'materialization', check: 'visual_parity', ...partial, route, width });
   }
 
   const reportFile = findReport(path.join(args.site, 'wp-content', 'static-site-importer'));

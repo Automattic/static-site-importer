@@ -164,7 +164,9 @@ function reduceAndFile(finding) {
 }
 
 // Evidence as a reader needs it: a scored check's failures, else its JSON.
-const failuresOf = (evidence) => [...new Set((evidence?.scores || []).flatMap((score) => score.failures || []))];
+// Parity class findings carry their failure strings directly; older cells keep
+// them inside scores.
+const failuresOf = (evidence) => [...new Set(evidence?.failures || (evidence?.scores || []).flatMap((score) => score.failures || []))];
 const evidenceText = (evidence) => {
   const failures = failuresOf(evidence);
   return failures.length ? failures.join('; ') : JSON.stringify(evidence);
