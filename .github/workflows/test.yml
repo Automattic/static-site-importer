@@ -50,7 +50,10 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --no-progress
       - run: bash tools/prepare-wordpress-core-fixture.sh
-      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-source-geometry.test.mjs tests/form-responsive-border.test.mjs tests/form-submit-colors.test.mjs tests/form-placeholder-colors.test.mjs tools/run-existing-runtime-review.test.mjs
+      # One definition of the browser test list lives in package.json's
+      # test:editor-presentation-browser script; the Blocks Engine pin refresh
+      # gate in release.yml runs the same script before pushing pins (#2967).
+      - run: npm run test:editor-presentation-browser
 
   homeboy-lint:
     name: Homeboy Lint
