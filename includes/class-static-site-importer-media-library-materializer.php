@@ -113,10 +113,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 						}
 						break;
 					}
-					// A third-party image the producer did not retain has no Media Library
-					// owner. The route imports without a social image and reports the loss;
-					// an unresolved source-origin or relative reference is an integrity fault.
-					if ( preg_match( '~^(?:https?:)?//~i', $tag['content'] ) && ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( $tag['content'], Static_Site_Importer_Site_Plan_Persistence::source_origin_url( $state ) ) ) {
+					// A third-party image or an asset declared omitted by the producer
+					// has no Media Library owner. Report the optional metadata loss;
+					// unexplained source-origin references remain integrity faults.
+					$declared_omitted = false;
+					foreach ( $state['args']['source_metadata']['intake_findings'] ?? array() as $finding ) {
+						if ( 'asset' === ( $finding['unit'] ?? null ) && 'omitted_unit' === ( $finding['loss_class'] ?? null ) && ( $finding['url'] ?? null ) === $tag['content'] ) {
+							$declared_omitted = true;
+							break;
+						}
+					}
+					if ( $declared_omitted || ( preg_match( '~^(?:https?:)?//~i', $tag['content'] ) && ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( $tag['content'], Static_Site_Importer_Site_Plan_Persistence::source_origin_url( $state ) ) ) ) {
 						$state['diagnostics'][] = array(
 							'reason_code' => 'route_social_image_not_retained',
 							'source_path' => (string) ( $page['source_path'] ?? '' ),
