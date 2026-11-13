@@ -54,10 +54,15 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         return all;
       });
       const route = new URL(url).pathname;
-      // A finding's subject names the defect: callers may pass an image
-      // identity so a Replace failure is never reported anonymously.
-      const check = async (name, action, subject) => {
-        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: subject || name, route, width: 1440, evidence: error.evidence ?? String(error.message || error).slice(0, 500) }); }
+      // The subject is the check, so a finding's signature stays stable across
+      // imports; `image` names the failing image in the evidence, so a Replace
+      // failure is never anonymous. Upload paths carry the month and
+      // WordPress's -1/-2 duplicate suffixes, so they cannot be a signature.
+      const check = async (name, action, image) => {
+        try { await action(); } catch (error) {
+          const evidence = error.evidence ?? String(error.message || error).slice(0, 500);
+          report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: image ? { image, error: evidence } : evidence });
+        }
       };
 
       await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
