@@ -1,44 +1,47 @@
-# Editor Saved-Image Probe Result
+# Provider Field Layout Result
 
 ## Change
 
-`editor_saved_image` (tools/import-loop/editor.mjs) now runs the Media Library
-Replace flow on every non-inert `core/image` up to a bounded five per page,
-instead of only the first. Each probe is its own finding whose subject names
-the image — the src path on the site, else the anchor href, else the probe
-position — so a Replace timeout can no longer be scored anonymously against an
-unrelated fix (the `ba5a797c79bc` collateral that refuted the header template
-part on Automattic/blocks-engine#5744). A failed probe dismisses a leftover
-media modal before the next one, and the naming lives in the pure helper
-tools/import-loop/image-subject.mjs with unit tests.
+When a source wrapper is a proven grid with exactly one mapped native field
+spanning all of its tracks, SSI now omits only the grid's structural facts and
+lets the full-width Jetpack field own that layout. The source placement may be
+on an intermediate one-control wrapper rather than the control itself. Jetpack
+adds label and error nodes, so that placement cannot be preserved there;
+projecting only the tracks shrank each field to one track.
+
+Unrelated parent layout facts remain eligible for the ordinary provider overlay.
+Partial-span fields, multi-control rows, and fields with responsive placement
+changes remain outside this rule.
 
 ## Verification
 
-- `node --test tests/import-loop-image-subject.test.mjs` passed: 3 tests.
-- `node --test tests/import-loop-progress.test.mjs
-  tools/reduce-finding/import-loop.test.mjs` passed: 11 tests.
-- `npm test` selected 238 tests: 234 passed; 4 failed only on transient
-  external fetch timeouts (ETIMEDOUT to wordpress.org asset hosts) and all
-  four pass when re-run individually.
+- `php tests/form-materializer-smoke.php` passed: 187 assertions.
+- `npm run test:form-materializer-topology` passed: 4 tests.
+- `npm test` passed: 81 selected tests, 0 failed.
 - `npm run test:inventory` passed.
-- Homeboy review lint passed (PHPCS, ESLint, PHPStan) on the changed workspace.
+- Homeboy WordPress PHPCS passed on the changed PHP files.
+- Homeboy WordPress PHPStan passed on the production seeder class. Its direct
+  scan of the standalone smoke has existing class-symbol ordering findings;
+  that smoke executes successfully.
+- Full `homeboy review --placement local lint static-site-importer --path .`
+  passed (run `64c40897-45c5-4a9b-8815-53c53203a626`): PHPCS, ESLint, and
+  PHPStan all passed.
 
-## Acceptance (sdnunca trunk import)
+## Canonical Proof Status
 
-- Fresh trunk re-import of the frozen sdnunca capture: Blocks Engine trunk
-  `609c9b3f` (php-transformer v0.45.593), Static Site Importer release
-  `v1.34.10`, five routes served at `http://127.0.0.1:47333`
-  (loop-runs/sdnunca-2957-p1).
-- The evaluate step with this change named every failing image on `/`:
-  `img:/wp-content/uploads/2026/11/image-989824.avif`,
-  `img:/wp-content/uploads/2026/11/image-989824-1.avif`,
-  `img:/wp-content/uploads/2026/11/image-989840-1.avif`, and a positional
-  `img#2` (an image block with neither src nor anchor), plus three named
-  images on `/about/`. The old first-image-only probe reported nothing on this
-  import — its single probe passed on both routes — so these per-image
-  failures were invisible before.
-- Post content was restored after the probes: original image references
-  intact, no edit markers, no leftover restore files. Every named subject
-  matches a real image in that page's `post_content`.
-- Findings: loop-runs/sdnunca-2957-p1-eval/findings.json; import receipt:
-  loop-runs/sdnunca-2957-import.log.
+- Paired development package built from SSI `534eee37` plus the scoped dirty
+  diff and Blocks Engine `19de97b2`.
+- Fresh Studio 3952 `create --from https://www.busybearscleaning.com` import
+  completed at `http://localhost:8887` in 51 seconds.
+- Chrome evidence at 1440px and 390px shows Contact input widths match the
+  public source: `694.14px` desktop and `280px` mobile. The corresponding
+  provider submit shell is `708.14px` desktop and `294px` mobile.
+- No fatal browser errors or horizontal overflow were observed. Contact editor
+  blocks are valid with no missing blocks; Jetpack marks the imported form post
+  dirty on load, an existing provider-editor behavior.
+
+## Draft PR
+
+- PR: https://github.com/Automattic/static-site-importer/pull/1556
+- Implementation commits: `4ace0c7c` and the pending nested-wrapper follow-up.
+- Status: draft, pending CI for the proven Contact grid fix.
