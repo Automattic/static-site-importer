@@ -330,10 +330,14 @@ class Static_Site_Importer_Site_Identity {
 		$evidence['status']           = 'explicit_evidence';
 		$evidence['front_page_title'] = self::title_from_html( $html, false );
 		// Only suppress page names when every HTML route proves the same title.
+		// Template-part includes are HTML fragments, not independently served routes.
 		$route_count  = 0;
 		$shared_title = '' !== $evidence['front_page_title'];
 		foreach ( $artifact['files'] ?? array() as $file ) {
 			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
+				continue;
+			}
+			if ( 'template-part' === ( $file['role'] ?? '' ) || preg_match( '#(^|/)(parts|template-parts)/[^/]+\.html?$#i', self::normalize_route_path( (string) $file['path'] ) ) ) {
 				continue;
 			}
 			++$route_count;

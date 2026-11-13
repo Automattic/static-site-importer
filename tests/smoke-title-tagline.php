@@ -160,6 +160,10 @@ foreach ( array( 'shared', 'brand-last', 'per-page', 'single', 'missing' ) as $s
 	foreach ( $titles as $index => $title ) {
 		$artifact['files'][] = array( 'path' => $index ? $index . '.html' : 'index.html', 'content' => '<title>' . $title . '</title>' . ( 'brand-last' === $shape ? '<meta property="og:site_name" content="My Site">' : '' ) );
 	}
+	// Capture bundles include untitled shared fragments alongside the routes.
+	$artifact['files'][] = array( 'path' => 'parts/header.html', 'content' => '<header>Site header</header>' );
+	$artifact['files'][] = array( 'path' => 'template-parts/footer.htm', 'content' => '<footer>Site footer</footer>' );
+	$artifact['files'][] = array( 'path' => 'shared/nav.html', 'role' => 'template-part', 'content' => '<nav>Navigation</nav>' );
 	$artifact['files'][] = array( 'path' => 'style.css', 'content' => 'body {}' );
 	$brand = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
 	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, '', $brand );
