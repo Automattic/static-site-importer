@@ -117,6 +117,7 @@
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-image-asset-records.php", "environment": "standalone-php" },
     { "path": "tests/smoke-resource-asset-records.php", "environment": "standalone-php" },
+    { "path": "tests/form-hidden-field-mapping.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-mapping-plan.php", "environment": "standalone-php" },
     { "path": "tests/form-fallback-contract-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/provider-adapter-runtime-smoke.php", "environment": "standalone-php" },
