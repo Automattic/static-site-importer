@@ -1,6 +1,7 @@
 {
   "blocks-engine": {
     "github": "Automattic/blocks-engine",
+    "branch": "trunk",
     "verify": "cd php-transformer && composer test:canonical && cd tools/visual-parity && npm ci --silent && npm test",
     "predicate_root": "php-transformer",
     "contracts": "gates/blocks-engine-contracts.sh",
@@ -8,11 +9,13 @@
   },
   "static-site-importer": {
     "github": "Automattic/static-site-importer",
+    "branch": "main",
     "verify": "npm ci && npm test",
     "stage": "import"
   },
   "data-liberation-agent": {
     "github": "Automattic/data-liberation-agent",
+    "branch": "main",
     "verify": "npm ci && npx tsc --noEmit && npm test",
     "stage": "capture"
   }

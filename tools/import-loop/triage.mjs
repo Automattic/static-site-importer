@@ -378,7 +378,11 @@ for (const item of tracked) {
       ] : []),
       ...(conflicting ? [
         '',
-        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since${trunkConflict ? ` (${trunkConflict.reason.replace(/^import_failed: /, '')})` : ''}. The acceptance gate measures your branch merged onto trunk \`${trunk}\`, so it fails until that merge is clean. First: \`git fetch origin trunk && git merge ${trunk}\`, resolve the conflicts keeping both trunk's behavior and this fix, and commit the merge. Then continue on the fix.`,
+        // The gate merges onto the pass's measured Blocks Engine trunk; any
+        // other repository merges onto its own base branch.
+        repo.predicate_root
+          ? `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since${trunkConflict ? ` (${trunkConflict.reason.replace(/^import_failed: /, '')})` : ''}. The acceptance gate measures your branch merged onto trunk \`${trunk}\`, so it fails until that merge is clean. First: \`git fetch origin ${repo.branch} && git merge ${trunk}\`, resolve the conflicts keeping both trunk's behavior and this fix, and commit the merge. Then continue on the fix.`
+          : `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with \`${repo.branch}\`, where other fixes have merged since. First: \`git fetch origin ${repo.branch} && git merge origin/${repo.branch}\`, resolve the conflicts keeping both \`${repo.branch}\`'s behavior and this fix, and commit the merge. Then continue on the fix.`,
       ] : []),
       ...(health.failed.length ? [
         '',
