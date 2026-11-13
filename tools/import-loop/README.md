@@ -10,9 +10,12 @@ in place.
 
 Editor checks open imported pages, inspect parsed blocks, exercise selection,
 List View, saved text, and bounded Media Library replacement of every non-inert
-image: each probe reports its own finding, named by the image's src path or
-anchor, so a Replace failure names its image. Theme checks run authenticated
-browser REST requests and render a reversible
+image, and restore post content. Each image probe reports its own finding,
+named by the image's src path or anchor, so a Replace failure names its image.
+A List View failure reports the group count, total block count, max depth, and
+the deepest root-to-leaf chain with each level's className/anchor
+(`list-view.mjs`), so the finding names the DOM chain to inspect in the capture.
+Theme checks run authenticated browser REST requests and render a reversible
 Global Styles restyle. These are disposable test imports: authentication resets
 the first administrator's password, as the previous editor checker did.
 
@@ -22,6 +25,12 @@ new unrelated blocker, and no new parity failure or missing evidence. Output
 contains `blockers.removed`, `added`, and `unchanged`, each with before/after
 counts. Reduction predicates are diagnostics, not acceptance gates. The old
 computed-style collateral and report-only editability gates were removed.
+Parity findings are split by the scorer's failure class (title, link, motion,
+text position, and any others it emits), each class its own finding, signature,
+and owner — title is the imported site's identity, so it is owned by
+`static-site-importer` while the rest stay with `blocks-engine`. A fix to one
+class moves its own count; a cell without measured scores stays one unverified
+finding.
 
 Run:
 
