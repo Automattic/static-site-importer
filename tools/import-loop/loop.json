@@ -189,7 +189,7 @@
       },
       "exec": {
         "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
+        "cwd": "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/gate-tools/tools/import-loop",
         "args": [
           "confirm.mjs",
           "--triage",
