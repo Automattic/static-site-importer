@@ -123,11 +123,11 @@ test('block predicate sees blocks the importer emits inside a materialized form'
     };
     const wrapped = '<input type="hidden" name="form-name" value="contact"><div class="field"><label>Email <input type="email" name="email"></label></div>';
     const plain = '<label>Email <input type="email" name="email"></label>';
-    // Controls now lower to native provider blocks, even inside an authored
-    // wrapper. Only the wrapper remains an importer-owned block.
+    // Controls lower to native provider blocks, even inside an authored
+    // wrapper. The wrapper now lowers to a native group as well.
     assert.equal(run(wrapped, 'authored-input'), 1);
     assert.equal(run(plain, 'authored-input'), 1);
-    assert.equal(run(wrapped, 'layout-shell@div'), 0);
+    assert.equal(run(wrapped, 'layout-shell@div'), 1);
     assert.equal(run(plain, 'layout-shell@div'), 1);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

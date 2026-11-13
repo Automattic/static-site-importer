@@ -681,6 +681,13 @@ class Static_Site_Importer_Form_Seeder {
 			self::control_has_responsive_border( $state->form['presentation_graph']['variants'] ?? array(), $control_index )
 		);
 		if ( null === $field_block ) {
+			if ( 'radio' === $type ) {
+				$state->control_attribute_losses[] = array(
+					'dimension'     => 'control',
+					'reason_code'   => 'radio_group_without_options',
+					'control_index' => $control_index,
+				);
+			}
 			$state->skipped[] = '' !== $type ? $type : $tag;
 			// No provider field exists for this control type. That is an explicit
 			// owner handoff, never a silent removal or downgrade.
