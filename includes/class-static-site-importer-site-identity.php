@@ -296,7 +296,7 @@ class Static_Site_Importer_Site_Identity {
 		}
 		$candidates = array();
 		foreach ( $counts as $segment => $count ) {
-			if ( '' !== (string) $segment && $count >= 2 && $count * 2 > $routes && in_array( (string) $segment, $edges, true ) ) {
+			if ( '' !== (string) $segment && $count >= 2 && $count * 2 > $routes ) {
 				$candidates[ $segment ] = (string) $segment;
 			}
 		}
@@ -306,7 +306,28 @@ class Static_Site_Importer_Site_Identity {
 		return 1 === $routes && $edges ? $edges[0] : $title;
 	}
 
-	/** Extract explicit native branding evidence from the ordinary entrypoint document. */
+	/** Match a complete brand at either title edge, including brands containing separators. */
+	private static function title_branding( string $title, string $brand ): array {
+		if ( '' === trim( $brand ) ) {
+			return array();
+		}
+		foreach ( self::TITLE_SEPARATORS as $separator ) {
+			$prefix = trim( $brand ) . ' ' . $separator . ' ';
+			$suffix = ' ' . $separator . ' ' . trim( $brand );
+			$last   = ! str_starts_with( $title, $prefix );
+			$rest   = ! $last ? trim( substr( $title, strlen( $prefix ) ) ) : ( str_ends_with( $title, $suffix ) ? trim( substr( $title, 0, -strlen( $suffix ) ) ) : '' );
+			if ( '' !== $rest ) {
+				return array(
+					'title_separator'  => $separator,
+					'title_brand_last' => $last,
+					'tagline'          => $rest,
+				);
+			}
+		}
+		return array();
+	}
+
+	/** Extract explicit native branding evidence from the entrypoint and route titles. */
 	public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '', string $site_title = '' ): array {
 		$entrypoint = isset( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
 		$html       = '';
@@ -357,22 +378,38 @@ class Static_Site_Importer_Site_Identity {
 				$evidence['tagline'] = trim( $node['slogan'] );
 			}
 		}
-		// Match the complete site name, which may itself contain separators.
-		if ( '' !== trim( $site_title ) && preg_match( '~<title\b[^>]*>(.*?)</title\s*>~is', $html, $title_match ) ) {
-			$title = trim( html_entity_decode( (string) preg_replace( '/<[^>]*>/', '', $title_match[1] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
-			foreach ( self::TITLE_SEPARATORS as $separator ) {
-				$prefix = trim( $site_title ) . ' ' . $separator . ' ';
-				$suffix = ' ' . $separator . ' ' . trim( $site_title );
-				$rest   = str_starts_with( $title, $prefix ) ? trim( substr( $title, strlen( $prefix ) ) ) : ( str_ends_with( $title, $suffix ) ? trim( substr( $title, 0, -strlen( $suffix ) ) ) : '' );
-				if ( '' !== $rest ) {
-					$evidence['title_separator']  = $separator;
-					$evidence['title_brand_last'] = ! str_starts_with( $title, $prefix );
-					if ( '' === $evidence['tagline'] ) {
-						$evidence['tagline'] = $rest;
-					}
-					break;
-				}
+		$site_title                                = '' !== trim( $site_title ) ? $site_title : self::site_title_from_website_artifact( $artifact, $payload_reader );
+		$front                                     = self::title_branding( $evidence['front_page_title'], $site_title );
+		$evidence['front_page_title_has_branding'] = ! empty( $front );
+		if ( '' === $evidence['tagline'] && $front ) {
+			$evidence['tagline'] = $front['tagline'];
+		}
+		// Vote on presentation independently of the home title. Never use inner
+		// page labels as the site's tagline.
+		$votes = array();
+		foreach ( $artifact['files'] ?? array() as $file ) {
+			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
+				continue;
 			}
+			$branding = self::title_branding( self::title_from_html( self::artifact_file_content( $file, $payload_reader ), false ), $site_title );
+			if ( $branding ) {
+				$key           = $branding['title_separator'] . (int) $branding['title_brand_last'];
+				$votes[ $key ] = ( $votes[ $key ] ?? 0 ) + 1;
+			}
+		}
+		$presentation = $front;
+		foreach ( $votes as $key => $count ) {
+			if ( $count >= 2 && $count * 2 > array_sum( $votes ) ) {
+				$presentation = array(
+					'title_separator'  => substr( $key, 0, -1 ),
+					'title_brand_last' => '1' === substr( $key, -1 ),
+				);
+				break;
+			}
+		}
+		if ( $presentation ) {
+			$evidence['title_separator']  = $presentation['title_separator'];
+			$evidence['title_brand_last'] = $presentation['title_brand_last'];
 		}
 		if ( preg_match_all( '~<link\\b([^>]+)>~i', $html, $links ) ) {
 			foreach ( $links[1] as $attributes ) {
@@ -430,8 +467,15 @@ class Static_Site_Importer_Site_Identity {
 		if ( in_array( $separator, array( '-', '—', '|', '·', '•', ':' ), true ) ) {
 			$filters .= "add_filter( 'document_title_separator', static fn() => '{$separator}' );\n";
 		}
-		if ( ! empty( $evidence['title_shared'] ) || ! empty( $evidence['title_brand_last'] ) ) {
+		// A standalone home title (no `brand SEP tagline` shape) is reproduced
+		// verbatim on the front page; core would render `blogname – tagline`.
+		$standalone_front = empty( $evidence['title_shared'] ) && false === ( $evidence['front_page_title_has_branding'] ?? null ) && '' !== ( $evidence['front_page_title'] ?? '' );
+		if ( $standalone_front || ! empty( $evidence['title_shared'] ) || ! empty( $evidence['title_brand_last'] ) ) {
 			$filters .= "add_filter( 'document_title_parts', static function ( array \$parts ): array {\n";
+			if ( $standalone_front ) {
+				$title    = var_export( $evidence['front_page_title'], true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Encode source text as a safe PHP literal in the generated theme.
+				$filters .= "\tif ( is_front_page() ) {\n\t\treturn array( 'title' => {$title} );\n\t}\n\n";
+			}
 			if ( ! empty( $evidence['title_shared'] ) ) {
 				// Mirror core's front-page parts using live, editable settings.
 				$filters .= <<<'PHP'
