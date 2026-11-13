@@ -118,7 +118,20 @@ foreach ( $radio_groups as $case => $group ) {
 	}
 	$checks[ $case . ' radio group maps to one radio field' ] = 'mapped' === $radio['status'] && 1 === count( $fields );
 	$checks[ $case . ' radio field carries one option per input' ] = $expected_options === ( $fields[0]['attrs']['options'] ?? null ) && $expected_options === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
+	$checks[ $case . ' radio options carry the saved block class' ] = "\n<ul class=\"wp-block-jetpack-options\">" === ( $fields[0]['innerBlocks'][1]['innerContent'][0] ?? null );
 	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => $expected_label ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
+}
+
+// Options save through useBlockProps.save(), unlike other div/ul wrappers.
+foreach ( array( 'ul', 'div' ) as $wrapper ) {
+	foreach ( array( array(), array( 'className' => '' ), array( 'className' => '  custom-choice  ' ), array( 'className' => 'choice&more' ) ) as $attrs ) {
+		$custom = trim( $attrs['className'] ?? '' );
+		foreach ( array( 'jetpack/options', 'jetpack/other' ) as $name ) {
+			$block = Static_Site_Importer_Form_Field_Markup::parsed_block( array( 'name' => $name, 'attrs' => $attrs, 'wrapper' => $wrapper ) );
+			$class = 'jetpack/options' === $name ? ' class="wp-block-jetpack-options' . ( '' !== $custom ? ' ' . htmlspecialchars( $custom, ENT_QUOTES, 'UTF-8' ) : '' ) . '"' : '';
+			$checks[ $name . ' ' . $wrapper . ' saved wrapper ' . json_encode( $attrs ) ] = "\n<" . $wrapper . $class . '>' === $block['innerContent'][0] && '</' . $wrapper . ">\n" === $block['innerContent'][1] && $attrs === $block['attrs'];
+		}
+	}
 }
 
 // A donation-intent form materializes as the Jetpack Donations block and its
