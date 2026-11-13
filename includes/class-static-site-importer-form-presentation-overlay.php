@@ -1496,13 +1496,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			}
 			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
 			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
+			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
 			// A select restored to its native appearance draws its own chevron;
 			// the provider's decorative chevron inside the same hook then hides.
 			if ( str_ends_with( $destination['selector'], ' select' ) && preg_grep( '/^appearance:auto(?:!important)?$/', $declarations ) ) {
 				$icon    = self::surface_selector( $prefix, self::authoritative_presentation_selector( substr( $destination['selector'], 0, -strlen( ' select' ) ) ) ) . ' .jetpack-field-dropdown__icon{display:none}';
 				$rules[] = null === $condition || $state ? $icon : self::conditional_rule( $condition, $icon );
 			}
-			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
 		}
 		// A captured property outside every ordinary destination's own vocabulary
 		// (see `positioned_control_only_presentation_property_keys()`) is not a
