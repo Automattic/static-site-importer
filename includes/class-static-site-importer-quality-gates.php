@@ -49,7 +49,7 @@ final class Static_Site_Importer_Quality_Gates {
 		Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics( $report );
 
 		$quality            = $report['quality'];
-		$fallbacks          = $report['blocks_engine']['plan_summary']['quality']['fallbacks'] ?? array();
+		$fallbacks          = is_array( $report['quality']['fallbacks'] ?? null ) ? $report['quality']['fallbacks'] : array();
 		$fallback_admission = self::fallback_admission_counts( $fallbacks, (int) $quality['fallback_count'] );
 		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];

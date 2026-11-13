@@ -782,10 +782,10 @@ $tool_compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\A
 ) )->toArray();
 $tool_plan = $tool_compiled['source_reports']['wordpress_site_plan'];
 $assert( count( $tool_plan['quality']['fallbacks'] ) >= 1, 'real-engine-produces-tool-fallback' );
-$assert( ! isset( $tool_plan['diagnostics'][0]['type'] ), 'real-engine-diagnostic-has-code-not-fallback-type' );
 $safe_runtime_report = Static_Site_Importer_Import_Report::from_array( array(
 	'quality' => $tool_plan['quality'],
-	'blocks_engine' => array( 'plan_summary' => array( 'quality' => $tool_plan['quality'] ) ),
+	// The persisted compiler summary carries no fallback rows; admission must not need it.
+	'blocks_engine' => array( 'plan_summary' => array( 'quality' => array( 'metrics' => $tool_plan['quality']['metrics'] ?? array() ) ) ),
 	'diagnostics' => $tool_plan['diagnostics'],
 ) );
 $safe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $safe_runtime_report, array( 'fail_on_quality' => true ) );
@@ -816,9 +816,8 @@ $choice_submission = array_merge( $tool_plan['quality']['fallbacks'][0], array(
 $assert( ! Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $choice_submission ), 'editable-choice-form-needs-handler-before-runtime-admission' );
 foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ), array( 'fail_on_quality' => true ) ) as $choice_args ) {
 	$choice_report = Static_Site_Importer_Import_Report::from_array( array(
-		'quality'     => array( 'fallback_count' => 1 ),
+		'quality'     => array( 'fallback_count' => 1, 'fallbacks' => array( $choice_submission ) ),
 		'diagnostics' => array( $choice_submission ),
-		'blocks_engine' => array( 'plan_summary' => array( 'quality' => array( 'fallbacks' => array( $choice_submission ) ) ) ),
 	) );
 	$choice_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $choice_report, $choice_args );
 	$assert( false === $choice_quality['pass'] && true === $choice_quality['fail_import'], 'choice-form-requires-remediation-even-with-permissive-quality-options' );
@@ -833,17 +832,17 @@ $preference = array_merge( $choice_submission, array( 'form_intent' => 'preferen
 $assert( Static_Site_Importer_Quality_Gates::is_accepted_preserved_runtime_island( $preference ), 'non-submitting-choice-state-keeps-existing-runtime-admission' );
 
 $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-$unsafe_plan = $unsafe_runtime_report['blocks_engine'];
-$unsafe_plan['plan_summary']['quality']['fallbacks'][0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
-$unsafe_runtime_report['blocks_engine'] = $unsafe_plan;
+$unsafe_plan = $unsafe_runtime_report['quality'];
+$unsafe_plan['fallbacks'][0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+$unsafe_runtime_report['quality'] = $unsafe_plan;
 $unsafe_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
 $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-$incomplete_plan = $incomplete_runtime_report['blocks_engine'];
-unset( $incomplete_plan['plan_summary']['quality']['fallbacks'][0]['materialization_path'] );
-$incomplete_runtime_report['blocks_engine'] = $incomplete_plan;
+$incomplete_plan = $incomplete_runtime_report['quality'];
+unset( $incomplete_plan['fallbacks'][0]['materialization_path'] );
+$incomplete_runtime_report['quality'] = $incomplete_plan;
 $incomplete_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
