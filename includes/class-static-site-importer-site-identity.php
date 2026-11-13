@@ -348,7 +348,8 @@ class Static_Site_Importer_Site_Identity {
 				$suffix = ' ' . $separator . ' ' . trim( $site_title );
 				$rest   = str_starts_with( $title, $prefix ) ? trim( substr( $title, strlen( $prefix ) ) ) : ( str_ends_with( $title, $suffix ) ? trim( substr( $title, 0, -strlen( $suffix ) ) ) : '' );
 				if ( '' !== $rest ) {
-					$evidence['title_separator'] = $separator;
+					$evidence['title_separator']  = $separator;
+					$evidence['title_brand_last'] = ! str_starts_with( $title, $prefix );
 					if ( '' === $evidence['tagline'] ) {
 						$evidence['tagline'] = $rest;
 					}
@@ -406,8 +407,27 @@ class Static_Site_Importer_Site_Identity {
 	 * @param array<string,mixed> $state Prepared materialization state.
 	 */
 	public static function compose_title_separator( array &$state ): void {
-		$separator = $state['args']['native_site_identity_evidence']['title_separator'] ?? '';
-		if ( ! in_array( $separator, array( '-', '—', '|', '·', '•', ':' ), true ) ) {
+		$evidence  = $state['args']['native_site_identity_evidence'] ?? array();
+		$separator = $evidence['title_separator'] ?? '';
+		$filters   = '';
+		if ( in_array( $separator, array( '-', '—', '|', '·', '•', ':' ), true ) ) {
+			$filters .= "add_filter( 'document_title_separator', static fn() => '{$separator}' );\n";
+		}
+		if ( ! empty( $evidence['title_brand_last'] ) ) {
+			// Core uses blogname then blogdescription on the front page. Keep
+			// those editable values, changing only their presentation order.
+			$filters .= <<<'PHP'
+add_filter( 'document_title_parts', static function ( array $parts ): array {
+	if ( is_front_page() && isset( $parts['title'], $parts['tagline'] ) ) {
+		$tagline = $parts['tagline'];
+		unset( $parts['tagline'] );
+		$parts = array( 'tagline' => $tagline ) + $parts;
+	}
+	return $parts;
+} );
+PHP;
+		}
+		if ( '' === $filters ) {
 			return;
 		}
 		$marker = '/* Static Site Importer document title separator. */';
@@ -415,7 +435,7 @@ class Static_Site_Importer_Site_Identity {
 			$state,
 			static fn( string $bootstrap ): string => str_contains( $bootstrap, $marker )
 				? $bootstrap
-				: $bootstrap . "\n{$marker}\nadd_filter( 'document_title_separator', static fn() => '{$separator}' );\n"
+				: $bootstrap . "\n{$marker}\n{$filters}\n"
 		);
 	}
 
