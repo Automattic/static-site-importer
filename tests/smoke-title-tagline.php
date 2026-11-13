@@ -138,6 +138,10 @@ foreach ( array( '|', '–' ) as $separator ) {
 	$assert( 'Home ' . $separator . ' My Site 1' === implode( ' ' . $separator . ' ', $parts ), 'brand-last source title renders through native parts' );
 	$assert( array( 'tagline' => 'New tagline', 'title' => 'New brand' ) === $filter( array( 'title' => 'New brand', 'tagline' => 'New tagline' ) ), 'owner edits remain live' );
 	$assert( array( 'title' => 'New brand' ) === $filter( array( 'title' => 'New brand' ) ), 'missing tagline stays absent' );
+	$assert(
+		array( 'tagline' => 'Home', 'title' => $brand, 'page' => 'Page 2' ) === $filter( array( 'title' => $brand, 'page' => 'Page 2', 'tagline' => 'Home' ) ),
+		'paginated homepage retains native page numbering when reordering title parts'
+	);
 	$GLOBALS['title_front_page'] = false;
 	$inner = array( 'title' => 'About', 'site' => $brand );
 	$assert( $inner === $filter( $inner ), 'inner route ordering unchanged' );
