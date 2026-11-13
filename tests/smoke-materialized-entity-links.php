@@ -18,6 +18,7 @@ define( 'ABSPATH', __DIR__ . '/' );
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route.php';
 
 function wp_parse_url( $url ) {
 	return parse_url( $url ); }
@@ -181,6 +182,23 @@ $navigation_state['resolved']['writes'] = array();
 $navigation_state['applied']['navigation_entities'] = array( array( 'id' => 99, 'source_path' => 'website/index.html' ) );
 $assert( true === Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $navigation_state ), 'Navigation-only rewrite completes.' );
 $assert( 'website/index.html' === $navigation_state['applied']['unresolved_link_targets']['/nav-missing']['source_path'], 'A link owned only by wp_navigation contributes a distinct target with its linking source.' );
+foreach ( array(
+	'slug normalized from source folder' => array( 'website/a---b/index.html', '/a-b', '/a\\u002d\\u002d-b/index.html' ),
+	'slug lowercased from source folder' => array( 'website/Tools/index.html', '/tools', '/Tools/index.html' ),
+) as $case => list( $source, $route, $href ) ) {
+	$GLOBALS['entity_link_content']     = '<!-- wp:navigation-link {"label":"X","url":"' . $href . '"} /-->';
+	$navigation_state['ordered_pages']  = array(
+		array(
+			'source_path'          => $source,
+			'route'                => array( 'path' => $route ),
+			'skip_materialization' => true,
+		),
+	);
+	$navigation_state['source_ids']     = array( $source => 7 );
+	$assert( true === Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $navigation_state ), $case . ': navigation-only rewrite completes.' );
+	$assert( '<!-- wp:navigation-link {"label":"X","url":"/entity/7/"} /-->' === $GLOBALS['entity_link_content'], $case . ': navigation link resolves to the page permalink.' );
+	$assert( array() === $navigation_state['applied']['unresolved_link_targets'], $case . ': nothing remains unresolved.' );
+}
 $fragment_targets = array();
 $missing_routes = array();
 Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references(
