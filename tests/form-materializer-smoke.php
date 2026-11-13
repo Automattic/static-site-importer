@@ -79,6 +79,7 @@ $radio_groups = array(
 	'aria group name'       => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
 	'plain preceding label' => '<div><label>Pick an area</label>%s</div>',
 	'single radio declined' => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
+	'bootstrap reused ids'  => '<div class="col"><label class="form-label">Tell us about yourself</label><div id="who">%s</div></div><div class="col"><label class="form-label">How did you hear about us</label><div id="heard">%s</div></div>',
 	'bootstrap six options' => '<div><label>Tell us about yourself</label><div id="g">%s</div></div>',
 );
 foreach ( $radio_groups as $case => $group ) {
@@ -95,6 +96,14 @@ foreach ( $radio_groups as $case => $group ) {
 		foreach ( $expected_options as $i => $label ) {
 			$radios .= '<div class="form-check"><input type="radio" name="who" id="o' . $i . '" value="' . $label . '"><label for="o' . $i . '">' . $label . '</label></div>';
 		}
+	}
+	if ( 'bootstrap reused ids' === $case ) {
+		$expected_options = array( 'Publisher', 'Author', 'Other' );
+		$radios = '';
+		foreach ( $expected_options as $label ) {
+			$radios .= '<div class="form-check"><input class="form-check-input" type="radio" name="who" id="' . strtolower( $label ) . '" value="' . $label . '" required><label class="form-check-label" for="' . strtolower( $label ) . '">' . $label . '</label></div>';
+		}
+		$group = sprintf( $group, $radios, str_replace( 'name="who"', 'name="heard"', $radios ) );
 	}
 	$html   = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Radio group</title></head><body><main><form action="/submit" method="post"><div><label for="email">Email</label><input type="email" id="email" name="email"></div>' . sprintf( $group, $radios ) . '<button type="submit">Send</button></form></main></body></html>';
 	$plan   = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray()['source_reports']['wordpress_site_plan'];
@@ -114,6 +123,29 @@ foreach ( $radio_groups as $case => $group ) {
 	if ( 'single radio declined' === $case ) {
 		$checks['declined radio never emits an option-less field'] = array() === $fields;
 		$checks['declined radio reports a named loss'] = str_contains( json_encode( $radio ), 'radio_group_without_options' );
+		continue;
+	}
+	if ( 'bootstrap reused ids' === $case ) {
+		$checks[ $case . ' maps both groups' ] = 'mapped' === $radio['status'] && 2 === count( $fields );
+		foreach ( array( 'Tell us about yourself', 'How did you hear about us' ) as $index => $label ) {
+			$checks[ $case . ' caption ' . $index ] = array( 'label' => $label, 'requiredIndicator' => false, 'className' => 'form-label' ) === ( $fields[ $index ]['innerBlocks'][0]['attrs'] ?? null );
+			$checks[ $case . ' options ' . $index ] = $expected_options === ( $fields[ $index ]['attrs']['options'] ?? null ) && $expected_options === array_column( array_column( $fields[ $index ]['innerBlocks'][1]['innerBlocks'] ?? array(), 'attrs' ), 'label' );
+		}
+		$copy = array();
+		$collect = static function ( array $blocks ) use ( &$collect, &$copy ): void {
+			foreach ( $blocks as $block ) {
+				if ( empty( $block['innerBlocks'] ) ) {
+					$text = trim( html_entity_decode( strip_tags( $block['innerHTML'] ?? '' ) ) );
+					$text = '' !== $text ? $text : ( $block['attrs']['label'] ?? '' );
+					$copy[] = $text;
+				}
+				$collect( $block['innerBlocks'] ?? array() );
+			}
+		};
+		$collect( parse_blocks( (string) $radio['block_markup'] ) );
+		$counts = array_count_values( $copy );
+		$checks[ $case . ' visible captions once' ] = 1 === ( $counts['Tell us about yourself'] ?? 0 ) && 1 === ( $counts['How did you hear about us'] ?? 0 );
+		$checks[ $case . ' consumes every local option label' ] = 2 === ( $counts['Other'] ?? 0 ) && ! str_contains( $radio['block_markup'], 'wp:custom/authored-label' );
 		continue;
 	}
 	$checks[ $case . ' radio group maps to one radio field' ] = 'mapped' === $radio['status'] && 1 === count( $fields );

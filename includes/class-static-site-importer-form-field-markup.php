@@ -252,7 +252,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 				continue;
 			}
 
-			$group_control            = $first;
+			$group_control = $first;
+			// The first option's label presentation does not name the group.
+			unset( $group_control['label_class'], $group_control['label_classes'], $group_control['label_marker'] );
 			$group_control['text']    = $group_label;
 			$group_control['label']   = $group_label;
 			$group_control['options'] = $options;
