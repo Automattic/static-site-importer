@@ -330,7 +330,7 @@ class Static_Site_Importer_Site_Identity {
 		$evidence['status']           = 'explicit_evidence';
 		$evidence['front_page_title'] = self::title_from_html( $html, false );
 		// Only suppress page names when every HTML route proves the same title.
-		$route_count = 0;
+		$route_count  = 0;
 		$shared_title = '' !== $evidence['front_page_title'];
 		foreach ( $artifact['files'] ?? array() as $file ) {
 			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
