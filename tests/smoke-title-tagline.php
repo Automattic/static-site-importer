@@ -19,6 +19,9 @@ function update_option( string $name, $value ): bool {
 	$GLOBALS['title_options'][ $name ] = $value;
 	return true;
 }
+function get_bloginfo( string $name, string $filter = 'raw' ): string {
+	return get_option( 'name' === $name ? 'blogname' : 'blogdescription', '' );
+}
 function is_front_page(): bool {
 	return $GLOBALS['title_front_page'] ?? false;
 }
@@ -141,6 +144,52 @@ foreach ( array( '|', '–' ) as $separator ) {
 	$GLOBALS['title_front_page'] = false;
 	$inner = array( 'title' => 'About', 'site' => $brand );
 	$assert( $inner === $filter( $inner ), 'inner route ordering unchanged' );
+}
+// A site-wide shared document title must not acquire an inner page's heading.
+// Exercise evidence intake and the generated theme filter, not private helpers.
+foreach ( array( 'shared', 'brand-last', 'per-page', 'single', 'missing' ) as $shape ) {
+	$titles = 'brand-last' === $shape ? array( 'Home | My Site', 'Home | My Site' ) : array( 'Business Casual - Start Bootstrap Theme', 'Business Casual - Start Bootstrap Theme' );
+	if ( 'per-page' === $shape ) {
+		$titles = array( 'Home | My Site', 'About | My Site' );
+	} elseif ( 'single' === $shape ) {
+		$titles = array( $titles[0] );
+	} elseif ( 'missing' === $shape ) {
+		$titles[] = '';
+	}
+	$artifact = array( 'entrypoint' => 'index.html', 'files' => array() );
+	foreach ( $titles as $index => $title ) {
+		$artifact['files'][] = array( 'path' => $index ? $index . '.html' : 'index.html', 'content' => '<title>' . $title . '</title>' . ( 'brand-last' === $shape ? '<meta property="og:site_name" content="My Site">' : '' ) );
+	}
+	// Capture bundles include untitled shared fragments alongside the routes.
+	$artifact['files'][] = array( 'path' => 'parts/header.html', 'content' => '<header>Site header</header>' );
+	$artifact['files'][] = array( 'path' => 'template-parts/footer.htm', 'content' => '<footer>Site footer</footer>' );
+	$artifact['files'][] = array( 'path' => 'shared/nav.html', 'role' => 'template-part', 'content' => '<nav>Navigation</nav>' );
+	$artifact['files'][] = array( 'path' => 'style.css', 'content' => 'body {}' );
+	$brand = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
+	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, '', $brand );
+	$state = array(
+		'args' => array( 'native_site_identity_evidence' => $evidence ),
+		'theme_dir' => '/theme',
+		'resolved' => array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => "<?php\n" ) ) ) ),
+	);
+	Static_Site_Importer_Site_Identity::compose_title_separator( $state );
+	$GLOBALS['title_filters'] = array();
+	$GLOBALS['title_options'] = array( 'blogname' => $brand, 'blogdescription' => $evidence['tagline'] );
+	eval( substr( $state['composed_theme_writes']['/theme/functions.php'] ?? '<?php', 5 ) );
+	$filter = $GLOBALS['title_filters']['document_title_parts'] ?? static fn( array $parts ): array => $parts;
+	$GLOBALS['title_front_page'] = false;
+	$inner = array( 'title' => 'About Our Cafe', 'site' => $brand );
+	$shared = in_array( $shape, array( 'shared', 'brand-last' ), true );
+	$parts = $filter( $inner );
+	$separator = $evidence['title_separator'] ?? '–';
+	$assert( $shared ? $titles[0] === implode( ' ' . $separator . ' ', $parts ) : $inner === $parts, "$shape inner route title" );
+	if ( $shared ) {
+		$GLOBALS['title_options'] = array( 'blogname' => 'Owner brand', 'blogdescription' => 'Owner tagline' );
+		$expected = 'brand-last' === $shape ? array( 'tagline' => 'Owner tagline', 'title' => 'Owner brand' ) : array( 'title' => 'Owner brand', 'tagline' => 'Owner tagline' );
+		$assert( $expected === $filter( $inner ), "$shape owner edits remain live" );
+		$GLOBALS['title_options']['blogdescription'] = '';
+		$assert( array( 'title' => 'Owner brand' ) === $filter( $inner ), "$shape empty tagline omitted" );
+	}
 }
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

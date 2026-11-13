@@ -329,6 +329,23 @@ class Static_Site_Importer_Site_Identity {
 		}
 		$evidence['status']           = 'explicit_evidence';
 		$evidence['front_page_title'] = self::title_from_html( $html, false );
+		// Only suppress page names when every HTML route proves the same title.
+		// Template-part includes are HTML fragments, not independently served routes.
+		$route_count  = 0;
+		$shared_title = '' !== $evidence['front_page_title'];
+		foreach ( $artifact['files'] ?? array() as $file ) {
+			if ( ! is_array( $file ) || ! preg_match( '/\.html?$/i', (string) ( $file['path'] ?? '' ) ) ) {
+				continue;
+			}
+			if ( 'template-part' === ( $file['role'] ?? '' ) || preg_match( '#(^|/)(parts|template-parts)/[^/]+\.html?$#i', self::normalize_route_path( (string) $file['path'] ) ) ) {
+				continue;
+			}
+			++$route_count;
+			if ( self::title_from_html( self::artifact_file_content( $file, $payload_reader ), false ) !== $evidence['front_page_title'] ) {
+				$shared_title = false;
+			}
+		}
+		$evidence['title_shared'] = $shared_title && $route_count >= 2;
 		foreach ( self::jsonld_branding_nodes( $html, $evidence ) as $node ) {
 			if ( empty( $evidence['logo'] ) && isset( $node['logo'] ) ) {
 				$evidence['logo'] = self::logo_reference( $node['logo'] );
@@ -413,19 +430,33 @@ class Static_Site_Importer_Site_Identity {
 		if ( in_array( $separator, array( '-', '—', '|', '·', '•', ':' ), true ) ) {
 			$filters .= "add_filter( 'document_title_separator', static fn() => '{$separator}' );\n";
 		}
-		if ( ! empty( $evidence['title_brand_last'] ) ) {
-			// Core uses blogname then blogdescription on the front page. Keep
-			// those editable values, changing only their presentation order.
-			$filters .= <<<'PHP'
-add_filter( 'document_title_parts', static function ( array $parts ): array {
-	if ( is_front_page() && isset( $parts['title'], $parts['tagline'] ) ) {
+		if ( ! empty( $evidence['title_shared'] ) || ! empty( $evidence['title_brand_last'] ) ) {
+			$filters .= "add_filter( 'document_title_parts', static function ( array \$parts ): array {\n";
+			if ( ! empty( $evidence['title_shared'] ) ) {
+				// Mirror core's front-page parts using live, editable settings.
+				$filters .= <<<'PHP'
+	if ( ! is_front_page() ) {
+		$parts = array( 'title' => get_bloginfo( 'name', 'display' ) );
+		$tagline = get_bloginfo( 'description', 'display' );
+		if ( $tagline ) {
+			$parts['tagline'] = $tagline;
+		}
+	}
+
+PHP;
+			}
+			if ( ! empty( $evidence['title_brand_last'] ) ) {
+				// Only front-page-style parts carry a tagline.
+				$filters .= <<<'PHP'
+	if ( isset( $parts['title'], $parts['tagline'] ) ) {
 		$tagline = $parts['tagline'];
 		unset( $parts['tagline'] );
 		$parts = array( 'tagline' => $tagline ) + $parts;
 	}
-	return $parts;
-} );
+
 PHP;
+			}
+			$filters .= "\treturn \$parts;\n} );\n";
 		}
 		if ( '' === $filters ) {
 			return;

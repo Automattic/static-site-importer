@@ -123,8 +123,11 @@ test('block predicate sees blocks the importer emits inside a materialized form'
     };
     const wrapped = '<input type="hidden" name="form-name" value="contact"><div class="field"><label>Email <input type="email" name="email"></label></div>';
     const plain = '<label>Email <input type="email" name="email"></label>';
-    // Controls lower to native provider blocks, even inside an authored
-    // wrapper. The wrapper now lowers to a native group as well.
+    // Controls lower to provider blocks and wrappers to native core/groups.
+    // Keep a positive assertion on the materialized provider form: the engine
+    // emits the whole form as core/html, not this contact-form block.
+    assert.equal(run(wrapped, 'contact-form'), 0);
+    assert.equal(run(plain, 'contact-form'), 0);
     assert.equal(run(wrapped, 'authored-input'), 1);
     assert.equal(run(plain, 'authored-input'), 1);
     assert.equal(run(wrapped, 'layout-shell@div'), 1);
