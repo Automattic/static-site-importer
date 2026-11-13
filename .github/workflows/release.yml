@@ -124,11 +124,39 @@ jobs:
         if: inputs.dry-run == true
         run: git diff --exit-code -- composer.json composer.lock
 
+      # The browser half of the pin gate (#2967) runs the Editor Presentation
+      # Browser suite, so Node and Playwright are needed here too. Kept out of
+      # the gated step below so a failing install cannot be mistaken for a
+      # pin-caused test failure; the job still stays red and blocks main.
+      - name: Set up Node for the browser test gate
+        if: inputs.dry-run != true
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install browser test gate dependencies
+        if: inputs.dry-run != true
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- composer.json composer.lock; then
+            echo "No published Blocks Engine pin changed; nothing to set up."
+            exit 0
+          fi
+          npm ci
+          npx playwright install --with-deps chromium
+
       # This commit is pushed with the workflow token, which does not trigger
       # the Test workflow, and the release below ships it. Prove the refreshed
       # pins against the same suites the Test workflow runs before anything is
       # pushed, so a Blocks Engine release that breaks SSI never reaches main
-      # or a published release untested (#1867).
+      # or a published release untested (#1867). That includes the Editor
+      # Presentation Browser suite (#2967): the v0.45.598 → v0.45.600 refresh
+      # passed the PHP-only gate and still broke form-submit-colors.test.mjs
+      # after landing. The browser test list has one definition, shared with
+      # test.yml: package.json's test:editor-presentation-browser script. The
+      # suite reads the WordPress tree through STATIC_SITE_IMPORTER_WP_ROOT,
+      # so it reuses the core extracted for the Homeboy PHP gate.
       - name: Test the refreshed pins before pushing them
         id: refreshed-tests
         if: inputs.dry-run != true
@@ -145,6 +173,8 @@ jobs:
             curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "${RUNNER_TEMP}"
             export STATIC_SITE_IMPORTER_WP_ROOT="${RUNNER_TEMP}/wordpress"
             homeboy review test --placement local static-site-importer --path .
+            bash tools/prepare-wordpress-core-fixture.sh
+            npm run test:editor-presentation-browser
           } 2>&1 | tee "${RUNNER_TEMP}/blocks-engine-refresh-tests.log"
 
       # No continue-on-error: this recovery step runs after failure, but the

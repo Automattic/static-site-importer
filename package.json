@@ -9,6 +9,7 @@
     "test": "node tools/run-test-manifest.mjs",
     "test:all": "node tools/run-test-manifest.mjs --all",
     "test:inventory": "node tools/run-test-manifest.mjs --check",
+    "test:editor-presentation-browser": "node --test tests/editor-presentation-browser.test.mjs tests/form-source-geometry.test.mjs tests/form-responsive-border.test.mjs tests/form-submit-colors.test.mjs tests/form-placeholder-colors.test.mjs tools/run-existing-runtime-review.test.mjs",
     "test:runtime-package": "node --test tools/runtime-package-manifest.test.mjs && php tests/smoke-ability-registration-idempotent.php",
     "test:companion-plugin": "php tests/smoke-content-only-policy.php && php tests/smoke-companion-plugin.php && php tests/smoke-companion-plugin-js.php && php tests/smoke-companion-renderer-real-kses.php",
     "test:site-plan-materializer": "php tests/smoke-wordpress-site-plan-materializer.php",
