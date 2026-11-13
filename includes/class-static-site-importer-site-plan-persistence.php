@@ -3042,6 +3042,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY, false ),
 				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
+				'page_template'                           => get_post_meta( $id, '_wp_page_template', false ),
+				'css_section'                             => get_post_meta( $id, '_static_site_importer_css_section', false ),
 				'taxonomy_memberships'                    => get_post_meta( $id, '_static_site_importer_taxonomy_memberships', true ),
 				'taxonomy_memberships_exists'             => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
 			);
@@ -3442,6 +3444,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					foreach ( array(
 						'source_routes' => Static_Site_Importer_Source_Route::META_KEY,
 						'thumbnail'     => '_thumbnail_id',
+						'page_template' => '_wp_page_template',
+						'css_section'   => '_static_site_importer_css_section',
 					) as $snapshot => $meta_key ) {
 						if ( ! array_key_exists( $snapshot, $before ) ) {
 							continue;

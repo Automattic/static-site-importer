@@ -248,6 +248,7 @@
     "materialization_post_modified_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_batch_run_expired": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_batch_work_dir_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
+    "existing_theme_template_conflict": { "class": "integrity", "owning_layer": "static-site-importer" },
     "existing_theme_runtime_block_conflict": { "class": "integrity", "owning_layer": "static-site-importer" },
     "existing_theme_navigation_removal_forbidden": { "class": "integrity", "owning_layer": "static-site-importer" },
     "existing_theme_removal_forbidden": { "class": "integrity", "owning_layer": "static-site-importer" },
