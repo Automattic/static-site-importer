@@ -191,6 +191,37 @@ foreach ( array( 'shared', 'brand-last', 'per-page', 'single', 'missing' ) as $s
 		$assert( array( 'title' => 'Owner brand' ) === $filter( $inner ), "$shape empty tagline omitted" );
 	}
 }
+// A standalone home title must not hide the inner-route branding consensus.
+$artifact = array( 'entrypoint' => 'index.html', 'files' => array(
+	array( 'path' => 'index.html', 'content' => '<title>Acme Widgets Company</title>' ),
+	array( 'path' => 'about.html', 'content' => '<title>About | Acme</title>' ),
+	array( 'path' => 'blog.html', 'content' => '<title>Blog | Acme</title>' ),
+) );
+$brand = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
+$assert( 'Acme' === $brand, 'standalone home route consensus brand' );
+$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, 'Meta description tagline', $brand );
+$assert( '|' === ( $evidence['title_separator'] ?? '' ), 'route consensus separator' );
+$assert( true === ( $evidence['title_brand_last'] ?? false ), 'route consensus brand last' );
+$assert( 'Meta description tagline' === $evidence['tagline'], 'standalone home preserves tagline evidence' );
+$state = array(
+	'args' => array( 'native_site_identity_evidence' => $evidence ),
+	'theme_dir' => '/theme',
+	'resolved' => array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => "<?php\n" ) ) ) ),
+);
+Static_Site_Importer_Site_Identity::compose_title_separator( $state );
+$bootstrap = $state['composed_theme_writes']['/theme/functions.php'];
+Static_Site_Importer_Site_Identity::compose_title_separator( $state );
+$assert( $bootstrap === $state['composed_theme_writes']['/theme/functions.php'], 'standalone title composition idempotent' );
+$GLOBALS['title_filters'] = array();
+eval( substr( $bootstrap, 5 ) );
+$filter = $GLOBALS['title_filters']['document_title_parts'];
+$separator = $GLOBALS['title_filters']['document_title_separator']( '–' );
+$GLOBALS['title_front_page'] = true;
+$parts = $filter( array( 'title' => $brand, 'tagline' => $evidence['tagline'] ) );
+$assert( 'Acme Widgets Company' === implode( ' ' . $separator . ' ', $parts ), 'standalone source home title renders through composed filters' );
+$GLOBALS['title_front_page'] = false;
+$parts = $filter( array( 'title' => 'About', 'site' => $brand ) );
+$assert( 'About | Acme' === implode( ' ' . $separator . ' ', $parts ), 'inner title uses route separator without home override' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
