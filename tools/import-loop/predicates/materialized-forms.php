@@ -17,7 +17,8 @@ spl_autoload_register(static function ($class) use ($root) {
 // stylesheets, scripts and evidence resolve. Other routes' documents stay out.
 $capture = getenv('PREDICATE_CAPTURE');
 $route = trim((string) (json_decode((string) getenv('PREDICATE_TARGET'), true)['route'] ?? '/'), '/');
-$document = 'website/' . ('' === $route ? '' : "$route/") . 'index.html';
+// A served file route (`/about.html`) is its own document; a directory route is its index.html.
+$document = str_ends_with($route, '.html') ? "website/$route" : 'website/' . ('' === $route ? '' : "$route/") . 'index.html';
 $files = array(array('path' => $document, 'content' => file_get_contents($candidate)));
 if ($capture && is_dir($capture)) {
     $skip = '#^(website/(?!parts/).*\.html?|reference/|semantic-evidence/|layout-geometry/|screenshots/|html/|html-mobile/|sections/|sections-mobile/|media/|resources/)#i';

@@ -2,6 +2,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 
 export const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
 
@@ -55,6 +56,10 @@ export function prHealth({ statusCheckRollup: checks = [], mergeable }) {
 
 // A predicate reads the finding cell it reproduces, and the imported site
 // that renders transformer output, from the environment.
+// A capture route's document: a served directory (`/about/`) is its
+// `index.html`, a served file (`/about.html`) is itself.
+export const routeDocument = (website, route = '/') => (route.endsWith('.html') ? path.join(website, route) : path.join(website, route.replace(/^\//, ''), 'index.html'));
+
 export const predicateEnv = (subject, cell, site) => ({
   ...process.env,
   PREDICATE_TARGET: JSON.stringify({ subject, route: cell.route || '/', width: cell.width || 1440, evidence: cell.evidence }),

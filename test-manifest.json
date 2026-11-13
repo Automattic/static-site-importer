@@ -346,6 +346,7 @@
     { "path": "tests/import-loop-progress.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-image-subject.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-parity-classes.test.mjs", "environment": "node" },
+    { "path": "tests/import-loop-capture-routes.test.mjs", "environment": "node" },
     { "path": "tests/media-library-asset-degradation.test.mjs", "environment": "node" },
     { "path": "tests/request-bundle-site-title.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },
