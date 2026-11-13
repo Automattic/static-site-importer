@@ -4,11 +4,13 @@
     "branch": "trunk",
     "verify": "cd php-transformer && composer test:canonical && cd tools/visual-parity && npm ci --silent && npm test",
     "predicate_root": "php-transformer",
+    "candidate": { "slot": "transformer", "paths": ["php-transformer"] },
     "contracts": "gates/blocks-engine-contracts.sh",
     "stage": "materialization"
   },
   "static-site-importer": {
     "github": "Automattic/static-site-importer",
+    "candidate": { "slot": "importer", "paths": ["static-site-importer.php", "includes"] },
     "branch": "main",
     "verify": "npm ci && npm test",
     "stage": "import"

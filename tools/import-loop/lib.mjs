@@ -69,15 +69,25 @@ export const predicateEnv = (subject, cell, site) => ({
   WP_CLI: args['wp-cli'] || process.env.WP_CLI || 'studio wp',
 });
 
+// A clone of `github` kept beside the passes (`runs`/clones), fetched by the
+// commits each check needs: a repository the loop measures without a caller's
+// checkout.
+export function repoClone(github, runs) {
+  const dir = path.join(runs, 'clones', github.split('/')[1]);
+  if (!fs.existsSync(path.join(dir, '.git'))) execFileSync('git', ['clone', '-q', '--filter=blob:none', '--no-checkout', `https://github.com/${github}.git`, dir]);
+  return dir;
+}
+
 // Materialize `capture` through the release importer with the transformer at
 // `transformer` (gates/reimport.sh) and serve it; predicates given its URL as
-// PREDICATE_SITE_URL check the route the whole import produced. The server
+// PREDICATE_SITE_URL check the route the whole import produced. `importer`
+// names a candidate importer's sources to lay over the release's. The server
 // stops when this process exits.
-export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
+export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir, importer = '') {
   const gate = new URL('./gates/reimport.sh', import.meta.url).pathname;
   let url;
   try {
-    url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', maxBuffer: 256 << 20, env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp }, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').pop();
+    url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', maxBuffer: 256 << 20, env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp, SSI_SOURCE: importer }, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').pop();
   } catch (error) {
     // The importer refused the site: name its reasons, keep its output in the log.
     const stderr = String(error.stderr || '');
@@ -90,27 +100,31 @@ export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir) {
   return url;
 }
 
-// A pull request is judged as it would ship: its head merged onto the pass's
-// Blocks Engine trunk (`trunk`, the commit the import step re-imported and the
-// evaluation measured), against that evaluation (`base_findings`). A stale
-// branch's own merge base can predate the release importer and fail to import
-// at all, which says nothing about the fix. `mergedHead` writes the merge once
-// per head under `work`/heads (gates/merge-onto.sh); a conflict is an
-// import_failed reason.
+// A pull request is judged as it would ship: its head merged onto the base the
+// pass measured (`at.base`: Blocks Engine's trunk for the transformer, the
+// importer release's commit for the importer), against that measurement
+// (`base_findings`). A stale branch's own merge base can predate the release
+// and fail to import at all, which says nothing about the fix. `mergedHead`
+// writes the repository's `candidate.paths` of the merge once per head under
+// `work`/heads (gates/merge-onto.sh); a conflict is an import_failed reason.
 const heads = new Map();
-function mergedHead(item, pr, { clone, root, work, trunk }) {
-  const dir = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}-on-${trunk.slice(0, 8)}`;
-  if (!heads.has(dir) && !fs.existsSync(`${dir}/${root}`)) {
-    execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', 'trunk', `pull/${pr.number}/head`]);
-    const merge = spawnSync('bash', [new URL('./gates/merge-onto.sh', import.meta.url).pathname, clone, trunk, pr.headRefOid, root, dir], { encoding: 'utf8' });
+function mergedHead(item, pr, { clone, candidate, base, work }) {
+  const dir = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}-on-${base.slice(0, 8)}`;
+  if (!heads.has(dir) && !fs.existsSync(dir)) {
+    execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', base, `pull/${pr.number}/head`]);
+    const merge = spawnSync('bash', [new URL('./gates/merge-onto.sh', import.meta.url).pathname, clone, base, pr.headRefOid, dir, ...candidate.paths], { encoding: 'utf8' });
     if (merge.status) heads.set(dir, Object.assign(new Error(merge.stderr.trim().split('\n').pop() || `merge_onto_exit_${merge.status}`), { import_failed: true }));
   }
   return dir;
 }
-function served(transformer, reimport, dir) {
+// A transformer candidate replaces the release's transformer; an importer
+// candidate runs on the pass's trunk transformer (`at.transformer`).
+function served(dir, { candidate, transformer, reimport }) {
   if (!heads.has(dir)) {
     try {
-      heads.set(dir, reimportSite(transformer, reimport, `${dir}-site`));
+      heads.set(dir, candidate.slot === 'transformer'
+        ? reimportSite(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`)
+        : reimportSite(transformer, reimport, `${dir}-site`, dir));
     } catch (error) {
       if (!error.import_failed) throw error;
       heads.set(dir, error);
@@ -119,21 +133,21 @@ function served(transformer, reimport, dir) {
   return heads.get(dir);
 }
 
-// The acceptance cells of a tracked finding on a pull request merged onto
-// trunk, re-imported once per merge. The re-import loads only the transformer's
+// The acceptance cells of a tracked finding on a pull request merged onto its
+// base, re-imported once per merge. The re-import loads only the candidate's
 // sources (gates/reimport.sh); its runtime libraries come with the release, so
 // no install runs here. Returns [{route, width, exit}]: exit 'imported' on every
 // cell, or 'import_failed' (with a reason) when the importer refuses the site.
 export function cellsAtHead(item, pr, at) {
   const dir = mergedHead(item, pr, at);
-  const site = served(`${dir}/${at.root}`, at.reimport, dir);
+  const site = served(dir, at);
   if (site instanceof Error) return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: 'import_failed', reason: site.message }));
   // Predicate reduction is diagnostic only. Acceptance is decided by the
   // shared whole-site comparison below, including partial count reductions.
   return item.cells.map((cell) => ({ route: cell.route, width: cell.width, exit: 'imported' }));
 }
 
-// Restyles outside `item`'s scope on a pull request merged onto trunk: its
+// Restyles outside `item`'s scope on a pull request merged onto its base: its
 // whole import against the pass's evaluation at that trunk, on every route.
 // Returns {exit, report}; exit 0 means none, 2 means it could not be compared.
 export function collateralAtHead(item, pr, at) {
