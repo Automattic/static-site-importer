@@ -5,9 +5,10 @@
 // in, each on the full captured page. Each head re-imports the capture as
 // triage did. A fix is confirmed only when the shared check comparison shows
 // fewer of its own occurrences, no other growing blocker, and no visual
-// regression. Fixes in a repository whose code the predicates do not
-// run (`predicate_root` in repos.json) are unconfirmed: the next pass's
-// import is their check.
+// regression. Each head is merged onto the commit the pass measured for its
+// repository (triage's `bases`) and enters the re-import as repos.json's
+// `candidate` says. Fixes in a repository with no `candidate` are
+// unconfirmed: the next pass's import is their check.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
@@ -18,14 +19,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, collateralAtHead, gh, linkedPullRequests } from './lib.mjs';
+import { args, cellsAtHead, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
 import { compareImports } from './progress.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
 const triage = JSON.parse(fs.readFileSync(args.triage, 'utf8'));
-const clones = { 'blocks-engine': args['blocks-engine'] };
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.resolve(args.work))) };
 const log = (...parts) => console.error('[confirm]', ...parts);
 
 // One pull request can fix several tracked findings: it is confirmed only
@@ -36,10 +37,10 @@ for (const item of triage.tracked) {
   for (const pr of linkedPullRequests(item.issue_url)) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [] };
     verdicts.set(pr.url, verdict);
-    const root = repos[item.repo]?.predicate_root;
-    if (!root || !clones[item.repo]) { verdict.reasons.push(`predicates do not run ${item.repo} code`); continue; }
+    const candidate = repos[item.repo]?.candidate;
+    if (!candidate || !clones[item.repo] || !triage.bases?.[item.repo]) { verdict.reasons.push(`the re-import does not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
-    const at = { clone: clones[item.repo], root, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path };
+    const at = { clone: clones[item.repo], candidate, base: triage.bases[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path };
     // A head no Cook moved since triage was checked there, on this capture and release.
     const prior = item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid ? item.head_check : null;
     const cells = (prior?.cells || cellsAtHead(item, pr, at)).map((cell) => ({ signature: item.signature, ...cell }));
