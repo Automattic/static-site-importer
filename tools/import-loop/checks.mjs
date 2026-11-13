@@ -62,6 +62,11 @@ export const parityCellReports = (cell) => {
       classes.set(cls.subject, entry);
     }
   }
+  // A route the imported site answers with 404 was never published: which
+  // pages exist is the importer's plan, so it is SSI's finding, not an
+  // unmeasured parity cell for the materializer.
+  const missing = (cell.pending || []).filter((p) => /\bHTTP 404\b/.test(String(p.reason || '')));
+  if (!classes.size && missing.length) return [{ owner_repo: 'static-site-importer', subject: 'route_missing', evidence: { route: cell.route, reasons: [...new Set(missing.map((p) => p.reason))] } }];
   if (!classes.size && (!cell.verified || cell.scores.some((s) => !s.pass))) return [{ owner_repo: 'blocks-engine', subject: 'unverified', evidence: cell }];
   return [...classes.values()].map(({ owner_repo, subject, failures }) => ({ owner_repo, subject, evidence: { count: failures.length, failures } }));
 };
