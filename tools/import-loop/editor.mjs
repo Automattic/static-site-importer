@@ -125,9 +125,14 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
               await dialog.waitFor();
               // The modal can open on "Upload files"; choosing from the library is a tab away.
               await dialog.getByRole('tab', { name: /media library/i }).click();
-              const choices = dialog.locator('.attachment');
-              await choices.nth(1).waitFor();
-              await choices.nth(1).click();
+              // Replace opens with the image's current attachment selected, and
+              // clicking a selected attachment deselects it, leaving Select
+              // disabled: choose one that is not selected, and wait for it to
+              // be checked before selecting.
+              const choice = dialog.locator('.attachment:not(.selected)').first();
+              await choice.waitFor();
+              await choice.click();
+              await dialog.locator('.attachment[aria-checked="true"]').first().waitFor();
               await dialog.getByRole('button', { name: /select|replace/i }).last().click();
               await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
               const replaced = await image.locator('img').first().getAttribute('src');
