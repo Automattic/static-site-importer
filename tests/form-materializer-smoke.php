@@ -78,9 +78,24 @@ $radio_groups = array(
 	'fieldset legend'       => '<fieldset><legend>Pick an area</legend>%s</fieldset>',
 	'aria group name'       => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
 	'plain preceding label' => '<div><label>Pick an area</label>%s</div>',
+	'single radio declined' => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
+	'bootstrap six options' => '<div><label>Tell us about yourself</label><div id="g">%s</div></div>',
 );
 foreach ( $radio_groups as $case => $group ) {
 	$radios = '<label><input type="radio" name="area" value="north"> North</label><label><input type="radio" name="area" value="south"> South</label>';
+	if ( 'single radio declined' === $case ) {
+		$radios = '<label><input type="radio" name="area" value="north"> North</label>';
+	}
+	$expected_options = array( 'North', 'South' );
+	$expected_label = 'Pick an area';
+	if ( 'bootstrap six options' === $case ) {
+		$expected_options = array( 'Publisher', 'Author', 'Corporate', 'Editor', 'Agent', 'Other' );
+		$expected_label = 'Tell us about yourself';
+		$radios = '';
+		foreach ( $expected_options as $i => $label ) {
+			$radios .= '<div class="form-check"><input type="radio" name="who" id="o' . $i . '" value="' . $label . '"><label for="o' . $i . '">' . $label . '</label></div>';
+		}
+	}
 	$html   = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Radio group</title></head><body><main><form action="/submit" method="post"><div><label for="email">Email</label><input type="email" id="email" name="email"></div>' . sprintf( $group, $radios ) . '<button type="submit">Send</button></form></main></body></html>';
 	$plan   = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray()['source_reports']['wordpress_site_plan'];
 	$decl   = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
@@ -96,9 +111,14 @@ foreach ( $radio_groups as $case => $group ) {
 		return $found;
 	};
 	$fields = $find( parse_blocks( (string) $radio['block_markup'] ) );
+	if ( 'single radio declined' === $case ) {
+		$checks['declined radio never emits an option-less field'] = array() === $fields;
+		$checks['declined radio reports a named loss'] = str_contains( json_encode( $radio ), 'radio_group_without_options' );
+		continue;
+	}
 	$checks[ $case . ' radio group maps to one radio field' ] = 'mapped' === $radio['status'] && 1 === count( $fields );
-	$checks[ $case . ' radio field carries one option per input' ] = array( 'North', 'South' ) === ( $fields[0]['attrs']['options'] ?? null ) && array( 'North', 'South' ) === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
-	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => 'Pick an area' ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
+	$checks[ $case . ' radio field carries one option per input' ] = $expected_options === ( $fields[0]['attrs']['options'] ?? null ) && $expected_options === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
+	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => $expected_label ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
 }
 
 // A donation-intent form materializes as the Jetpack Donations block and its
