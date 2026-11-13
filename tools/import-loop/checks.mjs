@@ -66,20 +66,21 @@ export const parityCellReports = (cell) => {
   return [...classes.values()].map(({ owner_repo, subject, failures }) => ({ owner_repo, subject, evidence: { count: failures.length, failures } }));
 };
 
+// The routes a capture holds, as the paths compare scores them: the capture
+// receipt lists every captured page, whether the source serves a directory
+// (`website/about/index.html` → `/about/`) or a file (`website/about.html` →
+// `/about.html`).
+export const captureRoutes = (captureRoot) => {
+  const receipt = JSON.parse(fs.readFileSync(path.join(captureRoot, 'capture-receipt.json'), 'utf8'));
+  const routes = (receipt.routes || []).map(({ path: file }) => '/' + file.replace(/^website\//, '').replace(/(?:^|\/)index\.html$/, (m) => (m.startsWith('/') ? '/' : '')));
+  return [...new Set(routes)].sort();
+};
+
 export async function checkImport(args) {
   for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
   fs.mkdirSync(args.out, { recursive: true });
   const captureRoot = path.join(args.source, new URL(args.url).hostname);
-  const website = path.join(captureRoot, 'website');
-  const routes = [];
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory() && !['assets', 'media', 'parts'].includes(entry.name)) walk(path.join(dir, entry.name));
-      else if (entry.name === 'index.html') routes.push('/' + path.relative(website, dir).split(path.sep).filter(Boolean).map((p) => `${p}/`).join(''));
-    }
-  };
-  walk(website);
-  routes.sort();
+  const routes = captureRoutes(captureRoot);
   if (!routes.length) throw new Error('capture_has_no_routes');
   const findings = new Map();
   const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null }) => {
