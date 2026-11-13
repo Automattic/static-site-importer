@@ -24,6 +24,29 @@ test('release gate uses shared pinned inputs and partial provisioning is destroy
   }
 });
 
+test('pinned downloads retry transport failures without bypassing integrity checks', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-provision-retry-'));
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  try {
+    globalThis.fetch = async () => {
+      if (++attempts < 3) throw new TypeError('fetch failed');
+      return new Response('not the pinned archive');
+    };
+    await assert.rejects(provisionWordPress({ workDir: directory }), /sha256 mismatch/);
+    assert.equal(attempts, 3);
+    assert.equal(fs.existsSync(path.join(directory, 'runtime')), false);
+    attempts = 0;
+    globalThis.fetch = async () => { attempts++; throw new TypeError('fetch failed'); };
+    await assert.rejects(provisionWordPress({ workDir: directory }), /fetch failed/);
+    assert.equal(attempts, 3, 'persistent failures stop after three attempts');
+    assert.equal(fs.existsSync(path.join(directory, 'runtime')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('provisioning refuses to reuse an existing runtime without deleting it', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-provision-'));
   try {

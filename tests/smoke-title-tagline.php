@@ -19,6 +19,9 @@ function update_option( string $name, $value ): bool {
 	$GLOBALS['title_options'][ $name ] = $value;
 	return true;
 }
+function is_front_page(): bool {
+	return $GLOBALS['title_front_page'] ?? false;
+}
 function add_filter( string $name, callable $callback ): void {
 	$GLOBALS['title_filters'][ $name ] = $callback;
 }
@@ -109,6 +112,36 @@ foreach ( array( 'Home | Acme Electric', 'Services | Installation | Acme Electri
 	);
 }
 $assert( 'Acme Electric' === Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact ), 'mixed-edge majority route title' );
+// Public evidence/composition handoff preserves a brand-last homepage title.
+foreach ( array( '|', '–' ) as $separator ) {
+	$artifact = array( 'entrypoint' => 'index.html', 'files' => array(
+		array( 'path' => 'index.html', 'content' => '<title>Home ' . $separator . ' My Site 1</title>' ),
+		array( 'path' => 'about.html', 'content' => '<title>About ' . $separator . ' My Site 1</title>' ),
+	) );
+	$brand = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
+	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, '', $brand );
+	$state = array(
+		'args' => array( 'native_site_identity_evidence' => $evidence ),
+		'theme_dir' => '/theme',
+		'resolved' => array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => "<?php\n" ) ) ) ),
+	);
+	Static_Site_Importer_Site_Identity::compose_title_separator( $state );
+	$bootstrap = $state['composed_theme_writes']['/theme/functions.php'] ?? '<?php';
+	$before = $bootstrap;
+	Static_Site_Importer_Site_Identity::compose_title_separator( $state );
+	$assert( $before === ( $state['composed_theme_writes']['/theme/functions.php'] ?? '<?php' ), 'brand-last composition is idempotent' );
+	$GLOBALS['title_filters'] = array();
+	eval( substr( $bootstrap, 5 ) );
+	$filter = $GLOBALS['title_filters']['document_title_parts'] ?? static fn( array $parts ): array => $parts;
+	$GLOBALS['title_front_page'] = true;
+	$parts = $filter( array( 'title' => $brand, 'tagline' => $evidence['tagline'] ) );
+	$assert( 'Home ' . $separator . ' My Site 1' === implode( ' ' . $separator . ' ', $parts ), 'brand-last source title renders through native parts' );
+	$assert( array( 'tagline' => 'New tagline', 'title' => 'New brand' ) === $filter( array( 'title' => 'New brand', 'tagline' => 'New tagline' ) ), 'owner edits remain live' );
+	$assert( array( 'title' => 'New brand' ) === $filter( array( 'title' => 'New brand' ) ), 'missing tagline stays absent' );
+	$GLOBALS['title_front_page'] = false;
+	$inner = array( 'title' => 'About', 'site' => $brand );
+	$assert( $inner === $filter( $inner ), 'inner route ordering unchanged' );
+}
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
