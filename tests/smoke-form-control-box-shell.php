@@ -54,8 +54,9 @@ $field       = $field_box['innerBlocks'][0] ?? array();
 $overlay     = $row['provider_layout_overlay_css'];
 $checks      = array(
 	'marked tree maps'                 => 'mapped' === $row['status'],
-	'field box keeps the label box'    => ( $field_box['attrs']['wrappers'][0]['attributes']['class'] ?? '' ) === 'framer-s3i8tk'
-		&& str_contains( (string) $row['block_markup'], '<div class="framer-s3i8tk">' ),
+	// The label box arrives as a layout shell or, class-only, as a native group.
+	'field box keeps the label box'    => in_array( 'framer-s3i8tk', array( $field_box['attrs']['wrappers'][0]['attributes']['class'] ?? '', $field_box['attrs']['className'] ?? '' ), true )
+		&& 1 === preg_match( '/<div class="(?:wp-block-group )?framer-s3i8tk">/', (string) $row['block_markup'] ),
 	'provider field takes the shell place' => str_starts_with( (string) ( $field['blockName'] ?? '' ), 'jetpack/field-' ),
 	'no control box shell wraps the field' => ! str_contains( (string) $row['block_markup'], '<div class="framer-form-input-wrapper framer-io8vii">' )
 		&& 1 === count( $field_box['innerBlocks'] ),
