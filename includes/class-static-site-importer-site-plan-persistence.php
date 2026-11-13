@@ -1915,7 +1915,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
 		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): string {
-			$value = html_entity_decode( str_replace( '\\/', '/', (string) $matches[2] ), ENT_QUOTES, 'UTF-8' );
+			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
+			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
+			if ( ! is_string( $value ) ) {
+				return $matches[0];
+			}
+			$value    = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			$is_local = (bool) preg_match( '~^[#?]~', $value );
+			$encode   = static function ( string $reference ) use ( $is_json ): string {
+				if ( ! $is_json ) {
+					return $reference;
+				}
+				// Match serialize_block_attributes(), including comment-delimiter protection.
+				$json = (string) wp_json_encode( $reference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+				return substr( str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json ), 1, -1 );
+			};
 			if ( '' === $value ) {
 				return $matches[0];
 			}
@@ -1945,21 +1959,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'fragment' => $fragment,
 					);
 				}
-				if ( preg_match( '~^[#?]~', html_entity_decode( (string) $matches[2], ENT_QUOTES, 'UTF-8' ) ) ) {
+				if ( $is_local ) {
 					return $matches[0];
 				}
-				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+				return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
 			}
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
 				if ( '/search' === $route ) {
 					parse_str( ltrim( $suffix, '?' ), $query );
 					$target = wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
-					return $matches[1] . $target . $matches[3];
+					return $matches[1] . $encode( $target ) . $matches[3];
 				}
 				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
 				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
 				if ( '' !== $target ) {
-					return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+					return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
 				}
 			}
 			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
@@ -1972,7 +1986,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
-			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
+			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
+			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
 		) as $pattern ) {
 			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
 		}

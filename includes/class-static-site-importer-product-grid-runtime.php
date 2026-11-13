@@ -38,6 +38,9 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Class on the product collection whose loop wrappers are flattened. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
+	/** Class on each imported card that replaced a flattened loop item. */
+	public const CARD_CLASS = 'ssi-item-template-card';
+
 	/** Register the shared runtime hooks once. */
 	public static function register(): void {
 		// Every copy (the importer's own, each generated companion's renamed one)
@@ -671,6 +674,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			if ( $needs_card && ! $close && null !== $item ) {
 				$card = new WP_HTML_Tag_Processor( substr( $content, $span[0], $span[1] ) );
 				$card->next_tag();
+				$card->add_class( self::CARD_CLASS );
 				$product_classes = preg_split( '/\s+/', (string) $item->get_attribute( 'class' ) );
 				foreach ( false === $product_classes ? array() : $product_classes as $class ) {
 					// Retain product/post classes, not the retired layout wrapper class.
@@ -725,10 +729,15 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	public static function layout_css(): string {
 		// Keep the collection and notices boxless where they wrap the listing.
 		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
+		$card = '.' . self::CARD_CLASS . '.' . self::CARD_CLASS;
 		// The card list may sit deeper than the loop: a store listing's loop
 		// wraps the whole listing and the list sits in its grid element.
 		return '.ssi-purchase-quantity-label{display:block;}'
 			. $loop . ',' . $loop . ' > .wc-block-components-notices{display:contents;}'
+			// Woo inserts a link between the source image box and its image.
+			// Keep percentage image sizing relative to that box, only in imported cards.
+			// Hand-picked loops lose their collection wrapper, so scope to the card.
+			. $card . ' .wc-block-components-product-image > a{display:block;width:100%;height:100%;}'
 			// A store notice spans the whole grid row instead of taking a card's cell.
 			. $loop . ' > .wc-block-components-notices > *{grid-column:1/-1;}';
 	}
