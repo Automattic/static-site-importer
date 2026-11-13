@@ -12,11 +12,16 @@ import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 import { listViewEvidence } from './list-view.mjs';
 import { themeChecks } from './theme.mjs';
+import { imageSubject } from './image-subject.mjs';
 
 // Text the user can edit: Gutenberg marks template and template-part blocks
 // shown around the post as inert, and a rich-text block is itself the
 // contenteditable element.
 const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/heading"])[contenteditable="true"]:not([inert])';
+
+// Each Replace probe saves the post and loads the frontend, so the probes are
+// bounded: a page with dozens of images must not dominate the whole run.
+const SAVED_IMAGE_PROBES = 5;
 
 export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const [command, ...prefix] = wpCli.split(/\s+/);
@@ -49,9 +54,12 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         return all;
       });
       const route = new URL(url).pathname;
-      const check = async (name, action) => {
-        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: error.evidence ?? String(error.message || error).slice(0, 500) }); }
+      // A finding's subject names the defect: callers may pass an image
+      // identity so a Replace failure is never reported anonymously.
+      const check = async (name, action, subject) => {
+        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: subject || name, route, width: 1440, evidence: error.evidence ?? String(error.message || error).slice(0, 500) }); }
       };
+
       await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
       const canvas = page.locator('iframe[name="editor-canvas"]');
       const frame = await canvas.count() ? page.frameLocator('iframe[name="editor-canvas"]') : page;
@@ -93,27 +101,46 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
             if (!(await front.locator('body').textContent()).includes(marker)) throw new Error('Saved text absent from frontend');
           } finally { await front.close(); }
         });
-        if (blocks.some((b) => b.name === 'core/image')) await check('editor_saved_image', async () => {
-          await frame.locator('[data-type="core/image"]:not([inert])').first().click();
-          await page.getByRole('button', { name: /replace/i }).first().click();
-          await page.getByRole('menuitem', { name: /media library/i }).click();
-          const dialog = page.getByRole('dialog');
-          await dialog.waitFor();
-          // The modal can open on "Upload files"; choosing from the library is a tab away.
-          await dialog.getByRole('tab', { name: /media library/i }).click();
-          const choices = dialog.locator('.attachment');
-          await choices.nth(1).waitFor();
-          await choices.nth(1).click();
-          await dialog.getByRole('button', { name: /select|replace/i }).last().click();
-          await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
-          const image = await frame.locator('[data-type="core/image"] img').first().getAttribute('src');
-          const front = await browser.newPage();
-          try {
-            await front.goto(url);
-            const paths = await front.locator('img').evaluateAll((images) => images.map((i) => new URL(i.src).pathname));
-            if (!image || !paths.includes(new URL(image, wpUrl).pathname)) throw new Error('Replacement image absent from frontend');
-          } finally { await front.close(); }
-        });
+        // Probe every non-inert image up to a small bound: a fix that moves a
+        // header (with its logo) into a template part used to shift this probe
+        // onto an unrelated image, and its Replace timeout was scored against
+        // the fix without naming any image at all. Each probe reports its own
+        // image by src or anchor, so a failure points at the defect.
+        if (blocks.some((b) => b.name === 'core/image')) {
+          const images = frame.locator('[data-type="core/image"]:not([inert])');
+          const probes = Math.min(await images.count(), SAVED_IMAGE_PROBES);
+          for (let index = 0; index < probes; index++) {
+            const image = images.nth(index);
+            const identity = await image.evaluate((figure) => ({ src: figure.querySelector('img')?.getAttribute('src') ?? null, anchor: figure.querySelector('a[href]')?.getAttribute('href') ?? null })).catch(() => ({}));
+            await check('editor_saved_image', async () => {
+              await image.click();
+              await page.getByRole('button', { name: /replace/i }).first().click();
+              await page.getByRole('menuitem', { name: /media library/i }).click();
+              const dialog = page.getByRole('dialog');
+              await dialog.waitFor();
+              // The modal can open on "Upload files"; choosing from the library is a tab away.
+              await dialog.getByRole('tab', { name: /media library/i }).click();
+              const choices = dialog.locator('.attachment');
+              await choices.nth(1).waitFor();
+              await choices.nth(1).click();
+              await dialog.getByRole('button', { name: /select|replace/i }).last().click();
+              await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
+              const replaced = await image.locator('img').first().getAttribute('src');
+              const front = await browser.newPage();
+              try {
+                await front.goto(url);
+                const paths = await front.locator('img').evaluateAll((list) => list.map((i) => new URL(i.src).pathname));
+                if (!replaced || !paths.includes(new URL(replaced, wpUrl).pathname)) throw new Error('Replacement image absent from frontend');
+              } finally { await front.close(); }
+            }, imageSubject(wpUrl, identity, index));
+            // A failed probe can leave the media modal open: dismiss it so the
+            // next probe fails on its own image, not on a leftover overlay.
+            if (await page.getByRole('dialog').count()) {
+              await page.keyboard.press('Escape');
+              await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 2500 }).catch(() => {});
+            }
+          }
+        }
       } finally {
         const file = `${site}/.import-loop-restore-${ID}.html`;
         const { writeFileSync, unlinkSync } = await import('node:fs');
