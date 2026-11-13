@@ -194,19 +194,24 @@ final class Static_Site_Importer_Content_Index {
 	/**
 	 * A source URL path as a canonical plan route: lowercase `[a-z0-9-]`
 	 * segments without a document extension, as WordPress slugs are spelled.
+	 * Return no explicit route if a non-empty segment is lost; let the compiler derive it.
 	 */
 	private static function canonical_route( string $path ): string {
 		$path     = (string) preg_replace( '/\.html?$/i', '', $path );
 		$segments = array();
 		foreach ( explode( '/', $path ) as $segment ) {
+			if ( '' === $segment ) {
+				continue;
+			}
 			$segment = rawurldecode( $segment );
 			if ( function_exists( 'remove_accents' ) ) {
 				$segment = remove_accents( $segment );
 			}
 			$segment = trim( substr( trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $segment ) ), '-' ), 0, 200 ), '-' );
-			if ( '' !== $segment ) {
-				$segments[] = $segment;
+			if ( '' === $segment ) {
+				return '';
 			}
+			$segments[] = $segment;
 		}
 		return array() === $segments ? '' : '/' . implode( '/', $segments );
 	}
