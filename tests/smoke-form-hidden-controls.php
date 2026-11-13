@@ -36,11 +36,12 @@ $handoffs = array_column( array_filter( $row['handoff_items'], static fn( array 
 
 $checks = array(
 	'fixture maps'                            => 'mapped' === $row['status'] && empty( $validated['errors'] ),
-	'every control has a decision'            => 6 === count( $row['field_contract'] ),
+	'every control has a decision'            => 7 === count( $row['field_contract'] ),
 	'hidden required field is handed off'     => 'handoff:conditional_visibility' === ( $decisions['service_address'] ?? '' ) && 'conditional_visibility' === ( $handoffs['service_address'] ?? '' ),
 	'hidden optional field is suppressed'     => 'suppressed:unconditionally_hidden_control' === ( $decisions['extra'] ?? '' ),
 	'file input is handed off as an upload'   => 'handoff:file_upload' === ( $decisions['photo'] ?? '' ) && 'file_upload' === ( $handoffs['photo'] ?? '' ),
-	'hidden fields are not seeded'            => ! str_contains( $row['block_markup'], 'Intervention address' ) && ! str_contains( $row['block_markup'], '"label":"Extra"' ),
+	'conditional fields are not seeded'            => ! str_contains( $row['block_markup'], 'Intervention address' ) && ! str_contains( $row['block_markup'], '"label":"Extra"' ),
+	'valued hidden input is mapped'           => 'mapped:jetpack/field-hidden' === ( $decisions['upload_token'] ?? '' ),
 	'visible fields are seeded'               => 'mapped:jetpack/field-text' === ( $decisions['name'] ?? '' ) && 'mapped:jetpack/field-select' === ( $decisions['service'] ?? '' ),
 );
 $failed = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );

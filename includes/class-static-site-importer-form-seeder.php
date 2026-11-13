@@ -308,6 +308,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Prepare readable fields, presentation destinations and the support decision. */
 	private static function plan_form( array $form, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
+		$form = Static_Site_Importer_Form_Field_Markup::with_hidden_controls( $form );
 		if ( ! Static_Site_Importer_Form_Readable_Substitution::supports( $form ) ) {
 			return self::skipped_plan( $form, (string) ( $form['selector'] ?? '' ), (string) ( $form['source_path'] ?? '' ), 'incomplete_readable_form_tree' );
 		}
@@ -544,7 +545,13 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return;
 		}
-		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
+		if ( 'input' === $tag && 'hidden' === $type && '' !== trim( (string) ( $control['name'] ?? '' ) ) && is_scalar( $control['value'] ?? null ) && '' !== (string) $control['value'] ) {
+			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::hidden_field_block( $control );
+			$state->mapped_types[]                 = 'jetpack/field-hidden';
+			$state->record_mapped( $control_index, 'jetpack/field-hidden' );
+			return;
+		}
+		if ( ( 'input' === $tag && 'hidden' === $type ) || self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
 			$state->suppressed_controls[ $control_index ] = true;
 			$state->skipped[]                             = 'hidden_bookkeeping';
 			$state->record_suppressed( $control_index, 'hidden_bookkeeping' );

@@ -25,6 +25,43 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
  * Emits Jetpack field and contact-form block markup.
  */
 final class Static_Site_Importer_Form_Field_Markup {
+	/** Include hidden authored-input slots the producer omits from its control inventory. */
+	public static function with_hidden_controls( array $form ): array {
+		$walk = static function ( array $block ) use ( &$walk, &$form ): array {
+			if ( ! isset( $block['form_control_index'] ) && str_ends_with( (string) ( $block['blockName'] ?? '' ), '/authored-input' ) && 'hidden' === strtolower( (string) ( $block['attrs']['type'] ?? '' ) ) ) {
+				$form['controls'][]          = array_merge(
+					$block['attrs'],
+					array(
+						'tag'  => 'input',
+						'type' => 'hidden',
+					)
+				);
+				$block['form_control_index'] = array_key_last( $form['controls'] );
+			}
+			foreach ( $block['innerBlocks'] ?? array() as $index => $child ) {
+				$block['innerBlocks'][ $index ] = $walk( $child );
+			}
+			return $block;
+		};
+		foreach ( $form['readable_blocks'] ?? array() as $index => $block ) {
+			$form['readable_blocks'][ $index ] = $walk( $block );
+		}
+		return $form;
+	}
+
+	/** Jetpack converts defaultValue to its hidden field's shortcode default. */
+	public static function hidden_field_block( array $control ): array {
+		$name = trim( (string) $control['name'] );
+		return array(
+			'name'  => 'jetpack/field-hidden',
+			'attrs' => array(
+				'label'        => $name,
+				'id'           => $name,
+				'defaultValue' => (string) $control['value'],
+			),
+		);
+	}
+
 	/** The country Jetpack's phone field editor selects when none is set. */
 	private const PROVIDER_DEFAULT_COUNTRY = 'US';
 
