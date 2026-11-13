@@ -736,6 +736,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: integrity
 			throw new InvalidArgumentException( 'post_conflict' );
 		}
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-navigation.php';
+		Static_Site_Importer_Existing_Theme_Navigation::prepare( $state );
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'], $import_run_id );
 		if ( null === $state['ordered_pages'] ) {
 			// ssi-error-class: representability:page

@@ -242,6 +242,11 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 			// ssi-error-class: integrity
 			return new WP_Error( 'existing_theme_removal_forbidden', 'Removing imported pages and CSS requires delete_pages and edit_css.' );
 		}
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-navigation.php';
+		$navigation = Static_Site_Importer_Existing_Theme_Navigation::remove( $id );
+		if ( is_wp_error( $navigation ) ) {
+			return $navigation;
+		}
 		$ownership = get_option( 'ssi_runtime_fold_' . $id, array() );
 		if ( $ownership ) {
 			foreach ( $ownership['files'] as $path => $hash ) {
@@ -427,6 +432,8 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 			'section'   => $id,
 			'per_theme' => true,
 		);
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-navigation.php';
+		Static_Site_Importer_Existing_Theme_Navigation::apply( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 }

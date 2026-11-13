@@ -25,7 +25,15 @@ One marker-delimited section per import slug owns the CSS. Re-import replaces th
 
 `post_status` accepts `publish`, `draft`, `pending`, or `private`. New existing-theme pages default to draft; generated-theme pages default to publish. Reconciled posts retain their status unless explicitly overridden. Source `index.html` is a normal `/index/` page in existing-theme mode, not the site's front page.
 
-Public plans and receipts expose `pages` rows with source path, selection, route, status and action. Conflicts include the occupying post and a free-slug suggestion. Apply rechecks every selected route before writing. Resolve conflicts with route choices, selection, or `overwrite`. Saved plan envelopes retain `page_choices` for application. Existing-theme imports withhold source site settings and navigation, reporting this in diagnostics.
+Public plans and receipts expose `pages` rows with source path, selection, route, status and action. Conflicts include the occupying post and a free-slug suggestion. Apply rechecks every selected route before writing. Resolve conflicts with route choices, selection, or `overwrite`. Saved plan envelopes retain `page_choices` for application. Existing-theme imports withhold source site settings and source navigation, reporting this in diagnostics.
+
+### Opt-in host navigation
+
+`navigation: true` applies only to `destination: "existing_theme"`; absent or `false` leaves navigation untouched. Published selected pages are appended in source order as `core/navigation-link` blocks with their title, page ID, `kind: "post-type"` and `type: "page"`. Unpublished pages are skipped with `existing_theme_navigation_skipped_unpublished`.
+
+The primary navigation is the published `wp_navigation` referenced by the active block theme's `header` template part (user customization takes precedence over the theme file). Without a navigation block, exactly one published navigation post can be used. Multiple references, a navigation block without a `ref`, ambiguous posts, and classic themes fail closed with `existing_theme_navigation_unresolved`: no navigation is created and page import continues.
+
+Plans expose `navigation.post_id` and `navigation.links` (new page IDs are null until apply). Receipts expose actual additions under `completed.navigation`, also included in the public receipt summary along with navigation diagnostics. Saved plans retain the opt-in. Re-import does not duplicate owned links; removal through `Static_Site_Importer_Existing_Theme_Styles::remove()` removes unchanged owned link bytes alongside pages and CSS. Owner links and their order are never reserialized. Edited owned links are left alone rather than risking owner content.
 
 Runtime evidence for this slice is recorded in [page-choices-evidence.md](page-choices-evidence.md).
 

@@ -138,6 +138,7 @@ $input  = array(
 	'stale_page_action'                    => 'draft',
 	'activate'                             => true,
 	'overwrite'                            => true,
+	'navigation'                           => true,
 	'disable_smilies'                      => true,
 	'remove_default_content'               => false,
 	'fail_on_quality'                      => true,
