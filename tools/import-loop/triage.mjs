@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead } from './lib.mjs';
+import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -56,8 +56,11 @@ execFileSync('git', ['-C', path.dirname(transformer), 'checkout', '-q', '--detac
 const log = (...parts) => console.error('[triage]', ...parts);
 
 function existingIssue(finding) {
-  const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository', '-L', '20'));
-  const known = hits.filter((h) => repos[h.repository.name]);
+  // The finding's record is the issue the loop filed for it, which states its
+  // signature on its own line. An issue that only mentions the signature (a
+  // checker issue, a closing note, quoted evidence) is not the record.
+  const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository,body', '-L', '20'));
+  const known = hits.filter((h) => repos[h.repository.name] && (h.body || '').includes(`Loop signature: \`${finding.signature}\``));
   return known.find((h) => h.state === 'open') || known[0] || null;
 }
 
@@ -68,7 +71,7 @@ function routePage(route) {
     const website = path.join(args.source, new URL(result.url).hostname, 'website');
     const file = path.join(args.work, 'pages', `${route.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'home'}.html`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    execFileSync('node', [path.join(here, 'inline.mjs'), path.join(website, route.replace(/^\//, ''), 'index.html'), file], { stdio: 'ignore' });
+    execFileSync('node', [path.join(here, 'inline.mjs'), routeDocument(website, route), file], { stdio: 'ignore' });
     pages.set(route, file);
   }
   return pages.get(route);
@@ -83,7 +86,7 @@ function findingPage(finding, cell, env = predicateEnv(finding.subject, cell, re
   const key = `${finding.signature}@${cell.route}`;
   if (!findingPages.has(key)) {
     const inlined = routePage(cell.route || '/');
-    const document = path.join(reimport.capture, 'website', (cell.route || '/').replace(/^\//, ''), 'index.html');
+    const document = routeDocument(path.join(reimport.capture, 'website'), cell.route || '/');
     const page = predicateExit(predicatePath(finding.check), transformer, inlined, env) !== 0 && fs.existsSync(document) && predicateExit(predicatePath(finding.check), transformer, document, env) === 0 ? document : inlined;
     findingPages.set(key, page);
   }
