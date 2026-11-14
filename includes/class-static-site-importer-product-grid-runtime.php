@@ -66,6 +66,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'render_block_woocommerce/add-to-cart-form', array( self::class, 'render_bound_layout' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+		add_action( 'enqueue_block_assets', array( self::class, 'enqueue_editor_layout' ) );
 	}
 
 	/** Fill only the declared badge, preserving the surrounding source markup. */
@@ -718,6 +719,28 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		}
 		wp_enqueue_style( $handle );
 		wp_add_inline_style( $handle, self::layout_css() );
+	}
+
+	/** Attach the editor counterpart of the front end loop flattening. */
+	public static function enqueue_editor_layout(): void {
+		if ( ! is_admin() ) {
+			return;
+		}
+		$handle = 'static-site-importer-product-grid-editor';
+		wp_register_style( $handle, false, array(), '1' );
+		wp_enqueue_style( $handle );
+		wp_add_inline_style( $handle, self::editor_layout_css() );
+	}
+
+	/**
+	 * The editor renders the loop's collection, inner block list, product list
+	 * and item boxes that flatten_collection() removes on the front end. Keep
+	 * them boxless there too, so each card stays a cell of the source grid.
+	 */
+	public static function editor_layout_css(): string {
+		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
+		return $loop . ',' . $loop . ' .block-editor-block-list__layout:has(>.wc-block-product-template),'
+			. $loop . ' .wc-block-product-template,' . $loop . ' .wc-block-product-template>li{display:contents;}';
 	}
 
 	/**
