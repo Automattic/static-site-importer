@@ -124,6 +124,8 @@ final class Static_Site_Importer_Content_Index {
 			}
 			$kept[ $position ]['metadata'] = array_merge( is_array( $kept[ $position ]['metadata'] ?? null ) ? $kept[ $position ]['metadata'] : array(), $metadata );
 		}
+		$term_archives   = array();
+		$archive_targets = array();
 		foreach ( $index['terms'] ?? array() as $term ) {
 			$position = is_array( $term ) && 'term-archive' === ( $term['kind'] ?? null ) && is_string( $term['name'] ?? null ) && '' !== trim( $term['name'] ) ? self::file_position( $term['path'] ?? null, $by_route ) : null;
 			if ( null === $position ) {
@@ -131,10 +133,30 @@ final class Static_Site_Importer_Content_Index {
 			}
 			$source = self::url_path( $term['sourceUrl'] ?? null );
 			$route  = self::canonical_route( $source );
+			$name   = trim( $term['name'] );
+			$key    = strtolower( $name );
+			$owner  = $term_archives[ $key ] ?? null;
+			if ( null !== $owner && $name !== $owner['name'] && $position !== $owner['position'] ) {
+				// Case-variant names identify the same term. Keep one archive
+				// capture, and bind every spelling and file alias to that capture.
+				$target = '/' . Static_Site_Importer_Source_Route::public_source_route( $owner['path'] );
+				$archive_targets[ self::url_path( $term['path'] ) ] = $target;
+				$rules[] = '/' . Static_Site_Importer_Source_Route::public_source_route( (string) $term['path'] ) . ' ' . $target;
+				if ( '' !== $source ) {
+					$rules[] = $source . ' ' . $target;
+				}
+				unset( $kept[ $position ] );
+				continue;
+			}
 			if ( ! self::claim_route( $route, (string) $kept[ $position ]['path'], $claimed, $findings ) ) {
 				continue;
 			}
-			$metadata = array( 'declared_content' => array( 'term_archive' => array( 'name' => trim( $term['name'] ) ) ) );
+			$term_archives[ $key ] = array(
+				'name'     => $name,
+				'position' => $position,
+				'path'     => (string) $kept[ $position ]['path'],
+			);
+			$metadata              = array( 'declared_content' => array( 'term_archive' => array( 'name' => $name ) ) );
 			if ( '' !== $route ) {
 				$metadata['route_path'] = $route;
 				if ( self::differs( $source, $route, (string) $term['path'] ) ) {
@@ -146,6 +168,7 @@ final class Static_Site_Importer_Content_Index {
 		foreach ( $index['redirects'] ?? array() as $redirect ) {
 			$from = is_array( $redirect ) ? self::url_path( $redirect['from'] ?? null ) : '';
 			$to   = is_array( $redirect ) ? self::url_path( $redirect['to'] ?? null ) : '';
+			$to   = $archive_targets[ $to ] ?? $to;
 			if ( '' !== $from && '' !== $to ) {
 				$rules[] = $from . ' ' . $to;
 			}
