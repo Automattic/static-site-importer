@@ -171,6 +171,52 @@ try {
 		$link = 'https://native.test/tag/' . $slug . '/';
 		$assert( $link === ( $routes[ '/search/label/' . $label ] ?? null ) && $link === ( $routes[ '/search/label/' . $slug ] ?? null ), 'Label URL redirects to its term: ' . $label . ' ' . json_encode( $routes ) );
 	}
+	// Non-Latin archive segments must fall back to distinct derived page routes.
+	$archive_files = array( $files[0] );
+	$archive_terms = array();
+	foreach ( array( '%D9%85%DA%A9%DA%BE%D9%86' => 'مکھن', '%D8%B4%DA%A9%D8%B1' => 'شکر' ) as $segment => $name ) {
+		$path            = '/collections/all/' . $segment;
+		$archive_files[] = array(
+			'path'    => 'website' . $path . '/index.html',
+			'content' => '<!doctype html><html><head><meta charset="utf-8"><title>' . $name . '</title></head><body><main><h1>' . $name . '</h1><p>Collection archive.</p></main></body></html>',
+		);
+		$archive_terms[] = array(
+			'name'      => $name,
+			'kind'      => 'term-archive',
+			'sourceUrl' => 'https://example.com' . $path,
+			'path'      => $path . '/index.html',
+		);
+	}
+	$archive_files[] = array(
+		'path'    => 'website/content-index.json',
+		'content' => json_encode( array( 'schema' => 'example/content-index/v1', 'terms' => $archive_terms ) ),
+	);
+	$result         = ssi_harness_drive(
+		array(
+			'operation' => 'apply',
+			'slug'      => 'non-latin-archives',
+			'source'    => array(
+				'type'  => 'files',
+				'files' => $archive_files,
+			),
+		)
+	);
+	$assert( ! empty( $result['success'] ), 'Non-Latin archives must import: ' . json_encode( $result ) );
+	$import = end( $GLOBALS['ssi_harness_imports'] );
+	// Declared term listings materialize as taxonomy archives, not ordinary pages.
+	$archives = array_column( array_column( $import['plan']['taxonomy_entities'], 'archive' ), null, 'source_path' );
+	$routes   = array();
+	foreach ( $archive_terms as $term ) {
+		$archive = $archives[ 'website' . $term['path'] ] ?? array();
+		$assert( ! empty( $archive['source_route'] ) && ! empty( $archive['presentation_markup'] ), 'Each non-Latin archive materializes with content and a route: ' . json_encode( $archive ) );
+		$routes[] = $archive['source_route'];
+	}
+	$assert( 2 === count( array_unique( $routes ) ), 'Non-Latin archives have distinct derived routes: ' . json_encode( $routes ) );
+	$extracted = Static_Site_Importer_Content_Index::extract( array( 'files' => $archive_files ) );
+	foreach ( $extracted['artifact']['files'] as $file ) {
+		$assert( ! isset( $file['metadata']['route_path'] ), 'A lost segment must not declare an explicit parent route.' );
+	}
+	$assert( array() === $extracted['aliases'], 'A lost segment must not create a route alias.' );
 } finally {
 	ssi_harness_cleanup();
 }
