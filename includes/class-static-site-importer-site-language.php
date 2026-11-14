@@ -427,7 +427,7 @@ final class Static_Site_Importer_Site_Language {
 		wp_update_plugins();
 		wp_update_themes();
 		// Core offers each pack as an object with type, slug and language fields.
-		$updates = array_values( array_filter( wp_get_translation_updates(), static fn( $update ): bool => $locale === ( get_object_vars( $update )['language'] ?? null ) && in_array( get_object_vars( $update )['type'] ?? null, array( 'plugin', 'theme' ), true ) ) );
+		$updates = array_values( array_filter( wp_get_translation_updates(), static fn( $update ): bool => ( get_object_vars( $update )['language'] ?? null ) === $locale && in_array( get_object_vars( $update )['type'] ?? null, array( 'plugin', 'theme' ), true ) ) );
 		if ( array() === $updates ) {
 			return array();
 		}
