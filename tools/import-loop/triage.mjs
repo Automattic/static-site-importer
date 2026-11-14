@@ -351,7 +351,10 @@ function acceptanceGate(item, repo) {
     // by side, then print acceptance's output after the repository's. A
     // heartbeat runs for as long as acceptance does, so neither a quiet
     // repository check nor a long acceptance meets Cook's no-output limit.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
+    // Most candidates fail whole-site acceptance, and the repository suite
+    // (Blocks Engine's canonical suite took about half the Lab's CPU) cannot
+    // change that verdict: run it only for a candidate acceptance passes.
+    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; if [ $accept -ne 0 ]; then echo "import-loop-gate acceptance_exit=$accept repository=skipped until acceptance passes"; exit 1; fi; (${repo.verify}); repo=$?; echo "import-loop-gate repository_exit=$repo acceptance_exit=0"; [ $repo -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source: evidenceFile(source, id) })),
   };
