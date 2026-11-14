@@ -65,7 +65,10 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
       // WordPress's -1/-2 duplicate suffixes, so they cannot be a signature.
       const check = async (name, action, image) => {
         try { await action(); } catch (error) {
-          const evidence = error.evidence ?? String(error.message || error).slice(0, 500);
+          // A Playwright call log ends with why an action failed (the element
+          // that intercepts pointer events, say): keep its head and its tail.
+          const text = String(error.message || error);
+          const evidence = error.evidence ?? (text.length > 1000 ? `${text.slice(0, 400)} … ${text.slice(-600)}` : text);
           report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: image ? { image, error: evidence } : evidence });
         }
       };
