@@ -1,4 +1,49 @@
-# Shared import checks
+# Import loop
+
+`loop.json` is a Homeboy workflow that turns a public site into a WordPress
+site and fixes what the import gets wrong, one pass at a time. Each pass:
+
+1. **imports** the site: the first pass captures it with `studio create --from`,
+   and every pass re-imports that frozen capture through the latest Static Site
+   Importer release with the Blocks Engine transformer at trunk;
+2. **evaluates** the import (the checks below) into `findings.json`;
+3. **triages** each blocker into a GitHub issue on its owning repository;
+4. **cooks** a fix for each issue, accepted only if the whole-site gate measures
+   its finding reduced with nothing else regressed;
+5. **confirms** each fix PR by re-measuring its exact head;
+6. **merges** confirmed PRs once they are green, at that head;
+7. **scores** the pass into `<runs>/<slug>-scoreboard.jsonl`.
+
+It starts the next pass until no blocker is left with an issue to work on,
+the blockers are unchanged for 3 passes, or 60 passes have run.
+
+## Run the loop
+
+Run it from a checkout that stays on `main` while it runs:
+
+```sh
+cd tools/import-loop
+homeboy workflow run "$PWD/loop.json" \
+  --input url=https://example.com/ \
+  --input slug=example \
+  --input loop_dir="$PWD" \
+  --input runs_dir="$HOME/loop-runs" \
+  --input blocks_engine="$HOME/loop-runs/example-be" \
+  --input cook_model=<model route>
+```
+
+- `slug` names the run's directories, issues and scoreboard; use a new slug
+  for a fresh run.
+- `blocks_engine` is a clone of Blocks Engine with an `origin` remote; each
+  pass fetches `trunk` there and imports with that commit's `php-transformer`.
+- Optional: `wp_cli` (default `studio wp`) and `cook_placement` (default
+  `auto`). Add `--notification-transport` and `--notification-route` for pass
+  notifications.
+
+`homeboy runs show <instance>` reports progress. Pass output lands in
+`<runs_dir>/<slug>-p<N>-{eval,triage,confirm}/`.
+
+## Shared import checks
 
 `evaluate.mjs` and `gates/accept.mjs` call `checks.mjs`. Parity runs the pinned
 Data Liberation release through `npx --yes --package=<release tgz>` (as Studio
