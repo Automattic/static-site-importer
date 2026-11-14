@@ -114,6 +114,7 @@
     { "path": "tests/form-responsive-border.test.mjs", "environment": "operator-only", "reason": "Chromium source, front-end and editor responsive border regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-placeholder-colors.test.mjs", "environment": "operator-only", "reason": "Chromium placeholder colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-submit-colors.test.mjs", "environment": "operator-only", "reason": "Chromium submit colour regression; executed by the Editor Presentation Browser CI job." },
+    { "path": "tests/product-loop-editor-layout.test.mjs", "environment": "operator-only", "reason": "Chromium editor product loop layout regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-image-asset-records.php", "environment": "standalone-php" },
     { "path": "tests/smoke-resource-asset-records.php", "environment": "standalone-php" },
