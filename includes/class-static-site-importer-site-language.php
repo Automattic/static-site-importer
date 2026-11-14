@@ -426,7 +426,8 @@ final class Static_Site_Importer_Site_Language {
 		wp_clean_update_cache();
 		wp_update_plugins();
 		wp_update_themes();
-		$updates = array_values( array_filter( wp_get_translation_updates(), static fn( $update ): bool => $locale === $update->language && in_array( $update->type, array( 'plugin', 'theme' ), true ) ) );
+		// Core offers each pack as an object with type, slug and language fields.
+		$updates = array_values( array_filter( wp_get_translation_updates(), static fn( $update ): bool => $locale === ( get_object_vars( $update )['language'] ?? null ) && in_array( get_object_vars( $update )['type'] ?? null, array( 'plugin', 'theme' ), true ) ) );
 		if ( array() === $updates ) {
 			return array();
 		}
@@ -435,7 +436,8 @@ final class Static_Site_Importer_Site_Language {
 		foreach ( $updates as $index => $update ) {
 			$result = is_array( $results ) ? ( $results[ $index ] ?? null ) : null;
 			if ( null !== $result && false !== $result && ! is_wp_error( $result ) ) {
-				$installed[] = $update->type . ':' . $update->slug;
+				$fields      = get_object_vars( $update );
+				$installed[] = $fields['type'] . ':' . ( $fields['slug'] ?? '' );
 			}
 		}
 		return $installed;
