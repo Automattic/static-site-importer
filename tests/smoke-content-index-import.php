@@ -143,6 +143,47 @@ try {
 	$assert( isset( $news_pages['website/label/news/index-query-1.html'] ), 'The query variant imports as an ordinary document.' );
 	$assert( ! empty( $news_import['args']['source_metadata']['intake_findings'] ), 'The duplicate declaration warning reaches the import.' );
 
+	// Issue #3012: case-variant archives bind to one term, never a fallback page.
+	$pending_index = array(
+		'schema' => 'data-liberation-agent/content-index/v1',
+		'terms' => array(
+			array( 'name' => 'PENDING', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/collections/all/PENDING', 'path' => '/terms/upper.html' ),
+			array( 'name' => 'pending', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/collections/all/pending', 'path' => '/terms/lower.html' ),
+		),
+		'redirects' => array(
+			array( 'from' => 'https://example.test/collections/all/PENDING', 'to' => '/terms/upper.html' ),
+			array( 'from' => 'https://example.test/collections/all/pending', 'to' => '/terms/lower.html' ),
+		),
+	);
+	$pending_files = array( $news_files[0] );
+	foreach ( array( 'upper', 'lower' ) as $variant ) {
+		$pending_files[] = array( 'path' => 'website/terms/' . $variant . '.html', 'content' => '<html><head><title>Pending</title></head><body><main><h1>Pending</h1></main></body></html>' );
+	}
+	$pending_files[] = array( 'path' => 'website/content-index.json', 'content' => json_encode( $pending_index ) );
+	$pending_result = ssi_harness_drive( array( 'operation' => 'apply', 'slug' => 'pending-index', 'source' => array( 'type' => 'files', 'files' => $pending_files ) ) );
+	$assert( ! empty( $pending_result['success'] ), 'Case-variant archive import completes: ' . json_encode( $pending_result ) );
+	$pending_import = end( $GLOBALS['ssi_harness_imports'] );
+	$pending_pages = array_column( $pending_import['plan']['pages'], null, 'source_path' );
+	$assert( ! isset( $pending_pages['website/terms/lower.html'] ) && ! isset( $pending_pages['website/terms/upper.html'] ), 'Neither archive is planned as a page.' );
+	$assert( 1 === count( $pending_import['plan']['taxonomy_entities'] ), 'Case variants share one term.' );
+	$GLOBALS['term_slugs'][9] = 'pending';
+	$pending_completed = array();
+	foreach ( $pending_import['plan']['taxonomy_entities'] as $entity ) {
+		$pending_completed[] = array( 'term_id' => 9, 'taxonomy' => $entity['taxonomy'], 'slug' => $entity['slug'], 'archive_route' => $entity['archive']['source_route'] );
+	}
+	$pending_receipt = array(
+		'plan' => $pending_import['plan'],
+		'completed' => array(
+			'pages' => array_combine( array_keys( $pending_pages ), range( 100, 99 + count( $pending_pages ) ) ),
+			'taxonomy_entities' => $pending_completed,
+		),
+	);
+	$pending_routes = Static_Site_Importer_Redirection_Materializer::routes( $pending_receipt, $pending_import['args'] );
+	$assert( is_array( $pending_routes ), 'Case-variant routes bind: ' . json_encode( $pending_routes ) );
+	foreach ( array( '/collections/all/PENDING', '/collections/all/pending', '/terms/lower.html' ) as $from ) {
+		$assert( get_term_link( 9, 'post_tag' ) === ( $pending_routes[ $from ] ?? null ), 'Archive alias redirects to the shared term: ' . $from );
+	}
+
 	// The public import: declared slugs, dates and labels reach the plan.
 	$result = ssi_harness_drive(
 		array(
