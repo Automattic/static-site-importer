@@ -19,29 +19,24 @@ the blockers are unchanged for 3 passes, or 60 passes have run.
 
 ## Run the loop
 
-Run it from a checkout that stays on `main` while it runs:
+Give it a URL:
 
 ```sh
-cd tools/import-loop
-homeboy workflow run "$PWD/loop.json" \
-  --input url=https://example.com/ \
-  --input slug=example \
-  --input loop_dir="$PWD" \
-  --input runs_dir="$HOME/loop-runs" \
-  --input blocks_engine="$HOME/loop-runs/example-be" \
-  --input cook_model=<model route>
+LOOP_COOK_MODEL=<model route> tools/import-loop/run.sh https://example.com/
 ```
 
-- `slug` names the run's directories, issues and scoreboard; use a new slug
-  for a fresh run.
-- `blocks_engine` is a clone of Blocks Engine with an `origin` remote; each
-  pass fetches `trunk` there and imports with that commit's `php-transformer`.
-- Optional: `wp_cli` (default `studio wp`) and `cook_placement` (default
-  `auto`). Add `--notification-transport` and `--notification-route` for pass
-  notifications.
+`run.sh` derives the slug from the URL's host and path, keeps runs in
+`$LOOP_RUNS_DIR` (default `~/loop-runs`), and keeps its own Blocks Engine
+clone at `<runs>/clones/blocks-engine`, fetching `trunk` into it each pass.
+Reusing a slug continues that site's captures and issues; pass a second
+argument for a fresh run. `LOOP_COOK_PLACEMENT` and `LOOP_WP_CLI` override
+the workflow defaults (`auto` and `studio wp`), and any further arguments,
+such as `--notification-transport` and `--notification-route`, go to
+`homeboy workflow run`. Start it from a checkout that stays on `main` while
+it runs.
 
 `homeboy runs show <instance>` reports progress. Pass output lands in
-`<runs_dir>/<slug>-p<N>-{eval,triage,confirm}/`.
+`<runs>/<slug>-p<N>-{eval,triage,confirm}/`.
 
 ## Shared import checks
 
