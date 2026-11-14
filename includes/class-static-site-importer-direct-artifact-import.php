@@ -92,6 +92,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return $content_index;
 		}
+		$args      = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $content_index['findings'] );
 		$artifact  = $content_index['artifact'];
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, $payload_reader );
 		if ( is_wp_error( $redirects ) ) {
