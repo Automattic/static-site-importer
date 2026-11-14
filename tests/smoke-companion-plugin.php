@@ -1394,6 +1394,7 @@ function is_admin(): bool { return false; }
 function wp_style_is( string $handle, string $status = 'enqueued' ): bool { return 'registered' === $status && isset( $GLOBALS['styles'][ $handle ] ); }
 function wp_register_style( string $handle, mixed $src, array $deps = array(), mixed $ver = false ): bool { $GLOBALS['styles'][ $handle ] = ''; return true; }
 function wp_enqueue_style( string $handle ): void {}
+function wp_styles(): object { return (object) array( 'registered' => array() ); }
 function wp_add_inline_style( string $handle, string $css ): bool { $GLOBALS['styles'][ $handle ] .= $css; return true; }
 require $argv[1];
 require $argv[2];

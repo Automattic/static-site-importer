@@ -45,7 +45,6 @@ abstract class Static_Site_Importer_Provider_Presentation {
 			return;
 		}
 
-		static::reconcile_provider_styles();
 		$css = static::css();
 		if ( '' === trim( $css ) ) {
 			return;
@@ -111,14 +110,6 @@ abstract class Static_Site_Importer_Provider_Presentation {
 
 		return $deps;
 	}
-
-	/**
-	 * Adjust the provider's own enqueued stylesheets before the presentation CSS
-	 * is attached. Providers whose stylesheets need no adjustment keep this no-op.
-	 *
-	 * @return void
-	 */
-	protected static function reconcile_provider_styles(): void {}
 
 	/**
 	 * A short slug identifying the provider, used to name the own handle.

@@ -712,9 +712,10 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		if ( ! class_exists( 'WooCommerce' ) || is_admin() ) {
 			return;
 		}
+		self::layer_store_styles();
 		$handle = 'static-site-importer-product-grid';
 		if ( ! wp_style_is( $handle, 'registered' ) ) {
-			$after = array_values( array_filter( array( 'wc-blocks-style', 'woocommerce-general' ), static fn( string $style ): bool => wp_style_is( $style, 'registered' ) ) );
+			$after = array_values( array_filter( array( 'wc-blocks-style', 'woocommerce-general' ), static fn( string $style ): bool => wp_style_is( $style, 'enqueued' ) ) );
 			wp_register_style( $handle, false, $after, '1' );
 		}
 		wp_enqueue_style( $handle );
@@ -741,6 +742,67 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
 		return $loop . ',' . $loop . ' .block-editor-block-list__layout:has(>.wc-block-product-template),'
 			. $loop . ' .wc-block-product-template,' . $loop . ' .wc-block-product-template>li{display:contents;}';
+	}
+
+	/**
+	 * WooCommerce's general stylesheets style bare elements on every store page
+	 * (`.woocommerce img`, `.woocommerce-page select`, `.woocommerce-page label`),
+	 * and their class-qualified selectors outrank the source design's own
+	 * element rules. On a page rendered from the source design, deliver each of
+	 * them inside a cascade layer instead: the unlayered source rules then win
+	 * wherever they set a property, and every WooCommerce rule still applies
+	 * where the source says nothing (store notice, select2, cart tables).
+	 * Surfaces WooCommerce renders itself keep the plain stylesheets.
+	 */
+	public static function layer_store_styles(): void {
+		if ( self::is_store_rendered_surface() ) {
+			return;
+		}
+		$handles = array( 'woocommerce-layout', 'woocommerce-smallscreen', 'woocommerce-general', 'woocommerce-blocktheme' );
+		$styles  = wp_styles();
+		foreach ( $handles as $handle ) {
+			$style = $styles->registered[ $handle ] ?? null;
+			if ( ! wp_style_is( $handle, 'enqueued' ) || ! is_object( $style ) || ! is_string( $style->src ) || '' === $style->src ) {
+				continue;
+			}
+			$src = $style->src;
+			if ( is_rtl() && 'replace' === $styles->get_data( $handle, 'rtl' ) ) {
+				$src = str_replace( '.css', '-rtl.css', $src );
+			}
+			if ( ! preg_match( '#^(https?:)?//#', $src ) ) {
+				$src = $styles->base_url . $src;
+			}
+			if ( $style->ver ) {
+				$src = add_query_arg( 'ver', $style->ver, $src );
+			}
+			$src   = (string) apply_filters( 'style_loader_src', $src, $handle );
+			$media = is_string( $style->args ?? null ) && '' !== $style->args && 'all' !== $style->args ? ' ' . $style->args : '';
+			// A layered sibling stays layered instead of pulling the plain stylesheet back in.
+			$deps  = array_map( static fn( string $dep ): string => in_array( $dep, $handles, true ) ? 'static-site-importer-' . $dep : $dep, (array) $style->deps );
+			$layer = 'static-site-importer-' . $handle;
+			wp_dequeue_style( $handle );
+			wp_register_style( $layer, false, $deps, $style->ver );
+			wp_enqueue_style( $layer );
+			wp_add_inline_style( $layer, '@import url("' . esc_url_raw( $src ) . '") layer(woocommerce)' . $media . ';' );
+			foreach ( (array) $styles->get_data( $handle, 'after' ) as $after ) {
+				if ( is_string( $after ) && '' !== $after ) {
+					wp_add_inline_style( $layer, $after );
+				}
+			}
+		}
+	}
+
+	/**
+	 * Whether WooCommerce, not the imported design, renders this request: My
+	 * Account, an endpoint such as order-received, or a template WooCommerce
+	 * supplies because the imported theme has none.
+	 */
+	private static function is_store_rendered_surface(): bool {
+		if ( ( function_exists( 'is_account_page' ) && is_account_page() ) || ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url() ) ) {
+			return true;
+		}
+		$template = isset( $GLOBALS['_wp_current_template_id'] ) ? (string) $GLOBALS['_wp_current_template_id'] : '';
+		return str_starts_with( $template, 'woocommerce/woocommerce//' );
 	}
 
 	/**
