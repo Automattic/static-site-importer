@@ -118,13 +118,15 @@ function delete_option(): bool {
 
 // WooCommerce global attributes.
 function wc_sanitize_taxonomy_name( string $name ): string {
-	return strtolower( trim( preg_replace( '/[^a-z0-9_]+/i', '-', $name ), '-' ) ); }
+	return strtolower( trim( preg_replace( '/[^a-z0-9_]+/i', '-', strtr( $name, array( 'é' => 'e', 'É' => 'E' ) ) ), '-' ) ); }
+function wc_check_if_attribute_name_is_reserved( string $slug ): bool {
+	return 'name' === $slug; }
 function wc_attribute_taxonomy_name( string $slug ): string {
 	return 'pa_' . $slug; }
 function wc_attribute_taxonomy_id_by_name( string $slug ): int {
 	return (int) array_search( $slug, array_column( $GLOBALS['attributes'], 'slug', 'id' ), true ); }
 function wc_create_attribute( array $args ): int|WP_Error {
-	if ( strlen( $args['slug'] ) > 28 ) {
+	if ( strlen( $args['slug'] ) > 28 || wc_check_if_attribute_name_is_reserved( $args['slug'] ) || ! empty( $GLOBALS['reject_attributes'] ) ) {
 		return new WP_Error( 'invalid_product_attribute_slug_too_long', 'Slug too long.' );
 	}
 	$id                           = ++$GLOBALS['next_attribute_id'];
@@ -257,7 +259,7 @@ $report = Static_Site_Importer_Woo_Product_Seeder::seed(
 				'fern',
 				array(
 					array(
-						'key'         => 'an_attribute_key_longer_than_woocommerce_allows',
+						'key'         => '',
 						'label'       => 'Long',
 						'value'       => 'x',
 						'value_label' => 'X',
@@ -267,7 +269,7 @@ $report = Static_Site_Importer_Woo_Product_Seeder::seed(
 		),
 	)
 );
-$assert( 'created' === $report['products'][0]['status'] && array( 'attributes.an_attribute_key_longer_than_woocommerce_allows' ) === array_column( $report['products'][0]['losses'] ?? array(), 'attribute' ), 'an attribute WooCommerce rejects is reported as a loss', $report['products'][0] );
+$assert( 'created' === $report['products'][0]['status'] && array( 'attributes.' ) === array_column( $report['products'][0]['losses'] ?? array(), 'attribute' ), 'an attribute WooCommerce rejects is reported as a loss', $report['products'][0] );
 
 // An existing product's attribute terms are restored on rollback.
 $reset();
