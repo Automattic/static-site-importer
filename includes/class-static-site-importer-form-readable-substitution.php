@@ -951,6 +951,29 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			if ( '' === $text || ( $field['attrs']['helpText'] ?? null ) !== $text ) {
 				continue;
 			}
+			// An unlabelled control's preceding copy is its visible caption,
+			// not help that Jetpack can discard from inside the field block.
+			// Only promote copy already bound as this field's description;
+			// explicit labels and unrelated paragraphs keep their contracts.
+			$control = $state->controls[ $index ] ?? array();
+			if ( '' === trim( (string) ( $control['label'] ?? '' ) ) && empty( $control['label_id'] ) ) {
+				foreach ( $state->field_blocks[ $index ]['innerBlocks'] ?? array() as $key => $label ) {
+					if ( 'jetpack/label' !== ( $label['name'] ?? '' ) ) {
+						continue;
+					}
+					$attrs          = &$state->field_blocks[ $index ]['innerBlocks'][ $key ]['attrs'];
+					$attrs['label'] = $text;
+					unset( $attrs['metadata']['blockVisibility'] );
+					if ( empty( $attrs['metadata'] ) ) {
+						unset( $attrs['metadata'] );
+					}
+					$attrs = array_replace( $attrs, array_intersect_key( $child['attrs'] ?? array(), array_flip( array( 'className', 'style' ) ) ) );
+					unset( $attrs );
+				}
+				unset( $state->field_blocks[ $index ]['attrs']['helpText'] );
+				$consumed[ $slot ] = true;
+				continue;
+			}
 			self::insert_description( $state->field_blocks[ $index ], array(
 				'name'    => 'core/paragraph',
 				'attrs'   => $child['attrs'] ?? array(),
