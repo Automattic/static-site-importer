@@ -292,7 +292,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 						$paged_target    = rtrim( $target, '/' ) . '/' . $pagination_base . '/$1/';
 					}
 					if ( isset( $routes[ $pattern ] ) && $routes[ $pattern ] !== $paged_target ) {
-						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.', array( 'source_route' => $pattern ) );
 					}
 					$routes[ $pattern ] = $paged_target;
 				}
@@ -304,7 +304,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( str_starts_with( $from, '^' ) ) {
 				foreach ( $routes as $other => $destination ) {
 					if ( ! str_starts_with( $other, '^' ) && 1 === preg_match( '~' . $from . '~', $other ) ) {
-						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'An exact source route overlaps an archive pagination family.' );
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'An exact source route overlaps an archive pagination family.', array( 'source_route' => $other ) );
 					}
 				}
 			}
@@ -337,7 +337,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			return true;
 		}
 		if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
-			return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+			return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.', array( 'source_route' => $request_path ) );
 		}
 		$occupied = self::published_route_owner( $from );
 		if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $post_id ) {
