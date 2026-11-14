@@ -29,6 +29,11 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
   wp('user', 'update', user, `--user_pass=${pass}`, '--skip-email');
+  // The Welcome Guide is a modal over the whole editor: until dismissed, no
+  // toolbar button is reachable and no canvas block is clickable. Closing it
+  // after load raced its render, and a guide that opened late failed every
+  // editor check on every page as a site defect. Store it dismissed instead.
+  wp('user', 'meta', 'update', user, 'wp_persisted_preferences', JSON.stringify({ 'core/edit-post': { welcomeGuide: false } }), '--format=json');
   const pages = JSON.parse(wp('post', 'list', '--post_type=page', '--post_status=publish', '--fields=ID,url', '--format=json'));
 
   const browser = await chromium.launch();
@@ -65,7 +70,6 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         }
       };
 
-      await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
       const canvas = page.locator('iframe[name="editor-canvas"]');
       const frame = await canvas.count() ? page.frameLocator('iframe[name="editor-canvas"]') : page;
       await check('editor_canvas_parity', async () => {
