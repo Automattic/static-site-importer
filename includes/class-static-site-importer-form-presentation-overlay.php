@@ -960,7 +960,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		}
 		// Provider dropdown chrome may only be suppressed within a generated
 		// select hook. Do not admit arbitrary declarations on provider icons.
-		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
+		if ( preg_match( '/^\.ssi-form-([a-f0-9]{12})(?:\.ssi-form-\1)? \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
 			return true;
 		}
 		$body = self::unwrap_condition( $rule );
@@ -1497,6 +1497,12 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
 			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
+			// A select restored to its native appearance draws its own chevron;
+			// the provider's decorative chevron inside the same hook then hides.
+			if ( str_ends_with( $destination['selector'], ' select' ) && preg_grep( '/^appearance:auto(?:!important)?$/', $declarations ) ) {
+				$icon    = self::surface_selector( $prefix, self::authoritative_presentation_selector( substr( $destination['selector'], 0, -strlen( ' select' ) ) ) ) . ' .jetpack-field-dropdown__icon{display:none}';
+				$rules[] = null === $condition || $state ? $icon : self::conditional_rule( $condition, $icon );
+			}
 		}
 		// A captured property outside every ordinary destination's own vocabulary
 		// (see `positioned_control_only_presentation_property_keys()`) is not a

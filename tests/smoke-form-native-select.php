@@ -18,6 +18,8 @@ $overlay     = $row['provider_layout_overlay_css']['css'];
 $checks      = array(
 	'fixture maps' => 'mapped' === $row['status'] && empty( $validated['errors'] ),
 	'overlay restores native appearance' => (bool) preg_match( '/\.ssi-node-[a-f0-9]{12} select\{[^}]*appearance:auto!important/', $overlay ),
+	// The native chevron replaces the provider's, so exactly one shows.
+	'one scoped provider chevron reset' => 1 === preg_match_all( '/\.ssi-form-([a-f0-9]{12})\.ssi-form-\1 \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}/', $overlay ),
 	'overlay validates' => null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ),
 );
 if ( in_array( '--json', $argv, true ) ) {
