@@ -344,6 +344,7 @@
     { "path": "tests/third-party-social-image.test.mjs", "environment": "node" },
     { "path": "tests/import-time-links.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-list-view.test.mjs", "environment": "node" },
+    { "path": "tests/import-loop-quality.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-progress.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-image-subject.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-parity-classes.test.mjs", "environment": "node" },
