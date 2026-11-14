@@ -65,6 +65,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( is_wp_error( $content_index ) ) {
 			return $content_index;
 		}
+		$args      = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $content_index['findings'] );
 		$artifact  = $content_index['artifact'];
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		if ( is_wp_error( $redirects ) ) {

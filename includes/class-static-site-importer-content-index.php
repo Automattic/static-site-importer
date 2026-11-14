@@ -45,7 +45,7 @@ final class Static_Site_Importer_Content_Index {
 	 *
 	 * @param array<string,mixed> $artifact       Website artifact.
 	 * @param object|null         $payload_reader Opaque payload reference reader.
-	 * @return array{artifact:array<string,mixed>,aliases:array<int,array{from:string,to:string}>}|WP_Error
+	 * @return array{artifact:array<string,mixed>,aliases:array<int,array{from:string,to:string}>,findings:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function extract( array $artifact, ?object $payload_reader = null ) {
 		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
@@ -77,6 +77,7 @@ final class Static_Site_Importer_Content_Index {
 			return array(
 				'artifact' => $artifact,
 				'aliases'  => array(),
+				'findings' => array(),
 			);
 		}
 
@@ -86,10 +87,17 @@ final class Static_Site_Importer_Content_Index {
 				$by_route[ Static_Site_Importer_Source_Route::public_source_route( (string) $file['path'] ) ] = $position;
 			}
 		}
-		$rules = array();
+		$rules    = array();
+		$claimed  = array();
+		$findings = array();
 		foreach ( $index['posts'] ?? array() as $post ) {
 			$position = is_array( $post ) ? self::file_position( $post['path'] ?? null, $by_route ) : null;
 			if ( null === $position || ! in_array( $post['kind'] ?? null, array( 'post', 'page' ), true ) ) {
+				continue;
+			}
+			$source = self::url_path( $post['permalink'] ?? null );
+			$route  = self::canonical_route( $source );
+			if ( ! self::claim_route( $route, (string) $kept[ $position ]['path'], $claimed, $findings ) ) {
 				continue;
 			}
 			$declared = array();
@@ -105,8 +113,6 @@ final class Static_Site_Importer_Content_Index {
 				}
 			}
 			$metadata = array( 'post_type' => $post['kind'] );
-			$source   = self::url_path( $post['permalink'] ?? null );
-			$route    = self::canonical_route( $source );
 			if ( '' !== $route ) {
 				$metadata['route_path'] = $route;
 				if ( self::differs( $source, $route, (string) $post['path'] ) ) {
@@ -123,9 +129,12 @@ final class Static_Site_Importer_Content_Index {
 			if ( null === $position ) {
 				continue;
 			}
+			$source = self::url_path( $term['sourceUrl'] ?? null );
+			$route  = self::canonical_route( $source );
+			if ( ! self::claim_route( $route, (string) $kept[ $position ]['path'], $claimed, $findings ) ) {
+				continue;
+			}
 			$metadata = array( 'declared_content' => array( 'term_archive' => array( 'name' => trim( $term['name'] ) ) ) );
-			$source   = self::url_path( $term['sourceUrl'] ?? null );
-			$route    = self::canonical_route( $source );
 			if ( '' !== $route ) {
 				$metadata['route_path'] = $route;
 				if ( self::differs( $source, $route, (string) $term['path'] ) ) {
@@ -147,6 +156,7 @@ final class Static_Site_Importer_Content_Index {
 			'artifact' => $artifact,
 			// Same-site, de-duplicated and self-redirect-free, like `_redirects`.
 			'aliases'  => Static_Site_Importer_Redirects_Manifest::parse( implode( "\n", $rules ) ),
+			'findings' => $findings,
 		);
 	}
 
@@ -171,6 +181,36 @@ final class Static_Site_Importer_Content_Index {
 			}
 		}
 		return $aliases;
+	}
+
+	/**
+	 * Posts precede terms; the first declaration of a canonical route wins.
+	 * A skipped entry must not stamp content metadata or add an alias either.
+	 *
+	 * @param string                          $route    Canonical route, or '' when absent.
+	 * @param string                          $path     Artifact file path.
+	 * @param array<string,string>            $claimed  Route owners.
+	 * @param array<int,array<string,mixed>>   $findings Intake warnings.
+	 */
+	private static function claim_route( string $route, string $path, array &$claimed, array &$findings ): bool {
+		if ( '' === $route ) {
+			return true;
+		}
+		if ( isset( $claimed[ $route ] ) ) {
+			$findings[] = array(
+				'code'        => 'content_index_route_skipped',
+				'type'        => 'static-site-importer',
+				'severity'    => 'warning',
+				'stage'       => 'content_index',
+				'source_path' => $path,
+				'path'        => $path,
+				'reason_code' => 'duplicate_canonical_route',
+				'message'     => sprintf( 'Skipped content-index declaration for %1$s: route %2$s is already claimed by %3$s; the file keeps its file-derived route.', $path, $route, $claimed[ $route ] ),
+			);
+			return false;
+		}
+		$claimed[ $route ] = $path;
+		return true;
 	}
 
 	/** @param array<string,int> $by_route */

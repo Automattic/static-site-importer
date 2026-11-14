@@ -78,10 +78,8 @@ try {
 	// Artifacts without a content index pass through unchanged, and a
 	// differently shaped content-index.json is an ordinary asset.
 	$plain = array( 'files' => array_slice( $files, 0, 4 ) );
-	$assert( array(
-		'artifact' => $plain,
-		'aliases'  => array(),
-	) === Static_Site_Importer_Content_Index::extract( $plain ), 'No content index changes nothing.' );
+	$plain_result = Static_Site_Importer_Content_Index::extract( $plain );
+	$assert( $plain === $plain_result['artifact'] && array() === $plain_result['aliases'] && empty( $plain_result['findings'] ), 'No content index changes nothing.' );
 	$foreign = array(
 		'files' => array(
 			array(
@@ -92,11 +90,58 @@ try {
 	);
 	$assert( $foreign === Static_Site_Importer_Content_Index::extract( $foreign )['artifact'], 'A foreign content-index.json stays an asset.' );
 
+	// Issue #3006: query variants must remain ordinary documents, not duplicate archives.
+	$news_index = array(
+		'schema' => 'data-liberation-agent/content-index/v1',
+		'posts'  => array(),
+		'terms'  => array(
+			array( 'name' => 'News', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/label/news', 'path' => '/label/news/index.html' ),
+			array( 'name' => 'News', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/label/news?start=2', 'path' => '/label/news/index-query-1.html' ),
+		),
+		'redirects' => array(),
+	);
+	$news_files = array();
+	foreach ( array( 'index.html' => 'Home', 'label/news/index.html' => 'News', 'label/news/index-query-1.html' => 'Older news' ) as $path => $title ) {
+		$news_files[] = array( 'path' => 'website/' . $path, 'content' => '<!doctype html><html><head><title>' . $title . '</title></head><body><main><h1>' . $title . '</h1><p>Stories from our community.</p></main></body></html>' );
+	}
+	$news_files[] = array( 'path' => 'website/content-index.json', 'content' => json_encode( $news_index ) );
+	$news = Static_Site_Importer_Content_Index::extract( array( 'files' => $news_files ) );
+	$stamped = array_column( $news['artifact']['files'], null, 'path' );
+	$archive = $stamped['website/label/news/index.html']['metadata'] ?? array();
+	$assert( '/label/news' === ( $archive['route_path'] ?? null ) && array( 'term_archive' => array( 'name' => 'News' ) ) === ( $archive['declared_content'] ?? null ), 'The first News archive keeps its route and term.' );
+	$assert( empty( $stamped['website/label/news/index-query-1.html']['metadata'] ), 'The query variant has no explicit route or declared content.' );
+	$assert( array() === $news['aliases'], 'The skipped archive creates no alias.' );
+	$assert( 1 === count( $news['findings'] ) && 'warning' === $news['findings'][0]['severity'] && str_contains( $news['findings'][0]['message'], 'website/label/news/index.html' ) && str_contains( $news['findings'][0]['message'], 'website/label/news/index-query-1.html' ), 'A warning names both conflicting files.' );
+
+	// Canonical normalization and ownership apply across posts and terms, even
+	// when the repeated entry names the same file as the original owner.
+	$ordered_index = $news_index;
+	$ordered_index['posts'] = array(
+		array( 'kind' => 'post', 'path' => '/label/news/index.html', 'permalink' => 'https://example.test/Label/NEWS.html', 'slug' => 'winner' ),
+		array( 'kind' => 'page', 'path' => '/label/news/index.html', 'permalink' => '/label/news', 'slug' => 'overwrite' ),
+		array( 'kind' => 'post', 'path' => '/label/news/index-query-1.html', 'permalink' => '/label/news?start=2', 'slug' => 'loser' ),
+	);
+	$ordered_files = $news_files;
+	$ordered_files[3]['content'] = json_encode( $ordered_index );
+	$ordered = Static_Site_Importer_Content_Index::extract( array( 'files' => $ordered_files ) );
+	$stamped = array_column( $ordered['artifact']['files'], null, 'path' );
+	$winner = $stamped['website/label/news/index.html']['metadata'];
+	$assert( 'post' === $winner['post_type'] && array( 'slug' => 'winner' ) === $winner['declared_content'] && '/label/news' === $winner['route_path'], 'The first post wins over later posts and terms, including same-file declarations.' );
+	$assert( empty( $stamped['website/label/news/index-query-1.html']['metadata'] ) && 4 === count( $ordered['findings'] ), 'All later declarations are skipped.' );
+	$assert( 1 === count( $ordered['aliases'] ) && 'label/news/index.html' === $ordered['aliases'][0]['to'], 'Only the winning declaration contributes an alias.' );
+
 	if ( ! class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\DeclaredContent' ) ) {
 		// The installed producer predates declared content (Automattic/blocks-engine#5699).
 		echo "Content index extraction passed; plan assertions need a Blocks Engine with declared content (set BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT).\n";
 		return;
 	}
+
+	$news_result = ssi_harness_drive( array( 'operation' => 'apply', 'slug' => 'news-index', 'source' => array( 'type' => 'files', 'files' => $news_files ) ) );
+	$assert( ! empty( $news_result['success'] ), 'Duplicate archive import must complete without colliding page routes: ' . json_encode( $news_result ) );
+	$news_import = end( $GLOBALS['ssi_harness_imports'] );
+	$news_pages = array_column( $news_import['plan']['pages'], null, 'source_path' );
+	$assert( isset( $news_pages['website/label/news/index-query-1.html'] ), 'The query variant imports as an ordinary document.' );
+	$assert( ! empty( $news_import['args']['source_metadata']['intake_findings'] ), 'The duplicate declaration warning reaches the import.' );
 
 	// The public import: declared slugs, dates and labels reach the plan.
 	$result = ssi_harness_drive(
