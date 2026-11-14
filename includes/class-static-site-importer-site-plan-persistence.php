@@ -1700,18 +1700,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function rewrite_materialized_route_links( array &$state ) {
 		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
-			$source_path = (string) ( $page['source_path'] ?? '' );
-			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
-			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
-			$post_type   = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
+			$source_path  = (string) ( $page['source_path'] ?? '' );
+			$source_route = self::normalized_route_path( '/' . Static_Site_Importer_Source_Route::public_source_route( $source_path ) );
+			$route        = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
+			$post_id      = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$post_type    = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
 			if ( ! self::is_valid_post_type( $post_type ) ) {
 				$post_type = 'page';
 			}
 			if ( false === ( $page['selected'] ?? true ) ) {
-				$occupant         = Static_Site_Importer_Route_Occupant::find( $route, $post_type );
-				$reference        = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
-				$routes[ $route ] = $reference;
-				$routes[ self::normalized_route_path( '/' . $source_path ) ]                = $reference;
+				$occupant                = Static_Site_Importer_Route_Occupant::find( $route, $post_type );
+				$reference               = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
+				$routes[ $route ]        = $reference;
+				$routes[ $source_route ] = $reference;
 				$routes[ self::normalized_route_path( $page['original_route'] ?? $route ) ] = $reference;
 				continue;
 			}
@@ -1721,7 +1722,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( isset( $page['original_route'] ) ) {
 					$routes[ self::normalized_route_path( $page['original_route'] ) ] = $reference;
 				}
-				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
+				$routes[ $source_route ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
 				}
