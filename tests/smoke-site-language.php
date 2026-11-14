@@ -50,6 +50,21 @@ function wp_download_language_pack( string $download ): string|false {
 	if ( ! $GLOBALS['ssi_file_mod_allowed'] || array() === $GLOBALS['ssi_pack_result'] ) {
 		return false; }
 	return true === $GLOBALS['ssi_pack_result'] ? $download : (string) $GLOBALS['ssi_pack_result']; }
+// WordPress.org translation API (network): the update check offers packs per locale.
+$GLOBALS['ssi_translation_updates'] = array();
+function is_wp_error( mixed $thing ): bool {
+	return $thing instanceof WP_Error; }
+function wp_clean_update_cache(): void {}
+function wp_update_plugins(): void {}
+function wp_update_themes(): void {}
+function wp_get_translation_updates(): array {
+	return $GLOBALS['ssi_translation_updates']; }
+class Automatic_Upgrader_Skin {}
+class Language_Pack_Upgrader {
+	public function __construct( Automatic_Upgrader_Skin $skin ) {}
+	public function bulk_upgrade( array $updates, array $args ): array {
+		return array_map( static fn( object $update ): mixed => 'broken' === $update->slug ? new WP_Error( 'download_failed' ) : array( 'destination_name' => $update->slug ), $updates ); }
+}
 function sanitize_text_field( string $value ): string {
 	return trim( preg_replace( '/<[^>]*>/', '', $value ) ?? '' ); }
 
@@ -88,6 +103,7 @@ $reset_runtime = static function (): void {
 	$GLOBALS['ssi_pack_result']      = true;
 	$GLOBALS['ssi_pack_calls']       = array();
 	$GLOBALS['ssi_file_mod_allowed'] = true;
+	$GLOBALS['ssi_translation_updates'] = array();
 	Static_Site_Importer_Site_Plan_Persistence::reset();
 };
 $page = static fn( string $path, array $metadata, bool $entrypoint = false ): array => array(
@@ -148,6 +164,21 @@ $applied = Static_Site_Importer_Site_Language::materialize_site_language( $state
 $assert( 'applied' === $applied['status'] && 'nl_NL' === $applied['locale'] && 'nl_NL' === get_option( 'WPLANG' ), 'An installed language pack makes the source language the site language owner.' );
 $assert( array() === $GLOBALS['ssi_pack_calls'], 'An already-installed pack needs no download.' );
 $assert( isset( Static_Site_Importer_Site_Plan_Persistence::$journaled_options['WPLANG'] ), 'The language write is journaled for rollback.' );
+$assert( array() === $applied['translations'], 'No offered packs installs no code translations.' );
+
+// Code installed before the language was set (a store plugin) gets its pack in the new locale.
+$reset_runtime();
+$GLOBALS['ssi_available']           = array( 'nl_NL' );
+$GLOBALS['ssi_translation_updates'] = array(
+	(object) array( 'type' => 'plugin', 'slug' => 'woocommerce', 'language' => 'nl_NL' ),
+	(object) array( 'type' => 'theme', 'slug' => 'twentytwentyfive', 'language' => 'nl_NL' ),
+	(object) array( 'type' => 'plugin', 'slug' => 'woocommerce', 'language' => 'fr_FR' ),
+	(object) array( 'type' => 'core', 'slug' => 'default', 'language' => 'nl_NL' ),
+	(object) array( 'type' => 'plugin', 'slug' => 'broken', 'language' => 'nl_NL' ),
+);
+$code_state = $state;
+$code       = Static_Site_Importer_Site_Language::materialize_site_language( $code_state );
+$assert( array( 'plugin:woocommerce', 'theme:twentytwentyfive' ) === $code['translations'], 'Installed plugins and themes get their packs in the applied locale only; failed packs are not reported.' );
 
 $reset_runtime();
 $download_state = array(
