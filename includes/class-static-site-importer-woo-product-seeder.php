@@ -557,12 +557,14 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			}
 			if ( $variable || isset( $manifest_product['attributes'] ) ) {
 				$attributes = self::product_attributes( $attribute_rows, $created_attributes, $losses );
-				foreach ( $variants as $variant ) {
+				foreach ( $variants as $index => $variant ) {
 					foreach ( $variant['attributes'] as $attribute ) {
-						$taxonomy = wc_attribute_taxonomy_name( wc_sanitize_taxonomy_name( $attribute['key'] ) );
+						$taxonomy = wc_attribute_taxonomy_name( self::attribute_slug( $attribute['key'] ) );
 						if ( ! isset( $attributes[ $taxonomy ] ) ) {
-							// ssi-error-class: operational
-							throw new RuntimeException( 'Variant attribute could not be created.' );
+							// Creation already reported the loss. Avoid a missing option
+							// becoming an "any value" variation in WooCommerce.
+							unset( $variants[ $index ] );
+							continue 2;
 						}
 						$attributes[ $taxonomy ]->set_variation( true );
 					}
@@ -623,7 +625,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$variation->set_status( 'publish' );
 				$variation_attributes = array();
 				foreach ( $variant['attributes'] as $attribute ) {
-					$variation_attributes[ wc_attribute_taxonomy_name( wc_sanitize_taxonomy_name( $attribute['key'] ) ) ] = sanitize_title( $attribute['value'] );
+					$variation_attributes[ wc_attribute_taxonomy_name( self::attribute_slug( $attribute['key'] ) ) ] = sanitize_title( $attribute['value'] );
 				}
 				$variation->set_attributes( $variation_attributes );
 				$variation->set_regular_price( self::price_value( $variant, 'regular_price' ) );
@@ -847,6 +849,15 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		return $failures;
 	}
 
+	/** Keep ordinary slugs stable; bound long or reserved keys consistently across products. */
+	private static function attribute_slug( string $key ): string {
+		$slug = wc_sanitize_taxonomy_name( $key );
+		if ( strlen( $slug ) > 28 || wc_check_if_attribute_name_is_reserved( $slug ) ) {
+			$slug = substr( $slug, 0, 15 ) . '-' . substr( md5( $key ), 0, 12 );
+		}
+		return $slug;
+	}
+
 	/**
 	 * A product's attribute values as global WooCommerce attributes: each
 	 * attribute key becomes a `pa_<key>` attribute named by its label, and each
@@ -866,7 +877,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	private static function product_attributes( array $rows, array &$created, array &$losses ): array {
 		$attributes = array();
 		foreach ( $rows as $row ) {
-			$slug   = wc_sanitize_taxonomy_name( (string) ( $row['key'] ?? '' ) );
+			$slug   = self::attribute_slug( (string) ( $row['key'] ?? '' ) );
 			$id     = '' === $slug ? 0 : (int) wc_attribute_taxonomy_id_by_name( $slug );
 			$create = 0 === $id && '' !== $slug;
 			if ( $create ) {
