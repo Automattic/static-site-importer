@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wrapperWeight, repeatedStructures, styleTokens } from '../tools/import-loop/quality.mjs';
+import { wrapperWeight, repeatedStructures, styleTokens, themeCss } from '../tools/import-loop/quality.mjs';
 
 // The flat list editor.mjs's walk records: document order, depth from 1, and a
 // `parent` index. Three product cards, each a group wrapping a group around an
@@ -34,4 +34,16 @@ test('wrapper weight, repeated structures and literal styles are measured from r
   ].join('\n');
   // A CSS-wide keyword is neither a preset nor a literal design value.
   assert.deepEqual(styleTokens(markup), { presets: 2, literal: 3, share: 0.6, values: [{ value: '#e6a756', count: 2 }, { value: '2.5rem', count: 1 }] });
+});
+
+test('theme CSS counts theme stylesheets and non-core inline styles, not theme.json or core', () => {
+  const kb = 1024;
+  assert.deepEqual(themeCss([
+    { href: 'http://site.test/wp-content/themes/imported/assets/styles.css?ver=1', bytes: 120 * kb },
+    { href: 'http://site.test/wp-content/plugins/forms/forms.css', bytes: 50 * kb },
+    { href: 'http://site.test/wp-includes/css/dist/block-library/style.min.css', bytes: 90 * kb },
+    { id: 'global-styles-inline-css', bytes: 40 * kb },
+    { id: 'core-block-supports-inline-css', bytes: 4 * kb },
+    { id: 'blocks-engine-dialog-inline-css', bytes: 6 * kb },
+  ]), { kb: 126, largest: [{ source: '/wp-content/themes/imported/assets/styles.css', kb: 120 }, { source: '<style id="blocks-engine-dialog-inline-css">', kb: 6 }] });
 });

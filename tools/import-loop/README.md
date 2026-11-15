@@ -66,7 +66,9 @@ style values may be literal rather than theme presets (CSS-wide keywords such
 as `inherit` count as neither). Each threshold sits just past the maximum
 `calibrate.mjs` measures across Twenty Twenty-Five, Twenty Twenty-Four, Ollie
 and Frost; rerun it with more themes or `--site <imported WordPress>` to see an
-import against them. A structure repeated three or more times on a page stays
+import against them. Each route may load at most 90 KB of theme CSS beyond
+Global Styles and core block styles; developer block themes load 1.5-36 KB,
+and Extendable, the heaviest measured, 85 KB. A structure repeated three or more times on a page stays
 an advisory, because developer pages repeat cards from one pattern too.
 
 `progress.mjs` compares block instance counts (not boolean predicate results).
