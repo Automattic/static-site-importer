@@ -156,7 +156,7 @@
       },
       "cook": {
         "repo": "{{item.repo}}",
-        "task-url": "{{item.issue_url}}",
+        "task-url": "{{item.task_url}}",
         "prompt": "{{item.prompt}}",
         "verify": "{{item.verify}}",
         "placement": "{{inputs.cook_placement}}",
