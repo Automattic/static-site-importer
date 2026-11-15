@@ -34,6 +34,10 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   // after load raced its render, and a guide that opened late failed every
   // editor check on every page as a site defect. Store it dismissed instead.
   wp('user', 'meta', 'update', user, 'wp_persisted_preferences', JSON.stringify({ 'core/edit-post': { welcomeGuide: false } }), '--format=json');
+  // The editor checks use English accessible names: a translated admin UI
+  // times out on those selectors and reports site defects. Set only the probe
+  // user's locale so the site language and imported content stay unchanged.
+  wp('user', 'meta', 'update', user, 'locale', 'en_US');
   const pages = JSON.parse(wp('post', 'list', '--post_type=page', '--post_status=publish', '--fields=ID,url', '--format=json'));
 
   const browser = await chromium.launch();
