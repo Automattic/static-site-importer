@@ -74,6 +74,21 @@ export const routeDocument = (website, route = '/') => {
   return fs.existsSync(index) || !file || !fs.existsSync(file) ? index : file;
 };
 
+// Homeboy posts one note per Cook that stopped without a pull request; Cooks
+// lost to runner mechanics leave none. Those since the last guidance comment
+// (anything else but the loop's own cap notice) count against the finding:
+// new guidance re-arms the loop.
+export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
+export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
+export const failedCooksSinceGuidance = (comments) => {
+  let failed = 0;
+  for (const { body = '' } of comments) {
+    if (body.startsWith(COOK_NOTE)) failed++;
+    else if (!body.startsWith(CAP_NOTICE)) failed = 0;
+  }
+  return failed;
+};
+
 export const predicateEnv = (subject, cell, site) => ({
   ...process.env,
   PREDICATE_TARGET: JSON.stringify({ subject, route: cell.route || '/', width: cell.width || 1440, evidence: cell.evidence }),

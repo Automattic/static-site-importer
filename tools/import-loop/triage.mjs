@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument } from './lib.mjs';
+import { args, cellsAtHead, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, failedCooksSinceGuidance, CAP_NOTICE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -362,6 +362,8 @@ function acceptanceGate(item, repo) {
 
 stageGateTools();
 const cook_items = [];
+// Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
+const COOK_CAP = Number(args['cook-cap'] || 2);
 for (const item of tracked) {
   const repo = repos[item.repo];
   const pr = linkedPullRequests(item.issue_url)[0];
@@ -380,8 +382,20 @@ for (const item of tracked) {
   const trunkConflict = refuted.find((c) => /head conflicts with/.test(c.reason || ''));
   const conflicting = health.mergeable === 'CONFLICTING' || Boolean(trunkConflict);
   if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
+  // A finding Cooks keep failing needs a design decision, not another attempt:
+  // past the cap the loop stops cooking it, says so on the issue once, and
+  // waits for guidance there.
+  const comments = JSON.parse(gh('issue', 'view', item.issue_url, '--json', 'comments')).comments;
+  const failed = failedCooksSinceGuidance(comments);
+  if (failed >= COOK_CAP) {
+    item.capped = { failed_cooks: failed };
+    if (!args['dry-run'] && !comments.at(-1)?.body.startsWith(CAP_NOTICE)) {
+      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${failed} Cooks since the last guidance stopped without a pull request (their reports are above). It needs a design decision or narrower scope. Comment with that guidance and the next pass cooks it again.\n\n${disclosure}`);
+    }
+    log(`capped ${item.issue_url}: ${failed} failed Cooks since guidance`);
+  }
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  if ((!pr || item.refuted) && repo && !item.capped && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
@@ -459,10 +473,11 @@ const output = {
   tracked_count: tracked.length,
   cook_items,
   cook_count: cook_items.length,
+  capped: tracked.filter((item) => item.capped).map(({ issue_url, capped }) => ({ issue_url, ...capped })),
   // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
   // stops the chain when evaluate's blocker signatures repeat.
   continue: blockers.length > 0 && tracked.length > 0,
 };
 fs.writeFileSync(path.join(args.work, 'triage.json'), JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
-log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length}`);
+log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} capped=${output.capped.length}`);
