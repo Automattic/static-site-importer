@@ -7,12 +7,12 @@ import { editorPages } from './editor.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
 import { compareImports } from './progress.mjs';
-import { wrapperWeight, repeatedStructures } from './quality.mjs';
+import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 
 export const WIDTHS = [390, 768, 1440];
 const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
 const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
-const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'block_nesting_deep', 'visual_parity_unsampled', 'block_wrapper_heavy', 'block_repeated_structure', 'theme_literal_style']);
+const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure']);
 const findReport = (dir) => {
   for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
     const full = path.join(dir, entry.name);
@@ -155,9 +155,9 @@ export async function checkImport(args) {
       for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { count }, ...cell });
       for (const [subject, count] of tally(blocks.filter((b) => /^(ssi-[a-z0-9-]+|custom)\//.test(b.name) && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { count, of: blocks.length }, ...cell });
       const depth = Math.max(0, ...blocks.map((b) => b.depth));
-      if (depth > 8) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { depth, threshold: 8 }, ...cell });
+      if (depth > QUALITY.depth) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { depth, threshold: QUALITY.depth }, ...cell });
       const weight = wrapperWeight(blocks);
-      if (weight.heavy) report({ stage: 'editability', check: 'block_wrapper_heavy', owner_repo: 'blocks-engine', subject: 'block_wrappers', evidence: weight, ...cell });
+      if (weight.heavy) report({ stage: 'editability', check: 'block_wrapper_heavy', owner_repo: 'blocks-engine', subject: 'block_wrappers', evidence: { ...weight, threshold: QUALITY.groups_per_leaf }, ...cell });
       const repeated = repeatedStructures(blocks);
       if (repeated.length) report({ stage: 'editability', check: 'block_repeated_structure', owner_repo: 'blocks-engine', subject: 'repeated_structure', evidence: repeated, ...cell });
     }
