@@ -64,6 +64,16 @@ foreach ( array( false, true ) as $edited ) {
 	}
 	$assert( 'https://moved.test' === get_option( 'home' ), 'Install-home filter must not leak' );
 }
+// Overwriting an owner's existing policy must not publish their draft.
+$GLOBALS['ssi_plan_posts'] = array( 3 => array_replace( $seed, array( 'post_content' => 'An owner-authored policy.' ) ) );
+$GLOBALS['ssi_plan_meta'] = array( 3 => array( '_wp_page_template' => 'default' ) );
+$GLOBALS['ssi_plan_options']['fresh_site'] = '1';
+$GLOBALS['ssi_plan_options']['wp_page_for_privacy_policy'] = 3;
+$existing_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'privacy-existing-draft', 'overwrite' => true ) );
+$assert( 'completed' === $existing_receipt['status'], 'Explicit overwrite of an existing policy must complete' );
+$assert( 3 === ( $existing_receipt['completed']['pages']['privacy-policy/index.html'] ?? null ), 'Existing policy overwrite must reuse its post' );
+$assert( 'draft' === $GLOBALS['ssi_plan_posts'][3]['post_status'], 'Existing owner-authored drafts must retain their status' );
+
 // Seed adoption must still honor an explicitly requested non-public import.
 $GLOBALS['ssi_plan_posts'] = array( 3 => $seed );
 $GLOBALS['ssi_plan_meta'] = array( 3 => array( '_wp_page_template' => 'default' ) );
