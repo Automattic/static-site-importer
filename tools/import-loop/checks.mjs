@@ -12,7 +12,7 @@ import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 export const WIDTHS = [390, 768, 1440];
 const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
 const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
-const advisory = new Set(['restyle_coverage_low', 'theme_css_bloat', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure']);
+const advisory = new Set(['restyle_coverage_low', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure']);
 const findReport = (dir) => {
   for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
     const full = path.join(dir, entry.name);
@@ -140,7 +140,6 @@ export async function checkImport(args) {
     for (const finding of coreHtmlFindings(imported, routes)) report(finding);
     const metrics = imported.design_system?.metrics || {};
     if (metrics.restyle_coverage < 0.5) report({ stage: 'theme', check: 'restyle_coverage_low', owner_repo: 'blocks-engine', subject: 'restyle_coverage', evidence: metrics });
-    if (metrics.generated_to_source_css_ratio > 2) report({ stage: 'theme', check: 'theme_css_bloat', owner_repo: 'blocks-engine', subject: 'generated_to_source_css_ratio', evidence: metrics });
     // Each diagnostic is one actual occurrence; do not multiply a site-wide
     // count by every route when the report has no route attribution.
     for (const d of imported.diagnostics || []) if (d.type === 'raw_html_companion_block') report({ stage: 'editability', check: 'raw_html_companion_block_count', owner_repo: 'blocks-engine', subject: slugStem(String(d.context?.block_name || '').split('/').pop() || 'unknown'), evidence: { document: d.source_path, selector: d.selector } });

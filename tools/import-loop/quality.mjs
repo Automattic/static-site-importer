@@ -8,7 +8,21 @@
 // block reach 1.07, depth reaches 10, and literal style values are 1-6% of a
 // theme's style values. A repeated structure is not a defect: developer pages
 // repeat cards inserted from one pattern too, so it stays an advisory.
-export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, literal_share: 0.1 };
+//
+// CSS a theme loads on a rendered page, beyond theme.json and core block
+// styles, is 1.5-36 KB across Twenty Twenty-Three to Twenty Twenty-Five, Frost,
+// Spiel, Raft, Spectra One, Ollie, Blockbase and Bricksy, and 85 KB for
+// Extendable: a developer expresses the design in theme.json and blocks.
+export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, literal_share: 0.1, theme_css_kb: 90 };
+
+// The stylesheets a rendered page loads, as `{ href, id, bytes }`: a theme
+// stylesheet file or a non-core inline <style> counts toward the theme's CSS.
+// Global Styles (theme.json), core block CSS and plugin stylesheets do not.
+const CORE_STYLE = /^(global-styles|core-|wp-|classic-theme|block-style-variation|admin-bar|dashicons)/;
+export function themeCss(sheets) {
+  const theme = sheets.filter(({ href, id }) => (href ? href.includes('/wp-content/themes/') : !CORE_STYLE.test(id || '')));
+  return { kb: +(theme.reduce((n, s) => n + s.bytes, 0) / 1024).toFixed(1), largest: theme.sort((a, b) => b.bytes - a.bytes).slice(0, 5).map(({ href, id, bytes }) => ({ source: href ? new URL(href).pathname : `<style id="${id || ''}">`, kb: +(bytes / 1024).toFixed(1) })) };
+}
 //
 // `blocks` is the flat list editor.mjs's walk records: document order, depth
 // starting at 1, and a `parent` index into the same array.
