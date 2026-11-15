@@ -3,7 +3,7 @@
 // templates and patterns of block themes from WordPress.org, and optionally
 // imported sites, with the measures the loop's checks use.
 //
-//   node calibrate.mjs [--site <WordPress dir>]... <theme slug>...
+//   node calibrate.mjs [--wp-cli <command>] [--site <WordPress dir>]... <theme slug>...
 //
 // Each theme's templates and patterns of 25 or more blocks count as pages.
 // Prints, per source, each measure's 50th and 90th percentile and maximum, and
@@ -36,8 +36,9 @@ function themeMarkup(slug) {
   });
 }
 
+let wpCli = ['wp'];
 function siteMarkup(site) {
-  const wp = (...a) => execFileSync('wp', [`--path=${site}`, '--skip-plugins', '--skip-themes', ...a], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  const wp = (...a) => execFileSync(wpCli[0], [...wpCli.slice(1), `--path=${site}`, '--skip-plugins', '--skip-themes', ...a], { encoding: 'utf8', maxBuffer: 64 << 20 });
   return JSON.parse(wp('post', 'list', '--post_type=page,wp_template,wp_template_part', '--post_status=publish', '--fields=post_content', '--format=json')).map((p) => p.post_content);
 }
 
@@ -54,7 +55,8 @@ function summarize(label, markups) {
 
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === '--site') summarize(argv[i + 1], siteMarkup(argv[++i]));
+  if (argv[i] === '--wp-cli') wpCli = argv[++i].split(' ');
+  else if (argv[i] === '--site') summarize(argv[i + 1], siteMarkup(argv[++i]));
   else summarize(argv[i], themeMarkup(argv[i]));
 }
 console.log(`thresholds: ${JSON.stringify(QUALITY)}`);
