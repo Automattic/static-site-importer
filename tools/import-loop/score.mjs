@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One scoreboard line per pass: what the pass found, what its Cooks did, what
-// it merged, and how long it took. Appended to <runs>/<slug>-scoreboard.jsonl
-// and printed as one summary line. Never fails the pass: a missing input is
+// it merged, and how long it took. Appended to <runs>/<slug>-scoreboard.jsonl,
+// summarized in <runs>/<slug>-status.md, and printed as one summary line. Never fails the pass: a missing input is
 // recorded as null.
 //
 // Usage: score.mjs --instance <id> --runs <dir> --slug <slug> --iteration <n>
@@ -25,7 +25,25 @@ const confirm = read(`${pass}-confirm/confirm.json`);
 
 let run = null;
 try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], { encoding: 'utf8', maxBuffer: 256 << 20 })).data; } catch { /* recorded as null */ }
-const cooks = (run?.steps?.cook?.items || []).map((item, n) => ({ issue: triage?.cook_items?.[n]?.issue_url ?? null, outcome: item.outcome ?? item.phase }));
+// Why a Cook did not succeed, from Homeboy's own diagnosis: the agent gave up
+// (`agent.*`), the acceptance gate refused its candidate, or Homeboy's
+// mechanics failed (anything else). Mechanics failures are the loop's bug count.
+// A refused candidate is summarized from the acceptance gate's verdict line.
+const diagnose = (runId) => {
+  let data;
+  try { data = JSON.parse(execFileSync('homeboy', ['agent-task', 'diagnose', runId], { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; }
+  const verdict = (data?.gate_failure_output || '').split('\n').filter((l) => l.startsWith('{"pass":')).map((l) => { try { return JSON.parse(l); } catch { return null; } }).at(-1);
+  if (!verdict || !data.root_cause) return data?.root_cause ?? null;
+  const message = `own blocker ${verdict.own?.before}->${verdict.own?.after}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
+  return { ...data.root_cause, message };
+};
+const failure = (cause) => !cause?.class ? 'unknown' : cause.class.startsWith('agent.') ? 'gave_up' : cause.class === 'agent_task.promotion_gate_failed' ? 'gate_failed' : 'mechanics';
+const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
+  const cook = { issue: triage?.cook_items?.[n]?.issue_url ?? null, signature: triage?.cook_items?.[n]?.signature ?? null, outcome: item.outcome ?? item.phase };
+  if (cook.outcome === 'succeeded' || !item.run_id) return cook;
+  const cause = diagnose(item.run_id);
+  return { ...cook, run: item.run_id, failure: failure(cause), cause: cause?.message?.split('\n')[0].slice(0, 240) ?? item.error ?? null };
+});
 const merged = (run?.steps?.merge?.items || []).filter((item) => item.outcome === 'succeeded').map((item) => `${item.item?.github}#${item.item?.number}`);
 const started = run?.job?.created_at_ms ?? null;
 
@@ -41,11 +59,32 @@ const line = {
   removed: now && previous?.blockers ? Object.keys(previous.blockers).filter((s) => !(s in now)) : null,
   cooks,
   cook_outcomes: cooks.reduce((m, c) => ({ ...m, [c.outcome]: (m[c.outcome] || 0) + 1 }), {}),
+  cook_failures: cooks.filter((c) => c.failure).reduce((m, c) => ({ ...m, [c.failure]: (m[c.failure] || 0) + 1 }), {}),
+  tools: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   confirmed: confirm?.confirmed?.map((c) => c.pr) ?? null,
   refuted: confirm?.refuted?.map((c) => c.pr) ?? null,
   merged,
 };
 fs.appendFileSync(board, JSON.stringify(line) + '\n');
+
+// The site's current state in one page, rewritten every pass: what still
+// blocks, where each blocker is tracked, and what its last Cook did.
+const tracked = Object.fromEntries((triage?.tracked || []).map((t) => [t.signature, t]));
+const lastCook = Object.fromEntries(cooks.filter((c) => c.signature).map((c) => [c.signature, c]));
+const rows = Object.entries(now || {}).map(([signature, count]) => {
+  const t = tracked[signature] || {};
+  const c = lastCook[signature];
+  const cook = !c ? 'not cooked this pass' : c.failure ? `${c.failure}: ${c.cause ?? c.outcome}` : c.outcome;
+  return `| ${t.check ?? signature} (${t.subject ?? ''}, ${count}) | ${t.issue_url ?? 'untracked'} | ${cook.replace(/\|/g, '/')} |`;
+});
+fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
+  `# ${args.slug}: pass ${line.iteration}, ${line.blocker_count ?? '?'} blockers`,
+  '',
+  `${triage?.url ?? ''} · ${line.at} · tools ${line.tools.slice(0, 12)} · ${line.minutes ?? '?'} min this pass · merged ${merged.length ? merged.join(' ') : 'none'}`,
+  '',
+  line.blocker_count === 0 ? 'Solved: no blockers remain.' : '| Blocker | Tracked at | Last Cook |\n|---|---|---|\n' + rows.join('\n'),
+  '',
+].join('\n'));
 const delta = previous?.occurrences != null && line.occurrences != null ? ` (${line.occurrences - previous.occurrences >= 0 ? '+' : ''}${line.occurrences - previous.occurrences})` : '';
-console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min`);
+console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}, failures ${JSON.stringify(line.cook_failures)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min`);
 console.log(JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board }));
