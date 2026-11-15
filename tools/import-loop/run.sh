@@ -25,8 +25,10 @@ pinned="$runs/loops/$commit"
 if [ ! -d "$pinned" ]; then
   mkdir -p "$runs/loops"
   git -C "$repo" worktree add -q --detach "$pinned.tmp" "$commit"
-  deps="$runs/loops/node_modules-$(git -C "$repo" rev-parse "$commit:package-lock.json")"
-  [ -d "$deps" ] || { npm ci --silent --prefix "$pinned.tmp" && mv "$pinned.tmp/node_modules" "$deps"; }
+  # Shared per lockfile. The directory must be named node_modules: Node
+  # resolves a package's own imports from its real path's node_modules.
+  deps="$runs/loops/deps-$(git -C "$repo" rev-parse "$commit:package-lock.json")/node_modules"
+  [ -d "$deps" ] || { npm ci --silent --prefix "$pinned.tmp" && mkdir -p "$(dirname "$deps")" && mv "$pinned.tmp/node_modules" "$deps"; }
   ln -s "$deps" "$pinned.tmp/node_modules"
   git -C "$repo" worktree move "$pinned.tmp" "$pinned"
 fi
