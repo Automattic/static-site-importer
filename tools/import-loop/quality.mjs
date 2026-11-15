@@ -1,7 +1,14 @@
 // What a developer building the site by hand would get right beyond parity and
-// editability: few layout wrappers, design tokens from the theme rather than
-// literal values on blocks, and a repeated layout built once. Reported as
-// advisories until imports show where their thresholds belong.
+// editability: few layout wrappers, shallow nesting, and design tokens from the
+// theme rather than literal values on blocks.
+//
+// The thresholds sit just past what developer-built block themes do
+// (calibrate.mjs over Twenty Twenty-Five, Twenty Twenty-Four, Ollie and Frost:
+// 76 full-page layouts of 25 or more blocks). Across them, groups per content
+// block reach 1.07, depth reaches 10, and literal style values are 1-6% of a
+// theme's style values. A repeated structure is not a defect: developer pages
+// repeat cards inserted from one pattern too, so it stays an advisory.
+export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, literal_share: 0.1 };
 //
 // `blocks` is the flat list editor.mjs's walk records: document order, depth
 // starting at 1, and a `parent` index into the same array.
@@ -13,7 +20,7 @@ export function wrapperWeight(blocks) {
   blocks.forEach((b) => children.set(b.parent, (children.get(b.parent) || 0) + 1));
   const groups = blocks.map((b, i) => i).filter((i) => blocks[i].name === 'core/group');
   const leaves = blocks.filter((b, i) => !children.has(i)).length;
-  return { groups: groups.length, leaves, single_child_groups: groups.filter((i) => children.get(i) === 1).length, heavy: groups.length > leaves };
+  return { groups: groups.length, leaves, single_child_groups: groups.filter((i) => children.get(i) === 1).length, heavy: blocks.length >= QUALITY.min_blocks && groups.length > QUALITY.groups_per_leaf * leaves };
 }
 
 // The same block tree, three blocks or larger, appearing three or more times on
@@ -35,8 +42,10 @@ export function repeatedStructures(blocks, min = 3) {
 }
 
 // Colors and font settings on blocks: a preset slug or `var:preset|` reference
-// follows the theme when Global Styles change; a literal value does not.
+// follows the theme when Global Styles change; a literal value does not. A
+// CSS-wide keyword such as `inherit` is not a design value either way.
 const PRESET_ATTRIBUTES = new Set(['textColor', 'backgroundColor', 'gradient', 'borderColor', 'fontSize', 'fontFamily']);
+const KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert', 'currentcolor', 'transparent']);
 const TOKEN_PATH = /^style\.(?:.*\.)?(?:color\.[a-zA-Z]+|border\.color|typography\.font(?:Size|Family))$/;
 export function styleTokens(markup) {
   let presets = 0;
@@ -48,11 +57,12 @@ export function styleTokens(markup) {
     const walk = (value, path) => {
       if (value && typeof value === 'object') { for (const [key, child] of Object.entries(value)) walk(child, `${path}.${key}`); return; }
       if (typeof value !== 'string' || !TOKEN_PATH.test(path)) return;
+      if (KEYWORDS.has(value.trim().toLowerCase())) return;
       if (/^var:preset\||var\(--wp--preset--/.test(value)) presets++;
       else literals.set(value, (literals.get(value) || 0) + 1);
     };
     walk(attributes.style, 'style');
   }
   const literal = [...literals.values()].reduce((n, c) => n + c, 0);
-  return { presets, literal, values: [...literals].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([value, count]) => ({ value, count })) };
+  return { presets, literal, share: +(literal / Math.max(1, presets + literal)).toFixed(2), values: [...literals].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([value, count]) => ({ value, count })) };
 }

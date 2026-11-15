@@ -59,6 +59,16 @@ Theme checks run authenticated browser REST requests and render a reversible
 Global Styles restyle. These are disposable test imports: authentication resets
 the first administrator's password, as the previous editor checker did.
 
+Quality checks hold the import to what developer-built block themes do
+(`quality.mjs`). A page of 25 or more blocks may have at most 1.1 groups per
+content block and a nesting depth of 10, and at most 10% of the site's block
+style values may be literal rather than theme presets (CSS-wide keywords such
+as `inherit` count as neither). Each threshold sits just past the maximum
+`calibrate.mjs` measures across Twenty Twenty-Five, Twenty Twenty-Four, Ollie
+and Frost; rerun it with more themes or `--site <imported WordPress>` to see an
+import against them. A structure repeated three or more times on a page stays
+an advisory, because developer pages repeat cards from one pattern too.
+
 `progress.mjs` compares block instance counts (not boolean predicate results).
 Acceptance requires fewer own occurrences in the recorded cells, no growing or
 new unrelated blocker, and no new parity failure or missing evidence. Output
