@@ -106,6 +106,9 @@ final class Static_Site_Importer_Content_Index {
 					$declared[ $key ] = trim( $post[ $key ] );
 				}
 			}
+			if ( is_string( $post['title'] ?? null ) ) {
+				$declared['title'] = trim( $post['title'] );
+			}
 			if ( is_array( $post['terms'] ?? null ) ) {
 				$terms = array_values( array_filter( $post['terms'], static fn( mixed $term ): bool => is_string( $term ) && '' !== trim( $term ) ) );
 				if ( array() !== $terms ) {

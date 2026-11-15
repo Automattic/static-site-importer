@@ -66,6 +66,7 @@ try {
 			'published' => '2025-01-10T09:00:00.000-08:00',
 			'updated'   => '2025-02-01T12:00:00Z',
 			'author'    => 'Ada',
+			'title'     => 'First trip',
 			'terms'     => array( 'Travel', 'Food' ),
 		) === ( $first['declared_content'] ?? null ),
 		'Posts declare their content record without its HTML.'
@@ -74,6 +75,24 @@ try {
 	$assert( array( 'term_archive' => array( 'name' => 'Travel' ) ) === ( $travel['declared_content'] ?? null ) && '/search/label/travel' === ( $travel['route_path'] ?? null ) && ! isset( $travel['post_type'] ), 'Label listings declare their term on a canonical route: ' . json_encode( $travel ) );
 	$aliases = array_column( $extracted['aliases'], 'to', 'from' );
 	$assert( 'search/label/Travel.html' === ( $aliases['search/label/Travel'] ?? null ) && ! isset( $aliases['2025/01/post-0.html'] ), 'Index redirects become aliases; self-redirects drop: ' . json_encode( $aliases ) );
+
+	// Declared titles distinguish an explicit empty title from an absent title.
+	foreach ( array(
+		'non-empty' => array( array( 'title' => '  Source title  ' ), array( 'title' => 'Source title' ) ),
+		'empty'     => array( array( 'title' => '' ), array( 'title' => '' ) ),
+		'absent'    => array( array(), array() ),
+	) as $case => list( $input, $expected ) ) {
+		$title_index = array(
+			'schema' => 'data-liberation-agent/content-index/v1',
+			'posts'  => array( array_merge( array( 'kind' => 'post', 'path' => '/post.html', 'slug' => 'post' ), $input ) ),
+		);
+		$title_result = Static_Site_Importer_Content_Index::extract( array( 'files' => array(
+			array( 'path' => 'website/post.html', 'content' => '<h1>HTML title</h1>' ),
+			array( 'path' => 'website/content-index.json', 'content' => json_encode( $title_index ) ),
+		) ) );
+		$declared = $title_result['artifact']['files'][0]['metadata']['declared_content'];
+		$assert( array_merge( array( 'slug' => 'post' ), $expected ) === $declared, 'Declared title (' . $case . '): ' . json_encode( $declared ) );
+	}
 
 	// Artifacts without a content index pass through unchanged, and a
 	// differently shaped content-index.json is an ordinary asset.
