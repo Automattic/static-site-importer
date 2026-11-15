@@ -434,7 +434,11 @@ for (const item of tracked) {
     ].join('\n'));
     // Cook resolves the issue itself: it reworks the one open linked PR on
     // its branch, or starts a fresh branch derived from the issue.
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...gate });
+    // A refuted pull request is reworked on its own branch: Cook's task is that
+    // pull request, so its workspace starts at the head this prompt describes.
+    // Cook only resolves an issue to a pull request GitHub links to close it,
+    // and its own draft publications only name the issue.
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...gate });
   }
 }
 
