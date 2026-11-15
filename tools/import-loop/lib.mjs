@@ -58,7 +58,21 @@ export function prHealth({ statusCheckRollup: checks = [], mergeable }) {
 // that renders transformer output, from the environment.
 // A capture route's document: a served directory (`/about/`) is its
 // `index.html`, a served file (`/about.html`) is itself.
-export const routeDocument = (website, route = '/') => (route.endsWith('.html') ? path.join(website, route) : path.join(website, route.replace(/^\//, ''), 'index.html'));
+// The capture keeps the source URL's case (`/shop/Suspension/`) and WordPress
+// lowercases slugs, so a path segment missing as written matches its
+// case-insensitive sibling. A directory route the capture saved as a file
+// (`/shop/index-query-1/` from `shop/index-query-1.html`) reads that file.
+const capturePath = (website, relative) => relative.split('/').filter(Boolean).reduce((at, segment) => {
+  const exact = path.join(at, segment);
+  if (fs.existsSync(exact) || !fs.existsSync(at)) return exact;
+  return path.join(at, fs.readdirSync(at).find((name) => name.toLowerCase() === segment.toLowerCase()) ?? segment);
+}, website);
+export const routeDocument = (website, route = '/') => {
+  if (route.endsWith('.html')) return capturePath(website, route);
+  const index = capturePath(website, `${route}/index.html`);
+  const file = route.replace(/\/+$/, '') && capturePath(website, `${route.replace(/\/+$/, '')}.html`);
+  return fs.existsSync(index) || !file || !fs.existsSync(file) ? index : file;
+};
 
 export const predicateEnv = (subject, cell, site) => ({
   ...process.env,
