@@ -19,9 +19,12 @@ test('routes come from the capture receipt for directory and file sites', () => 
   }
 });
 
-test('a lowercased WordPress route reads the capture document saved in the source case', () => {
+test('a WordPress route reads its capture document however the capture saved it', () => {
   const website = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-case-'));
   fs.mkdirSync(path.join(website, 'shop', 'Suspension'), { recursive: true });
   fs.writeFileSync(path.join(website, 'shop', 'Suspension', 'index.html'), 'suspension');
-  assert.equal(fs.readFileSync(routeDocument(website, '/shop/suspension/'), 'utf8'), 'suspension');
+  fs.writeFileSync(path.join(website, 'shop', 'index-query-1.html'), 'query variant');
+  for (const [route, content] of [['/shop/suspension/', 'suspension'], ['/shop/index-query-1/', 'query variant']]) {
+    assert.equal(fs.readFileSync(routeDocument(website, route), 'utf8'), content);
+  }
 });
