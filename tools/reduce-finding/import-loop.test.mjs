@@ -52,7 +52,15 @@ if [[ "$1" == create ]]; then
 fi
 exit 1
 `, { mode: 0o755 });
-    const site = path.join(dir, 'site');
+    const site = path.join(dir, 'loop-p2');
+    // The earlier pass's server stops; another slug's loop keeps its server.
+    const servers = Object.fromEntries(['loop-p1', 'other-p1'].map((pass) => {
+      fs.mkdirSync(path.join(dir, pass, 'site'), { recursive: true });
+      const pid = Number(spawnSync('sh', ['-c', 'sleep 300 > /dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout);
+      fs.writeFileSync(path.join(dir, pass, 'site', '.server.pid'), String(pid));
+      return [pass, pid];
+    }));
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
     const output = path.join(dir, 'output.json');
     const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), ENGINE_ROOT: engine, CREATE_CAPTURE: 'yes', FAILURE: 'static_site_importer_quality_failed' };
     let attempt = 0;
@@ -67,6 +75,9 @@ exit 1
       wp_cli: `php ${dir}/bare-wp/wp-cli.phar`, blocks_engine: 'example-engine-sha', ssi_zip: `${site}/static-site-importer.zip`, ssi_release: 'v-example',
     });
     assert.equal(fs.readFileSync(env.START_LOG, 'utf8'), 'reimported\n');
+    assert.equal(alive(servers['loop-p1']), false);
+    assert.equal(alive(servers['other-p1']), true);
+    process.kill(servers['other-p1']);
     env.CREATE_CAPTURE = 'no';
     assert.notEqual(run().status, 0);
     env.CREATE_CAPTURE = 'yes';
