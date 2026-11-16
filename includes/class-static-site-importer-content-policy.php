@@ -164,7 +164,30 @@ final class Static_Site_Importer_Content_Policy {
 		$findings = array();
 		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
 		require_once __DIR__ . '/cli.php';
-		$reports = static_site_importer_cli_request_bundle_declared_reports( is_array( $artifact['reports'] ?? null ) ? $artifact['reports'] : array() );
+		$reports         = static_site_importer_cli_request_bundle_declared_reports( is_array( $artifact['reports'] ?? null ) ? $artifact['reports'] : array() );
+		$route_documents = 0;
+		$report_bytes    = 0;
+		foreach ( $files as $file ) {
+			$path = is_array( $file ) && is_scalar( $file['path'] ?? null ) ? (string) $file['path'] : '';
+			if ( static_site_importer_cli_request_bundle_is_declared_report( $path, $reports ) ) {
+				$report_bytes += max( 0, self::declared_bytes( $file ) ?? 0 );
+			} elseif ( preg_match( '/\.html?$/i', $path ) ) {
+				++$route_documents;
+			}
+		}
+		$report_limits = static_site_importer_cli_request_bundle_limits( $route_documents );
+		if ( $report_bytes > $report_limits['max_report_total_bytes'] ) {
+			return static_site_importer_cli_request_bundle_report_total_error( $report_bytes, $report_limits['max_report_total_bytes'] );
+		}
+		// Carry the same report contract into normalization, including REST artifacts
+		// whose caller did not supply CLI compiler limits. Preserve other budgets.
+		$artifact['compiler_limits'] = array_merge(
+			is_array( $artifact['compiler_limits'] ?? null ) ? $artifact['compiler_limits'] : array(),
+			array(
+				'max_report_file_bytes'  => $report_limits['max_report_file_bytes'],
+				'max_report_total_bytes' => $report_limits['max_report_total_bytes'],
+			)
+		);
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
