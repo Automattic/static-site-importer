@@ -11,12 +11,19 @@
 // unconfirmed: the next pass's import is their check.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
+//          [--issue <url> | --uncooked 1] [--merge 1]
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
-//          merge:[{github, number, sha}], merge_count, confirm_path}
-// `merge` is what the merge step merges once its checks are green, each at the
-// head checked here: every PR not refuted. A confirmed draft (an incomplete Cook that a later pass finished) is
-// marked ready, since confirm just proved it; an unconfirmed draft waits.
+//          merge:[{github, number, sha}], merge_count, merged:[github#number], confirm_path}
+// --issue confirms one tracked issue's pull requests: the loop runs it per Cook,
+// as soon as that Cook settles, so a fix merges without waiting for the pass's
+// slowest Cook. --uncooked 1 confirms the tracked issues no Cook works this
+// pass, alongside the Cooks. `merge` is every confirmed, ready PR at the head
+// checked here; with --merge 1 each merges once its checks are green, at that
+// head (Homeboy `git pr merge-when-green`). A confirmed draft (an incomplete
+// Cook that a later pass finished) is marked ready, since confirm just proved
+// it; an unconfirmed draft waits.
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { args, cellsAtHead, checkHeads, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
@@ -33,13 +40,18 @@ const log = (...parts) => console.error('[confirm]', ...parts);
 // when the shared acceptance comparison passes for each finding.
 process.env.PREDICATE_CAPTURE = triage.reimport.capture;
 const verdicts = new Map();
-const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: triage.bases?.[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path });
+const cooked = new Set((triage.cook_items || []).map((cook) => cook.issue_url));
 const linked = new Map(triage.tracked.map((item) => [item, linkedPullRequests(item.issue_url)]));
+const chosen = triage.tracked.filter((item) => args.issue ? item.issue_url === args.issue : args.uncooked ? !cooked.has(item.issue_url) : true);
+// A pull request linked to several findings is judged on all of them.
+const prs = new Set(chosen.flatMap((item) => linked.get(item).map((pr) => pr.url)));
+const scope = triage.tracked.filter((item) => chosen.includes(item) || linked.get(item).some((pr) => prs.has(pr.url)));
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: triage.bases?.[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path });
 // Every head a Cook moved since triage, checked at once.
-await checkHeads(triage.tracked.flatMap((item) => repos[item.repo]?.candidate && clones[item.repo] && triage.bases?.[item.repo] && item.cells?.length
+await checkHeads(scope.flatMap((item) => repos[item.repo]?.candidate && clones[item.repo] && triage.bases?.[item.repo] && item.cells?.length
   ? linked.get(item).filter((pr) => !(item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid)).map((pr) => ({ item, pr, at: headAt(item) }))
   : []));
-for (const item of triage.tracked) {
+for (const item of scope) {
   for (const pr of linked.get(item)) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [] };
     verdicts.set(pr.url, verdict);
@@ -65,6 +77,15 @@ const unconfirmed = entries.filter(([, v]) => !v.failing.length && v.reasons.len
 const confirmed = entries.filter(([, v]) => !v.failing.length && !v.reasons.length).map(([pr, v]) => ({ pr, head: v.head }));
 for (const [pr, v] of entries.filter(([, v]) => v.draft && !v.failing.length && !v.reasons.length)) { gh('pr', 'ready', pr); v.draft = false; }
 const merge = entries.filter(([, v]) => !v.failing.length && !v.reasons.length && !v.draft).map(([, v]) => ({ github: v.github, number: v.number, sha: v.head }));
+const merged = [];
+for (const pr of args.merge ? merge : []) {
+  try {
+    execFileSync('homeboy', ['git', 'pr', 'merge-when-green', '--repo', pr.github, '--number', String(pr.number), '--sha', pr.sha, '--wait-seconds', '3600'], { stdio: ['ignore', 'ignore', 'inherit'], timeout: 65 * 60 * 1000 });
+    merged.push(`${pr.github}#${pr.number}`);
+  } catch (error) {
+    log(`not merged: ${pr.github}#${pr.number} (exit ${error.status})`);
+  }
+}
 
 fs.mkdirSync(args.work, { recursive: true });
 const confirm_path = path.join(args.work, 'confirm.json');
@@ -73,6 +94,6 @@ const confirm_path = path.join(args.work, 'confirm.json');
 const live = args.after ? JSON.parse(fs.readFileSync(args.after, 'utf8')) : null;
 const before = triage.findings_path ? JSON.parse(fs.readFileSync(triage.findings_path, 'utf8')) : null;
 const live_checks = live && before ? triage.tracked.map((item) => ({ signature: item.signature, ...compareImports(before, live, item.signature, item.cells) })) : [];
-const output = { confirmed, refuted, unconfirmed, live_checks, live_status: live ? 'checked' : 'awaiting_next_import', progress: live && before ? compareImports(before, live).blockers : triage.progress, confirmed_count: confirmed.length, refuted_count: refuted.length, merge, merge_count: merge.length, confirm_path };
+const output = { confirmed, refuted, unconfirmed, live_checks, live_status: live ? 'checked' : 'awaiting_next_import', progress: live && before ? compareImports(before, live).blockers : triage.progress, confirmed_count: confirmed.length, refuted_count: refuted.length, merge, merge_count: merge.length, merged, confirm_path };
 fs.writeFileSync(confirm_path, JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));

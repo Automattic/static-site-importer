@@ -10,8 +10,10 @@ site and fixes what the import gets wrong, one pass at a time. Each pass:
 3. **triages** each blocker into a GitHub issue on its owning repository;
 4. **cooks** a fix for each issue, accepted only if the whole-site gate measures
    its finding reduced with nothing else regressed;
-5. **confirms** each fix PR by re-measuring its exact head;
-6. **merges** confirmed PRs once they are green, at that head;
+5. **confirms** each fix PR by re-measuring its exact head, and
+6. **merges** it once it is green, at that head. Each Cook's fix is confirmed
+   and merged as soon as that Cook settles (a `per_item` step), and open fixes
+   no Cook works this pass are confirmed alongside the Cooks;
 7. **scores** the pass into `<runs>/<slug>-scoreboard.jsonl`.
 
 It starts the next pass until no blocker is left with an issue to work on,
