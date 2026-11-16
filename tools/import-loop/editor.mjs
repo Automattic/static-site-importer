@@ -51,7 +51,9 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
     const result = [];
     for (const { ID, url } of pages) {
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
-      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getEditorBlocks().length > 0, null, { timeout: 30_000 });
+      // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
+      // opens with zero blocks, and that is what an editor gets.
+      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.__unstableIsEditorReady?.(), null, { timeout: 30_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
         const walk = (list, depth, parent) => list.forEach((b) => {
