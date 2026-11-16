@@ -1920,7 +1920,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! is_string( $value ) ) {
 				return $matches[0];
 			}
-			$value    = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			$value = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			// Unlike href/action, data attributes may be flags or identifiers, not links.
+			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $matches[1] ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
+				return $matches[0];
+			}
 			$is_local = (bool) preg_match( '~^[#?]~', $value );
 			$encode   = static function ( string $reference ) use ( $is_json ): string {
 				if ( ! $is_json ) {
