@@ -59,7 +59,7 @@ if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['sta
 const ssiVersion = execFileSync('unzip', ['-p', reimport.ssi_zip, 'static-site-importer/static-site-importer.php'], { encoding: 'utf8', maxBuffer: 16 << 20 }).match(/^\s*\*\s*Version:\s*(\S+)/m)?.[1];
 if (!ssiVersion) throw new Error('triage_ssi_release_version_missing');
 const bases = { 'blocks-engine': trunk, 'static-site-importer': gh('api', `repos/${repos['static-site-importer'].github}/commits/v${ssiVersion}`, '--jq', '.sha').trim() };
-const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.resolve(args.work))) };
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.dirname(path.resolve(args['blocks-engine'])))) };
 // An importer candidate runs on this pass's trunk transformer, frozen here so a
 // later trunk cannot change it mid-pass.
 const trunkTransformer = path.join(args.work, 'trunk-transformer');
