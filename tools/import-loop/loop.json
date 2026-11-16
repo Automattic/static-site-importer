@@ -162,6 +162,7 @@
         "placement": "{{inputs.cook_placement}}",
         "model": "{{inputs.cook_model}}",
         "acknowledge-model-override": true,
+        "max-attempts": 2,
         "provider-evidence": "{{item.provider_evidence}}",
         "gate-input": "{{item.gate_inputs}}",
         "gate-env-from": "PLAYWRIGHT_BROWSERS_PATH=HOME/.cache/ms-playwright",
