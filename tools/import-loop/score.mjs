@@ -29,26 +29,39 @@ const confirm = confirms.length ? { confirmed: confirms.flatMap((c) => c.confirm
 
 let run = null;
 try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], { encoding: 'utf8', maxBuffer: 256 << 20 })).data; } catch { /* recorded as null */ }
-// Why a Cook did not succeed, from Homeboy's own diagnosis: the agent gave up
-// (`agent.*`), the acceptance gate refused its candidate, or Homeboy's
-// mechanics failed (anything else). Mechanics failures are the loop's bug count.
-// A refused candidate is summarized from the acceptance gate's verdict line.
-const diagnose = (runId) => {
-  let data;
-  try { data = JSON.parse(execFileSync('homeboy', ['agent-task', 'diagnose', runId], { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; }
-  const verdict = (data?.gate_failure_output || '').split('\n').filter((l) => l.startsWith('{"pass":')).map((l) => { try { return JSON.parse(l); } catch { return null; } }).at(-1);
-  if (!verdict || !data.root_cause) return data?.root_cause ?? null;
-  const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}${verdict.own?.excess ? ` (excess ${verdict.own.excess.before}->${verdict.own.excess.after})` : ''}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
-  // Acceptance passed, so the repository's own checks refused the candidate.
-  const message = verdict.pass ? `acceptance passed (${measured}); repository checks failed` : measured;
-  return { ...data.root_cause, message };
+// How each Cook ended, from Homeboy's settled outcome (`agent-task status`
+// `terminal_outcome`): a published PR the gate did not refuse is the only
+// success; a refused gate (a draft PR included) is gate_failed; no change or a
+// declined form is the agent giving up; infrastructure is Homeboy's mechanics,
+// the loop's bug count. A Cook superseded by an active Cook on the same issue
+// is not a failure. Diagnose only explains a failure: the acceptance gate's
+// verdict line, or Homeboy's root cause.
+const homeboy = (...argv) => { try { return JSON.parse(execFileSync('homeboy', argv, { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; } };
+const FAILURE = { gate_refused: 'gate_failed', no_change: 'gave_up', agent_declined: 'gave_up', infrastructure: 'mechanics' };
+const classify = (outcome) => {
+  if (!outcome?.kind) return 'unknown';
+  if (outcome.kind === 'published') return outcome.refused_gate ? 'gate_failed' : null;
+  if (outcome.kind === 'superseded_by_active_cook') return null;
+  return FAILURE[outcome.kind] ?? 'unknown';
 };
-const failure = (cause) => !cause?.class ? 'unknown' : cause.class.startsWith('agent.') ? 'gave_up' : cause.class === 'agent_task.promotion_gate_failed' ? 'gate_failed' : 'mechanics';
+const explain = (runId, outcome) => {
+  const data = homeboy('agent-task', 'diagnose', runId);
+  const verdict = (data?.gate_failure_output || '').split('\n').filter((l) => l.startsWith('{"pass":')).map((l) => { try { return JSON.parse(l); } catch { return null; } }).at(-1);
+  if (verdict) {
+    const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}${verdict.own?.excess ? ` (excess ${verdict.own.excess.before}->${verdict.own.excess.after})` : ''}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
+    // Acceptance passed, so the repository's own checks refused the candidate.
+    return verdict.pass ? `acceptance passed (${measured}); repository checks failed` : measured;
+  }
+  return data?.root_cause?.message ?? outcome?.error_code ?? outcome?.kind ?? null;
+};
 const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
   const cook = { issue: triage?.cook_items?.[n]?.issue_url ?? null, signature: triage?.cook_items?.[n]?.signature ?? null, outcome: item.outcome ?? item.phase };
-  if (cook.outcome === 'succeeded' || !item.run_id) return cook;
-  const cause = diagnose(item.run_id);
-  return { ...cook, run: item.run_id, failure: failure(cause), cause: cause?.message?.split('\n')[0].slice(0, 240) ?? item.error ?? null };
+  if (!item.run_id) return cook;
+  const terminal = homeboy('agent-task', 'status', item.run_id)?.terminal_outcome ?? null;
+  const failure = classify(terminal);
+  const settled = { ...cook, run: item.run_id, terminal: terminal?.kind ?? null, ...(terminal?.pr ? { pr: terminal.pr } : {}) };
+  if (!failure) return settled;
+  return { ...settled, failure, cause: String(explain(item.run_id, terminal) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
 });
 const merged = [...new Set(confirms.flatMap((c) => c.merged || []))];
 const started = run?.job?.created_at_ms ?? null;
@@ -64,7 +77,7 @@ const line = {
   // Against the previous pass on this board: what this pass's import fixed.
   removed: now && previous?.blockers ? Object.keys(previous.blockers).filter((s) => !(s in now)) : null,
   cooks,
-  cook_outcomes: cooks.reduce((m, c) => ({ ...m, [c.outcome]: (m[c.outcome] || 0) + 1 }), {}),
+  cook_outcomes: cooks.reduce((m, c) => { const k = c.terminal ?? c.outcome; return { ...m, [k]: (m[k] || 0) + 1 }; }, {}),
   cook_failures: cooks.filter((c) => c.failure).reduce((m, c) => ({ ...m, [c.failure]: (m[c.failure] || 0) + 1 }), {}),
   tools: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   confirmed: confirm?.confirmed?.map((c) => c.pr) ?? null,
@@ -81,7 +94,7 @@ const lastCook = Object.fromEntries(cooks.filter((c) => c.signature).map((c) => 
 const rows = Object.entries(now || {}).map(([signature, count]) => {
   const t = tracked[signature] || {};
   const c = lastCook[signature];
-  const cook = t.capped ? `needs design: ${t.capped.failed_cooks} failed Cooks since guidance` : !c ? 'not cooked this pass' : c.failure ? `${c.failure}: ${c.cause ?? c.outcome}` : c.outcome;
+  const cook = t.capped ? `needs design: ${t.capped.failed_cooks} failed Cooks since guidance` : !c ? 'not cooked this pass' : c.failure ? `${c.failure}: ${c.cause ?? c.outcome}` : c.pr ? `published ${c.pr}` : c.terminal ?? c.outcome;
   return `| ${t.check ?? signature} (${t.subject ?? ''}, ${count}) | ${t.issue_url ?? 'untracked'} | ${cook.replace(/\|/g, '/')} |`;
 });
 fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
