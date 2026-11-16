@@ -176,7 +176,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 
 		$groups = array();
 		foreach ( $nodes as $node ) {
-			if ( 'radiogroup' !== ( $node['group_role'] ?? null ) ) {
+			$radiogroup = 'radiogroup' === ( $node['group_role'] ?? null );
+			// A captioned fieldset is the same named group: its legend names the
+			// radios however each option is wrapped.
+			if ( ! $radiogroup && ! isset( $legends[ $node['id'] ] ) ) {
 				$groups[] = $node;
 				continue;
 			}
@@ -186,6 +189,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 				if ( 'input' === strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) && 'radio' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
 					$by_name[ trim( (string) ( $control['name'] ?? '' ) ) ][] = $index;
 				}
+			}
+			// One legend names one radio group; a fieldset of several keeps the
+			// per-option label shape below.
+			if ( ! $radiogroup && 1 !== count( $by_name ) ) {
+				$groups[] = $node;
+				continue;
 			}
 			foreach ( $by_name as $members ) {
 				$groups[] = $node + array( 'radio_members' => $members );
@@ -202,7 +211,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) ) {
 				$labels = $children[ $labels[0]['id'] ];
 			}
-			$explicit_group = 'radiogroup' === ( $group['group_role'] ?? null );
+			$explicit_group = isset( $group['radio_members'] );
 			foreach ( $explicit_group ? array() : $labels as $label ) {
 				$label_children = $children[ $label['id'] ] ?? array();
 				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
