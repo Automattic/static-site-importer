@@ -176,13 +176,12 @@
       }
     },
     {
-      "id": "confirm",
+      "id": "confirm_uncooked",
       "needs": [
-        "triage",
-        "cook"
+        "triage"
       ],
       "always": true,
-      "timeout": "2h",
+      "timeout": "3h",
       "when": {
         "step": "triage",
         "output": "/continue",
@@ -198,9 +197,13 @@
           "--blocks-engine",
           "{{inputs.blocks_engine}}",
           "--work",
-          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm/uncooked",
           "--wp-cli",
-          "{{inputs.wp_cli}}"
+          "{{inputs.wp_cli}}",
+          "--uncooked",
+          "1",
+          "--merge",
+          "1"
         ]
       },
       "retry": {
@@ -213,48 +216,55 @@
       }
     },
     {
-      "id": "merge",
+      "id": "confirm",
       "needs": [
-        "confirm"
+        "cook"
       ],
       "always": true,
+      "timeout": "3h",
       "when": {
-        "all": [
-          {
-            "step": "triage",
-            "output": "/continue",
-            "equals": true
-          },
-          {
-            "step": "confirm",
-            "output": "/merge_count",
-            "gt": 0
-          }
-        ]
+        "step": "triage",
+        "output": "/continue",
+        "equals": true
       },
-      "foreach": "{{steps.confirm.output/merge}}",
+      "foreach": "{{steps.cook.items}}",
+      "per_item": true,
       "join": {
         "min_succeeded": 0
       },
-      "timeout": "65m",
-      "homeboy": [
-        "git",
-        "pr",
-        "merge-when-green",
-        "--repo",
-        "{{item.github}}",
-        "--number",
-        "{{item.number}}",
-        "--sha",
-        "{{item.sha}}",
-        "--wait-seconds",
-        "3600"
-      ]
+      "exec": {
+        "program": "node",
+        "cwd": "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/gate-tools/tools/import-loop",
+        "args": [
+          "confirm.mjs",
+          "--triage",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-triage/triage.json",
+          "--blocks-engine",
+          "{{inputs.blocks_engine}}",
+          "--work",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-confirm/{{item.item.signature}}",
+          "--wp-cli",
+          "{{inputs.wp_cli}}",
+          "--issue",
+          "{{item.item.issue_url}}",
+          "--merge",
+          "1"
+        ]
+      },
+      "retry": {
+        "max": 2,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "2m"
+      }
     },
     {
       "id": "score",
       "needs": [
-        "merge"
+        "confirm",
+        "confirm_uncooked"
       ],
       "always": true,
       "timeout": "10m",

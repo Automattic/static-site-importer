@@ -22,7 +22,10 @@ const board = path.join(args.runs, `${args.slug}-scoreboard.jsonl`);
 const previous = fs.existsSync(board) ? fs.readFileSync(board, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).at(-1) : null;
 const now = blockers(read(`${pass}-eval/findings.json`));
 const triage = read(`${pass}-triage/triage.json`);
-const confirm = read(`${pass}-confirm/confirm.json`);
+// One confirm per Cook and one for the issues no Cook worked: each wrote its
+// verdicts and merges under the pass's confirm directory.
+const confirms = fs.existsSync(`${pass}-confirm`) ? fs.readdirSync(`${pass}-confirm`).map((dir) => read(`${pass}-confirm/${dir}/confirm.json`)).filter(Boolean) : [];
+const confirm = confirms.length ? { confirmed: confirms.flatMap((c) => c.confirmed), refuted: confirms.flatMap((c) => c.refuted) } : null;
 
 let run = null;
 try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], { encoding: 'utf8', maxBuffer: 256 << 20 })).data; } catch { /* recorded as null */ }
@@ -47,7 +50,7 @@ const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
   const cause = diagnose(item.run_id);
   return { ...cook, run: item.run_id, failure: failure(cause), cause: cause?.message?.split('\n')[0].slice(0, 240) ?? item.error ?? null };
 });
-const merged = (run?.steps?.merge?.items || []).filter((item) => item.outcome === 'succeeded').map((item) => `${item.item?.github}#${item.item?.number}`);
+const merged = [...new Set(confirms.flatMap((c) => c.merged || []))];
 const started = run?.job?.created_at_ms ?? null;
 
 const line = {
