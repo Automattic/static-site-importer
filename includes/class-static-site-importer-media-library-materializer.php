@@ -592,7 +592,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( is_array( $record ) ) {
 			require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 			if ( ! Static_Site_Importer_Image_Assets::verify( $file, $record ) ) {
-				$error = new WP_Error( 'image_resource_unresolved', 'The staged resource does not match its capture record.' );
+				$error = new WP_Error( 'image_resource_unresolved', 'The staged resource does not match its capture record.', array( 'source_path' => $relative ) );
 				return 0;
 			}
 			$reason = Static_Site_Importer_Image_Assets::media_library_unavailable_reason( $file, $record );
@@ -743,7 +743,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				// ICO, non-image bytes) keeps its unresolved theme destination.
 				if ( ! $id ) {
 					if ( isset( $state['staged_resource_records'][ $asset['target_path'] ] ) ) {
-						return new WP_Error( 'image_resource_unresolved', 'The recorded original could not become its declared destination.' );
+						return new WP_Error( 'image_resource_unresolved', 'The recorded original could not become its declared destination.', array( 'source_path' => $asset['target_path'] ) );
 					}
 					continue;
 				}
