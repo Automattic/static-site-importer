@@ -15,9 +15,12 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-image-assets.php';
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
-		public function __construct( public string $code, public string $message = '' ) {}
+		public function __construct( public string $code, public string $message = '', public mixed $data = null ) {}
 		public function get_error_code(): string {
 			return $this->code;
+		}
+		public function get_error_data(): mixed {
+			return $this->data;
 		}
 	}
 }
@@ -117,7 +120,11 @@ foreach ( array( 4 => 'media-library', 0 => 'theme' ) as $conflicting_asset => $
 		$data['assets'][ $conflicting_asset ]['destination_owner'] = $conflicting_owner;
 		$lying['files'][ $index ]['content']     = json_encode( $data );
 	}
-	$assert( Static_Site_Importer_Image_Assets::extract( $lying ) instanceof WP_Error, 'An asset claiming ' . $conflicting_owner . ' ownership against its kind must fail intake.' );
+	$refused = Static_Site_Importer_Image_Assets::extract( $lying );
+	$assert( $refused instanceof WP_Error, 'An asset claiming ' . $conflicting_owner . ' ownership against its kind must fail intake.' );
+	// The refusal names the record, so a failed import says which resource to fix.
+	$named = $refused->get_error_data();
+	$assert( 'record_invalid' === ( $named['reason'] ?? null ) && $data['assets'][ $conflicting_asset ]['source_urls'][0] === ( $named['record']['source_url'] ?? null ), 'A refused record must be named in the error data.' );
 }
 
 // Verification is digest- and signature-bound for every non-image kind.
@@ -204,7 +211,7 @@ try {
 		$GLOBALS['ssi_record_test_attachments'] = 0;
 		$media = Static_Site_Importer_Media_Library_Materializer::resolve_plan_assets( $state );
 		if ( 'block-wrong-digest' === $case ) {
-			$assert( is_wp_error( $media ) && 'image_resource_unresolved' === $media->code, $case . ': recorded upload must still verify.' );
+			$assert( is_wp_error( $media ) && 'image_resource_unresolved' === $media->code && 'assets/media/apple-touch-icon.png' === ( $media->get_error_data()['source_path'] ?? null ), $case . ': recorded upload must still verify, naming its source.' );
 			continue;
 		}
 		$assert( ! is_wp_error( $media ), $case . ': media resolution must succeed.' );
