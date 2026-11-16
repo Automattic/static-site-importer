@@ -38,6 +38,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'editability_report' => $documents[ $row['source_path'] ?? '' ] ?? array(),
 			);
 		}
+		$context['diagnostics']    = $report['diagnostics'] ?? array();
 		$context['distinct_menus'] = $context['distinct_menus'] ?? null;
 		$dir                       = (string) ( $receipt['theme']['dir'] ?? '' );
 		return function_exists( 'parse_blocks' ) && is_dir( $dir )
@@ -120,7 +121,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 			'gating' => false,
 			'checks' => array(
 				'template_hierarchy'   => self::template_hierarchy( $templates, $routes ),
-				'shared_shell'         => self::shared_shell( $template_blocks, $parts, $json, $routes ),
+				'shared_shell'         => self::shared_shell( $template_blocks, $parts, $json, $routes, $route_blocks, $context ),
 				'navigation'           => self::navigation( $template_blocks, $part_blocks, $route_blocks, $context ),
 				'design_tokens'        => self::design_tokens( $json, $context ),
 				'theme_json'           => self::theme_json( $json, $template_blocks, $part_blocks, $route_blocks ),
@@ -160,7 +161,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	}
 
 	/** Measure shared shell. */
-	private static function shared_shell( array $template_blocks, array $parts, array $json, array $routes ): array {
+	private static function shared_shell( array $template_blocks, array $parts, array $json, array $routes, array $route_blocks, array $context ): array {
 		$references    = array();
 		$missing_shell = array();
 		$variants      = array(
@@ -202,12 +203,36 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				}
 			}
 		}
+		// Retention diagnostics can have empty provenance sources (incomplete
+		// clusters), so confirm repeated page-owned landmarks in the route blocks.
+		$retained = array();
+		foreach ( $context['diagnostics'] ?? array() as $diagnostic ) {
+			if ( ! str_starts_with( (string) ( $diagnostic['code'] ?? '' ), 'wordpress_site_plan_shell_retained_' ) ) {
+				continue;
+			}
+			$carriers = array();
+			foreach ( $route_blocks as $key => $blocks ) {
+				foreach ( self::flatten( $blocks ) as $block ) {
+					$tag  = $block['attrs']['tagName'] ?? '';
+					$area = 'nav' === $tag ? 'header' : $tag;
+					if ( in_array( $area, array( 'header', 'footer' ), true ) && ( ! isset( $diagnostic['area'] ) || $area === $diagnostic['area'] ) ) {
+						$carriers[ $area ][ (string) ( $routes[ $key ]['route'] ?? $key ) ] = true;
+					}
+				}
+			}
+			foreach ( $carriers as $area => $paths ) {
+				if ( count( $paths ) > 1 ) {
+					$retained[ $area ] = true;
+				}
+			}
+		}
 		$unreferenced = array_values( array_diff( array_keys( $parts ), array_keys( $references ) ) );
 		return self::check(
 			array(
 				'templates_missing_shell'   => $missing_shell,
 				'unreferenced_parts'        => $unreferenced,
 				'duplicated_parts_by_route' => $duplicates,
+				'retained_shell_areas'      => count( $retained ),
 				'header_variants'           => count( $variants['header'] ),
 				'footer_variants'           => count( $variants['footer'] ),
 			),
@@ -215,8 +240,9 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'templates_missing_shell'   => 0,
 				'unreferenced_parts'        => 0,
 				'duplicated_parts_by_route' => 0,
+				'retained_shell_areas'      => 0,
 			),
-			! $missing_shell && ! $unreferenced && ! $duplicates
+			! $missing_shell && ! $unreferenced && ! $duplicates && ! $retained
 		);
 	}
 

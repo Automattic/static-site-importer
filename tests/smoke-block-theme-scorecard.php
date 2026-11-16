@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/class-static-site-importer-block-theme-scor
 require_once __DIR__ . '/../includes/class-static-site-importer-import-report.php';
 require_once __DIR__ . '/../includes/class-static-site-importer-diagnostic-projection.php';
 foreach ( array( 'report-diagnostics', 'diagnostic-loss-classes', 'visual-parity-oracle' ) as $ssi_class ) { require_once __DIR__ . '/../includes/class-static-site-importer-' . $ssi_class . '.php'; }
+function get_post( $id ) { return $GLOBALS['scorecard_posts'][ $id ] ?? null; }
 function scorecard_assert( $condition, $message ) { if ( ! $condition ) { throw new RuntimeException( $message ); } }
 $root = sys_get_temp_dir() . '/ssi-scorecard-' . bin2hex( random_bytes( 6 ) );
 $header = '<!-- wp:group --><header><!-- wp:navigation {"ref":7} /--></header><!-- /wp:group -->';
@@ -39,6 +40,38 @@ try {
 		scorecard_assert( $missing_shell === $shell['measured']['templates_missing_shell'], $name . ': missing shell templates' );
 		scorecard_assert( $unreferenced === $shell['measured']['unreferenced_parts'], $name . ': unreferenced parts' );
 		scorecard_assert( array() === $shell['measured']['duplicated_parts_by_route'], $name . ': no duplicated parts' );
+	}
+	// Reduced output of #3057: route-current navigation remains page-owned,
+	// while the footer alone is extracted. Exercise the public measurement API.
+	foreach ( array(
+		'retained incomplete header' => array( 'incomplete', 'nav', 2, false, 'fail', 1 ),
+		'retained non-shell content' => array( 'incomplete', 'section', 2, false, 'pass', 0 ),
+		'retained ambiguous header' => array( 'ambiguous', 'header', 2, false, 'fail', 1 ),
+		'retained footer' => array( 'runtime_binding', 'footer', 2, false, 'fail', 1 ),
+		'single route' => array( 'only_content', 'nav', 1, false, 'pass', 0 ),
+		'extracted header' => array( '', 'nav', 2, true, 'pass', 0 ),
+		'no retention evidence' => array( '', 'nav', 2, false, 'pass', 0 ),
+	) as $name => list( $reason, $tag, $route_count, $extracted, $status, $retained ) ) {
+		$shell_routes = array();
+		foreach ( array_slice( array( '/', '/about/' ), 0, $route_count ) as $path ) {
+			$shell_routes[] = array( 'route' => $path, 'post_content' => ( $extracted ? '' : '<!-- wp:group {"tagName":"' . $tag . '","metadata":{"name":"Navigation"}} --><' . $tag . '><a href="' . $path . '" class="active">Current</a></' . $tag . '><!-- /wp:group -->' ) . '<!-- wp:paragraph --><p>Body</p><!-- /wp:paragraph -->' );
+		}
+		$shell_context = $context;
+		$shell_context['diagnostics'] = $reason ? array( array( 'code' => 'wordpress_site_plan_shell_retained_' . $reason ) ) : array();
+		$shell = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . ( $extracted ? '/good' : '/footer-only referenced' ), $shell_routes, $shell_context )['checks']['shared_shell'];
+		scorecard_assert( $status === $shell['status'], $name . ': shared shell status (observed ' . $shell['status'] . ')' );
+		scorecard_assert( $retained === $shell['measured']['retained_shell_areas'], $name . ': retained shell areas' );
+		scorecard_assert( 0 === $shell['pass_threshold']['retained_shell_areas'], $name . ': retained shell threshold' );
+		$wordpress = array();
+		foreach ( $shell_routes as $id => $route ) {
+			$GLOBALS['scorecard_posts'][ $id + 1 ] = (object) array( 'post_type' => 'page', 'post_content' => $route['post_content'] );
+			$wordpress[] = array( 'id' => $id + 1, 'source_path' => $route['route'] );
+		}
+		$import_shell = Static_Site_Importer_Block_Theme_Scorecard::from_import( array(
+			'diagnostics' => $shell_context['diagnostics'],
+			'materialization_receipt' => array( 'theme' => array( 'dir' => $root . ( $extracted ? '/good' : '/footer-only referenced' ) ), 'wordpress' => $wordpress ),
+		) )['checks']['shared_shell'];
+		scorecard_assert( $shell === $import_shell, $name . ': import forwards retention evidence' );
 	}
 	$good = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', $routes, $context );
 	foreach ( $good['checks'] as $name => $check ) { scorecard_assert( 'pass' === $check['status'], 'Good theme: ' . $name ); }
