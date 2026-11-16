@@ -61,7 +61,7 @@ const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
   const failure = classify(terminal);
   const settled = { ...cook, run: item.run_id, terminal: terminal?.kind ?? null, ...(terminal?.pr ? { pr: terminal.pr } : {}) };
   if (!failure) return settled;
-  return { ...settled, failure, cause: String(explain(item.run_id, terminal) ?? item.error ?? '').split('\n')[0].slice(0, 240) || null };
+  return { ...settled, failure, cause: String(explain(item.run_id, terminal) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
 });
 const merged = [...new Set(confirms.flatMap((c) => c.merged || []))];
 const started = run?.job?.created_at_ms ?? null;
