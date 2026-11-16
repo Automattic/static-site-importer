@@ -16,6 +16,40 @@ export function excess(finding, cells) {
 // Fewer occurrences, or as many and less excess past their limits.
 const change = (was, now, wasExcess, nowExcess) => (now !== was ? now - was : Math.sign(nowExcess - wasExcess));
 
+// The scorer emits each defect as one failure string whose leading words name
+// its class. One finding per class gives a fix to one class its own signature,
+// owner and count, instead of an all-defects bundle that only clears when every
+// failure is gone. Title is the imported site's identity, produced by SSI, not
+// the materializer; every other class belongs to Blocks Engine until a class
+// proves another owner.
+export const parityFailureClass = (failure) => {
+  const text = String(failure);
+  const known = [
+    [/^title /, 'title', 'static-site-importer'],
+    [/^nav /, 'link', 'blocks-engine'],
+    [/^viewport animation/, 'motion', 'blocks-engine'],
+    [/^text position/, 'text_position', 'blocks-engine'],
+    [/^text \d/, 'text_content', 'blocks-engine'],
+    [/^image geometry/, 'image_geometry', 'blocks-engine'],
+    [/^background geometry/, 'background_geometry', 'blocks-engine'],
+    [/^page height/, 'page_height', 'blocks-engine'],
+    [/^images /, 'image_decoding', 'blocks-engine'],
+  ].find(([pattern]) => pattern.test(text));
+  if (known) return { subject: known[1], owner_repo: known[2] };
+  // A class this table has not seen: its leading words still give a stable
+  // subject, so the scorer's new class is measured on its own, not bundled.
+  const words = text.toLowerCase().match(/[a-z]+/g)?.slice(0, 3).join('_');
+  return { subject: words || 'other', owner_repo: 'blocks-engine' };
+};
+
+// A state's failures as counts per class, the measure its finding reports:
+// a class that appears or grows is a regression. The numbers inside a
+// message are not compared: the source side of `text N chars !== source M`
+// varies between captures of the same frozen route, and a fix that halves a
+// mismatch still reads as a different string.
+const classCounts = (failures) => (failures || []).map((f) => parityFailureClass(f).subject).reduce((m, cls) => m.set(cls, (m.get(cls) || 0) + 1), new Map());
+const regressed = (before, after) => [...classCounts(after)].some(([cls, n]) => n > (classCounts(before).get(cls) || 0));
+
 // A check that could not run: its findings are missing, not fixed.
 export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
 
@@ -41,7 +75,7 @@ export function compareImports(before, after, signature, cells) {
     if (!next?.verified || !v.verified) { regressions.push(key); continue; }
     for (const score of v.scores) {
       const n = next.scores.find((s) => s.state === score.state && s.profile === score.profile);
-      if (!n || (n.failures || []).some((failure) => !(score.failures || []).includes(failure))) regressions.push(key);
+      if (!n || regressed(score.failures, n.failures)) regressions.push(key);
     }
   }
   const own = { before: occurrences(a.get(signature), cells), after: occurrences(b.get(signature), cells) };

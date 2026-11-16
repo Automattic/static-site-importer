@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { parityFailureClass, parityCellReports } from '../tools/import-loop/checks.mjs';
+import { parityCellReports } from '../tools/import-loop/checks.mjs';
+import { parityFailureClass } from '../tools/import-loop/progress.mjs';
 import { occurrences, compareImports } from '../tools/import-loop/progress.mjs';
 
 // Failure strings exactly as the pinned scorer emitted them on sdnunca `/`
