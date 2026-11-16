@@ -52,8 +52,11 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
     for (const { ID, url } of pages) {
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
       // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
-      // opens with zero blocks, and that is what an editor gets.
-      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.__unstableIsEditorReady?.(), null, { timeout: 30_000 });
+      // opens with zero blocks, and that is what an editor gets. The wait
+      // shares the navigation's budget: on a loaded runner an editor takes
+      // over 30s to boot, and a shorter wait reports a working editor as
+      // editor_unreachable and refutes the fix under test.
+      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.__unstableIsEditorReady?.(), null, { timeout: 120_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
         const walk = (list, depth, parent) => list.forEach((b) => {
