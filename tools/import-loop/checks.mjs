@@ -6,7 +6,7 @@ import path from 'node:path';
 import { editorPages } from './editor.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
-import { compareImports, excess } from './progress.mjs';
+import { compareImports, excess, parityFailureClass } from './progress.mjs';
 import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 
 export const WIDTHS = [390, 768, 1440];
@@ -20,32 +20,6 @@ const findReport = (dir) => {
     if (entry.isDirectory()) { const found = findReport(full); if (found) return found; }
   }
   return null;
-};
-
-// The scorer emits each defect as one failure string whose leading words name
-// its class. One finding per class gives a fix to one class its own signature,
-// owner and count, instead of an all-defects bundle that only clears when every
-// failure is gone. Title is the imported site's identity, produced by SSI, not
-// the materializer; every other class belongs to Blocks Engine until a class
-// proves another owner.
-export const parityFailureClass = (failure) => {
-  const text = String(failure);
-  const known = [
-    [/^title /, 'title', 'static-site-importer'],
-    [/^nav /, 'link', 'blocks-engine'],
-    [/^viewport animation/, 'motion', 'blocks-engine'],
-    [/^text position/, 'text_position', 'blocks-engine'],
-    [/^text \d/, 'text_content', 'blocks-engine'],
-    [/^image geometry/, 'image_geometry', 'blocks-engine'],
-    [/^background geometry/, 'background_geometry', 'blocks-engine'],
-    [/^page height/, 'page_height', 'blocks-engine'],
-    [/^images /, 'image_decoding', 'blocks-engine'],
-  ].find(([pattern]) => pattern.test(text));
-  if (known) return { subject: known[1], owner_repo: known[2] };
-  // A class this table has not seen: its leading words still give a stable
-  // subject, so the scorer's new class is measured on its own, not bundled.
-  const words = text.toLowerCase().match(/[a-z]+/g)?.slice(0, 3).join('_');
-  return { subject: words || 'other', owner_repo: 'blocks-engine' };
 };
 
 // One per-class report per cell: deduplicated failure strings are the count,

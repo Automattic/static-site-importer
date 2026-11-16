@@ -25,6 +25,15 @@ test('unmeasured or regressed visual cell fails closed', () => {
     assert.equal(compareImports(result(finding('a', 7)), { findings: [finding('a', 5)], visual: next }, 'a').pass, false);
   }
 });
+test('a visual cell regresses when a failure class appears or grows, not when its numbers change', () => {
+  const cell = (...failures) => [{ ...visual[0], scores: [{ state: 'baseline', failures }] }];
+  const was = cell('text 3173 chars !== source 3175', 'text position differs for 86 matched text run(s)');
+  for (const [now, regressed] of [
+    [cell('text 3176 chars !== source 3165', 'text position differs for 3 matched text run(s)'), false],
+    [cell('text 3176 chars !== source 3165', 'text position differs for 3 matched text run(s)', 'page height 9365px !== source 10264px (Δ-899)'), true],
+    [cell('text 3176 chars !== source 3165', 'text 12 chars !== source 40', 'text position differs for 3 matched text run(s)'), true],
+  ]) assert.equal(compareImports({ findings: [finding('a', 7)], visual: was }, { findings: [finding('a', 5)], visual: now }, 'a').pass, !regressed);
+});
 test('a cell unmeasured on both sides is reported, not a regression; nothing measured fails', () => {
   const blind = { route: '/about/', width: 1440, verified: false, scores: [] };
   const v = compareImports({ findings: [finding('a', 7)], visual: [...visual, blind] }, { findings: [finding('a', 5)], visual: [...visual, blind] }, 'a');
