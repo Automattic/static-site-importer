@@ -33,7 +33,7 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
 const triage = JSON.parse(fs.readFileSync(args.triage, 'utf8'));
-const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.resolve(args.work))) };
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.dirname(path.resolve(args['blocks-engine'])))) };
 const log = (...parts) => console.error('[confirm]', ...parts);
 
 // One pull request can fix several tracked findings: it is confirmed only
