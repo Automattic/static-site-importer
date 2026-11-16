@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, failedCooksSinceGuidance, CAP_NOTICE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, failedCooksSinceGuidance, CAP_NOTICE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -364,12 +364,15 @@ stageGateTools();
 const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
+const openPrs = new Map(tracked.map((item) => [item, linkedPullRequests(item.issue_url)[0]]));
+await checkHeads(tracked.filter((item) => openPrs.get(item) && repos[item.repo]?.candidate && item.cells.length).map((item) => ({ item, pr: openPrs.get(item), at: headAt(item) })));
 for (const item of tracked) {
   const repo = repos[item.repo];
-  const pr = linkedPullRequests(item.issue_url)[0];
+  const pr = openPrs.get(item);
   item.open_pr = pr?.url || null;
   const checkable = repo?.candidate && item.cells.length;
-  const at = { clone: clones[item.repo], candidate: repo?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, routes: result.routes, trunk, base_findings: path.resolve(args.findings) };
+  const at = headAt(item);
   const cells = pr && checkable ? cellsAtHead(item, pr, at) : [];
   const refuted = cells.filter((cell) => cell.exit === 'import_failed');
   const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : null;

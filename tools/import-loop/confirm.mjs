@@ -19,7 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
 import { compareImports } from './progress.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -33,14 +33,20 @@ const log = (...parts) => console.error('[confirm]', ...parts);
 // when the shared acceptance comparison passes for each finding.
 process.env.PREDICATE_CAPTURE = triage.reimport.capture;
 const verdicts = new Map();
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: triage.bases?.[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path });
+const linked = new Map(triage.tracked.map((item) => [item, linkedPullRequests(item.issue_url)]));
+// Every head a Cook moved since triage, checked at once.
+await checkHeads(triage.tracked.flatMap((item) => repos[item.repo]?.candidate && clones[item.repo] && triage.bases?.[item.repo] && item.cells?.length
+  ? linked.get(item).filter((pr) => !(item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid)).map((pr) => ({ item, pr, at: headAt(item) }))
+  : []));
 for (const item of triage.tracked) {
-  for (const pr of linkedPullRequests(item.issue_url)) {
+  for (const pr of linked.get(item)) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [] };
     verdicts.set(pr.url, verdict);
     const candidate = repos[item.repo]?.candidate;
     if (!candidate || !clones[item.repo] || !triage.bases?.[item.repo]) { verdict.reasons.push(`the re-import does not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
-    const at = { clone: clones[item.repo], candidate, base: triage.bases[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path };
+    const at = headAt(item);
     // A head no Cook moved since triage was checked there, on this capture and release.
     const prior = item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid ? item.head_check : null;
     const cells = (prior?.cells || cellsAtHead(item, pr, at)).map((cell) => ({ signature: item.signature, ...cell }));

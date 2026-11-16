@@ -1,7 +1,8 @@
 // Shared by the loop steps: arguments, GitHub, and predicate runs.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => (value.startsWith('--') ? [...pairs, [value.slice(2), all[index + 1]]] : pairs), []));
@@ -112,21 +113,22 @@ export function repoClone(github, runs) {
 // PREDICATE_SITE_URL check the route the whole import produced. `importer`
 // names a candidate importer's sources to lay over the release's. The server
 // stops when this process exits.
-export function reimportSite(transformer, { capture, ssi_zip, bare_wp }, dir, importer = '') {
-  const gate = new URL('./gates/reimport.sh', import.meta.url).pathname;
-  let url;
-  try {
-    url = execFileSync('bash', [gate, transformer, capture, dir], { encoding: 'utf8', maxBuffer: 256 << 20, env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp, SSI_SOURCE: importer }, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').pop();
-  } catch (error) {
+const reimportRun = (transformer, { capture, ssi_zip, bare_wp }, dir, importer) => [new URL('./gates/reimport.sh', import.meta.url).pathname, transformer, capture, dir, { env: { ...process.env, SSI_ZIP: ssi_zip, BARE_WP: bare_wp, SSI_SOURCE: importer } }];
+function reimportUrl({ status, stdout, stderr }, dir) {
+  if (status !== 0) {
     // The importer refused the site: name its reasons, keep its output in the log.
-    const stderr = String(error.stderr || '');
     process.stderr.write(stderr);
     const reasons = [...new Set([...stderr.matchAll(/"(?:reason_code|code)":"([a-z0-9_]+)"/g)].map((m) => m[1]))];
-    throw Object.assign(new Error(`import_failed: ${reasons.join(', ') || stderr.trim().split('\n').pop()?.slice(0, 200) || `exit ${error.status}`}`), { import_failed: true });
+    throw Object.assign(new Error(`import_failed: ${reasons.join(', ') || stderr.trim().split('\n').pop()?.slice(0, 200) || `exit ${status}`}`), { import_failed: true });
   }
   const pid = Number(fs.readFileSync(`${dir}/.server.pid`, 'utf8'));
   process.on('exit', () => { try { process.kill(pid); } catch {} });
-  return url;
+  return stdout.trim().split('\n').pop();
+}
+export function reimportSite(transformer, reimport, dir, importer = '') {
+  const [gate, ...rest] = reimportRun(transformer, reimport, dir, importer);
+  const options = rest.pop();
+  return reimportUrl(spawnSync('bash', [gate, ...rest], { ...options, encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] }), dir);
 }
 
 // A pull request is judged as it would ship: its head merged onto the base the
@@ -148,16 +150,22 @@ function mergedHead(item, pr, { clone, candidate, base, work }) {
 }
 // A transformer candidate replaces the release's transformer; an importer
 // candidate runs on the pass's trunk transformer (`at.transformer`).
-function served(dir, { candidate, transformer, reimport }) {
+const servedRun = (dir, { candidate, transformer, reimport }) => candidate.slot === 'transformer'
+  ? reimportRun(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`, '')
+  : reimportRun(transformer, reimport, `${dir}-site`, dir);
+function settle(dir, serve) {
+  try {
+    heads.set(dir, serve());
+  } catch (error) {
+    if (!error.import_failed) throw error;
+    heads.set(dir, error);
+  }
+}
+function served(dir, at) {
   if (!heads.has(dir)) {
-    try {
-      heads.set(dir, candidate.slot === 'transformer'
-        ? reimportSite(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`)
-        : reimportSite(transformer, reimport, `${dir}-site`, dir));
-    } catch (error) {
-      if (!error.import_failed) throw error;
-      heads.set(dir, error);
-    }
+    const [gate, ...rest] = servedRun(dir, at);
+    const options = rest.pop();
+    settle(dir, () => reimportUrl(spawnSync('bash', [gate, ...rest], { ...options, encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] }), `${dir}-site`));
   }
   return heads.get(dir);
 }
@@ -183,12 +191,48 @@ export function collateralAtHead(item, pr, at) {
   const head = mergedHead(item, pr, at);
   if (!heads.has(head)) throw new Error('collateral_requires_cellsAtHead_first');
   if (heads.get(head) instanceof Error) return { exit: 2, report: [heads.get(head).message] };
-  const { reimport } = at;
-  const gate = new URL('./gates/accept.mjs', import.meta.url).pathname;
+  const key = `${head}-checks-${item.signature}`;
+  if (!collaterals.has(key)) collaterals.set(key, collateralResult(spawnSync('node', collateralArgs(item, head, at), { encoding: 'utf8', maxBuffer: 64 << 20 })));
+  return collaterals.get(key);
+}
+const collaterals = new Map();
+const collateralResult = (run) => ({ exit: run.status ?? 2, report: [run.stdout || '', run.stderr || ''] });
+function collateralArgs(item, head, { reimport, base_findings }) {
   const receipt = JSON.parse(fs.readFileSync(`${reimport.capture}/capture-receipt.json`, 'utf8'));
   const url = receipt.source?.url || receipt.url;
-  const run = spawnSync('node', [gate, '--base-findings', at.base_findings, '--candidate-url', heads.get(head), '--candidate-site', `${head}-site`, '--capture', reimport.capture, '--url', url, '--signature', item.signature, '--cells', JSON.stringify(item.cells), '--wp-cli', `php ${reimport.bare_wp}/wp-cli.phar`, '--out', `${head}-checks-${item.signature}`], { encoding: 'utf8', maxBuffer: 64 << 20 });
-  return { exit: run.status ?? 2, report: [run.stdout || '', run.stderr || ''] };
+  return [new URL('./gates/accept.mjs', import.meta.url).pathname, '--base-findings', base_findings, '--candidate-url', heads.get(head), '--candidate-site', `${head}-site`, '--capture', reimport.capture, '--url', url, '--signature', item.signature, '--cells', JSON.stringify(item.cells), '--wp-cli', `php ${reimport.bare_wp}/wp-cli.phar`, '--out', `${head}-checks-${item.signature}`];
+}
+
+// Each head check is its own merge, re-import, and server, so independent
+// checks run at once: a pass with many open pull requests waits for the
+// slowest one, not for their sum. `checks` is [{item, pr, at}]; afterwards
+// cellsAtHead and collateralAtHead answer from what ran here. Merges run first
+// and in order, since they fetch into the shared clone.
+const running = (command, argv, options = {}) => new Promise((resolve) => {
+  const child = spawn(command, argv, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.on('close', (status) => resolve({ status, stdout, stderr }));
+});
+async function pooled(tasks, width) {
+  const queue = [...tasks];
+  await Promise.all(Array.from({ length: Math.min(width, queue.length) }, async () => { while (queue.length) await queue.shift()(); }));
+}
+export async function checkHeads(checks, width = Math.max(1, Math.floor(os.availableParallelism() / 4))) {
+  const merged = checks.map((check) => ({ ...check, head: mergedHead(check.item, check.pr, check.at) }));
+  const serves = new Map(merged.filter(({ head }) => !heads.has(head)).map((check) => [check.head, check]));
+  await pooled([...serves.values()].map(({ head, at }) => async () => {
+    const [gate, ...rest] = servedRun(head, at);
+    const options = rest.pop();
+    const run = await running('bash', [gate, ...rest], options);
+    settle(head, () => reimportUrl(run, `${head}-site`));
+  }), width);
+  const compared = merged.filter(({ item, head }) => !(heads.get(head) instanceof Error) && !collaterals.has(`${head}-checks-${item.signature}`));
+  await pooled(compared.map(({ item, head, at }) => async () => {
+    collaterals.set(`${head}-checks-${item.signature}`, collateralResult(await running('node', collateralArgs(item, head, at))));
+  }), width);
 }
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
