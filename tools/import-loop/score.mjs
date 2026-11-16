@@ -35,7 +35,7 @@ const diagnose = (runId) => {
   try { data = JSON.parse(execFileSync('homeboy', ['agent-task', 'diagnose', runId], { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; }
   const verdict = (data?.gate_failure_output || '').split('\n').filter((l) => l.startsWith('{"pass":')).map((l) => { try { return JSON.parse(l); } catch { return null; } }).at(-1);
   if (!verdict || !data.root_cause) return data?.root_cause ?? null;
-  const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
+  const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}${verdict.own?.excess ? ` (excess ${verdict.own.excess.before}->${verdict.own.excess.after})` : ''}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
   // Acceptance passed, so the repository's own checks refused the candidate.
   const message = verdict.pass ? `acceptance passed (${measured}); repository checks failed` : measured;
   // A verdict means the gate ran and refused the candidate, whichever process

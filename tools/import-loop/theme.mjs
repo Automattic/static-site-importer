@@ -27,7 +27,7 @@ export async function themeChecks(page, wpUrl, routes, report) {
   const menus = [...templates, ...parts, ...pages].flatMap((p) => [...p.content.raw.matchAll(/<!-- wp:navigation\b([^]*?)-->/g)].map((m) => m[1]));
   if (!menus.length || menus.some((m) => !navigation.some((n) => m.includes(`"ref":${n.id}`)))) fail('theme_saved_navigation', { menus, saved: navigation.map((n) => n.id) });
   const tokens = styleTokens([...templates, ...parts, ...pages].map((p) => p.content.raw).join('\n'));
-  if (tokens.share > QUALITY.literal_share) fail('theme_literal_style', { ...tokens, threshold: QUALITY.literal_share });
+  if (tokens.share > QUALITY.literal_share) fail('theme_literal_style', { ...tokens, threshold: QUALITY.literal_share, measure: { value: tokens.share, limit: QUALITY.literal_share } });
   const themes = await api('/wp/v2/themes?status=active');
   const theme = themes[0]?.stylesheet;
   if (!theme) throw new Error('Active theme unavailable');
@@ -65,7 +65,7 @@ export async function themeChecks(page, wpUrl, routes, report) {
         ...await Promise.all([...document.querySelectorAll('link[rel=stylesheet]')].map(async (l) => ({ href: l.href, bytes: (await (await fetch(l.href)).text()).length }))),
         ...[...document.querySelectorAll('style')].map((s) => ({ id: s.id, bytes: s.textContent.length })),
       ]));
-      if (css.kb > QUALITY.theme_css_kb) report({ stage: 'theme', check: 'theme_css_weight', owner_repo: 'blocks-engine', subject: 'theme_css_weight', route, evidence: { ...css, threshold_kb: QUALITY.theme_css_kb } });
+      if (css.kb > QUALITY.theme_css_kb) report({ stage: 'theme', check: 'theme_css_weight', owner_repo: 'blocks-engine', subject: 'theme_css_weight', route, evidence: { ...css, threshold_kb: QUALITY.theme_css_kb, measure: { value: css.kb, limit: QUALITY.theme_css_kb } } });
     }
     const before = await observe();
     const styles = structuredClone(original.styles || {});

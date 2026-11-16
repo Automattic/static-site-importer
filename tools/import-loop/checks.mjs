@@ -6,7 +6,7 @@ import path from 'node:path';
 import { editorPages } from './editor.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
-import { compareImports } from './progress.mjs';
+import { compareImports, excess } from './progress.mjs';
 import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 
 export const WIDTHS = [390, 768, 1440];
@@ -154,9 +154,9 @@ export async function checkImport(args) {
       for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { count }, ...cell });
       for (const [subject, count] of tally(blocks.filter((b) => /^(ssi-[a-z0-9-]+|custom)\//.test(b.name) && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { count, of: blocks.length }, ...cell });
       const depth = Math.max(0, ...blocks.map((b) => b.depth));
-      if (depth > QUALITY.depth) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { depth, threshold: QUALITY.depth }, ...cell });
+      if (depth > QUALITY.depth) report({ stage: 'editability', check: 'block_nesting_deep', owner_repo: 'blocks-engine', subject: 'block_depth', evidence: { depth, threshold: QUALITY.depth, measure: { value: depth, limit: QUALITY.depth } }, ...cell });
       const weight = wrapperWeight(blocks);
-      if (weight.heavy) report({ stage: 'editability', check: 'block_wrapper_heavy', owner_repo: 'blocks-engine', subject: 'block_wrappers', evidence: { ...weight, threshold: QUALITY.groups_per_leaf }, ...cell });
+      if (weight.heavy) report({ stage: 'editability', check: 'block_wrapper_heavy', owner_repo: 'blocks-engine', subject: 'block_wrappers', evidence: { ...weight, threshold: QUALITY.groups_per_leaf, measure: { value: weight.groups / Math.max(1, weight.leaves), limit: QUALITY.groups_per_leaf } }, ...cell });
       const repeated = repeatedStructures(blocks);
       if (repeated.length) report({ stage: 'editability', check: 'block_repeated_structure', owner_repo: 'blocks-engine', subject: 'repeated_structure', evidence: repeated, ...cell });
     }
@@ -168,6 +168,6 @@ export async function checkImport(args) {
   result.progress = compareImports(previous, result).blockers;
   const findingsPath = path.join(args.out, 'findings.json');
   fs.writeFileSync(findingsPath, JSON.stringify(result, null, 2));
-  const output = { verdict: result.verdict, finding_count: list.length, blocker_count: list.filter((f) => f.severity === 'blocker').length, blocker_signatures: list.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${f.occurrences.reduce((n, o) => n + (o.evidence?.count ?? 1), 0)}`), findings_path: findingsPath, progress: result.progress };
+  const output = { verdict: result.verdict, finding_count: list.length, blocker_count: list.filter((f) => f.severity === 'blocker').length, blocker_signatures: list.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${f.occurrences.reduce((n, o) => n + (o.evidence?.count ?? 1), 0)}${excess(f) ? `:${excess(f)}` : ''}`), findings_path: findingsPath, progress: result.progress };
   return { result, output };
 }
