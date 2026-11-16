@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { args } from './lib.mjs';
+import { excess } from './progress.mjs';
 
 process.on('uncaughtException', (error) => { console.error(`[score] skipped: ${error.message}`); process.exit(0); });
 
@@ -28,8 +29,7 @@ try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], 
 // Why a Cook did not succeed, from Homeboy's own diagnosis: the agent gave up
 // (`agent.*`), the acceptance gate refused its candidate, or Homeboy's
 // mechanics failed (anything else). Mechanics failures are the loop's bug count.
-// A refused candidate is classified and summarized from the acceptance gate's
-// verdict line.
+// A refused candidate is summarized from the acceptance gate's verdict line.
 const diagnose = (runId) => {
   let data;
   try { data = JSON.parse(execFileSync('homeboy', ['agent-task', 'diagnose', runId], { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; }
@@ -38,9 +38,7 @@ const diagnose = (runId) => {
   const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}${verdict.own?.excess ? ` (excess ${verdict.own.excess.before}->${verdict.own.excess.after})` : ''}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
   // Acceptance passed, so the repository's own checks refused the candidate.
   const message = verdict.pass ? `acceptance passed (${measured}); repository checks failed` : measured;
-  // A verdict means the gate ran and refused the candidate, whichever process
-  // stream Homeboy's diagnosis ranks first.
-  return { ...data.root_cause, class: 'agent_task.promotion_gate_failed', message };
+  return { ...data.root_cause, message };
 };
 const failure = (cause) => !cause?.class ? 'unknown' : cause.class.startsWith('agent.') ? 'gave_up' : cause.class === 'agent_task.promotion_gate_failed' ? 'gate_failed' : 'mechanics';
 const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
@@ -93,4 +91,9 @@ fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
 ].join('\n'));
 const delta = previous?.occurrences != null && line.occurrences != null ? ` (${line.occurrences - previous.occurrences >= 0 ? '+' : ''}${line.occurrences - previous.occurrences})` : '';
 console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}, failures ${JSON.stringify(line.cook_failures)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min`);
-console.log(JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board }));
+// What the chain's stop_unchanged compares: this pass's blockers (count and
+// excess past their limits) and what it merged. A pass that merges a fix is
+// progress the next pass's evaluation has yet to see.
+const findings = read(`${pass}-eval/findings.json`);
+const progress = findings ? [...findings.findings.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${occurrences(f)}:${excess(f)}`).sort(), ...merged.map((m) => `merged:${m}`)] : null;
+fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board, progress }));
