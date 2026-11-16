@@ -282,8 +282,8 @@
       "equals": true
     },
     "stop_unchanged": {
-      "step": "evaluate",
-      "output": "/blocker_signatures",
+      "step": "score",
+      "output": "/progress",
       "passes": 3
     }
   }

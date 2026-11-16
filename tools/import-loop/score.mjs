@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { args } from './lib.mjs';
+import { excess } from './progress.mjs';
 
 process.on('uncaughtException', (error) => { console.error(`[score] skipped: ${error.message}`); process.exit(0); });
 
@@ -93,4 +94,9 @@ fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
 ].join('\n'));
 const delta = previous?.occurrences != null && line.occurrences != null ? ` (${line.occurrences - previous.occurrences >= 0 ? '+' : ''}${line.occurrences - previous.occurrences})` : '';
 console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}, failures ${JSON.stringify(line.cook_failures)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min`);
-console.log(JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board }));
+// What the chain's stop_unchanged compares: this pass's blockers (count and
+// excess past their limits) and what it merged. A pass that merges a fix is
+// progress the next pass's evaluation has yet to see.
+const findings = read(`${pass}-eval/findings.json`);
+const progress = findings ? [...findings.findings.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${occurrences(f)}:${excess(f)}`).sort(), ...merged.map((m) => `merged:${m}`)] : null;
+fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board, progress }));
