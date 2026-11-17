@@ -1906,21 +1906,7 @@ PHP;
 	 * @return string
 	 */
 	private static function sanitize_slug( string $value ): string {
-		$value = trim( $value );
-		if ( '' === $value ) {
-			return '';
-		}
-
-		// sanitize_title() transliterates accents but keeps underscores (and
-		// percent-encodes the rest), so its result still needs the identifier
-		// alphabet the companion plugin's PHP names and file paths require.
-		if ( function_exists( 'sanitize_title' ) && '' !== sanitize_title( $value ) ) {
-			$value = sanitize_title( $value );
-		}
-
-		$value = strtolower( $value );
-		$value = preg_replace( '/[^a-z0-9]+/', '-', $value );
-		return trim( (string) $value, '-' );
+		return Static_Site_Importer_Site_Identity::sanitize_slug( $value );
 	}
 
 	/**

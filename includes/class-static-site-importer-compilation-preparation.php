@@ -132,9 +132,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( empty( $args['name'] ) ) {
 			$args['name'] = $identity['name'];
 		}
-		if ( empty( $args['slug'] ) ) {
-			$args['slug'] = $identity['slug'];
-		}
+		$args['slug'] = $identity['slug'];
 		if ( empty( $args['source_artifact_reference'] ) ) {
 			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
 		}

@@ -341,7 +341,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** Add the importer-owned report targets before canonical destination preflight. */
 	public static function with_report_destinations( array $args ): array {
-		$theme_dir = trailingslashit( get_theme_root() ) . sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		$theme_dir = trailingslashit( get_theme_root() ) . Static_Site_Importer_Site_Identity::sanitize_slug( (string) ( $args['slug'] ?? '' ) );
 		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $args['destination'] ?? '' ) ) {
 			$args['report_destinations']          = array();
 			$args['external_report_destinations'] = array();
@@ -494,7 +494,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$destination = null;
 		}
 		if ( null === $destination ) {
-			$slug        = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+			$slug        = Static_Site_Importer_Site_Identity::sanitize_slug( (string) ( $args['slug'] ?? '' ) );
 			$theme_root  = get_theme_root();
 			$theme_uri   = trailingslashit( get_theme_root_uri() ) . $slug;
 			$theme_dir   = trailingslashit( $theme_root ) . $slug;

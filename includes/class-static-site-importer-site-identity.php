@@ -11,7 +11,7 @@
  * Deterministic priority:
  * - name/title: explicit theme name -> explicit site_title -> source document <title>
  *   (extracted + suffix-stripped) -> source URL host -> generic constant.
- * - slug: explicit slug arg -> sanitize_title(name) -> host -> generic constant.
+ * - slug: explicit slug arg -> normalized name -> host -> generic constant.
  * - block namespace: ssi-<slug>, filtered, sanitized, and never `core`.
  *
  * @package StaticSiteImporter
@@ -792,28 +792,35 @@ PHP;
 	}
 
 	/**
-	 * Sanitize a slug, with a runtime-independent fallback.
+	 * Normalize a slug to alphanumeric groups joined by dashes, with a portable fallback.
 	 *
 	 * @param string $value Raw slug source.
 	 * @return string
 	 */
-	private static function sanitize_slug( string $value ): string {
+	public static function sanitize_slug( string $value ): string {
 		$value = trim( $value );
 		if ( '' === $value ) {
 			return '';
 		}
 
+		// WordPress transliterates accents but preserves underscores and percent
+		// escapes; identifiers and runtime owner paths need a stricter alphabet.
 		if ( function_exists( 'sanitize_title' ) ) {
 			$sanitized = sanitize_title( $value );
 			if ( '' !== $sanitized ) {
-				return $sanitized;
+				$value = $sanitized;
 			}
 		}
 
-		$value = strtolower( $value );
-		$value = preg_replace( '/[^a-z0-9]+/', '-', $value );
+		// A lone underscore between alphanumerics is a valid owner separator and
+		// keeps existing slugs stable; any other separator run becomes one dash.
+		$value = (string) preg_replace_callback(
+			'/[^a-z0-9]+/',
+			static fn( array $run ): string => '_' === $run[0] ? '_' : '-',
+			strtolower( $value )
+		);
 
-		return trim( (string) $value, '-' );
+		return trim( $value, '_-' );
 	}
 
 	/**
