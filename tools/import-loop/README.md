@@ -35,8 +35,15 @@ Reusing a slug continues that site's captures and issues; pass a second
 argument for a fresh run. `LOOP_COOK_PLACEMENT` and `LOOP_WP_CLI` override
 the workflow defaults (`auto` and `studio wp`), and any further arguments,
 such as `--notification-transport` and `--notification-route`, go to
-`homeboy workflow run`. Start it from a checkout that stays on `main` while
-it runs.
+`homeboy workflow run`.
+
+Each pass first pins the tools at the current commit of `$LOOP_TOOLS_REF`
+(default `origin/main`) in the checkout it was started from (`tools.sh`), so a
+merged change to the loop's scripts reaches every running chain on its next
+pass. Set `LOOP_TOOLS_REF` to a commit to hold a run on fixed tools. A change to
+`loop.json` itself takes effect on the next launch. When the capture client or
+its arguments in `compare-client.json` change, the next pass captures the site
+again.
 
 `homeboy runs show <instance>` reports progress. Pass output lands in
 `<runs>/<slug>-p<N>-{eval,triage,confirm}/`.
