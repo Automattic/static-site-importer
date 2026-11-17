@@ -833,24 +833,55 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 
 	/**
 	 * Selectors whose subjects name different element types never match one element.
+	 * Jetpack's editor option block is known markup too: the block `div` carrying
+	 * the choice-label marker holds the native checkbox and a label wrapper with the
+	 * label RichText `div` and the required `span`, so those roles never share an
+	 * element even where their tags agree.
 	 *
 	 * @param string $left  First selector list.
 	 * @param string $right Second selector list.
 	 * @return bool
 	 */
 	private static function disjoint_subject_elements( string $left, string $right ): bool {
-		$types = array();
+		$subjects = array();
 		foreach ( array( $left, $right ) as $selectors ) {
 			$group = array();
 			foreach ( explode( ', ', $selectors ) as $selector ) {
-				if ( ! preg_match( '/(?:^|[ >+~])([a-z][a-z0-9]*)(?:[.#][a-zA-Z0-9_-]+)*$/D', $selector, $match ) ) {
+				$subject = self::subject_element( $selector );
+				if ( null === $subject ) {
 					return false;
 				}
-				$group[] = $match[1];
+				$group[] = $subject;
 			}
-			$types[] = $group;
+			$subjects[] = $group;
 		}
-		return ! array_intersect( $types[0], $types[1] );
+		foreach ( $subjects[0] as $one ) {
+			foreach ( $subjects[1] as $other ) {
+				if ( $one[0] === $other[0] && ( null === $one[1] || null === $other[1] || $one[1] === $other[1] ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The subject's element type, and its role in known provider markup if any.
+	 *
+	 * @param string $selector One complex selector.
+	 * @return array{0:string,1:?string}|null
+	 */
+	private static function subject_element( string $selector ): ?array {
+		foreach ( array(
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]*$/D' => array( 'div', 'option' ),
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]* > \.jetpack-field-option__label-wrapper > \.rich-text$/D' => array( 'div', 'option_label' ),
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]* > \.jetpack-field-option__label-wrapper > \.required$/D' => array( 'span', 'option_required' ),
+		) as $pattern => $subject ) {
+			if ( preg_match( $pattern, $selector ) ) {
+				return $subject;
+			}
+		}
+		return preg_match( '/(?:^|[ >+~])([a-z][a-z0-9]*)(?:[.#][a-zA-Z0-9_-]+)*$/D', $selector, $match ) ? array( $match[1], null ) : null;
 	}
 
 	/**
