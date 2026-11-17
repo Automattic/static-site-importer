@@ -11,7 +11,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args } from './lib.mjs';
+import { args, gh, COOK_NOTE } from './lib.mjs';
 import { excess } from './progress.mjs';
 import { retain, sweep } from './retain.mjs';
 
@@ -48,13 +48,21 @@ const classify = (outcome) => {
   if (outcome.kind === 'superseded_by_active_cook') return null;
   return FAILURE[outcome.kind] ?? 'unknown';
 };
-const explain = (runId, outcome) => {
+// A Cook that stopped without a pull request explains itself in the note
+// Homeboy posts on the issue: its summary is the agent's own reason.
+const noteSummary = (runId, issue) => {
+  try {
+    const note = JSON.parse(gh('issue', 'view', issue, '--json', 'comments')).comments.map((c) => c.body).findLast((body) => body.startsWith(`${COOK_NOTE}${runId} -->`));
+    return note?.match(/\*\*Summary:\*\*\s*(.+)/)?.[1] ?? null;
+  } catch { return null; }
+};
+const explain = (runId, outcome, issue) => {
+  if (FAILURE[outcome?.kind] === 'gave_up') { const summary = issue && noteSummary(runId, issue); if (summary) return summary; }
   const data = homeboy('agent-task', 'diagnose', runId);
   const verdict = (data?.gate_failure_output || '').split('\n').filter((l) => l.startsWith('{"pass":')).map((l) => { try { return JSON.parse(l); } catch { return null; } }).at(-1);
   if (verdict) {
     const measured = `own blocker ${verdict.own?.before}->${verdict.own?.after}${verdict.own?.excess ? ` (excess ${verdict.own.excess.before}->${verdict.own.excess.after})` : ''}; added ${verdict.blockers_added?.join(' ') || 'none'}; ${verdict.visual_regressions?.length ?? 0} visual regressions`;
-    // Acceptance passed, so the repository's own checks refused the candidate.
-    return verdict.pass ? `acceptance passed (${measured}); repository checks failed` : measured;
+    return verdict.pass ? `acceptance passed (${measured})` : measured;
   }
   return data?.root_cause?.message ?? outcome?.error_code ?? outcome?.kind ?? null;
 };
@@ -65,7 +73,7 @@ const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
   const failure = classify(terminal);
   const settled = { ...cook, run: item.run_id, terminal: terminal?.kind ?? null, ...(terminal?.pr ? { pr: terminal.pr } : {}) };
   if (!failure) return settled;
-  return { ...settled, failure, cause: String(explain(item.run_id, terminal) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
+  return { ...settled, failure, cause: String(explain(item.run_id, terminal, cook.issue) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
 });
 const merged = [...new Set(confirms.flatMap((c) => c.merged || []))];
 const started = run?.job?.created_at_ms ?? null;
