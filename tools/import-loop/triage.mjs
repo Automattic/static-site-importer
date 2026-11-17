@@ -304,7 +304,7 @@ function acceptanceGate(item, repo) {
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
     'tools="${IMPORT_LOOP_TOOLS:?}/tools/import-loop"; failed=0; scratch=$(mktemp -d); bare="$scratch/wp"; site="$scratch/site"',
-    `trap 'kill $(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$scratch"' EXIT`,
+    `trap 'kill -- -$(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$scratch"' EXIT`,
     // One line per phase, so a gate report shows where its time went.
     'phase() { echo "import-loop-gate phase=$1 seconds=$((SECONDS - mark))"; mark=$SECONDS; }; mark=$SECONDS',
     ...(checked || contracts ? ['bash "$tools/gates/bare-wp.sh" "$bare" "$IMPORT_LOOP_BARE_WP" >/dev/null || exit 1; phase bare_wp'] : []),

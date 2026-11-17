@@ -4,12 +4,16 @@
 // summarized in <runs>/<slug>-status.md, and printed as one summary line. Never fails the pass: a missing input is
 // recorded as null.
 //
+// Scoring ends the pass, so it also applies retention (retain.mjs): this slug's
+// servers stop and its sites go, except this pass's own site.
+//
 // Usage: score.mjs --instance <id> --runs <dir> --slug <slug> --iteration <n>
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { args } from './lib.mjs';
 import { excess } from './progress.mjs';
+import { retain, sweep } from './retain.mjs';
 
 process.on('uncaughtException', (error) => { console.error(`[score] skipped: ${error.message}`); process.exit(0); });
 
@@ -114,3 +118,6 @@ console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count
 const findings = read(`${pass}-eval/findings.json`);
 const progress = findings ? [...findings.findings.filter((f) => f.severity === 'blocker').map((f) => `${f.signature}:${occurrences(f)}:${excess(f)}`).sort(), ...merged.map((m) => `merged:${m}`)] : null;
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ blocker_count: line.blocker_count, occurrences: line.occurrences, merged: merged.length, minutes: line.minutes, board, progress }));
+const removed = retain(args.runs, args.slug, args.iteration);
+const swept = sweep(args.runs).filter((s) => s.removed);
+console.error(`[score] retention: ${removed} sites removed for ${args.slug}${swept.length ? `; swept ${swept.map((s) => `${s.slug}:${s.removed}`).join(' ')}` : ''}`);

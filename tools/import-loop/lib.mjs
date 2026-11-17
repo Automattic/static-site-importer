@@ -126,7 +126,10 @@ function reimportUrl({ status, stdout, stderr }, dir) {
     throw Object.assign(new Error(`import_failed: ${reasons.join(', ') || stderr.trim().split('\n').pop()?.slice(0, 200) || `exit ${status}`}`), { import_failed: true });
   }
   const pid = Number(fs.readFileSync(`${dir}/.server.pid`, 'utf8'));
-  process.on('exit', () => { try { process.kill(pid); } catch {} });
+  // Stop the server's whole process group when this step ends, including when
+  // Homeboy terminates it.
+  process.on('exit', () => { try { process.kill(-pid); } catch {} });
+  for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => process.exit(128 + (signal === 'SIGTERM' ? 15 : 2)));
   return stdout.trim().split('\n').pop();
 }
 export function reimportSite(transformer, reimport, dir, importer = '') {
