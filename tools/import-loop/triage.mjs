@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, CAP_NOTICE, DESIGN_NOTICE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -285,12 +285,7 @@ const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
 const archives = new Map();
 function evidenceFile(source, id) {
   if (!fs.statSync(source).isDirectory()) return source;
-  if (!archives.has(id)) {
-    const archive = path.join(args.work, 'evidence', `${id}.tgz`);
-    fs.mkdirSync(path.dirname(archive), { recursive: true });
-    execFileSync('tar', ['-czhf', archive, '-C', source, '.']);
-    archives.set(id, archive);
-  }
+  if (!archives.has(id)) archives.set(id, evidenceArchive(source, path.join(args.work, 'evidence', `${id}.tgz`)));
   return archives.get(id);
 }
 

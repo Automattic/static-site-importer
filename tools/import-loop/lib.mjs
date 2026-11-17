@@ -1,6 +1,7 @@
 // Shared by the loop steps: arguments, GitHub, and predicate runs.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -244,3 +245,28 @@ export async function checkHeads(checks, width = Math.max(1, Math.floor(os.avail
 
 // 0: the defect reproduces. 1: it does not. Anything else: the predicate failed.
 export const predicateExit = (predicate, transformer, page, env) => spawnSync('node', [predicate, transformer, page], { stdio: 'ignore', env }).status;
+
+// A directory as one `.tgz` for a Cook's provider evidence, which Homeboy caps
+// at 64 MB. A capture holds the same media under `media/` and
+// `resources/external/`, so files with equal content go in as hard links to
+// one copy: base44's capture packs to 37.6 MB instead of 72.3 MB. The staging
+// tree hard-links the source (copying only across filesystems) and never
+// writes to it.
+export function evidenceArchive(source, archive) {
+  const staged = `${archive}.staging`;
+  fs.rmSync(staged, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(archive), { recursive: true });
+  try { execFileSync('cp', ['-RLl', `${fs.realpathSync(source)}/.`, staged], { stdio: 'ignore' }); } catch { fs.rmSync(staged, { recursive: true, force: true }); fs.cpSync(source, staged, { recursive: true, dereference: true }); }
+  const first = new Map();
+  for (const file of fs.readdirSync(staged, { recursive: true })) {
+    const full = path.join(staged, file);
+    if (!fs.lstatSync(full).isFile()) continue;
+    const key = createHash('sha1').update(fs.readFileSync(full)).digest('hex');
+    if (!first.has(key)) { first.set(key, full); continue; }
+    fs.rmSync(full);
+    fs.linkSync(first.get(key), full);
+  }
+  execFileSync('tar', ['-czf', archive, '-C', staged, '.']);
+  fs.rmSync(staged, { recursive: true, force: true });
+  return archive;
+}
