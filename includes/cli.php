@@ -766,8 +766,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$limits  = static_site_importer_cli_request_bundle_limits();
 		$reports = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
 		$walk    = array( array( $directory, false ) );
+		$website_prefix = '';
 		if ( '' !== $report_root && $report_root !== $directory ) {
-			$walk = array( array( $directory, true ) );
+			$walk           = array( array( $directory, true ) );
+			$website_root   = (string) realpath( $directory );
+			$website_prefix = str_starts_with( $website_root, $report_root . DIRECTORY_SEPARATOR ) ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $website_root, strlen( $report_root ) + 1 ) ) . '/' : '';
 			foreach ( array_keys( $reports ) as $report_path ) {
 				$candidate = $report_root . DIRECTORY_SEPARATOR . str_replace( '/', DIRECTORY_SEPARATOR, $report_path );
 				if ( ! file_exists( $candidate ) && ! is_link( $candidate ) ) {
@@ -814,8 +817,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				}
 				$absolute = $item->getRealPath();
 				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $root ) + 1 ) ) : '';
-				// Declared reports come from the capture root, never the website tree.
-				if ( $reports_elsewhere && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
+				// Declared reports come from the capture root, never the website tree,
+				// including a report that lives inside the website tree.
+				if ( $reports_elsewhere && ( static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) || static_site_importer_cli_request_bundle_is_declared_report( $website_prefix . $relative, $reports ) ) ) {
 					continue;
 				}
 				if ( '' === $relative || ( function_exists( 'static_site_importer_rest_artifact_path' ) && '' === static_site_importer_rest_artifact_path( $relative ) ) ) {
