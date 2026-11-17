@@ -266,6 +266,7 @@
         "confirm_uncooked"
       ],
       "always": true,
+      "capacity": "none",
       "timeout": "10m",
       "exec": {
         "program": "node",
