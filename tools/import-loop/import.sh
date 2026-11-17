@@ -29,11 +29,10 @@ if [ ! -f "$capture/capture-receipt.json" ]; then
   studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$first")" '.[] | select(.path == $site)' > /dev/null &&
     studio site delete "$runs/$(basename "$first")" > /dev/null 2>&1
   rm -rf "$first" "$first-source"
-  status=0
-  studio create --path "$first" --from "$url" --keep-source --skip-browser 2>&1 | tee "$first.log" || status=$?
-  # Only a preserved quality-failed preview is a usable non-zero result.
-  if (( status != 0 )) && ! grep -q 'static_site_importer_quality_failed' "$first.log"; then exit "$status"; fi
-  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "studio create kept no capture for $host" >&2; exit 1; }
+  # The loop needs only the kept capture: every pass re-imports it below, so
+  # Studio's own import result (accepted, quality-failed or failed) is not used.
+  studio create --path "$first" --from "$url" --keep-source --skip-browser 2>&1 | tee "$first.log" || true
+  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "studio create kept no capture for $host (see $first.log)" >&2; exit 1; }
   rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; cp -a "$first-source/$host" "$capture"
   studio site stop --path "$first" > /dev/null 2>&1 || true
 fi
