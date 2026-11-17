@@ -518,11 +518,12 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * they stay bounded, but it converts none of them, so the budget sized for
 	 * page source does not describe what they cost.
 	 *
-	 * `max_media_total_bytes` and `max_report_total_bytes` are enforced through
-	 * the per-file ceiling below, which shrinks to whatever remains of them, so
-	 * a capture of any shape is still refused once it passes an aggregate.
+	 * Reports receive 4 MiB per captured HTML route document, with a 64 MiB
+	 * baseline and a 128 MiB hard ceiling (also the compiler's hard ceiling).
+	 * Their aggregate is checked separately from the fixed 32 MiB file ceiling;
+	 * media retains a per-file ceiling that shrinks to its remaining budget.
 	 */
-	function static_site_importer_cli_request_bundle_limits(): array {
+	function static_site_importer_cli_request_bundle_limits( int $route_documents = 0 ): array {
 		return array(
 			'max_files'                => 5000,
 			'max_media_files'          => 20000,
@@ -531,7 +532,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 			'max_report_file_bytes'    => 33554432,
 			'max_total_bytes'          => 268435456,
 			'max_media_total_bytes'    => 1073741824,
-			'max_report_total_bytes'   => 67108864,
+			'max_report_total_bytes'   => max( 67108864, min( 32, max( 0, $route_documents ) ) * 4194304 ),
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
@@ -618,7 +619,8 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * A declared capture report is read, so it is not media, but it is evidence
 	 * about the capture rather than page source: Blocks Engine hydrates it and
 	 * only ever decodes the few reports a projector names, converting none of
-	 * them. It gets the same two-sided treatment on the report budget.
+	 * them. Its fixed per-file ceiling is independent of the route-scaled
+	 * aggregate, checked after counting the captured documents.
 	 *
 	 * @param array<string,true> $reports Declared report lookup set.
 	 */
@@ -627,9 +629,17 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 			return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
 		}
 		if ( static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
-			return min( $limits['max_report_file_bytes'], max( 0, $limits['max_report_total_bytes'] - $report_bytes_used ) );
+			return $limits['max_report_file_bytes'];
 		}
 		return $limits['max_file_bytes'];
+	}
+
+	/** Report aggregate refusals with the full declared total, never a file remainder. */
+	function static_site_importer_cli_request_bundle_report_total_error( int $bytes, int $maximum ): WP_Error {
+		return new WP_Error(
+			'static_site_importer_cli_request_bundle_report_total_too_large',
+			sprintf( 'Declared capture reports total %1$s (%2$d bytes), exceeding the %3$s aggregate report budget (%4$d bytes).', static_site_importer_cli_request_bundle_mib( $bytes ), $bytes, static_site_importer_cli_request_bundle_mib( $maximum ), $maximum )
+		);
 	}
 
 	/** Format a byte count as whole or one-decimal MiB for an error message. */
@@ -775,6 +785,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$total_bytes     = 0;
 		$media_bytes     = 0;
 		$report_bytes    = 0;
+		$route_documents = 0;
 		$generated_files = array();
 		$media_files     = 0;
 		try {
@@ -838,8 +849,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( $read_source && ! $report && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
-				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
+				$is_html           = ! $report && (bool) preg_match( '/\.html?$/i', $relative );
 				$inline_expansions = $is_html ? array_diff_key( array_flip( static_site_importer_cli_inline_expansion_keys( $absolute ) ), $generated_files ) : array();
+
+				$route_documents += $is_html ? 1 : 0;
 				// Media the compiler never opens has its own file budget; the
 				// file budget bounds what it parses.
 				$media = ! $read_source && ! $report;
@@ -879,6 +892,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		}
 		if ( empty( $files ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source tree contains no static files.' );
+		}
+		$limits = static_site_importer_cli_request_bundle_limits( $route_documents );
+		if ( $report_bytes > $limits['max_report_total_bytes'] ) {
+			return static_site_importer_cli_request_bundle_report_total_error( $report_bytes, $limits['max_report_total_bytes'] );
 		}
 		usort( $files, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
 		return array(
