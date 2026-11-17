@@ -763,9 +763,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$limits  = static_site_importer_cli_request_bundle_limits();
-		$reports = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
-		$walk    = array( array( $directory, false ) );
+		$limits         = static_site_importer_cli_request_bundle_limits();
+		$reports        = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$walk           = array( array( $directory, false ) );
 		$website_prefix = '';
 		if ( '' !== $report_root && $report_root !== $directory ) {
 			$walk           = array( array( $directory, true ) );
