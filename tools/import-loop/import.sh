@@ -34,8 +34,10 @@ if [ ! -f "$capture/capture-receipt.json" ] || ! cmp -s "$client" "$capture/.cap
   capture_args=(); while IFS= read -r arg; do capture_args+=("$arg"); done < <(jq -r '.capture_args[]' "$client")
   npx --yes "--package=$(jq -r .package "$client")" "$(jq -r .executable "$client")" "$url" --output "$first-source" \
     "${capture_args[@]}" 2>&1 | tee "$first.log" || true
-  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "the capture client kept no capture for $host (see $first.log)" >&2; exit 1; }
-  rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; cp -a "$first-source/$host" "$capture"; cp "$client" "$capture/.capture-client.json"
+  # The client names the capture after the site's host and path.
+  kept=$(dirname "$(ls "$first-source"/*/capture-receipt.json 2> /dev/null | head -1 || true)")
+  [ -f "$kept/capture-receipt.json" ] || { echo "the capture client kept no capture for $url (see $first.log)" >&2; exit 1; }
+  rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; mv "$kept" "$capture"; cp "$client" "$capture/.capture-client.json"
   rm -rf "$first-source"
 fi
 
