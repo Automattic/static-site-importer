@@ -390,6 +390,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array(), bool $responsive_border = false ): ?array {
 		$map = Static_Site_Importer_Jetpack_Forms_Runtime::field_block_map();
+		// The file field is plan- and connection-gated; callers only ask for it
+		// after Static_Site_Importer_Jetpack_Forms_Runtime::file_upload_available().
+		$map['file'] = 'jetpack/field-file';
 
 		$lookup = 'textarea' === $tag ? 'textarea' : ( 'select' === $tag ? 'select' : $type );
 		if ( 'select-multiple' === $type ) {
@@ -566,6 +569,32 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'innerBlocks' => $option_blocks,
 				'wrapper'     => 'ul',
 			);
+		} elseif ( 'file' === $lookup ) {
+			// Jetpack takes one file of its own accepted types; a source that asks
+			// for several files or narrows the types keeps that as a named loss.
+			foreach ( array( 'multiple', 'accept' ) as $attribute ) {
+				if ( ! empty( $control[ $attribute ] ) ) {
+					$losses[] = array(
+						'dimension'         => 'control',
+						'reason_code'       => 'unsupported_control_attribute',
+						'attribute'         => $attribute,
+						'control_type_hash' => hash( 'sha256', $type ),
+					);
+				}
+			}
+			$inner_blocks[] = array(
+				'name'        => 'jetpack/dropzone',
+				'attrs'       => array(),
+				'innerBlocks' => array(
+					array(
+						'name'    => 'core/paragraph',
+						'attrs'   => array(),
+						'wrapper' => 'paragraph',
+						'content' => '' !== $placeholder ? $placeholder : __( 'Drag and drop or click to select a file.', 'static-site-importer' ),
+					),
+				),
+				'wrapper'     => 'dropzone',
+			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
 			$input_attrs = array();
 			// A source shorthand already owns the border through the presentation
@@ -722,7 +751,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @return bool
 	 */
 	private static function provider_renders_help_text( string $lookup ): bool {
-		return ! in_array( $lookup, array( 'checkbox', 'radio' ), true );
+		return ! in_array( $lookup, array( 'checkbox', 'radio', 'file' ), true );
 	}
 
 	/**
@@ -1106,6 +1135,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '"' . ( '' !== $style ? ' style="' . self::escape_attribute( rtrim( $style, ';' ) ) . '"' : '' ) . '>';
 			$suffix = '</' . $tag . ">\n";
+		} elseif ( 'dropzone' === $wrapper ) {
+			$prefix = "\n<div class=\"wp-block-jetpack-dropzone\">";
+			$suffix = "</div>\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
 			// The options list saves through useBlockProps.save(): always include the generated class.
 			$custom  = 'jetpack/options' === $name && is_string( $attrs['className'] ?? null ) ? trim( $attrs['className'] ) : '';

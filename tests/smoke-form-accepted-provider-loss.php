@@ -61,4 +61,35 @@ $source['controls'][0]['description'] = 'Unrepresentable checkbox description';
 $source['controls'][0]['type'] = 'checkbox';
 $declined = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $source ) ) )['forms'][0];
 $assert( 'skipped' === $declined['status'] && 'form_receipt_loss_unaccepted' === $declined['reason'] && false === $declined['runtime_mapped'], 'Other unaccepted losses must still refuse materialization.' );
+// A site whose plan carries Jetpack's file field and that has a WordPress.com
+// ID accepts the upload natively; any missing capability keeps the named loss.
+class Jetpack_Gutenberg {
+	public static bool $file_field = false;
+	public static function get_cached_availability(): array {
+		return array( 'field-file' => array( 'available' => self::$file_field ) );
+	}
+}
+class Jetpack_Options {
+	public static int $id = 0;
+	public static function get_option( string $name ) {
+		return 'id' === $name ? self::$id : null;
+	}
+}
+$GLOBALS['ssi_jetpack_registered_form_blocks'][] = 'jetpack/field-file';
+unset( $source['controls'][0]['description'] );
+$source['controls'][0]['type'] = 'text';
+foreach ( array(
+	array( true, 0, false ),
+	array( false, 123, false ),
+	array( true, 123, true ),
+) as [ $plan, $site_id, $uploads ] ) {
+	Jetpack_Gutenberg::$file_field = $plan;
+	Jetpack_Options::$id           = $site_id;
+	$case   = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $source ) ) )['forms'][0];
+	$losses = array_column( $case['computed_layout_receipt']['losses'], 'reason_code', 'name' );
+	$assert( 'mapped' === $case['status'], 'The form materializes whatever the upload capability.' );
+	$assert( $uploads === str_contains( $case['block_markup'], '<!-- wp:jetpack/field-file' ) && $uploads === str_contains( $case['block_markup'], 'Manuscript' ), 'The upload maps to Jetpack\'s file field exactly when the site can accept it.' );
+	$assert( $uploads === ! isset( $losses['file'] ), 'A mapped upload is not reported lost; an unmapped one is.' );
+}
+$assert( str_contains( $case['block_markup'], '<div class="wp-block-jetpack-dropzone">' ), 'The file field carries its dropzone saved markup.' );
 echo "form accepted provider loss passed\n";

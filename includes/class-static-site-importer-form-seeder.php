@@ -592,9 +592,9 @@ class Static_Site_Importer_Form_Seeder {
 			return;
 		}
 
-		if ( 'file' === $type && 'input' === $tag ) {
-			// A file upload is a functional control the provider cannot represent
-			// here; it is never downgraded to text or dropped without a name.
+		if ( 'file' === $type && 'input' === $tag && ! Static_Site_Importer_Jetpack_Forms_Runtime::file_upload_available() ) {
+			// Without the plan feature and a WordPress.com site ID Jetpack cannot
+			// accept the upload; it is never downgraded to text or dropped without a name.
 			$state->skipped[]                  = 'file';
 			$state->unsupported_capabilities[] = array(
 				'capability'    => 'file_upload',
