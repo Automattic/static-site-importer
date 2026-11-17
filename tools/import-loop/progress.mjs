@@ -34,6 +34,7 @@ export const parityFailureClass = (failure) => {
     [/^background geometry/, 'background_geometry', 'blocks-engine'],
     [/^page height/, 'page_height', 'blocks-engine'],
     [/^images /, 'image_decoding', 'blocks-engine'],
+    [/^pixel region /, 'pixel_region', 'blocks-engine'],
   ].find(([pattern]) => pattern.test(text));
   if (known) return { subject: known[1], owner_repo: known[2] };
   // A class this table has not seen: its leading words still give a stable
