@@ -65,7 +65,10 @@ if ( is_file( $file ) ) return false;
 require __DIR__ . '/index.php';
 PHP
 # The block editor fires dozens of parallel requests; one worker serializes them.
-PHP_CLI_SERVER_WORKERS=8 setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
+# The server leads its own process group, so its owner stops it with its
+# workers (`kill -- -<pid>`). Retention stops it once the pass is scored; the
+# deadline bounds a server whose owner died before that.
+PHP_CLI_SERVER_WORKERS=8 setsid timeout -k 30 "${IMPORT_LOOP_SERVER_TTL:-24h}" php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
 echo $! > "$site/.server.pid"
 for _ in $(seq 50); do curl -fs -o /dev/null "$url/" && break; sleep 0.2; done
 echo "$url"

@@ -22,7 +22,7 @@ bare="$runs/bare-wp"
 # This slug's earlier passes served their sites from `php -S` (reimport.sh
 # records the server in <pass>/site); stop them. Other slugs share $runs and
 # their loops still use their servers.
-for pid in "${pass%-p*}"-p[0-9]*/site/.server.pid; do [ -f "$pid" ] && kill "$(cat "$pid")" 2> /dev/null || true; done
+for pid in "${pass%-p*}"-p[0-9]*/site/.server.pid; do [ -f "$pid" ] && kill -- "-$(cat "$pid")" 2> /dev/null || true; done
 
 if [ ! -f "$capture/capture-receipt.json" ]; then
   first="$pass-capture"
