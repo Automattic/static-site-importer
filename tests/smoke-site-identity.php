@@ -70,6 +70,7 @@ foreach ( array(
 	array( 'My__Site', 'my__site', 'my-site' ),
 	array( 'Studio_', 'studio_', 'studio' ),
 	array( 'émile_ photo', 'emile_-photo', 'emile-photo' ),
+	array( 'my_theme', 'my_theme', 'my_theme' ),
 ) as list( $name, $wordpress_slug, $expected ) ) {
 	$assert( $wordpress_slug === sanitize_title( $name ), 'wordpress-keeps-underscores: ' . $name );
 	foreach ( array(

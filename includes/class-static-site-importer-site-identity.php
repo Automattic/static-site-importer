@@ -812,10 +812,15 @@ PHP;
 			}
 		}
 
-		$value = strtolower( $value );
-		$value = preg_replace( '/[^a-z0-9]+/', '-', $value );
+		// A lone underscore between alphanumerics is a valid owner separator and
+		// keeps existing slugs stable; any other separator run becomes one dash.
+		$value = (string) preg_replace_callback(
+			'/[^a-z0-9]+/',
+			static fn( array $run ): string => '_' === $run[0] ? '_' : '-',
+			strtolower( $value )
+		);
 
-		return trim( (string) $value, '-' );
+		return trim( $value, '_-' );
 	}
 
 	/**
