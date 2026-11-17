@@ -85,7 +85,7 @@ export async function checkImport(args) {
     finding.occurrences.push({ route, width, evidence });
     findings.set(signature, finding);
   };
-  for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: 'data-liberation-agent', subject: 'route_folded', evidence: folded, route: folded.route });
+  for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: compareClient.owner_repo, subject: 'route_folded', evidence: folded, route: folded.route });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.
