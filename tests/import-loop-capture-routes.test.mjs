@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { captureRoutes } from '../tools/import-loop/checks.mjs';
+import { captureRoutes, foldedRoutes } from '../tools/import-loop/checks.mjs';
 import { routeDocument } from '../tools/import-loop/lib.mjs';
 
 test('routes come from the capture receipt for directory and file sites', () => {
@@ -27,4 +27,20 @@ test('a WordPress route reads its capture document however the capture saved it'
   for (const [route, content] of [['/shop/suspension/', 'suspension'], ['/shop/index-query-1/', 'query variant']]) {
     assert.equal(fs.readFileSync(routeDocument(website, route), 'utf8'), content);
   }
+});
+
+test('a route folded into a page with different text is reported; aliases and query renditions are not', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-folded-'));
+  const site = 'https://spa.example/';
+  const pages = { '': 'Home', about: 'About us', alias: 'Home', 'gallery?c=x': 'Gallery X' };
+  fs.mkdirSync(path.join(root, 'html')); fs.mkdirSync(path.join(root, 'screenshots'));
+  const entries = {};
+  for (const [route, text] of Object.entries(pages)) {
+    const file = `html/${route.replace(/\W/g, '-') || 'homepage'}.html`;
+    fs.writeFileSync(path.join(root, file), `<html><head><link rel="canonical" href="${site}"><script>x()</script></head><body><h1>${text}</h1></body></html>`);
+    entries[site + route] = { html: file };
+  }
+  fs.writeFileSync(path.join(root, 'screenshots', 'manifest.json'), JSON.stringify({ version: 1, entries }));
+  fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ duplicateRoutes: ['about', 'alias', 'gallery?c=x'].map((r) => ({ url: site + r, canonicalUrl: site })) }));
+  assert.deepEqual(foldedRoutes(root), [{ route: '/about', canonical: '/' }]);
 });

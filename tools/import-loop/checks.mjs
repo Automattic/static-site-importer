@@ -56,6 +56,22 @@ export const captureRoutes = (captureRoot) => {
   return [...new Set(routes)].sort();
 };
 
+// Routes the capture folded into another page although they render different
+// text: a folded route never reaches `website/`, so the import cannot make it
+// and no other check sees it. Query renditions fold by design and are skipped.
+const pageText = (file) => fs.readFileSync(file, 'utf8').replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+export const foldedRoutes = (captureRoot) => {
+  const receipt = JSON.parse(fs.readFileSync(path.join(captureRoot, 'capture-receipt.json'), 'utf8'));
+  const manifestPath = path.join(captureRoot, 'screenshots', 'manifest.json');
+  const entries = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')).entries || {} : {};
+  const text = (url) => entries[url]?.html && fs.existsSync(path.join(captureRoot, entries[url].html)) ? pageText(path.join(captureRoot, entries[url].html)) : null;
+  return (receipt.duplicateRoutes || []).filter(({ url, canonicalUrl }) => {
+    if (new URL(url).search) return false;
+    const alias = text(url), canonical = text(canonicalUrl);
+    return alias !== null && canonical !== null && alias !== canonical;
+  }).map(({ url, canonicalUrl }) => ({ route: new URL(url).pathname, canonical: new URL(canonicalUrl).pathname }));
+};
+
 export async function checkImport(args) {
   for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
   fs.mkdirSync(args.out, { recursive: true });
@@ -69,6 +85,7 @@ export async function checkImport(args) {
     finding.occurrences.push({ route, width, evidence });
     findings.set(signature, finding);
   };
+  for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: compareClient.owner_repo, subject: 'route_folded', evidence: folded, route: folded.route });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.
