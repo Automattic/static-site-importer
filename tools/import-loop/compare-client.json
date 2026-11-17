@@ -1,5 +1,5 @@
 {
-  "package": "https://github.com/Automattic/data-liberation-agent/releases/download/v0.33.204/data-liberation-0.33.204.tgz",
+  "package": "https://github.com/Automattic/data-liberation-agent/releases/download/v0.35.37/data-liberation-0.35.37.tgz",
   "executable": "data-liberation",
   "owner_repo": "data-liberation-agent"
 }
