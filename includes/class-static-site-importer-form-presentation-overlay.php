@@ -34,6 +34,21 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	// Builders such as Wix state a range as `screen and (min-width: 1px) and (max-width: 750px)`.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?' . self::MEDIA_FEATURE . '(?: and ' . self::MEDIA_FEATURE . '){0,3}';
 
+	/** Property families whose members set each other through shorthand or logical forms. */
+	private const PROPERTY_FAMILY_ALIASES = array(
+		'top'     => 'inset',
+		'right'   => 'inset',
+		'bottom'  => 'inset',
+		'left'    => 'inset',
+		'row'     => 'gap',
+		'column'  => 'gap',
+		'columns' => 'gap',
+		'place'   => 'align',
+		'justify' => 'align',
+		'inline'  => 'width',
+		'block'   => 'height',
+	);
+
 	public const SURFACE_FRONT_END = 'front_end';
 	public const SURFACE_EDITOR    = 'editor';
 
@@ -725,7 +740,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	}
 
 	/**
-	 * Merge equivalent rules only across provably disjoint mapped node selectors.
+	 * Merge equivalent rules only across intervening rules that provably cannot
+	 * compete: disjoint mapped nodes, distinct subject elements, or declarations
+	 * in disjoint property families.
 	 *
 	 * @param string[] $rules Compiled rules in cascade order.
 	 * @return string[]
@@ -758,7 +775,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 					$merged              = true;
 					break;
 				}
-				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) ) {
+				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) && ! self::disjoint_subject_elements( $parts[2], $candidate[2] ) && ! self::disjoint_declarations( $parts[3], $candidate[3] ) ) {
 					break;
 				}
 			}
@@ -790,7 +807,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	 * Only simple, per-node boxes prove that two selector lists cannot compete.
 	 * A node's core/button link is its own box too: only that node's wrapper
 	 * holds it, so distinct nodes' links never share an element. A node's
-	 * placeholder belongs to that node's own control in the same way.
+	 * placeholder belongs to that node's own control in the same way. Labels
+	 * reached as `> label` are unclassed provider markup (the editor RichText or
+	 * a choice option label) under the node that carries the label class, and
+	 * the provider's required marker is likewise an unclassed span.
 	 *
 	 * @param string $left  First selector list.
 	 * @param string $right Second selector list.
@@ -801,7 +821,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		foreach ( array( $left, $right ) as $selectors ) {
 			$group = array();
 			foreach ( explode( ', ', $selectors ) as $selector ) {
-				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31})| > \.wp-block-button__link)?(?:::placeholder)?$/D', $selector, $match ) ) {
+				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31})| > \.wp-block-button__link| > label(?: > \.grunion-label-required)?| > \.grunion-label-required)?(?:::placeholder)?$/D', $selector, $match ) ) {
 					return false;
 				}
 				$group[] = $match[1];
@@ -809,6 +829,56 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$nodes[] = $group;
 		}
 		return ! array_intersect( $nodes[0], $nodes[1] );
+	}
+
+	/**
+	 * Selectors whose subjects name different element types never match one element.
+	 *
+	 * @param string $left  First selector list.
+	 * @param string $right Second selector list.
+	 * @return bool
+	 */
+	private static function disjoint_subject_elements( string $left, string $right ): bool {
+		$types = array();
+		foreach ( array( $left, $right ) as $selectors ) {
+			$group = array();
+			foreach ( explode( ', ', $selectors ) as $selector ) {
+				if ( ! preg_match( '/(?:^|[ >+~])([a-z][a-z0-9]*)(?:[.#][a-zA-Z0-9_-]+)*$/D', $selector, $match ) ) {
+					return false;
+				}
+				$group[] = $match[1];
+			}
+			$types[] = $group;
+		}
+		return ! array_intersect( $types[0], $types[1] );
+	}
+
+	/**
+	 * Rules that set no common property family cannot override each other, so
+	 * their relative order never changes the cascade. Families are deliberately
+	 * coarse: shorthands, longhands, logical and physical forms share one.
+	 *
+	 * @param string $left  First declaration block.
+	 * @param string $right Second declaration block.
+	 * @return bool
+	 */
+	private static function disjoint_declarations( string $left, string $right ): bool {
+		$families = array();
+		foreach ( array( $left, $right ) as $declarations ) {
+			$group = array();
+			foreach ( explode( ';', $declarations ) as $declaration ) {
+				if ( '' === trim( $declaration ) ) {
+					continue;
+				}
+				if ( ! preg_match( '/^\s*(-[a-z]+-)?([a-z][a-z0-9-]*)\s*:/D', $declaration, $match ) ) {
+					return false;
+				}
+				$family  = strtok( $match[2], '-' );
+				$group[] = self::PROPERTY_FAMILY_ALIASES[ $family ] ?? $family;
+			}
+			$families[] = $group;
+		}
+		return ! in_array( 'all', array_merge( ...$families ), true ) && ! array_intersect( $families[0], $families[1] );
 	}
 
 	/**

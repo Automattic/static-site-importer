@@ -16,6 +16,8 @@ $node_c = '.ssi-form-123456789abc .ssi-node-000000000003-wrap';
 $link_a  = '.ssi-form-123456789abc .ssi-node-000000000001 > .wp-block-button__link';
 $field_b = '.ssi-form-123456789abc .ssi-node-000000000002';
 $link_c  = '.ssi-form-123456789abc .ssi-node-000000000003 > .wp-block-button__link';
+$field_a = '.ssi-form-123456789abc .ssi-node-000000000001';
+$field_c = '.ssi-form-123456789abc .ssi-node-000000000003';
 $cases   = array(
 	array( array( '@media (max-width:500px){' . $node_a . '{color:red}}', "$node_b{color:blue}", '@media (max-width:500px){' . $node_c . '{color:red}}' ), array( '@media (max-width:500px){' . $node_a . ', ' . $node_c . '{color:red}}', "$node_b{color:blue}" ) ),
 	array( array( "$node_a{margin:0}", "$node_a{margin-left:8px}", "$node_a{margin:0}" ), array( "$node_a{margin:0}", "$node_a{margin-left:8px}", "$node_a{margin:0}" ) ),
@@ -23,6 +25,15 @@ $cases   = array(
 	array( array( "$node_a{color:red}", "$node_b{color:blue}", "$node_c{color:red}" ), array( "$node_a, $node_c{color:red}", "$node_b{color:blue}" ) ),
 	// A node's core/button link and placeholder are that node's own boxes, so they never block distinct nodes' rules from merging.
 	array( array( "$link_a{margin:0}", "$field_b::placeholder{color:red}", "$link_c{margin:0}" ), array( "$link_a, $link_c{margin:0}", "$field_b::placeholder{color:red}" ) ),
+	// A node's unclassed `> label` and required marker are its own boxes too: repeated choice rows merge.
+	array( array( "$field_a{display:flex}", "$field_a > label{color:red}", "$field_b > .grunion-label-required{margin:0}", "$field_c{display:flex}" ), array( "$field_a, $field_c{display:flex}", "$field_a > label{color:red}", "$field_b > .grunion-label-required{margin:0}" ) ),
+	// Distinct subject elements never compete; neither do disjoint property families.
+	array( array( '.x input{color:red}', '.y label{color:blue}', '.z input{color:red}' ), array( '.x input, .z input{color:red}', '.y label{color:blue}' ) ),
+	array( array( '.x{display:flex}', '.y{color:blue}', '.z{display:flex}' ), array( '.x, .z{display:flex}', '.y{color:blue}' ) ),
+	// Shorthands, logical forms and `all` share a family, so they stay barriers.
+	array( array( '.x{margin:0}', '.y{margin-left:8px}', '.z{margin:0}' ), array( '.x{margin:0}', '.y{margin-left:8px}', '.z{margin:0}' ) ),
+	array( array( '.x{width:10px}', '.y{inline-size:20px}', '.z{width:10px}' ), array( '.x{width:10px}', '.y{inline-size:20px}', '.z{width:10px}' ) ),
+	array( array( '.x{color:red}', '.y{all:unset}', '.z{color:red}' ), array( '.x{color:red}', '.y{all:unset}', '.z{color:red}' ) ),
 	array( array( "$node_a{color:red}", "$node_a{color:blue}", "$node_a{color:red}" ), array( "$node_a{color:red}", "$node_a{color:blue}", "$node_a{color:red}" ) ),
 	array( array( "$node_a{color:red}", "$node_c{color:blue}", "$node_c{color:red}" ), array( "$node_a{color:red}", "$node_c{color:blue}", "$node_c{color:red}" ) ),
 	array( array( '.a{color:red}', '.b{color:red}' ), array( '.a, .b{color:red}' ) ),
