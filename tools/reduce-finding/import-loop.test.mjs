@@ -56,11 +56,18 @@ exit 1
     // The earlier pass's server stops; another slug's loop keeps its server.
     const servers = Object.fromEntries(['loop-p1', 'other-p1'].map((pass) => {
       fs.mkdirSync(path.join(dir, pass, 'site'), { recursive: true });
-      const pid = Number(spawnSync('sh', ['-c', 'sleep 300 > /dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout);
+      const pid = Number(spawnSync('sh', ['-c', 'setsid sleep 300 > /dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout);
       fs.writeFileSync(path.join(dir, pass, 'site', '.server.pid'), String(pid));
       return [pass, pid];
     }));
-    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const alive = (pid) => {
+      try {
+        process.kill(pid, 0);
+        // Minimal container init processes may leave terminated children as zombies.
+        const stat = `/proc/${pid}/stat`;
+        return !fs.existsSync(stat) || fs.readFileSync(stat, 'utf8').split(') ')[1]?.[0] !== 'Z';
+      } catch { return false; }
+    };
     const output = path.join(dir, 'output.json');
     const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), ENGINE_ROOT: engine, CREATE_CAPTURE: 'yes', FAILURE: 'static_site_importer_quality_failed' };
     let attempt = 0;
