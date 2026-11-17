@@ -282,6 +282,8 @@ const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
 // Cook lists every file of a directory's evidence in the provider prompt, and a
 // capture's hundreds of entries overflow the provider's argument. A directory
 // reaches the agent as one archive instead, built once per pass.
+// Cook's content-addressed artifact limit for one provider evidence file.
+const EVIDENCE_LIMIT = 64 << 20;
 const archives = new Map();
 function evidenceFile(source, id) {
   if (!fs.statSync(source).isDirectory()) return source;
@@ -339,8 +341,12 @@ function acceptanceGate(item, repo) {
   ];
   // Prompts stay free of machine-local paths. Cook's gates receive the inputs
   // as gate inputs; the agent receives the same files as provider evidence
-  // under the same ids, so it can run the whole-site check itself. Bare
-  // WordPress is over the evidence size limit: without it the gate installs one.
+  // under the same ids, so it can run the whole-site check itself. An input
+  // over Cook's evidence limit (bare WordPress, a capture with every route's
+  // reference) reaches the gate only: the gate's verdict stands without it.
+  const evidence = inputs.filter((input) => input.id !== 'bare-wp')
+    .map(({ id, source }) => ({ id, source: evidenceFile(source, id) }))
+    .filter(({ source }) => fs.statSync(source).size <= EVIDENCE_LIMIT);
   return {
     // The gate is whole-site acceptance alone. The repository's own suite is
     // GitHub CI's job: it runs on every pull request, triage refutes a head
@@ -350,7 +356,8 @@ function acceptanceGate(item, repo) {
     // does, so a long acceptance never meets Cook's no-output limit.
     verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate acceptance_exit=$accept"; [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
-    provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source: evidenceFile(source, id) })),
+    provider_evidence: evidence.map((input) => JSON.stringify(input)),
+    omitted: inputs.filter((input) => input.id !== 'bare-wp' && !evidence.some((e) => e.id === input.id)).map((input) => input.id),
   };
 }
 
@@ -447,6 +454,7 @@ for (const item of tracked) {
           : 'It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it,') + ' and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Put every clone, re-import and scratch file under `$TMPDIR`, which is yours for this attempt and removed when it ends. `/tmp` is shared with every other Cook on the runner.',
         '- Trunk is already measured: provider evidence `base` is this pass\'s whole-site evaluation of trunk, and the check compares your change against it. Read the finding\'s trunk occurrences there; there is no need to reproduce them. You can run the whole-site check yourself on your change as a diagnostic. Its inputs are the declared provider evidence under the same ids. A directory input arrives as a `.tgz` archive: extract it into a scratch directory (`mkdir -p "$d" && tar -xzf <evidence path> -C "$d"`) and use that directory. From your worktree root, set each variable to its file or extracted directory: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
+        ...(gate.omitted.length ? [`- Provider evidence ${gate.omitted.map((id) => `\`${id}\``).join(', ')} is over Cook's evidence size limit and is not attached, so you cannot run the gate yourself. Cook's gate receives it in full and its verdict decides; the issue and \`base\` carry the occurrences.`] : []),
         '- Declare the review form complete when your change fixes the root cause and your regression test and the tests nearest your change pass. Run those, not the whole repository suite: CI runs it on the pull request and the loop sends any failure back to the next Cook, and every Cook on the runner shares its CPU. Acceptance is the gate\'s verdict: Cook runs it on the pass\'s exact WordPress, and confirm re-measures the head before anything merges. A local run installs WordPress fresh and can differ from the pass, for example by serving a route the pass\'s import answers with 404, so a regression only your local run shows is evidence to report, not a reason to declare the task incomplete.',
         '- The finding must improve in its recorded cells on a whole candidate re-import: fewer occurrences, or as many with less excess past their limits. That is the gate\'s measure of progress, and a change that meets it is done even when occurrences remain. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
@@ -467,7 +475,8 @@ for (const item of tracked) {
     // The notice opens the round on the issue: it is the guidance the next
     // round's count starts from.
     if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\nDesign round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...gate });
+    const { omitted, ...cook } = gate;
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
   }
 }
 

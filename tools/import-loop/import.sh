@@ -2,9 +2,12 @@
 # Loop step: materialize the source at Blocks Engine trunk and report where the
 # evidence lives.
 #
-# The first pass captures the source with `studio create --from --keep-source`
-# and keeps the capture. Every pass, including the first, re-imports that frozen
-# capture through the latest Static Site Importer release with the transformer
+# The first pass captures the source with the pinned capture client
+# (compare-client.json, the same release evaluate compares with) and keeps the
+# capture. It freezes reference evidence for every route, so every route is
+# compared, and lifts the default time window, so no route is left
+# uncaptured. Every pass, including the first, re-imports that frozen capture
+# through the latest Static Site Importer release with the transformer
 # from Blocks Engine `trunk` (gates/reimport.sh, as triage, the Cook gate and
 # confirm do). A merged fix is therefore measured on the very next pass, without
 # waiting for a release to carry it into Studio.
@@ -26,15 +29,12 @@ for pid in "${pass%-p*}"-p[0-9]*/site/.server.pid; do [ -f "$pid" ] && kill -- "
 
 if [ ! -f "$capture/capture-receipt.json" ]; then
   first="$pass-capture"
-  studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$first")" '.[] | select(.path == $site)' > /dev/null &&
-    studio site delete "$runs/$(basename "$first")" > /dev/null 2>&1
-  rm -rf "$first" "$first-source"
-  # The loop needs only the kept capture: every pass re-imports it below, so
-  # Studio's own import result (accepted, quality-failed or failed) is not used.
-  studio create --path "$first" --from "$url" --keep-source --skip-browser 2>&1 | tee "$first.log" || true
-  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "studio create kept no capture for $host (see $first.log)" >&2; exit 1; }
+  rm -rf "$first-source"
+  client="$here/compare-client.json"
+  npx --yes "--package=$(jq -r .package "$client")" "$(jq -r .executable "$client")" "$url" --output "$first-source" \
+    --reference-sample all --route-limit all 2>&1 | tee "$first.log" || true
+  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "the capture client kept no capture for $host (see $first.log)" >&2; exit 1; }
   rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; cp -a "$first-source/$host" "$capture"
-  studio site stop --path "$first" > /dev/null 2>&1 || true
 fi
 
 # The transformer at Blocks Engine trunk, and the importer release Studio installs.

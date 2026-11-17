@@ -3,8 +3,9 @@
 `loop.json` is a Homeboy workflow that turns a public site into a WordPress
 site and fixes what the import gets wrong, one pass at a time. Each pass:
 
-1. **imports** the site: the first pass captures it with `studio create --from`,
-   and every pass re-imports that frozen capture through the latest Static Site
+1. **imports** the site: the first pass captures every route with the pinned
+   capture client in `compare-client.json`, freezing reference evidence for each
+   one so every route is compared, and every pass re-imports that frozen capture through the latest Static Site
    Importer release with the Blocks Engine transformer at trunk;
 2. **evaluates** the import (the checks below) into `findings.json`;
 3. **triages** each blocker into a GitHub issue on its owning repository;
