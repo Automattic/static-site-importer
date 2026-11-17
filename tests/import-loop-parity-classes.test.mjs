@@ -18,6 +18,8 @@ const failures = {
   backgroundGeometry: 'background geometry differs for 1 source background(s)',
   pageHeight: 'page height 3472px !== source 3359px (Δ113)',
   imageDecoding: 'images 1 visible image(s) pending or failed decoding',
+  // Data Liberation 0.35.37 on agency `/` (#3081).
+  pixelRegion: 'pixel region 144,768 96x96 (4 tiles)',
 };
 
 test('each scorer failure class names its own subject and owner', () => {
@@ -26,7 +28,7 @@ test('each scorer failure class names its own subject and owner', () => {
     [failures.link, 'link'], [failures.anchor, 'link'], [failures.motion, 'motion'],
     [failures.textPosition, 'text_position'], [failures.textContent, 'text_content'],
     [failures.imageGeometry, 'image_geometry'], [failures.backgroundGeometry, 'background_geometry'],
-    [failures.pageHeight, 'page_height'], [failures.imageDecoding, 'image_decoding'],
+    [failures.pageHeight, 'page_height'], [failures.imageDecoding, 'image_decoding'], [failures.pixelRegion, 'pixel_region'],
   ]) assert.deepEqual(parityFailureClass(text), { subject, owner_repo: 'blocks-engine' });
 });
 
