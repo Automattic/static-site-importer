@@ -30,7 +30,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
-	private const MEDIA_FEATURE = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+	// Builders such as Squarespace pair a width with the viewport's orientation.
+	private const MEDIA_FEATURE = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|orientation: ?(?:portrait|landscape))\)';
 	// Builders such as Wix state a range as `screen and (min-width: 1px) and (max-width: 750px)`.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?' . self::MEDIA_FEATURE . '(?: and ' . self::MEDIA_FEATURE . '){0,3}';
 
@@ -337,7 +338,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			if ( 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
 				continue;
 			}
-			$condition = $variant['condition'] ?? null;
+			$condition = self::canonical_condition( $variant['condition'] ?? null );
 			if ( self::is_media_all( $condition ) ) {
 				$condition = null;
 			} elseif ( ! self::safe_condition( $condition ) || 'state' === ( $condition['kind'] ?? null ) ) {
@@ -575,7 +576,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			// It is still a patch: the base pass (or the reset pass above) already
 			// released provider defaults, so it must not repeat those resets after
 			// the base rule and undo the authored values there.
-			$condition = self::is_media_all( $variant['condition'] ?? null ) ? null : ( $variant['condition'] ?? null );
+			$condition = self::canonical_condition( $variant['condition'] ?? null );
+			$condition = self::is_media_all( $condition ) ? null : $condition;
 			if ( 'control_container' === $role ) {
 				$destinations = self::destinations_for( $pass, $index, 'control_container' );
 				if ( ! is_int( $index ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
@@ -1191,6 +1193,23 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		) === $condition;
 	}
 
+	/**
+	 * One spelling of a source query. CSS ignores whitespace inside its
+	 * parentheses and around its commas, and source stylesheets keep it
+	 * (Squarespace's `(max-width:  767px )`).
+	 */
+	private static function canonical_condition( mixed $condition ): mixed {
+		if ( ! is_array( $condition ) ) {
+			return $condition;
+		}
+		if ( 'all' === ( $condition['kind'] ?? null ) && is_array( $condition['conditions'] ?? null ) ) {
+			$condition['conditions'] = array_map( array( self::class, 'canonical_condition' ), $condition['conditions'] );
+		} elseif ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) && is_string( $condition['query'] ?? null ) ) {
+			$condition['query'] = (string) preg_replace( array( '/\s+/', '/\( /', '/ \)/', '/ ?, ?/' ), array( ' ', '(', ')', ',' ), trim( $condition['query'] ) );
+		}
+		return $condition;
+	}
+
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
 			return false;
@@ -1202,7 +1221,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			) === $condition;
 		}
 		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
-			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^' . self::MEDIA_FEATURE_QUERY . '$/D', $condition['query'] );
+			// A media query list holds when any of its queries does.
+			$list = 'media' === $condition['kind'] ? '(?:,(?&query)){0,127}' : '';
+			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^(?<query>' . self::MEDIA_FEATURE_QUERY . ')' . $list . '$/D', $condition['query'] );
 		}
 		return 'all' === ( $condition['kind'] ?? null ) && array_keys( $condition ) === array( 'kind', 'conditions' ) && is_array( $condition['conditions'] ) && count( $condition['conditions'] ) >= 2 && count( $condition['conditions'] ) <= 4 && array_is_list( $condition['conditions'] ) && ! array_filter( $condition['conditions'], static fn ( $part ): bool => ! self::safe_condition( $part ) );
 	}
