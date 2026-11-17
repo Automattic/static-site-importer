@@ -25,6 +25,12 @@
     },
     "cook_placement": {
       "default": "auto"
+    },
+    "tools_repo": {
+      "required": true
+    },
+    "tools_ref": {
+      "default": "origin/main"
     }
   },
   "env": {
@@ -39,6 +45,28 @@
   },
   "steps": [
     {
+      "id": "tools",
+      "timeout": "20m",
+      "retry": {
+        "max": 8,
+        "on": [
+          "failed",
+          "timed_out"
+        ],
+        "backoff": "2m"
+      },
+      "exec": {
+        "program": "bash",
+        "cwd": "{{inputs.loop_dir}}",
+        "args": [
+          "tools.sh",
+          "{{inputs.tools_repo}}",
+          "{{inputs.tools_ref}}",
+          "{{inputs.runs_dir}}"
+        ]
+      }
+    },
+    {
       "id": "import",
       "timeout": "60m",
       "retry": {
@@ -51,7 +79,7 @@
       },
       "exec": {
         "program": "bash",
-        "cwd": "{{inputs.loop_dir}}",
+        "cwd": "{{steps.tools.output/dir}}",
         "args": [
           "import.sh",
           "{{inputs.url}}",
@@ -59,7 +87,10 @@
           "{{inputs.runs_dir}}/{{inputs.slug}}-capture",
           "{{inputs.blocks_engine}}"
         ]
-      }
+      },
+      "needs": [
+        "tools"
+      ]
     },
     {
       "id": "evaluate",
@@ -77,7 +108,7 @@
       },
       "exec": {
         "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
+        "cwd": "{{steps.tools.output/dir}}",
         "args": [
           "evaluate.mjs",
           "--url",
@@ -108,7 +139,7 @@
       },
       "exec": {
         "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
+        "cwd": "{{steps.tools.output/dir}}",
         "args": [
           "triage.mjs",
           "--findings",
@@ -270,7 +301,7 @@
       "timeout": "10m",
       "exec": {
         "program": "node",
-        "cwd": "{{inputs.loop_dir}}",
+        "cwd": "{{steps.tools.output/dir}}",
         "args": [
           "score.mjs",
           "--instance",
