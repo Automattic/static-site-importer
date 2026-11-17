@@ -11,7 +11,7 @@
 // unconfirmed: the next pass's import is their check.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
-//          [--issue <url> | --uncooked 1] [--merge 1]
+//          [--issue <url> [--cook <run>] | --uncooked 1] [--merge 1]
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
 //          merge:[{github, number, sha}], merge_count, merged:[github#number], confirm_path}
 // --issue confirms one tracked issue's pull requests: the loop runs it per Cook,
@@ -22,6 +22,10 @@
 // head (Homeboy `git pr merge-when-green`). A confirmed draft (an incomplete
 // Cook that a later pass finished) is marked ready, since confirm just proved
 // it; an unconfirmed draft waits.
+// --cook is the issue's Cook this pass. When another chain's Cook already owns
+// the issue, Homeboy supersedes this one at once; confirm then waits for the
+// owner to settle and confirms its pull request, so the pass waits on real
+// work instead of re-importing an unchanged site.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,6 +43,14 @@ const log = (...parts) => console.error('[confirm]', ...parts);
 // One pull request can fix several tracked findings: it is confirmed only
 // when the shared acceptance comparison passes for each finding.
 process.env.PREDICATE_CAPTURE = triage.reimport.capture;
+const cookStatus = (run) => JSON.parse(execFileSync('homeboy', ['agent-task', 'status', run], { encoding: 'utf8' })).data;
+for (let run = args.cook && args.cook !== 'null' ? args.cook : null, seen = new Set(); run && !seen.has(run);) {
+  seen.add(run);
+  let status = cookStatus(run);
+  while (!status.terminal_outcome) { await new Promise((resolve) => setTimeout(resolve, 60_000)); status = cookStatus(run); }
+  run = status.terminal_outcome.kind === 'superseded_by_active_cook' ? status.terminal_outcome.owner?.cook_id : null;
+  if (run) log(`waiting for ${run}, the active Cook on ${args.issue}`);
+}
 const verdicts = new Map();
 const cooked = new Set((triage.cook_items || []).map((cook) => cook.issue_url));
 const linked = new Map(triage.tracked.map((item) => [item, linkedPullRequests(item.issue_url)]));

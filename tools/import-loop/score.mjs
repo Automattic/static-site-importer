@@ -83,7 +83,8 @@ const line = {
   confirmed: confirm?.confirmed?.map((c) => c.pr) ?? null,
   refuted: confirm?.refuted?.map((c) => c.pr) ?? null,
   merged,
-  capped: triage?.capped?.map((c) => c.issue_url) ?? [],
+  excepted: triage?.excepted?.map((c) => c.issue_url) ?? [],
+  design: triage?.design?.map((c) => c.issue_url) ?? [],
 };
 fs.appendFileSync(board, JSON.stringify(line) + '\n');
 
@@ -94,7 +95,7 @@ const lastCook = Object.fromEntries(cooks.filter((c) => c.signature).map((c) => 
 const rows = Object.entries(now || {}).map(([signature, count]) => {
   const t = tracked[signature] || {};
   const c = lastCook[signature];
-  const cook = t.capped ? `needs design: ${t.capped.failed_cooks} failed Cooks since guidance` : !c ? 'not cooked this pass' : c.failure ? `${c.failure}: ${c.cause ?? c.outcome}` : c.pr ? `published ${c.pr}` : c.terminal ?? c.outcome;
+  const cook = t.excepted ? `out of scope: ${t.excepted.reason}` : !c ? 'not cooked this pass' : c.failure ? `${c.failure}: ${c.cause ?? c.outcome}` : c.pr ? `published ${c.pr}` : c.terminal ?? c.outcome;
   return `| ${t.check ?? signature} (${t.subject ?? ''}, ${count}) | ${t.issue_url ?? 'untracked'} | ${cook.replace(/\|/g, '/')} |`;
 });
 fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
