@@ -26,7 +26,10 @@ if ( ! function_exists( 'sanitize_text_field' ) ) {
 
 if ( ! function_exists( 'sanitize_title' ) ) {
 	function sanitize_title( string $title ): string {
-		return trim( (string) preg_replace( '/[^a-z0-9\-]+/', '-', strtolower( $title ) ), '-' );
+		// Match WordPress's underscore preservation, dash collapsing and trimming.
+		$title = strtolower( strtr( $title, array( 'é' => 'e' ) ) );
+		$title = (string) preg_replace( '/[^a-z0-9_\-]+/', '-', $title );
+		return trim( (string) preg_replace( '/-+/', '-', $title ), '-' );
 	}
 }
 
@@ -60,6 +63,27 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 		$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 	}
 };
+
+// Underscore-adjacent names must produce runtime-safe slugs on every identity path.
+foreach ( array(
+	array( 'Photo _ Studio', 'photo-_-studio', 'photo-studio' ),
+	array( 'My__Site', 'my__site', 'my-site' ),
+	array( 'Studio_', 'studio_', 'studio' ),
+	array( 'émile_ photo', 'emile_-photo', 'emile-photo' ),
+) as list( $name, $wordpress_slug, $expected ) ) {
+	$assert( $wordpress_slug === sanitize_title( $name ), 'wordpress-keeps-underscores: ' . $name );
+	foreach ( array(
+		array( 'name' => $name ),
+		array( 'slug' => $name ),
+		array( 'url' => 'https://' . $wordpress_slug . '/' ),
+	) as $context ) {
+		$resolved = Static_Site_Importer_Site_Identity::resolve( $context );
+		$assert( $expected === $resolved['slug'], 'normalized-identity: ' . $name, $resolved['slug'] );
+		$assert( 1 === preg_match( '/\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/', $resolved['slug'] ), 'runtime-owner-alphabet: ' . $name );
+	}
+	$unique = Static_Site_Importer_Site_Identity::unique_slug( $name, static fn( string $slug ): bool => $expected === $slug );
+	$assert( $expected . '-2' === $unique, 'normalized-unique-slug: ' . $name, $unique );
+}
 
 // 1. Explicit site_title wins over everything.
 $identity = Static_Site_Importer_Site_Identity::resolve(
