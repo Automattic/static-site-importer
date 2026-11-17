@@ -248,6 +248,11 @@ $reader = $forwarded['payload_reader'] ?? null;
 $file   = array_values( array_filter( $forwarded['source']['files'] ?? array(), static fn( array $entry ): bool => 'scroll-states.json' === $entry['path'] ) )[0] ?? array();
 $assert( is_object( $reader ) && '{"pages":[]}' === $reader->read( $file['payload_reference'] ?? array() ), 'capture-receipt-report-payload-reads-the-capture-root-file' );
 
+// A report inside the website tree (Data Liberation's per-route box-tree
+// evidence) is transported once, as the report.
+$inside = $resolve( 'inside', $stage( 'inside', array( 'reports' => array( 'scroll-states.json', 'website/other.json' ) ) ) );
+$assert( array( 'scroll-states.json', 'website/index.html', 'website/other.json' ) === $runtime_paths( $inside ), 'capture-receipt-report-inside-the-website-tree-is-transported-once' );
+
 // A caller-declared `metadata.reports` wins over the receipt.
 $explicit = $resolve( 'explicit', $stage( 'explicit', array( 'reports' => array( 'scroll-states.json' ) ), array( 'reports' => array( 'other.json' ) ) ) );
 $assert( array( 'other.json' ) === ( $explicit['source']['metadata']['reports'] ?? null ), 'explicit-metadata-reports-win' );
