@@ -254,9 +254,9 @@ for (const finding of blockers) {
   (record.status === 'tracked' ? tracked : untracked).push(record);
 }
 
-// Cook promotes only when the repository's own checks pass and, where the
-// predicates run this repository's code, the defect is gone from every
-// acceptance cell. The gate runs from the root of Cook's worktree, on whichever
+// Cook promotes only when, where the predicates run this repository's code,
+// the defect is gone from every acceptance cell; CI runs the repository's own
+// checks on the pull request. The gate runs from the root of Cook's worktree, on whichever
 // runner Cook places it. Everything it reads beyond that worktree is a declared
 // Cook gate input (Homeboy `--gate-input`): a content-addressed snapshot that
 // Homeboy ships to the runner and names by environment variable, so the gate
@@ -347,14 +347,13 @@ function acceptanceGate(item, repo) {
   // under the same ids, so it can run the whole-site check itself. Bare
   // WordPress is over the evidence size limit: without it the gate installs one.
   return {
-    // The repository's checks and acceptance are independent: run them side
-    // by side, then print acceptance's output after the repository's. A
-    // heartbeat runs for as long as acceptance does, so neither a quiet
-    // repository check nor a long acceptance meets Cook's no-output limit.
-    // Most candidates fail whole-site acceptance, and the repository suite
-    // (Blocks Engine's canonical suite took about half the Lab's CPU) cannot
-    // change that verdict: run it only for a candidate acceptance passes.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; if [ $accept -ne 0 ]; then echo "import-loop-gate acceptance_exit=$accept repository=skipped until acceptance passes"; exit 1; fi; (${repo.verify}); repo=$?; echo "import-loop-gate repository_exit=$repo acceptance_exit=0"; [ $repo -eq 0 ]`,
+    // The gate is whole-site acceptance alone. The repository's own suite is
+    // GitHub CI's job: it runs on every pull request, triage refutes a head
+    // whose CI fails, and the next Cook receives those failures. On the Lab it
+    // took about half the CPU and caught 20 of 244 candidates, each of which
+    // CI catches one pass later. A heartbeat runs for as long as acceptance
+    // does, so a long acceptance never meets Cook's no-output limit.
+    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate acceptance_exit=$accept"; [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source: evidenceFile(source, id) })),
   };
@@ -453,14 +452,14 @@ for (const item of tracked) {
           : 'It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it,') + ' and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Put every clone, re-import and scratch file under `$TMPDIR`, which is yours for this attempt and removed when it ends. `/tmp` is shared with every other Cook on the runner.',
         '- Trunk is already measured: provider evidence `base` is this pass\'s whole-site evaluation of trunk, and the check compares your change against it. Read the finding\'s trunk occurrences there; there is no need to reproduce them. You can run the whole-site check yourself on your change as a diagnostic. Its inputs are the declared provider evidence under the same ids. A directory input arrives as a `.tgz` archive: extract it into a scratch directory (`mkdir -p "$d" && tar -xzf <evidence path> -C "$d"`) and use that directory. From your worktree root, set each variable to its file or extracted directory: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
-        '- Declare the review form complete when your change fixes the root cause and your regression test and the tests nearest your change pass. Run those, not the whole repository suite: once acceptance passes, the gate runs the full suite (`' + repo.verify + '`) and reports any failure for the next attempt, and every Cook on the runner shares its CPU. Acceptance is the gate\'s verdict: Cook runs it on the pass\'s exact WordPress, and confirm re-measures the head before anything merges. A local run installs WordPress fresh and can differ from the pass, for example by serving a route the pass\'s import answers with 404, so a regression only your local run shows is evidence to report, not a reason to declare the task incomplete.',
+        '- Declare the review form complete when your change fixes the root cause and your regression test and the tests nearest your change pass. Run those, not the whole repository suite: CI runs it on the pull request and the loop sends any failure back to the next Cook, and every Cook on the runner shares its CPU. Acceptance is the gate\'s verdict: Cook runs it on the pass\'s exact WordPress, and confirm re-measures the head before anything merges. A local run installs WordPress fresh and can differ from the pass, for example by serving a route the pass\'s import answers with 404, so a regression only your local run shows is evidence to report, not a reason to declare the task incomplete.',
         '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
         ...(item.site ? [] : ['- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.']),
         '',
         ...item.cells.map((cell) => `  - ${cell.route ? `\`${cell.route}\`` : 'site-wide'}${cell.width ? ` at ${cell.width}px` : ''}: \`${evidenceText(cell.evidence).slice(0, 600)}\``),
       ] : repo?.predicate_root ? ['- The issue\'s predicate exits non-zero on the reduced page with your change.'] : [
-        `- The whole-site gate rebuilds only the materializer, so it cannot run this repository's code: the acceptance gate records that and exits zero. The next pass imports the site through the released importer and measures this fix there. Done is the focused regression test below plus this repository's own checks; declare the task complete when they pass.`,
+        `- The whole-site gate rebuilds only the materializer, so it cannot run this repository's code: the acceptance gate records that and exits zero. The next pass imports the site through the released importer and measures this fix there. Done is the focused regression test below and the tests nearest your change; declare the task complete when they pass. CI runs the repository's suite on the pull request.`,
       ]),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
