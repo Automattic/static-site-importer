@@ -220,7 +220,7 @@
         "cook"
       ],
       "always": true,
-      "timeout": "3h",
+      "timeout": "8h",
       "when": {
         "step": "triage",
         "output": "/continue",
@@ -246,6 +246,8 @@
           "{{inputs.wp_cli}}",
           "--issue",
           "{{item.item.issue_url}}",
+          "--cook",
+          "{{item.run_id}}",
           "--merge",
           "1"
         ]

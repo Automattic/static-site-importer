@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, failedCooksSinceGuidance, CAP_NOTICE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, CAP_NOTICE, DESIGN_NOTICE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -364,6 +364,7 @@ stageGateTools();
 const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
+const DESIGN_ROUNDS = Number(args['design-rounds'] || 2);
 const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
 const openPrs = new Map(tracked.map((item) => [item, linkedPullRequests(item.issue_url)[0]]));
 await checkHeads(tracked.filter((item) => openPrs.get(item) && repos[item.repo]?.candidate && item.cells.length).map((item) => ({ item, pr: openPrs.get(item), at: headAt(item) })));
@@ -385,25 +386,39 @@ for (const item of tracked) {
   const trunkConflict = refuted.find((c) => /head conflicts with/.test(c.reason || ''));
   const conflicting = health.mergeable === 'CONFLICTING' || Boolean(trunkConflict);
   if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
-  // A finding Cooks keep failing needs a design decision, not another attempt:
-  // past the cap the loop stops cooking it, says so on the issue once, and
-  // waits for guidance there.
+  // A finding Cooks keep failing needs a design decision, not another
+  // attempt. The loop makes it: past the cap it opens a design round, a Cook
+  // that decides the scope from every earlier report, then implements it or
+  // accepts the finding. A finding accepted, or still failing after its design
+  // rounds, is out of scope: the loop stops cooking it and says so once, and a
+  // human comment re-arms it.
   const comments = JSON.parse(gh('issue', 'view', item.issue_url, '--json', 'comments')).comments;
-  const failed = failedCooksSinceGuidance(comments);
-  if (failed >= COOK_CAP) {
-    item.capped = { failed_cooks: failed };
+  const history = cookHistory(comments);
+  if (history.accepted || (history.failed >= COOK_CAP && history.designs >= DESIGN_ROUNDS)) {
+    item.excepted = { reason: history.accepted ? 'accepted by design round' : `${history.designs} design rounds failed`, failed_cooks: history.failed, designs: history.designs };
     if (!args['dry-run'] && !comments.at(-1)?.body.startsWith(CAP_NOTICE)) {
-      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${failed} Cooks since the last guidance stopped without a pull request (their reports are above). It needs a design decision or narrower scope. Comment with that guidance and the next pass cooks it again.\n\n${disclosure}`);
+      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${item.excepted.reason}. It counts as an accepted exception to the site's import. Comment with guidance and the next pass cooks it again.\n\n${disclosure}`);
     }
-    log(`capped ${item.issue_url}: ${failed} failed Cooks since guidance`);
+    log(`excepted ${item.issue_url}: ${item.excepted.reason}`);
+  } else if (history.failed >= COOK_CAP) {
+    item.design = history.designs + 1;
+    log(`design round ${item.design} for ${item.issue_url}: ${history.failed} failed Cooks since guidance`);
   }
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if ((!pr || item.refuted) && repo && !item.capped && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  if ((!pr || item.refuted) && repo && !item.excepted && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
       '',
+      ...(item.design ? [
+        `This is design round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix, and their reports are the issue's latest comments. Read them all before changing anything, then decide what this finding needs and act on it:`,
+        '- **narrow**: fix the part of the finding that has a sound root-cause fix, and say which occurrences remain and why.',
+        '- **approach**: the earlier attempts share a wrong approach; fix it a different way and say what changed.',
+        '- **accept**: the finding is correct output for this site, or no sound fix exists in the owning code path; change nothing.',
+        'Begin your final summary with `Decision: narrow`, `Decision: approach` or `Decision: accept`, followed by the reason in one sentence. The loop reads that line: `accept` ends cooking for this finding, so use it only when the evidence supports it.',
+        '',
+      ] : []),
       `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. ${item.site ? 'It is a whole-site check: the issue holds its occurrences and evidence, and there is no reduced page; the whole re-import is the reproduction.' : 'The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.'} Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
       ...(refuted.length && !trunkConflict ? [
         '',
@@ -455,6 +470,9 @@ for (const item of tracked) {
     // pull request, so its workspace starts at the head this prompt describes.
     // Cook only resolves an issue to a pull request GitHub links to close it,
     // and its own draft publications only name the issue.
+    // The notice opens the round on the issue: it is the guidance the next
+    // round's count starts from.
+    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\nDesign round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...gate });
   }
 }
@@ -476,11 +494,12 @@ const output = {
   tracked_count: tracked.length,
   cook_items,
   cook_count: cook_items.length,
-  capped: tracked.filter((item) => item.capped).map(({ issue_url, capped }) => ({ issue_url, ...capped })),
+  excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
+  design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
   // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
   // stops the chain when evaluate's blocker signatures repeat.
-  continue: blockers.length > 0 && tracked.length > 0,
+  continue: blockers.length > 0 && tracked.some((item) => !item.excepted),
 };
 fs.writeFileSync(path.join(args.work, 'triage.json'), JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
-log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} capped=${output.capped.length}`);
+log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} design=${output.design.length} excepted=${output.excepted.length}`);

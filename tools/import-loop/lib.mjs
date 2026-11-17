@@ -76,18 +76,22 @@ export const routeDocument = (website, route = '/') => {
 };
 
 // Homeboy posts one note per Cook that stopped without a pull request; Cooks
-// lost to runner mechanics leave none. Those since the last guidance comment
-// (anything else but the loop's own cap notice) count against the finding:
-// new guidance re-arms the loop.
+// lost to runner mechanics leave none. Those since the last guidance count
+// against the finding. Guidance is the loop's own design notice, which opens a
+// design round, or any comment other than the loop's notes, which re-arms the
+// loop entirely. A design Cook whose note reports `Decision: accept` accepts
+// the finding as it stands.
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
-export const failedCooksSinceGuidance = (comments) => {
-  let failed = 0;
+export const DESIGN_NOTICE = '<!-- import-loop:design -->';
+export const cookHistory = (comments) => {
+  let failed = 0, designs = 0, accepted = false;
   for (const { body = '' } of comments) {
-    if (body.startsWith(COOK_NOTE)) failed++;
-    else if (!body.startsWith(CAP_NOTICE)) failed = 0;
+    if (body.startsWith(COOK_NOTE)) { failed++; if (designs && /Decision:\W*accept/i.test(body)) accepted = true; }
+    else if (body.startsWith(DESIGN_NOTICE)) { failed = 0; designs++; }
+    else if (!body.startsWith(CAP_NOTICE)) { failed = 0; designs = 0; accepted = false; }
   }
-  return failed;
+  return { failed, designs, accepted };
 };
 
 export const predicateEnv = (subject, cell, site) => ({
