@@ -5,6 +5,7 @@
   "sdnunca": { "url": "https://sdnunca.wixsite.com/my-site-1/", "set": "hard" },
   "bolt-lumen": { "url": "https://lumen-studio-portfol-lrr6.bolt.host/", "set": "hard" },
   "lovable-apex": { "url": "https://apex-auto-crafted.lovable.app/", "set": "hard" },
-  "base44-imb": { "url": "https://imb-culinary-craft.base44.app/", "set": "hard" },
-  "replit-zach": { "url": "https://zach-richards-site.replit.app/", "set": "hard" }
+  "base44-imb": { "url": "https://imb-culinary-craft.base44.app/", "set": "control" },
+  "replit-zach": { "url": "https://zach-richards-site.replit.app/", "set": "hard" },
+  "squarespace-bedford": { "url": "https://bedford-demo.squarespace.com/", "set": "hard" }
 }
