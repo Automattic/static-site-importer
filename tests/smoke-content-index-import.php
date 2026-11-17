@@ -175,9 +175,13 @@ try {
 		),
 	);
 	$pending_files = array( $news_files[0] );
+	// Each capture includes a shared part; the collapsed one also has its own.
 	foreach ( array( 'upper', 'lower' ) as $variant ) {
-		$pending_files[] = array( 'path' => 'website/terms/' . $variant . '.html', 'content' => '<html><head><title>Pending</title></head><body><main><h1>Pending</h1></main></body></html>' );
+		$own             = 'lower' === $variant ? '<!--#include virtual="/parts/footer-lower.html" -->' : '';
+		$pending_files[] = array( 'path' => 'website/terms/' . $variant . '.html', 'content' => '<html><head><title>Pending</title></head><body><!--#include virtual="/parts/header-shared.html" --><main><h1>Pending</h1></main>' . $own . '</body></html>' );
 	}
+	$pending_files[] = array( 'path' => 'website/parts/header-shared.html', 'content' => '<header><p>Shared</p></header>' );
+	$pending_files[] = array( 'path' => 'website/parts/footer-lower.html', 'content' => '<footer><form class="newsletter-form"><input name="email"></form></footer>' );
 	$pending_files[] = array( 'path' => 'website/content-index.json', 'content' => json_encode( $pending_index ) );
 	$pending_result = ssi_harness_drive( array( 'operation' => 'apply', 'slug' => 'pending-index', 'source' => array( 'type' => 'files', 'files' => $pending_files ) ) );
 	$assert( ! empty( $pending_result['success'] ), 'Case-variant archive import completes: ' . json_encode( $pending_result ) );
@@ -185,6 +189,8 @@ try {
 	$pending_pages = array_column( $pending_import['plan']['pages'], null, 'source_path' );
 	$assert( ! isset( $pending_pages['website/terms/lower.html'] ) && ! isset( $pending_pages['website/terms/upper.html'] ), 'Neither archive is planned as a page.' );
 	$assert( 1 === count( $pending_import['plan']['taxonomy_entities'] ), 'Case variants share one term.' );
+	$pending_parts = wp_json_encode( $pending_import['plan']['template_parts'] ?? array() );
+	$assert( str_contains( $pending_parts, 'Shared' ) && ! str_contains( $pending_parts, 'newsletter-form' ), 'Only the collapsed capture\'s own part leaves the site: ' . $pending_parts );
 	$GLOBALS['term_slugs'][9] = 'pending';
 	$pending_completed = array();
 	foreach ( $pending_import['plan']['taxonomy_entities'] as $entity ) {
