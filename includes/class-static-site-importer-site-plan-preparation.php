@@ -1603,11 +1603,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */
 	public static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
+		// An untouched core seed is a placeholder, not an owner's status choice.
+		// Adopt the planned import status; only real existing pages retain their status.
 		$id                               = (int) $existing->ID;
 		$protected                        = Static_Site_Importer_Protected_Page_Policy::is_protected_page( $existing );
 		$page['planned_existing_id']      = $id;
 		$page['action']                   = 'update';
-		$page['materialized_post_status'] = $state['args']['post_status'] ?? ( ! empty( $page['synthetic'] ) ? $page['materialized_post_status'] : $existing->post_status );
+		$page['materialized_post_status'] = $state['args']['post_status'] ?? ( ! empty( $page['synthetic'] ) || 'default_content_seed_match' === $reason ? $page['materialized_post_status'] : $existing->post_status );
 		$page['post_status']              = $page['materialized_post_status'];
 		$state['page_ids'][ $page['reconciliation_identity'] ] = $id;
 		$state['source_ids'][ $page['source_path'] ]           = $id;
