@@ -129,6 +129,7 @@ final class Static_Site_Importer_Content_Index {
 		}
 		$term_archives   = array();
 		$archive_targets = array();
+		$removed         = array();
 		foreach ( $index['terms'] ?? array() as $term ) {
 			$position = is_array( $term ) && 'term-archive' === ( $term['kind'] ?? null ) && is_string( $term['name'] ?? null ) && '' !== trim( $term['name'] ) ? self::file_position( $term['path'] ?? null, $by_route ) : null;
 			if ( null === $position ) {
@@ -148,6 +149,7 @@ final class Static_Site_Importer_Content_Index {
 				if ( '' !== $source ) {
 					$rules[] = $source . ' ' . $target;
 				}
+				$removed[] = $kept[ $position ];
 				unset( $kept[ $position ] );
 				continue;
 			}
@@ -176,6 +178,10 @@ final class Static_Site_Importer_Content_Index {
 				$rules[] = $from . ' ' . $to;
 			}
 		}
+		$kept = self::without_orphaned_parts( $kept, $removed, $payload_reader );
+		if ( $kept instanceof WP_Error ) {
+			return $kept;
+		}
 		$artifact['files'] = array_values( $kept );
 
 		return array(
@@ -184,6 +190,70 @@ final class Static_Site_Importer_Content_Index {
 			'aliases'  => Static_Site_Importer_Redirects_Manifest::parse( implode( "\n", $rules ) ),
 			'findings' => $findings,
 		);
+	}
+
+	/**
+	 * Drop the `/parts/` includes that only collapsed archive captures used.
+	 *
+	 * An orphaned part has no page to bind to, so the compiler would emit it
+	 * as a standalone template part nobody renders.
+	 *
+	 * @param array<int,mixed>               $kept           Retained artifact files.
+	 * @param array<int,array<string,mixed>> $removed        Collapsed archive files.
+	 * @param object|null                    $payload_reader Opaque payload reference reader.
+	 * @return array<int,mixed>|WP_Error
+	 */
+	private static function without_orphaned_parts( array $kept, array $removed, ?object $payload_reader ) {
+		$parts = array();
+		foreach ( $kept as $position => $file ) {
+			if ( is_array( $file ) && is_string( $file['path'] ?? null ) && preg_match( '~(?:^|/)(parts/[a-zA-Z0-9_-]+\.html)$~D', $file['path'], $match ) ) {
+				$parts[ '/' . $match[1] ] = $position;
+			}
+		}
+		$includes = static function ( array $file ) use ( $payload_reader, $parts ) {
+			$content = Static_Site_Importer_Content_Policy::file_bytes( $file, $payload_reader );
+			if ( $content instanceof WP_Error ) {
+				return $content;
+			}
+			preg_match_all( '~<!--#include virtual="(/parts/[a-zA-Z0-9_-]+\.html)" -->~', (string) $content, $matches );
+			return array_intersect_key( $parts, array_flip( $matches[1] ) );
+		};
+		// Parts reached from collapsed captures, including nested parts.
+		$orphans = array();
+		$queue   = $removed;
+		while ( array() !== $queue ) {
+			$reached = $includes( array_shift( $queue ) );
+			if ( $reached instanceof WP_Error ) {
+				return $reached;
+			}
+			foreach ( $reached as $virtual => $position ) {
+				if ( ! isset( $orphans[ $virtual ] ) ) {
+					$orphans[ $virtual ] = $position;
+					$queue[]             = $kept[ $position ];
+				}
+			}
+		}
+		if ( array() === $orphans ) {
+			return $kept;
+		}
+		// Any retained HTML document outside the orphan set keeps what it includes alive.
+		$queue = array();
+		foreach ( $kept as $position => $file ) {
+			if ( is_array( $file ) && is_string( $file['path'] ?? null ) && preg_match( '/\.html?$/i', $file['path'] ) && ! in_array( $position, $orphans, true ) ) {
+				$queue[] = $file;
+			}
+		}
+		while ( array() !== $queue && array() !== $orphans ) {
+			$reached = $includes( array_shift( $queue ) );
+			if ( $reached instanceof WP_Error ) {
+				return $reached;
+			}
+			foreach ( array_intersect_key( $orphans, $reached ) as $virtual => $position ) {
+				unset( $orphans[ $virtual ] );
+				$queue[] = $kept[ $position ];
+			}
+		}
+		return array_diff_key( $kept, array_flip( $orphans ) );
 	}
 
 	/**
