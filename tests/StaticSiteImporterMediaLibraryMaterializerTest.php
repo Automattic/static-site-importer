@@ -52,13 +52,23 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	/** Smaller lazy-load placeholders must not become attachment originals.
 	 *
 	 * @dataProvider placeholder_sources
+	 *
+	 * @param array<string,int[]> $candidates Srcset files keyed by name, each [ width, height, descriptor ].
+	 * @param string[]            $renditions Expected ssi-source-* size keys.
 	 */
-	public function test_width_family_uses_real_original( string $source ): void {
+	public function test_width_family_uses_real_original( string $source, array $candidates, string $declared, string $original, array $renditions ): void {
 		$uri    = get_theme_root_uri() . '/' . $this->slug() . '/media/';
-		$srcset = $uri . '225.jpg 225w, ' . $uri . '510.jpg 510w, ' . $uri . '210.jpg 210w';
+		$srcset = implode(
+			', ',
+			array_map(
+				static fn ( string $name, array $size ): string => $uri . $name . '.jpg ' . $size[2] . 'w',
+				array_keys( $candidates ),
+				$candidates
+			)
+		);
 		$attrs  = array( 'metadata' => array( 'blocksEngineImageSelection' => array( 'src' => $uri . $source . '.jpg', 'srcset' => $srcset ) ) );
-		$state  = $this->state_with_page( '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $uri . $source . '.jpg" srcset="' . $srcset . '" alt=""/></figure><!-- /wp:image -->' );
-		foreach ( array( 'placeholder' => array( 1, 2 ), '210' => array( 210, 118 ), '225' => array( 225, 127 ), '510' => array( 510, 286 ) ) as $name => $size ) {
+		$state  = $this->state_with_page( '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img ' . $declared . 'src="' . $uri . $source . '.jpg" srcset="' . $srcset . '" alt=""/></figure><!-- /wp:image -->' );
+		foreach ( array( 'placeholder' => array( 1, 2 ) ) + $candidates as $name => $size ) {
 			$image = imagecreatetruecolor( $size[0], $size[1] );
 			imagejpeg( $image, $this->theme_dir . '/media/' . $name . '.jpg' );
 			imagedestroy( $image );
@@ -68,16 +78,35 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$blocks   = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) );
 		$id       = $blocks[0]['attrs']['id'];
 		$metadata = wp_get_attachment_metadata( $id );
-		$this->assertSame( 510, $metadata['width'] );
-		$this->assertSame( 286, $metadata['height'] );
-		$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/510.jpg' ), hash_file( 'sha256', wp_get_original_image_path( $id ) ) );
-		$this->assertSame( 210, $metadata['sizes']['ssi-source-210']['width'] );
-		$this->assertSame( 225, $metadata['sizes']['ssi-source-225']['width'] );
+		$this->assertSame( $candidates[ $original ][0], $metadata['width'] );
+		$this->assertSame( $candidates[ $original ][1], $metadata['height'] );
+		$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/' . $original . '.jpg' ), hash_file( 'sha256', wp_get_original_image_path( $id ) ) );
+		$registered = array_values( preg_grep( '/^ssi-source-/', array_keys( $metadata['sizes'] ?? array() ) ) );
+		sort( $registered );
+		$this->assertSame( $renditions, $registered );
+		foreach ( $renditions as $key ) {
+			$this->assertSame( (int) substr( $key, strlen( 'ssi-source-' ) ), $metadata['sizes'][ $key ]['width'] );
+		}
 		$this->assertStringNotContainsString( 'placeholder.jpg', $blocks[0]['innerHTML'] );
 	}
 
 	public static function placeholder_sources(): array {
-		return array( 'placeholder' => array( 'placeholder' ), 'real family member' => array( '510' ) );
+		$family = array(
+			'225' => array( 225, 127, 225 ),
+			'510' => array( 510, 286, 510 ),
+			'210' => array( 210, 118, 210 ),
+		);
+		// Blogger mixes crops in one srcset (lloydlofthouse, #3137).
+		$mixed = array(
+			'402' => array( 402, 286, 402 ),
+			'330' => array( 330, 185, 330 ),
+			'345' => array( 345, 194, 345 ),
+		);
+		return array(
+			'placeholder'                    => array( 'placeholder', $family, '', '510', array( 'ssi-source-210', 'ssi-source-225' ) ),
+			'real family member'             => array( '510', $family, '', '510', array( 'ssi-source-210', 'ssi-source-225' ) ),
+			'placeholder with mixed ratios'  => array( 'placeholder', $mixed, 'width="345" height="194" ', '345', array() ),
+		);
 	}
 
 	/** A theme image whose filename has non-ASCII characters binds whether its URL is raw or percent-encoded. */
