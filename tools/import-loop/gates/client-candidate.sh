@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A capture-client candidate, measured as it would ship: build and pack the
 # client from <client source> (the client repository's tree merged onto the
-# pinned release's commit), capture <url> with it and compare-client.json's
+# release commit the pass captured with), capture <url> with it and compare-client.json's
 # `capture_args` into <capture>, then import that capture on <php-transformer
 # dir> (gates/reimport.sh) and print the served site's URL. The packed client
 # stays as <capture>/.client.tgz so the compare uses the same build
