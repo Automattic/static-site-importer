@@ -215,6 +215,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 		$interaction_inventory                         = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact, $inventory_plan );
 		$args['captured_interaction_diagnostics']      = $interaction_inventory['diagnostics'];
 		$args['captured_interaction_state_count']      = $interaction_inventory['unrepresented_member_count'];
+		$args['runtime_features']                      = self::declared_runtime_features( $plan );
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		$artifact_provenance                           = null;
@@ -236,6 +237,11 @@ final class Static_Site_Importer_Compilation_Preparation {
 			}
 			if ( ! empty( $external_metrics ) ) {
 				$companion_payload['external_metrics'] = $external_metrics; }
+			// The compile step owns the payload's runtime declaration; a producer
+			// that already declared features keeps them.
+			$producer_features                     = is_array( $companion_payload['runtime_features'] ?? null ) ? $companion_payload['runtime_features'] : array();
+			$companion_payload['runtime_features'] = array_values( array_unique( array_merge( $producer_features, $args['runtime_features'] ), SORT_REGULAR ) );
+
 			$artifact_provenance = array_key_exists( 'provenance', $companion_payload ) ? $companion_payload['provenance'] : null;
 			if ( null !== $artifact_provenance && ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $artifact_provenance ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload carries a malformed provenance record.' );
@@ -288,6 +294,39 @@ final class Static_Site_Importer_Compilation_Preparation {
 			'companion_payload'     => $companion_payload,
 			'theme_materialization' => $strategy['evidence'],
 		);
+	}
+
+	/**
+	 * Optional runtime features the compiled plan's own documents need.
+	 *
+	 * The compile step is the producer of every runtime payload, so it declares
+	 * the plan-level interaction runtime here: native core/tabs blocks (read from
+	 * block delimiters, like generated-block scoping) and member sign-in controls
+	 * the capture producer declares with the capture-evidence contract. Form and
+	 * commerce runtimes are declared by their provider adapters instead.
+	 *
+	 * @param array<string,mixed> $plan Compiled WordPress site plan.
+	 * @return array<int,string>
+	 */
+	private static function declared_runtime_features( array $plan ): array {
+		if ( ! class_exists( 'Static_Site_Importer_Capture_Evidence' ) ) {
+			require_once __DIR__ . '/class-static-site-importer-capture-evidence.php';
+		}
+		if ( ! class_exists( 'Static_Site_Importer_Generated_Runtime_Package' ) ) {
+			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+		}
+		$documents = array_intersect_key( $plan, array_flip( array( 'pages', 'template_parts', 'templates', 'writes' ) ) );
+		if ( in_array( 'core/tabs', Static_Site_Importer_Generated_Runtime_Package::referenced_block_names( $documents ), true ) ) {
+			return array( 'interactions' );
+		}
+		$member_login = false;
+		array_walk_recursive(
+			$documents,
+			static function ( $value ) use ( &$member_login ): void {
+				$member_login = $member_login || ( is_string( $value ) && str_contains( $value, Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN ) );
+			}
+		);
+		return $member_login ? array( 'interactions' ) : array();
 	}
 
 	/** Extract artifact identity fields supplied with a source artifact. */

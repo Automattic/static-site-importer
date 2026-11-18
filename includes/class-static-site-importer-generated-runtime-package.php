@@ -8,10 +8,114 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-require_once __DIR__ . '/class-static-site-importer-companion-plugin.php';
+if ( ! class_exists( 'Static_Site_Importer_Companion_Plugin' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-companion-plugin.php';
+}
 
 final class Static_Site_Importer_Generated_Runtime_Package {
 	public const DIRECTORY = 'ssi-runtime';
+
+	/**
+	 * Merge the runtime features that selected provider adapters declare into a
+	 * payload's own `runtime_features` declaration.
+	 *
+	 * A provider adapter that emits a document needing an optional runtime (a
+	 * form or commerce provider) declares it as `runtime_features` on its adapter
+	 * definition. Nothing is inferred from content: a payload without its own
+	 * declaration is left for payload validation to reject.
+	 *
+	 * @param array<string,mixed> $payload   Runtime payload.
+	 * @param array<string,mixed> $lifecycle Runtime lifecycle with selected provider adapters.
+	 * @return array<string,mixed>
+	 */
+	public static function with_declared_features( array $payload, array $lifecycle = array() ): array {
+		if ( ! is_array( $payload['runtime_features'] ?? null ) ) {
+			return $payload;
+		}
+		$adapters = array();
+		foreach ( array( 'dependencies', 'entities' ) as $kind ) {
+			foreach ( is_array( $lifecycle[ $kind ] ?? null ) ? $lifecycle[ $kind ] : array() as $entry ) {
+				$features = is_array( $entry ) ? ( $entry['adapter']['runtime_features'] ?? array() ) : array();
+				$adapters = array_merge( $adapters, is_array( $features ) ? $features : array() );
+			}
+		}
+		$adapters                    = array_intersect( Static_Site_Importer_Companion_Plugin::RUNTIME_FEATURES, $adapters );
+		$payload['runtime_features'] = array_values( array_unique( array_merge( $payload['runtime_features'], $adapters ), SORT_REGULAR ) );
+		return $payload;
+	}
+
+	/**
+	 * Scope a theme runtime payload to what the site uses: merge the runtime
+	 * features its producers and provider adapters declare, and keep only the
+	 * generated blocks that a materialized block document references.
+	 *
+	 * @param array<string,mixed> $payload   Theme runtime payload.
+	 * @param array<mixed>        $content   Resolved plan and other documents the theme renders.
+	 * @param array<string,mixed> $lifecycle Runtime lifecycle with selected provider adapters.
+	 * @return array<string,mixed>
+	 */
+	public static function scoped_payload( array $payload, array $content, array $lifecycle = array() ): array {
+		$used_blocks = array_flip( self::referenced_block_names( $content ) );
+		$namespace   = Static_Site_Importer_Companion_Plugin::block_namespace( $payload );
+		$blocks      = array();
+		foreach ( is_array( $payload['blocks'] ?? null ) ? $payload['blocks'] : array() as $block ) {
+			if ( ! is_array( $block ) ) {
+				$blocks[] = $block; // Left for payload validation to reject.
+				continue;
+			}
+			$declared = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
+			$name     = '' !== $declared ? $declared : $namespace . '/' . ( is_string( $block['name'] ?? null ) ? $block['name'] : '' );
+			if ( isset( $used_blocks[ $name ] ) ) {
+				$blocks[] = $block;
+			}
+		}
+		if ( array_key_exists( 'blocks', $payload ) ) {
+			$payload['blocks'] = $blocks;
+		}
+		return self::with_declared_features( $payload, $lifecycle );
+	}
+
+	/**
+	 * Block names that serialized block documents reference, from their block
+	 * delimiters. Core blocks are returned with their `core/` namespace.
+	 *
+	 * @param array<mixed> $content Documents, plans or other nested values.
+	 * @return array<int,string>
+	 */
+	public static function referenced_block_names( array $content ): array {
+		$names = array();
+		array_walk_recursive(
+			$content,
+			static function ( $value ) use ( &$names ): void {
+				if ( ! is_string( $value ) || ! str_contains( $value, 'wp:' ) ) {
+					return;
+				}
+				if ( preg_match_all( '~wp:([a-z][a-z0-9-]*)\\\\?/([a-z0-9-]+)~', $value, $matches, PREG_SET_ORDER ) ) {
+					foreach ( $matches as $match ) {
+						$names[ $match[1] . '/' . $match[2] ] = true;
+					}
+				}
+				if ( preg_match_all( '~<!--\s+wp:([a-z][a-z0-9-]*)\s~', $value, $matches ) ) {
+					foreach ( $matches[1] as $core ) {
+						$names[ 'core/' . $core ] = true;
+					}
+				}
+			}
+		);
+		return array_keys( $names );
+	}
+
+	/**
+	 * Generated runtime files the package ships, for the import report.
+	 *
+	 * @param array<string,mixed> $package Theme runtime package.
+	 * @return array<int,string>
+	 */
+	public static function shipped_files( array $package ): array {
+		$files = array_map( 'strval', array_keys( $package['files'] ?? array() ) );
+		sort( $files );
+		return $files;
+	}
 
 	/** Build the same validated runtime for the theme destination, without a plugin or loader. */
 	public static function theme( array $payload, string $owner_slug = '' ) {

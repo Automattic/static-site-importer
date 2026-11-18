@@ -361,10 +361,11 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 // Synthetic metadata block with a render file plus a preserved island scoped to
 // that block. Generic; no fixture-specific strings.
 $payload = array(
-	'schema'         => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'      => 'Example Site',
-	'site_name'      => 'Example Site',
-	'blocks'         => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array( 'forms', 'interactions', 'commerce' ),
+	'site_slug'        => 'Example Site',
+	'site_name'        => 'Example Site',
+	'blocks'           => array(
 		array(
 			'name'                => 'custom-hero',
 			'block_json'          => array(
@@ -421,14 +422,14 @@ $payload = array(
 			),
 		),
 	),
-	'preserved_js'   => array(
+	'preserved_js'     => array(
 		array(
 			'handle'  => 'hero-island',
 			'content' => 'document.addEventListener("DOMContentLoaded",function(){});',
 			'block'   => 'example/custom-hero',
 		),
 	),
-	'editor_scripts' => array(
+	'editor_scripts'   => array(
 		array(
 			'handle'       => 'ssi-example-site-editor',
 			'src'          => 'editor/core-enhancement.js',
@@ -440,10 +441,11 @@ $payload = array(
 
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $payload ), 'canonical-payload-validates-all-core-metadata-fields' );
 $dialog_payload    = array(
-	'schema'       => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'    => 'captured-dialog-site',
-	'site_name'    => 'Captured Dialog Site',
-	'blocks'       => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'captured-dialog-site',
+	'site_name'        => 'Captured Dialog Site',
+	'blocks'           => array(
 		array(
 			'name'                => 'captured-dialog',
 			'block_json'          => array(
@@ -482,7 +484,7 @@ $dialog_payload    = array(
 			),
 		),
 	),
-	'preserved_js' => array(),
+	'preserved_js'     => array(),
 );
 $dialog_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $dialog_payload );
 $assert( true === $dialog_validation, 'captured-dialog-payload-validates', is_wp_error( $dialog_validation ) ? $dialog_validation->get_error_message() : '' );
@@ -648,11 +650,12 @@ $default_editor_path = $payload;
 unset( $default_editor_path['editor_scripts'][0]['src'] );
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $default_editor_path ), 'editor-script-path-is-optional' );
 $editor_scripts_only = array(
-	'schema'         => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'      => 'editor-only-site',
-	'site_name'      => 'Editor Only Site',
-	'blocks'         => array(),
-	'editor_scripts' => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'editor-only-site',
+	'site_name'        => 'Editor Only Site',
+	'blocks'           => array(),
+	'editor_scripts'   => array(
 		array(
 			'handle'       => 'ssi-editor-only-site-editor',
 			'content'      => 'window.ssiEditorOnly = true;',
@@ -1136,10 +1139,11 @@ WP_Block_Type_Registry::$registered = array();
 // Metadata blocks remain dynamic through their generated render.php.
 $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 	array(
-		'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-		'site_slug' => 'render-variants',
-		'site_name' => 'Render Variants',
-		'blocks'    => array(
+		'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+		'runtime_features' => array(),
+		'site_slug'        => 'render-variants',
+		'site_name'        => 'Render Variants',
+		'blocks'           => array(
 			array(
 				'name'       => 'static-card',
 				'block_json' => array(
@@ -1789,10 +1793,11 @@ if ( is_array( $provenanced_descriptor ) && is_array( $plain_descriptor ) ) {
 // recomputing ssi-<site_slug>: declared block_json.name namespaces win, and
 // the plugin directory name remains a separate concern.
 $namespaced_payload = array(
-	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug' => 'acme',
-	'site_name' => 'Acme',
-	'blocks'    => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'acme',
+	'site_name'        => 'Acme',
+	'blocks'           => array(
 		array(
 			'name'       => 'hero',
 			'block_json' => array(
@@ -1900,6 +1905,7 @@ $metric_fact     = array(
 );
 $metric_payload  = array(
 	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
 	'site_slug'        => 'metric-site',
 	'site_name'        => 'Metric Site',
 	'blocks'           => array(),

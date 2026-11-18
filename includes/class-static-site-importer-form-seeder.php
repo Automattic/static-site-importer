@@ -80,6 +80,7 @@ class Static_Site_Importer_Form_Seeder {
 			'rejected_rows_degrade'    => true,
 			'capability'               => 'form',
 			'provider'                 => 'jetpack',
+			'runtime_features'         => array( 'forms' ),
 			'label'                    => 'Jetpack contact form',
 			'report_key'               => 'form_seeding',
 			'waiver_arg'               => 'allow_missing_jetpack',

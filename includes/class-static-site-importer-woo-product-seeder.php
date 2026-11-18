@@ -32,6 +32,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			'entity_collection'        => 'products',
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
+			'runtime_features'         => array( 'commerce' ),
 			'label'                    => 'WooCommerce simple product',
 			'report_key'               => 'product_seeding',
 			'waiver_arg'               => 'allow_missing_woocommerce',

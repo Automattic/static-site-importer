@@ -21,9 +21,10 @@ $assert    = static function ( bool $value, string $message ): void {
 	WP_CLI::log( 'PASS: ' . $message );
 };
 $payload   = array(
-	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug' => 'saved-usage-proof',
-	'blocks'    => array_map( static fn ( $name ) => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'saved-usage-proof',
+	'blocks'           => array_map( static fn ( $name ) => array(
 		'name'       => $name,
 		'block_json' => array(
 			'name'       => 'ssi-proof/' . $name,

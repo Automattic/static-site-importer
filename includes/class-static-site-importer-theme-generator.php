@@ -133,6 +133,13 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
 		}
+		// A host-theme runtime ships the features its selected providers declare.
+		foreach ( array( 'theme_runtime_payload', 'existing_theme_runtime_payload' ) as $runtime_arg ) {
+			if ( is_array( $args[ $runtime_arg ] ?? null ) ) {
+				require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+				$args[ $runtime_arg ] = Static_Site_Importer_Generated_Runtime_Package::with_declared_features( $args[ $runtime_arg ], $lifecycle );
+			}
+		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$encoded_artifact = wp_json_encode( $artifact );
 			$dependency_plan = Static_Site_Importer_Dependency_Manager::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );

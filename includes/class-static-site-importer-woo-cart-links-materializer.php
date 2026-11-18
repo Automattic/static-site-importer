@@ -19,6 +19,7 @@ final class Static_Site_Importer_Woo_Cart_Links_Materializer {
 			'entity_collection'    => 'cart_links',
 			'capability'           => 'shop',
 			'provider'             => 'woocommerce',
+			'runtime_features'     => array( 'commerce' ),
 			'label'                => 'WooCommerce cart links',
 			'validator'            => array( self::class, 'validate' ),
 			'materializer'         => array( self::class, 'materialize' ),
