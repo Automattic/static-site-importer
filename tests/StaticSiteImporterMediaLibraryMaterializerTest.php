@@ -49,6 +49,37 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( array( $ids[0] ), $state['applied']['attachments'] );
 	}
 
+	/** Smaller lazy-load placeholders must not become attachment originals.
+	 *
+	 * @dataProvider placeholder_sources
+	 */
+	public function test_width_family_uses_real_original( string $source ): void {
+		$uri    = get_theme_root_uri() . '/' . $this->slug() . '/media/';
+		$srcset = $uri . '225.jpg 225w, ' . $uri . '510.jpg 510w, ' . $uri . '210.jpg 210w';
+		$attrs  = array( 'metadata' => array( 'blocksEngineImageSelection' => array( 'src' => $uri . $source . '.jpg', 'srcset' => $srcset ) ) );
+		$state  = $this->state_with_page( '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $uri . $source . '.jpg" srcset="' . $srcset . '" alt=""/></figure><!-- /wp:image -->' );
+		foreach ( array( 'placeholder' => array( 1, 2 ), '210' => array( 210, 118 ), '225' => array( 225, 127 ), '510' => array( 510, 286 ) ) as $name => $size ) {
+			$image = imagecreatetruecolor( $size[0], $size[1] );
+			imagejpeg( $image, $this->theme_dir . '/media/' . $name . '.jpg' );
+			imagedestroy( $image );
+		}
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertIsArray( $report );
+		$blocks   = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) );
+		$id       = $blocks[0]['attrs']['id'];
+		$metadata = wp_get_attachment_metadata( $id );
+		$this->assertSame( 510, $metadata['width'] );
+		$this->assertSame( 286, $metadata['height'] );
+		$this->assertSame( hash_file( 'sha256', $this->theme_dir . '/media/510.jpg' ), hash_file( 'sha256', wp_get_original_image_path( $id ) ) );
+		$this->assertSame( 210, $metadata['sizes']['ssi-source-210']['width'] );
+		$this->assertSame( 225, $metadata['sizes']['ssi-source-225']['width'] );
+		$this->assertStringNotContainsString( 'placeholder.jpg', $blocks[0]['innerHTML'] );
+	}
+
+	public static function placeholder_sources(): array {
+		return array( 'placeholder' => array( 'placeholder' ), 'real family member' => array( '510' ) );
+	}
+
 	/** A theme image whose filename has non-ASCII characters binds whether its URL is raw or percent-encoded. */
 	public function test_non_ascii_image_filename_becomes_attachment(): void {
 		$uri   = get_theme_root_uri() . '/' . $this->slug() . '/media/';

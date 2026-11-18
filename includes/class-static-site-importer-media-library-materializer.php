@@ -462,7 +462,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
-		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored ? $selection['srcset'] : (string) $tags->get_attribute( 'srcset' ) );
 		if ( null !== $error ) {
 			return $block_match[0];
 		}
@@ -726,7 +726,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 						}
 					}
 				}
-				$id = self::ensure_attachment( $dir, $asset['target_path'], $alt, $state, $attachments, $by_hash, $error );
+				$original = $asset['target_path'];
+				foreach ( $families[ $original ] ?? array() as $family ) {
+					$promoted = self::register_srcset_renditions( $family['srcset'], 0, rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' ), $dir, $state, $dir . '/' . $original );
+					if ( $promoted ) {
+						$original = substr( reset( $promoted ), strlen( $dir ) + 1 );
+						break;
+					}
+				}
+				$id = self::ensure_attachment( $dir, $original, $alt, $state, $attachments, $by_hash, $error );
 				// One image the Media Library refuses degrades alone: it keeps its
 				// verified theme destination and is reported. Integrity faults
 				// (bytes that do not match their capture record) still fail.
@@ -1452,9 +1460,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 */
 	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class, ?string $unbound_size_slug = null ): string {
 		$src_id             = 0;
-		$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
+		$authored_selection = (bool) preg_match( '/\bsrcset="([^"\s][^"]*)"/i', $tag, $authored_srcset );
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
-			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored_srcset[1] ?? '' );
 			if ( null !== $error ) {
 				return $tag;
 			}
@@ -1468,7 +1476,12 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 		}
 		if ( preg_match( '/\bsrcset="([^"]*)"/i', $tag, $srcset_match ) ) {
-			$srcset = self::rewrite_srcset( $srcset_match[1], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			$candidate_ids = array();
+			$relative      = isset( $src_match[1] ) ? self::theme_relative_raster( $src_match[1], $theme_uri ) : null;
+			$source_size   = null !== $relative ? wp_getimagesize( $theme_dir . '/' . $relative ) : false;
+			$metadata      = $src_id > 0 ? wp_get_attachment_metadata( $src_id ) : array();
+			$promoted      = $source_size && $source_size[0] < ( $metadata['width'] ?? 0 );
+			$srcset        = self::rewrite_srcset( $srcset_match[1], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $candidate_ids, $promoted ? $src_id : 0 );
 			if ( null !== $error ) {
 				return $tag;
 			}
@@ -1540,13 +1553,24 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * Register distinct files in a width family on its image, not as attachments.
 	 * Fully collapsed, density and art-directed families keep the legacy path.
 	 *
-	 * @return array<string,string> Uploaded rendition URLs keyed by authored URL.
+	 * With attachment ID zero, return the largest verified source path only
+	 * when source_file decodes narrower than every candidate in the family.
+	 *
+	 * @return array<string,string> Uploaded URLs (or preflight source path) keyed by authored URL.
 	 */
-	private static function register_srcset_renditions( string $srcset, int $attachment_id, string $theme_uri, string $theme_dir, array $state ): array {
-		$metadata = wp_get_attachment_metadata( $attachment_id );
+	private static function register_srcset_renditions( string $srcset, int $attachment_id, string $theme_uri, string $theme_dir, array $state, string $source_file = '' ): array {
+		// Before attachment creation, use the same verified family to replace a
+		// smaller placeholder. Never change a src that belongs to its family.
+		$source_size = '' !== $source_file ? wp_getimagesize( $source_file ) : false;
+		$metadata    = $source_size ? array(
+			'width'  => $source_size[0],
+			'height' => $source_size[1],
+		) : wp_get_attachment_metadata( $attachment_id );
+		$preflight   = 0 === $attachment_id;
 		if ( empty( $metadata['width'] ) || empty( $metadata['height'] ) ) {
 			return array();
 		}
+		$ratio      = $preflight ? null : $metadata;
 		$candidates = \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::parse( html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 		$files      = array();
 		$hashes     = array();
@@ -1562,7 +1586,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$size  = wp_getimagesize( $file );
 			$hash  = hash_file( 'sha256', $file );
 			$width = (int) $match[1];
-			if ( ! $size || ! wp_image_matches_ratio( $metadata['width'], $metadata['height'], $size[0], $size[1] ) || false === $hash || isset( $files[ $width ] ) ) {
+			if ( ! $size || ( null !== $ratio && ! wp_image_matches_ratio( $ratio['width'], $ratio['height'], $size[0], $size[1] ) ) || false === $hash || isset( $files[ $width ] ) ) {
 				return array();
 			}
 			$record = $state['staged_resource_records'][ $relative ] ?? null;
@@ -1571,6 +1595,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				if ( ! Static_Site_Importer_Image_Assets::verify( $file, $record ) ) {
 					return array();
 				}
+			}
+			if ( $preflight && ( $metadata['width'] >= $size[0] || $metadata['width'] >= $width ) ) {
+				return array();
+			}
+			if ( $preflight ) {
+				$ratio = array(
+					'width'  => $size[0],
+					'height' => $size[1],
+				);
 			}
 			$hashes[ $hash ] = true;
 			$files[ $width ] = array(
@@ -1583,6 +1616,12 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		if ( count( $hashes ) < 2 ) {
 			return array();
+		}
+
+		if ( $preflight ) {
+			krsort( $files, SORT_NUMERIC );
+			$largest = reset( $files );
+			return array( $largest['url'] => $largest['file'] );
 		}
 
 		$attached_file = get_attached_file( $attachment_id );
@@ -1639,13 +1678,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
-	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): int {
+	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, string $srcset = '' ): int {
 		$relative = self::theme_relative_raster( $url, $theme_uri );
 		if ( null === $relative ) {
 			return 0;
 		}
 		++$report['replaceable_media_count'];
-		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
+		$authored_relative = $relative;
+		if ( '' !== $srcset && ! isset( $attachments[ $relative ] ) ) {
+			$promoted = self::register_srcset_renditions( $srcset, 0, $theme_uri, $theme_dir, $state, $theme_dir . '/' . $relative );
+			if ( $promoted ) {
+				$relative = substr( reset( $promoted ), strlen( $theme_dir ) + 1 );
+			}
+		}
+		$id                                = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
+		$attachments[ $authored_relative ] = $id;
 		return null === $error ? $id : 0;
 	}
 
