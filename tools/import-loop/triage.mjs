@@ -25,6 +25,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
 
+import { reportRegression } from './bisect-report.mjs';
+
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
@@ -371,6 +373,15 @@ function acceptanceGate(item, repo) {
 }
 
 stageGateTools();
+// Bisect starts alongside triage. Join only before writing Cook guidance;
+// reduction and head checks need not wait for attribution.
+let bisect;
+if (args.bisect) {
+  const deadline = Date.now() + 3 * 3600_000;
+  while (!fs.existsSync(args.bisect) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1000));
+  if (fs.existsSync(args.bisect)) bisect = JSON.parse(fs.readFileSync(args.bisect, 'utf8'));
+}
+const regressionNotes = args['dry-run'] ? new Map() : reportRegression(bisect, tracked, result.url, gh);
 const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
@@ -420,6 +431,7 @@ for (const item of tracked) {
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
+      regressionNotes.get(item.signature) || '',
       '',
       ...(item.design ? [
         `This is design round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix, and their reports are the issue's latest comments. Read them all before changing anything, then decide what this finding needs and act on it:`,

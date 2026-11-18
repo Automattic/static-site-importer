@@ -127,6 +127,26 @@
       }
     },
     {
+      "id": "bisect",
+      "needs": ["evaluate"],
+      "timeout": "3h",
+      "exec": {
+        "program": "node",
+        "cwd": "{{steps.tools.output/dir}}",
+        "args": [
+          "bisect.mjs",
+          "--findings", "{{steps.evaluate.output/findings_path}}",
+          "--iteration", "{{inputs.iteration}}",
+          "--slug", "{{inputs.slug}}",
+          "--cur", "{{steps.import.output/blocks_engine}}",
+          "--source", "{{steps.import.output/source}}",
+          "--ssi-zip", "{{steps.import.output/ssi_zip}}",
+          "--blocks-engine", "{{inputs.blocks_engine}}",
+          "--work", "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-bisect"
+        ]
+      }
+    },
+    {
       "id": "triage",
       "needs": [
         "evaluate"
@@ -142,6 +162,8 @@
         "cwd": "{{steps.tools.output/dir}}",
         "args": [
           "triage.mjs",
+          "--bisect",
+          "{{inputs.runs_dir}}/{{inputs.slug}}-p{{inputs.iteration}}-bisect/bisect.json",
           "--findings",
           "{{steps.evaluate.output/findings_path}}",
           "--source",

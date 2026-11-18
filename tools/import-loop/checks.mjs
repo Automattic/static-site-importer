@@ -6,7 +6,7 @@ import path from 'node:path';
 import { editorPages } from './editor.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
-import { compareImports, excess, parityFailureClass } from './progress.mjs';
+import { compareImports, excess, parityFailureClass, UNCHECKED } from './progress.mjs';
 import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 
 export const WIDTHS = [390, 768, 1440];
@@ -76,11 +76,15 @@ export async function checkImport(args) {
   for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
   fs.mkdirSync(args.out, { recursive: true });
   const captureRoot = path.join(args.source, new URL(args.url).hostname);
-  const routes = captureRoutes(captureRoot);
+  const scope = args['check-scope'];
+  const scopedCell = (route, width) => !scope || scope.some((s) => s.cells.some((c) => c.route === route && (c.width == null || width == null || c.width === width)));
+  const routes = captureRoutes(captureRoot).filter((route) => !scope || scope.some((s) => s.cells.some((c) => c.route == null || c.route === route)));
   if (!routes.length) throw new Error('capture_has_no_routes');
   const findings = new Map();
   const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null }) => {
     const signature = createHash('sha1').update(JSON.stringify([stage, check, owner_repo, subject])).digest('hex').slice(0, 12);
+    if (scope && !UNCHECKED.has(check) && !scope.some((s) => s.signature === signature)) return;
+    if (scope && route != null && !scopedCell(route, width)) return;
     const finding = findings.get(signature) || { signature, severity: advisory.has(check) ? 'advisory' : 'blocker', stage, check, owner_repo, subject, evidence, occurrences: [] };
     finding.occurrences.push({ route, width, evidence });
     findings.set(signature, finding);
@@ -91,12 +95,26 @@ export async function checkImport(args) {
   // reuse stale evidence from another run. The same pinned release checks both.
   const capture = path.join(args.out, 'parity-capture');
   fs.rmSync(capture, { recursive: true, force: true });
-  fs.cpSync(captureRoot, capture, { recursive: true });
+  fs.cpSync(captureRoot, capture, { recursive: true, dereference: true });
   // A client candidate (gates/client-candidate.sh) compares with its own package.
   const command = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || compareClient.package}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
   const reportPath = path.join(capture, 'compare', 'materialization', 'report.json');
   fs.rmSync(reportPath, { force: true });
-  const run = spawnSync('npx', command, { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 30 * 60_000 });
+  let compareCommand = command;
+  let compareEnv = process.env;
+  if (scope) {
+    const scopeFile = path.resolve(args.out, 'check-scope.json');
+    fs.writeFileSync(scopeFile, JSON.stringify(scope));
+    compareCommand = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || compareClient.package}`, '-c', `node "$IMPORT_LOOP_BISECT_COMPARE" "$IMPORT_LOOP_COMPARE_EXECUTABLE" "$IMPORT_LOOP_COMPARE_CAPTURE" "$IMPORT_LOOP_COMPARE_CANDIDATE" "$IMPORT_LOOP_COMPARE_SCOPE"`];
+    compareEnv = { ...process.env,
+      IMPORT_LOOP_BISECT_COMPARE: new URL('./bisect-compare.mjs', import.meta.url).pathname,
+      IMPORT_LOOP_COMPARE_EXECUTABLE: compareClient.executable,
+      IMPORT_LOOP_COMPARE_CAPTURE: path.resolve(capture),
+      IMPORT_LOOP_COMPARE_CANDIDATE: args['wp-url'],
+      IMPORT_LOOP_COMPARE_SCOPE: scopeFile,
+    };
+  }
+  const run = spawnSync('npx', compareCommand, { env: compareEnv, encoding: 'utf8', maxBuffer: 64 << 20, timeout: 30 * 60_000 });
   fs.writeFileSync(path.join(args.out, 'compare.log'), `${run.stdout || ''}\n${run.stderr || ''}`);
   let parity;
   try {
@@ -114,6 +132,7 @@ export async function checkImport(args) {
   const visual = [];
   const sameRoute = (value, route) => new URL(value, args.url).pathname === route;
   for (const route of routes) for (const width of WIDTHS) {
+    if (!scopedCell(route, width)) continue;
     const scores = (parity?.scores || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
     const pending = (parity?.pending || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
     const cell = { route, width, scores, pending, verified: scores.length > 0 && pending.length === 0 };
@@ -139,7 +158,7 @@ export async function checkImport(args) {
 
   const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
   try {
-    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report);
+    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells));
     const tally = (list, key) => list.reduce((m, b) => m.set(key(b), (m.get(key(b)) || 0) + 1), new Map());
     for (const { route, blocks } of pages) {
       const cell = { route, width: 1440 };
