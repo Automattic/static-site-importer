@@ -67,6 +67,8 @@ try {
     for (const key of ['quality_pass', 'fail_import', 'failure_reasons', 'counts', 'diagnostic_summary']) {
       assert.deepEqual(result.import_validation_result[key], validation[key], `${name}: ${key}`);
     }
+    assert.ok(report.compact_summary.block_theme_scorecard, `${name}: the report carries a scorecard summary`);
+    assert.deepEqual(result.import_report_summary.block_theme_scorecard, report.compact_summary.block_theme_scorecard, `${name}: block_theme_scorecard`);
     assert.ok(report.quality.block_count > 0);
     assert.equal(result.fixture_diagnostics.quality_counts.block_count, report.quality.block_count);
     // The copy beside `result` is the one hosts read for the block count.
