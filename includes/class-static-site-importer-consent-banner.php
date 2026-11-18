@@ -336,7 +336,9 @@ class Static_Site_Importer_Consent_Banner {
 				$css .= $property . ':' . $presentation[ $key ] . ';';
 			}
 		}
-		$selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+		// The repeated class outranks Jetpack's `:not([role=document]).align*`
+		// rules (0,3,0), whose view.css loads after the theme stylesheet.
+		$selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
 		$flex     = isset( $presentation['text_margin'] ) || ! empty( $presentation['layout'] );
 		if ( $flex ) {
 			$css .= 'flex-wrap:nowrap;';
