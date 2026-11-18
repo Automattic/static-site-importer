@@ -92,7 +92,8 @@ export async function checkImport(args) {
   const capture = path.join(args.out, 'parity-capture');
   fs.rmSync(capture, { recursive: true, force: true });
   fs.cpSync(captureRoot, capture, { recursive: true });
-  const command = ['--yes', `--package=${compareClient.package}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
+  // A client candidate (gates/client-candidate.sh) compares with its own package.
+  const command = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || compareClient.package}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
   const reportPath = path.join(capture, 'compare', 'materialization', 'report.json');
   fs.rmSync(reportPath, { force: true });
   const run = spawnSync('npx', command, { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 30 * 60_000 });
