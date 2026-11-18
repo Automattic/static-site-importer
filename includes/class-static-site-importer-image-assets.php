@@ -108,6 +108,7 @@ final class Static_Site_Importer_Image_Assets {
 				$mapped[ $path ] = $record;
 			}
 		}
+		$bound = self::box_tree_bindings( $artifact['files'], $reader );
 		foreach ( $artifact['files'] as &$file ) {
 			if ( ! preg_match( '/\.html?$/i', $file['path'] ) ) {
 				continue;
@@ -115,6 +116,11 @@ final class Static_Site_Importer_Image_Assets {
 			$html = Static_Site_Importer_Content_Policy::file_bytes( $file, $reader );
 			if ( ! is_string( $html ) ) {
 				return self::invalid( 'document_unreadable', (string) $file['path'] );
+			}
+			if ( in_array( hash( 'sha256', $html ), $bound[ $file['path'] ] ?? array(), true ) ) {
+				// Capture box-tree evidence is hash-bound to these exact bytes;
+				// rewriting them would make Blocks Engine reject it as stale.
+				continue;
 			}
 			$tags = new WP_HTML_Tag_Processor( $html );
 			while ( $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
@@ -143,6 +149,27 @@ final class Static_Site_Importer_Image_Assets {
 			'artifact' => $artifact,
 			'records'  => $mapped,
 		);
+	}
+
+	/**
+	 * Document hashes bound by capture box-tree sidecars, keyed by source path.
+	 *
+	 * @return array<string, list<string>>
+	 */
+	private static function box_tree_bindings( array $files, ?object $reader ): array {
+		$bound = array();
+		foreach ( $files as $file ) {
+			$path = (string) ( $file['path'] ?? '' );
+			if ( ! \Automattic\BlocksEngine\PhpTransformer\Contract\BoxTree::isSidecarPath( $path ) ) {
+				continue;
+			}
+			$bytes = Static_Site_Importer_Content_Policy::file_bytes( $file, $reader );
+			$tree  = is_string( $bytes ) && strlen( $bytes ) <= \Automattic\BlocksEngine\PhpTransformer\Contract\BoxTree::MAX_BYTES ? json_decode( $bytes, true, 32 ) : null;
+			if ( is_array( $tree ) && is_string( $tree['source_path'] ?? null ) && is_string( $tree['source_hash'] ?? null ) ) {
+				$bound[ $tree['source_path'] ][] = $tree['source_hash'];
+			}
+		}
+		return $bound;
 	}
 
 	/** One validated record: a declared kind whose original, aliases and references agree. */
