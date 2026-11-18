@@ -268,7 +268,10 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 		$results     = array();
 		$spawn_error = false;
 		while ( ! empty( $processes ) || ( ! $spawn_error && ! empty( $queue ) ) ) {
-			while ( ! $spawn_error && ! empty( $queue ) && count( $processes ) < $concurrency ) {
+			while ( ! $spawn_error && ! empty( $queue ) ) {
+				if ( count( $processes ) >= $concurrency ) {
+					break;
+				}
 				$index    = array_key_first( $queue );
 				$page_ids = $queue[ $index ];
 				unset( $queue[ $index ] );

@@ -1362,7 +1362,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$rest     = array_values( array_diff( $pending, array( $entry_id ) ) );
 		usort(
 			$rest,
-			static fn ( string $a, string $b ): int => ( (int) ( $page_bytes[ $b ] ?? -1 ) <=> (int) ( $page_bytes[ $a ] ?? -1 ) ) ?: ( $position[ $a ] <=> $position[ $b ] )
+			static fn ( string $a, string $b ): int => array( (int) ( $page_bytes[ $b ] ?? -1 ), $position[ $a ] ) <=> array( (int) ( $page_bytes[ $a ] ?? -1 ), $position[ $b ] )
 		);
 		return in_array( $entry_id, $pending, true ) ? array_merge( array( $entry_id ), $rest ) : $rest;
 	}
