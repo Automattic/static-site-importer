@@ -49,3 +49,10 @@ test('a threshold blocker passes on less excess at the same count, and fails on 
   // Another threshold blocker growing past its limit is a regression.
   assert.equal(compareImports(result(finding('a', 7), measured('css', 100)), result(finding('a', 5), measured('css', 110)), 'a').pass, false);
 });
+test('blockers on routes only the candidate measured are new scope; a shared route still regresses', () => {
+  const was = { routes: ['/'], findings: [finding('folded', 22)], visual };
+  const wider = (b) => ({ routes: ['/', '/about/'], findings: [finding('folded', 0), finding('b', 9, '/about/'), ...(b ? [finding('b', b)] : [])], visual });
+  const v = compareImports(was, wider(0), 'folded');
+  assert.deepEqual([v.pass, v.new_scope], [true, { routes: ['/about/'], blockers: [{ signature: 'b', count: 9 }] }]);
+  assert.equal(compareImports(was, wider(1), 'folded').pass, false);
+});

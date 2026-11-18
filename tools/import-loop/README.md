@@ -11,11 +11,20 @@ site and fixes what the import gets wrong, one pass at a time. Each pass:
 3. **triages** each blocker into a GitHub issue on its owning repository;
 4. **cooks** a fix for each issue, accepted only if the whole-site gate measures
    its finding reduced with nothing else regressed;
-5. **confirms** each fix PR by re-measuring its exact head, and
+5. **confirms** each fix PR by re-measuring its exact head merged onto what
+   the pass measured: a Blocks Engine head as the transformer, a Static Site
+   Importer head as the importer, and a Data Liberation Agent head as the
+   capture client, which captures the source again and compares with itself
+   (`gates/client-candidate.sh`), and
 6. **merges** it once it is green, at that head. Each Cook's fix is confirmed
    and merged as soon as that Cook settles (a `per_item` step), and open fixes
    no Cook works this pass are confirmed alongside the Cooks;
 7. **scores** the pass into `<runs>/<slug>-scoreboard.jsonl`.
+
+A refuted fix goes back to a Cook on its own branch. Each rework is recorded
+on the issue and counts toward its Cook cap like a failed Cook, so a fix that
+keeps failing reaches a design round and then an exception; an excepted
+finding's refuted PR is closed.
 
 It starts the next pass until no blocker is left with an issue to work on,
 the blockers are unchanged for 3 passes, or 60 passes have run.

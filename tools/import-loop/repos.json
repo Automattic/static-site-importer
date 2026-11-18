@@ -27,6 +27,12 @@
   "data-liberation-agent": {
     "github": "Automattic/data-liberation-agent",
     "branch": "main",
+    "candidate": {
+      "slot": "client",
+      "paths": [
+        "."
+      ]
+    },
     "stage": "capture"
   }
 }

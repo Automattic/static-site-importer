@@ -7,8 +7,9 @@
 // fewer of its own occurrences, no other growing blocker, and no visual
 // regression. Each head is merged onto the commit the pass measured for its
 // repository (triage's `bases`) and enters the re-import as repos.json's
-// `candidate` says. Fixes in a repository with no `candidate` are
-// unconfirmed: the next pass's import is their check.
+// `candidate` says: the transformer, the importer, or the capture client
+// (which captures the source again). Fixes in a repository with no
+// `candidate` are unconfirmed.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
 //          [--issue <url> | --uncooked 1] [--merge 1]
@@ -33,7 +34,9 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
 const triage = JSON.parse(fs.readFileSync(args.triage, 'utf8'));
-const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.dirname(path.resolve(args['blocks-engine'])))) };
+const compareClient = JSON.parse(fs.readFileSync(path.join(here, 'compare-client.json'), 'utf8'));
+const runsRoot = path.dirname(path.dirname(path.resolve(args['blocks-engine'])));
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, runsRoot), [compareClient.owner_repo]: repoClone(repos[compareClient.owner_repo].github, runsRoot) };
 const log = (...parts) => console.error('[confirm]', ...parts);
 
 // One pull request can fix several tracked findings: it is confirmed only
@@ -46,7 +49,7 @@ const chosen = triage.tracked.filter((item) => args.issue ? item.issue_url === a
 // A pull request linked to several findings is judged on all of them.
 const prs = new Set(chosen.flatMap((item) => linked.get(item).map((pr) => pr.url)));
 const scope = triage.tracked.filter((item) => chosen.includes(item) || linked.get(item).some((pr) => prs.has(pr.url)));
-const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: triage.bases?.[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path });
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: triage.bases?.[item.repo], transformer: triage.transformer, work: args.work, reimport: triage.reimport, site: triage.site, url: triage.url, routes: triage.routes, trunk: triage.trunk, base_findings: triage.findings_path });
 // Every head a Cook moved since triage, checked at once.
 await checkHeads(scope.flatMap((item) => repos[item.repo]?.candidate && clones[item.repo] && triage.bases?.[item.repo] && item.cells?.length
   ? linked.get(item).filter((pr) => !(item.head_check?.pr === pr.url && item.head_check.head === pr.headRefOid)).map((pr) => ({ item, pr, at: headAt(item) }))

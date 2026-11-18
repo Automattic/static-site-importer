@@ -81,14 +81,19 @@ export const routeDocument = (website, route = '/') => {
 // against the finding. Guidance is the loop's own design notice, which opens a
 // design round, or any comment other than the loop's notes, which re-arms the
 // loop entirely. A design Cook whose note reports `Decision: accept` accepts
-// the finding as it stands.
+// the finding as it stands. A refuted pull request is reworked on its own
+// branch, where Cook reports on the pull request instead: triage records each
+// rework on the issue (REWORK_NOTE), and it counts as a failed Cook, since the
+// head that Cook started from did not fix the finding.
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
+export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
 export const DESIGN_NOTICE = '<!-- import-loop:design -->';
 export const cookHistory = (comments) => {
   let failed = 0, designs = 0, accepted = false;
   for (const { body = '' } of comments) {
     if (body.startsWith(COOK_NOTE)) { failed++; if (designs && /Decision:\W*accept/i.test(body)) accepted = true; }
+    else if (body.startsWith(REWORK_NOTE)) failed++;
     else if (body.startsWith(DESIGN_NOTICE)) { failed = 0; designs++; }
     else if (!body.startsWith(CAP_NOTICE)) { failed = 0; designs = 0; accepted = false; }
   }
@@ -157,10 +162,15 @@ function mergedHead(item, pr, { clone, candidate, base, work }) {
   return dir;
 }
 // A transformer candidate replaces the release's transformer; an importer
-// candidate runs on the pass's trunk transformer (`at.transformer`).
-const servedRun = (dir, { candidate, transformer, reimport }) => candidate.slot === 'transformer'
-  ? reimportRun(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`, '')
-  : reimportRun(transformer, reimport, `${dir}-site`, dir);
+// candidate runs on the pass's trunk transformer (`at.transformer`). A client
+// candidate (the capture and compare client) re-captures the source with
+// itself and imports that capture on the trunk transformer
+// (gates/client-candidate.sh); it compares with itself too (`compareRun`).
+const servedRun = (dir, { candidate, transformer, reimport, url }) => candidate.slot === 'client'
+  ? [new URL('./gates/client-candidate.sh', import.meta.url).pathname, dir, url, `${dir}-capture`, transformer, `${dir}-site`, { env: { ...process.env, SSI_ZIP: reimport.ssi_zip, BARE_WP: reimport.bare_wp } }]
+  : candidate.slot === 'transformer'
+    ? reimportRun(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`, '')
+    : reimportRun(transformer, reimport, `${dir}-site`, dir);
 function settle(dir, serve) {
   try {
     heads.set(dir, serve());
@@ -200,15 +210,17 @@ export function collateralAtHead(item, pr, at) {
   if (!heads.has(head)) throw new Error('collateral_requires_cellsAtHead_first');
   if (heads.get(head) instanceof Error) return { exit: 2, report: [heads.get(head).message] };
   const key = `${head}-checks-${item.signature}`;
-  if (!collaterals.has(key)) collaterals.set(key, collateralResult(spawnSync('node', collateralArgs(item, head, at), { encoding: 'utf8', maxBuffer: 64 << 20 })));
+  if (!collaterals.has(key)) { const [argv, env] = compareRun(item, head, at); collaterals.set(key, collateralResult(spawnSync('node', argv, { env, encoding: 'utf8', maxBuffer: 64 << 20 }))); }
   return collaterals.get(key);
 }
 const collaterals = new Map();
 const collateralResult = (run) => ({ exit: run.status ?? 2, report: [run.stdout || '', run.stderr || ''] });
-function collateralArgs(item, head, { reimport, base_findings }) {
-  const receipt = JSON.parse(fs.readFileSync(`${reimport.capture}/capture-receipt.json`, 'utf8'));
-  const url = receipt.source?.url || receipt.url;
-  return [new URL('./gates/accept.mjs', import.meta.url).pathname, '--base-findings', base_findings, '--candidate-url', heads.get(head), '--candidate-site', `${head}-site`, '--capture', reimport.capture, '--url', url, '--signature', item.signature, '--cells', JSON.stringify(item.cells), '--wp-cli', `php ${reimport.bare_wp}/wp-cli.phar`, '--out', `${head}-checks-${item.signature}`];
+// The candidate's whole import against the pass's evaluation (gates/accept.mjs).
+// A client candidate is compared on its own capture with its own package.
+function compareRun(item, head, { reimport, base_findings, candidate, url }) {
+  const client = candidate.slot === 'client';
+  const argv = [new URL('./gates/accept.mjs', import.meta.url).pathname, '--base-findings', base_findings, '--candidate-url', heads.get(head), '--candidate-site', `${head}-site`, '--capture', client ? `${head}-capture` : reimport.capture, '--url', url, '--signature', item.signature, '--cells', JSON.stringify(item.cells), '--wp-cli', `php ${reimport.bare_wp}/wp-cli.phar`, '--out', `${head}-checks-${item.signature}`];
+  return [argv, { ...process.env, ...(client ? { IMPORT_LOOP_CLIENT_PACKAGE: `${head}-capture/.client.tgz` } : {}) }];
 }
 
 // Each head check is its own merge, re-import, and server, so independent
@@ -239,7 +251,8 @@ export async function checkHeads(checks, width = Math.max(1, Math.floor(os.avail
   }), width);
   const compared = merged.filter(({ item, head }) => !(heads.get(head) instanceof Error) && !collaterals.has(`${head}-checks-${item.signature}`));
   await pooled(compared.map(({ item, head, at }) => async () => {
-    collaterals.set(`${head}-checks-${item.signature}`, collateralResult(await running('node', collateralArgs(item, head, at))));
+    const [argv, env] = compareRun(item, head, at);
+    collaterals.set(`${head}-checks-${item.signature}`, collateralResult(await running('node', argv, { env })));
   }), width);
 }
 

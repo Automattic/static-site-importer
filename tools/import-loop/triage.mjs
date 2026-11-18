@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -55,11 +55,17 @@ execFileSync('git', ['-C', path.dirname(transformer), 'checkout', '-q', '--detac
 if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['static-site-importer'].github, '-p', 'static-site-importer.zip', '-O', reimport.ssi_zip);
 // What each candidate is merged onto: the commits this pass measured. Blocks
 // Engine's is the trunk the import re-imported; the importer's is the commit of
-// the release whose zip it imported through.
+// the release whose zip it imported through. The capture client's is the
+// commit of the release compare-client.json pins.
 const ssiVersion = execFileSync('unzip', ['-p', reimport.ssi_zip, 'static-site-importer/static-site-importer.php'], { encoding: 'utf8', maxBuffer: 16 << 20 }).match(/^\s*\*\s*Version:\s*(\S+)/m)?.[1];
 if (!ssiVersion) throw new Error('triage_ssi_release_version_missing');
-const bases = { 'blocks-engine': trunk, 'static-site-importer': gh('api', `repos/${repos['static-site-importer'].github}/commits/v${ssiVersion}`, '--jq', '.sha').trim() };
-const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, path.dirname(path.dirname(path.resolve(args['blocks-engine'])))) };
+const compareClient = JSON.parse(fs.readFileSync(path.join(here, 'compare-client.json'), 'utf8'));
+const clientTag = compareClient.package.match(/\/releases\/download\/([^/]+)\//)?.[1];
+if (!clientTag) throw new Error('triage_client_release_tag_missing');
+const releaseCommit = (repo, tag) => gh('api', `repos/${repos[repo].github}/commits/${tag}`, '--jq', '.sha').trim();
+const bases = { 'blocks-engine': trunk, 'static-site-importer': releaseCommit('static-site-importer', `v${ssiVersion}`), [compareClient.owner_repo]: releaseCommit(compareClient.owner_repo, clientTag) };
+const runsRoot = path.dirname(path.dirname(path.resolve(args['blocks-engine'])));
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, runsRoot), [compareClient.owner_repo]: repoClone(repos[compareClient.owner_repo].github, runsRoot) };
 // An importer candidate runs on this pass's trunk transformer, frozen here so a
 // later trunk cannot change it mid-pass.
 const trunkTransformer = path.join(args.work, 'trunk-transformer');
@@ -295,6 +301,7 @@ function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
   const checked = repo.candidate && item.cells.length;
   const importer = repo.candidate?.slot === 'importer';
+  const client = repo.candidate?.slot === 'client';
   // Contracts CI runs that the repository's verify command does not.
   const contracts = repo.contracts ? `"$tools"/${quote(repo.contracts)}` : null;
   const reimportLine = (transformer, site) => `SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/reimport.sh" ${transformer} "$IMPORT_LOOP_CAPTURE" ${site}`;
@@ -318,10 +325,12 @@ function acceptanceGate(item, repo) {
       'parents=(-p HEAD); while read -r merged; do parents+=(-p "$merged"); done < <(cat "$(git rev-parse --git-path MERGE_HEAD)" 2>/dev/null)',
       'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" "${parents[@]}" -m candidate) || exit 1',
       `bash "$tools/gates/merge-onto.sh" . ${quote(bases[item.repo])} "$candidate" "$scratch/merged" ${repo.candidate.paths.map(quote).join(' ')} || exit 1; phase merge_onto_base`,
-      importer
-        ? `url=$(SSI_SOURCE="$scratch/merged" ${reimportLine('"$IMPORT_LOOP_TRANSFORMER/php-transformer"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`
-        : `url=$(${reimportLine(`"$scratch/merged/${repo.candidate.paths[0]}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
-      `node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
+      client
+        ? `url=$(SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/client-candidate.sh" "$scratch/merged" ${quote(result.url)} "$scratch/capture" "$IMPORT_LOOP_TRANSFORMER/php-transformer" "$site") || exit 1; url=$(tail -n1 <<<"$url"); phase capture_reimport`
+        : importer
+          ? `url=$(SSI_SOURCE="$scratch/merged" ${reimportLine('"$IMPORT_LOOP_TRANSFORMER/php-transformer"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`
+          : `url=$(${reimportLine(`"$scratch/merged/${repo.candidate.paths[0]}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
+      `${client ? 'IMPORT_LOOP_CLIENT_PACKAGE="$scratch/capture/.client.tgz" ' : ''}node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "${client ? '$scratch/capture' : '$IMPORT_LOOP_CAPTURE'}" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
     ] : []),
     'exit $failed',
   ].join('\n') + '\n');
@@ -336,7 +345,7 @@ function acceptanceGate(item, repo) {
       { id: 'pages', source: path.join(args.work, 'pages'), env: 'IMPORT_LOOP_PAGES' },
       { id: 'ssi-zip', source: reimport.ssi_zip, env: 'IMPORT_LOOP_SSI_ZIP' },
       { id: 'base', source: path.resolve(args.findings), env: 'IMPORT_LOOP_BASE' },
-      ...(importer ? [{ id: 'transformer', source: trunkTransformer, env: 'IMPORT_LOOP_TRANSFORMER' }] : []),
+      ...(importer || client ? [{ id: 'transformer', source: trunkTransformer, env: 'IMPORT_LOOP_TRANSFORMER' }] : []),
     ] : []),
   ];
   // Prompts stay free of machine-local paths. Cook's gates receive the inputs
@@ -366,7 +375,7 @@ const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
 const DESIGN_ROUNDS = Number(args['design-rounds'] || 2);
-const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, url: result.url, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
 const openPrs = new Map(tracked.map((item) => [item, linkedPullRequests(item.issue_url)[0]]));
 await checkHeads(tracked.filter((item) => openPrs.get(item) && repos[item.repo]?.candidate && item.cells.length).map((item) => ({ item, pr: openPrs.get(item), at: headAt(item) })));
 for (const item of tracked) {
@@ -449,7 +458,9 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. ' + (repo.candidate.slot === 'importer'
+        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. ' + (repo.candidate.slot === 'client'
+          ? 'It merges your worktree onto `' + bases[item.repo] + '`, the commit of the capture client release this pass captured and compares with (a conflict fails it), builds and packs that client, captures the source URL again with it, imports that capture with Blocks Engine trunk `' + trunk + '` (provider evidence `transformer`) and the Static Site Importer release, serves it, compares it with the same packed client,'
+          : repo.candidate.slot === 'importer'
           ? 'It merges your worktree onto `' + bases[item.repo] + '`, the commit of the Static Site Importer release this pass imported through (a conflict fails it), lays its `' + repo.candidate.paths.join('`, `') + '` over that release, re-imports the capture with Blocks Engine trunk `' + trunk + '` (provider evidence `transformer`), serves it,'
           : 'It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it,') + ' and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Put every clone, re-import and scratch file under `$TMPDIR`, which is yours for this attempt and removed when it ends. `/tmp` is shared with every other Cook on the runner.',
@@ -474,10 +485,22 @@ for (const item of tracked) {
     // and its own draft publications only name the issue.
     // The notice opens the round on the issue: it is the guidance the next
     // round's count starts from.
+    // A rework's Cook reports on the pull request: record the rework on the
+    // issue, where the cap counts it (cookHistory).
+    if (item.refuted && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${REWORK_NOTE}\nPass ${args.iteration} on ${result.url} refuted ${pr.url} at head \`${pr.headRefOid.slice(0, 8)}\`; a Cook reworks it on its branch. Reworks count toward this issue's Cook cap.\n\n${disclosure}`);
     if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\nDesign round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
     const { omitted, ...cook } = gate;
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
   }
+}
+
+// An excepted finding's refuted pull request has nothing left to land: close
+// it, unless it is still the open fix for a finding the loop keeps cooking.
+for (const item of tracked.filter((t) => t.excepted && t.refuted)) {
+  if (args['dry-run'] || tracked.some((t) => !t.excepted && t.open_pr === item.refuted.pr)) continue;
+  gh('pr', 'close', item.refuted.pr, '--comment', `Closing: the import loop excepted ${item.issue_url} (${item.excepted.reason}) and this head \`${item.refuted.head.slice(0, 8)}\` does not fix it on a whole re-import. The issue's comments hold every attempt; a comment there with guidance re-arms the loop.\n\n${disclosure}`);
+  item.closed_pr = item.refuted.pr;
+  log(`closed ${item.refuted.pr}: ${item.issue_url} excepted`);
 }
 
 const output = {
