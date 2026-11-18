@@ -26,7 +26,7 @@ if ( ! class_exists( 'Static_Site_Importer_Post_Source_Route_Runtime', false ) )
 		public static function post_source_rewrite_rules( array $rules ): array {
 			$exact = array();
 			foreach ( (array) get_option( 'static_site_importer_post_routes', array() ) as $id => $route ) {
-				$exact[ '^' . preg_quote( ltrim( $route, '/' ), '#' ) . '/?$' ] = 'index.php?p=' . (int) $id;
+				$exact[ '^' . preg_quote( ltrim( rawurldecode( $route ), '/' ), '#' ) . '/?$' ] = 'index.php?p=' . (int) $id;
 			}
 			return $exact + $rules;
 		}
