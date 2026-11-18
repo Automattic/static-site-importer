@@ -68,28 +68,49 @@ class Static_Site_Importer_Companion_Plugin {
 	public const PAYLOAD_SCHEMA = 'blocks-engine/wordpress-companion-plugin/v1';
 
 	/**
-	 * Optional runtime features a payload may declare in `runtime_features`.
-	 * A payload without the key ships every optional runtime (legacy owners);
-	 * a declaring payload ships only the ones it names.
+	 * Optional runtime features a payload declares in its required
+	 * `runtime_features` list. Every producer that emits a document or block
+	 * needing one of these runtimes declares it: the payload producer on the
+	 * payload, a generated block on its own `runtime_features`, and a provider
+	 * adapter on its adapter definition (merged in by the import path). The
+	 * package ships exactly the declared runtimes; nothing is inferred.
 	 */
 	public const RUNTIME_FEATURES = array( 'forms', 'interactions', 'commerce' );
 
 	/**
 	 * Whether a payload's runtime package ships one optional runtime feature.
 	 * External metrics and post source routes are already payload data, so
-	 * a declaring payload ships them exactly when that data is present.
+	 * they ship exactly when that data is present.
 	 *
 	 * @param array<string,mixed> $payload Generated companion-plugin payload.
 	 * @param string              $feature Feature name.
 	 */
 	public static function ships_runtime_feature( array $payload, string $feature ): bool {
-		if ( ! is_array( $payload['runtime_features'] ?? null ) ) {
-			return true;
-		}
 		if ( 'external_metrics' === $feature || 'post_source_routes' === $feature ) {
 			return ! empty( $payload[ $feature ] );
 		}
-		return in_array( $feature, $payload['runtime_features'], true );
+		return in_array( $feature, self::declared_runtime_features( $payload ), true );
+	}
+
+	/**
+	 * Runtime features declared by a payload and by the generated blocks it carries.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return array<int,string>
+	 */
+	public static function declared_runtime_features( array $payload ): array {
+		$declared = is_array( $payload['runtime_features'] ?? null ) ? $payload['runtime_features'] : array();
+		foreach ( is_array( $payload['blocks'] ?? null ) ? $payload['blocks'] : array() as $block ) {
+			if ( is_array( $block ) && is_array( $block['runtime_features'] ?? null ) ) {
+				$declared = array_merge( $declared, $block['runtime_features'] );
+			}
+		}
+		return array_values( array_intersect( self::RUNTIME_FEATURES, $declared ) );
+	}
+
+	/** Whether a value is a valid `runtime_features` declaration. */
+	private static function valid_runtime_features( $features ): bool {
+		return is_array( $features ) && array_is_list( $features ) && array() === array_diff( $features, self::RUNTIME_FEATURES );
 	}
 
 	/**
@@ -108,8 +129,8 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! preg_match( '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', self::site_slug( $payload ) ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_invalid', 'Companion-plugin site_slug must resolve to an ASCII slug safe for PHP identifiers and file paths.' );
 		}
-		if ( array_key_exists( 'runtime_features', $payload ) && ( ! is_array( $payload['runtime_features'] ) || ! array_is_list( $payload['runtime_features'] ) || array() !== array_diff( $payload['runtime_features'], self::RUNTIME_FEATURES ) ) ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_runtime_features_invalid', 'Companion-plugin runtime_features must list known runtime features.' );
+		if ( ! array_key_exists( 'runtime_features', $payload ) || ! self::valid_runtime_features( $payload['runtime_features'] ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_runtime_features_invalid', 'Companion-plugin payloads must declare runtime_features as a list of known runtime features.' );
 		}
 		if ( array_key_exists( 'provenance', $payload ) && null !== $payload['provenance'] && ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $payload['provenance'] ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_provenance_invalid', 'Companion-plugin provenance must declare blocks-engine/generated-artifact-provenance/v1 with generator, engine_version, and artifact_hash.' );
@@ -130,6 +151,9 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_name_invalid', 'Companion-plugin block names must be unique lowercase slugs.' );
 			}
 			$names[ $name ] = true;
+			if ( array_key_exists( 'runtime_features', $block ) && ! self::valid_runtime_features( $block['runtime_features'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_runtime_features_invalid', sprintf( 'Block %s runtime_features must list known runtime features.', $name ) );
+			}
 			if ( ! isset( $block['block_json'] ) || ! is_array( $block['block_json'] ) || array_is_list( $block['block_json'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s must declare block_json as an object.', $name ) );
 			}
@@ -347,9 +371,7 @@ class Static_Site_Importer_Companion_Plugin {
 		foreach ( array( 'forms', 'interactions', 'commerce', 'external_metrics', 'post_source_routes' ) as $feature ) {
 			$ships[ $feature ] = self::ships_runtime_feature( $payload, $feature );
 		}
-		if ( is_array( $payload['runtime_features'] ?? null ) ) {
-			$inventory_source[] = $ships;
-		}
+		$inventory_source[] = $ships;
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -865,11 +887,11 @@ class Static_Site_Importer_Companion_Plugin {
 	): string {
 		$ships = array_merge(
 			array(
-				'forms'              => true,
-				'interactions'       => true,
-				'commerce'           => true,
-				'external_metrics'   => true,
-				'post_source_routes' => true,
+				'forms'              => false,
+				'interactions'       => false,
+				'commerce'           => false,
+				'external_metrics'   => false,
+				'post_source_routes' => false,
 			),
 			$ships
 		);

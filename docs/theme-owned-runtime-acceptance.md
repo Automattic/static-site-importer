@@ -21,6 +21,26 @@ fields such as `mu_plugin`. Both destinations reuse the content-only validator,
 audited renderer dispatch, JSON-backed data wrappers and script dependency
 manifests. No source-authored PHP is admitted.
 
+## Optional runtime declarations (#3108)
+
+The form, interaction and commerce runtimes ship only when a producer declares
+them. Every runtime payload, theme-owned or plugin-owned, must carry a
+`runtime_features` list (`forms`, `interactions`, `commerce`); a payload without
+it is rejected. The declarations come from the producers:
+
+- The compile step declares the payload's own features: `interactions` when the
+  plan's documents use core/tabs blocks or carry the capture-evidence
+  member-login marker.
+- A generated block may declare `runtime_features`; it counts only when that
+  block ships.
+- A provider adapter declares the runtime its documents need (`forms` for the
+  Jetpack form adapter, `commerce` for WooCommerce adapters). The import path
+  merges the selected adapters' declarations into the payload.
+
+No content is searched for marker strings. The theme-owned package also keeps
+only the generated blocks that a materialized document references. External
+metrics and post-source routes ship when their payload data is present.
+
 The theme package is composed into the resolved plan before mutable destination
 preflight. Its writes use the existing conflict checks, hash verification,
 reconciliation identities and rollback journal. Before editor admission, the

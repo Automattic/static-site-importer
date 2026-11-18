@@ -48,12 +48,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		// Routing is a runtime dependency even when the import declares no blocks.
 		foreach ( $prepared['resolved']['pages'] ?? array() as $page ) {
 			if ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) ) {
-				$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : array(
-					'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-					'site_slug' => $prepared['theme']['slug'],
-					'site_name' => $prepared['theme']['name'],
-					'blocks'    => array(),
-				);
+				$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
 				$runtime_payload['post_source_routes'] = true;
 				break;
 			}
@@ -61,14 +56,10 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$theme_owned = Static_Site_Importer_Import_Destination::GENERATED_THEME === ( $prepared['destination']['mode'] ?? Static_Site_Importer_Import_Destination::GENERATED_THEME );
 		if ( $theme_owned ) {
 			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
-			$runtime_payload = is_array( $runtime_payload ) ? $runtime_payload : array(
-				'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-				'site_slug' => $prepared['theme']['slug'],
-				'site_name' => $prepared['theme']['name'],
-				'blocks'    => array(),
-			);
+			$runtime_payload = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
 			$runtime_payload = self::resolve_companion_asset_references( $runtime_payload, $prepared['plan'], $prepared['resolved'] );
-			// Ship only the runtime the site's documents and providers use. A prior
+			// Ship only the runtime features the payload and its providers declare,
+			// and the generated blocks the site's documents reference. A prior
 			// composition's own runtime files are not evidence of use.
 			$site_documents           = is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array();
 			$site_documents['writes'] = array_values( array_filter( is_array( $site_documents['writes'] ?? null ) ? $site_documents['writes'] : array(), static fn( $write ): bool => ! is_array( $write ) || ! str_starts_with( (string) ( $write['target_path'] ?? '' ), Static_Site_Importer_Generated_Runtime_Package::DIRECTORY . '/' ) ) );
@@ -112,6 +103,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			);
 		} else {
 			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
+			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+			// Plugin-owned and host-theme runtimes follow the same declaration rule.
+			$runtime_payload = is_array( $runtime_payload ) ? Static_Site_Importer_Generated_Runtime_Package::with_declared_features( $runtime_payload, $lifecycle ) : null;
 			if ( is_array( $runtime_payload ) && Static_Site_Importer_Existing_Theme_Runtime::host() ) {
 				$projection = Static_Site_Importer_Existing_Theme_Runtime::project( $runtime_payload );
 				if ( is_wp_error( $projection ) ) {
@@ -280,15 +274,24 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			return $payload;
 		}
 		if ( ! is_array( $payload ) ) {
-			$payload = array(
-				'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-				'site_slug' => (string) ( $args['slug'] ?? '' ),
-				'site_name' => (string) ( $args['name'] ?? '' ),
-				'blocks'    => array(),
-			);
+			$payload = self::runtime_payload( (string) ( $args['slug'] ?? '' ), (string) ( $args['name'] ?? '' ), $args );
 		}
 		$payload['external_metrics'] = $metrics;
 		return $payload;
+	}
+
+	/**
+	 * An SSI-built runtime payload for an import whose compiled output carried
+	 * none. It declares the runtime features the compile step recorded.
+	 */
+	private static function runtime_payload( string $slug, string $name, array $args ): array {
+		return array(
+			'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+			'site_slug'        => $slug,
+			'site_name'        => $name,
+			'blocks'           => array(),
+			'runtime_features' => is_array( $args['runtime_features'] ?? null ) ? $args['runtime_features'] : array(),
+		);
 	}
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */

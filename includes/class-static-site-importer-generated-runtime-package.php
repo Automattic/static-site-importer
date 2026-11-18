@@ -8,28 +8,46 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-require_once __DIR__ . '/class-static-site-importer-companion-plugin.php';
+if ( ! class_exists( 'Static_Site_Importer_Companion_Plugin' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-companion-plugin.php';
+}
 
 final class Static_Site_Importer_Generated_Runtime_Package {
 	public const DIRECTORY = 'ssi-runtime';
 
-	/** Materialized-content markers that prove a site uses an optional runtime feature. */
-	private const FEATURE_MARKERS = array(
-		'forms'        => array( 'wp:jetpack/', 'grunion', 'ssi-source-submit--', 'ssi-source-semantic-wrapper-' ),
-		'interactions' => array( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN, 'wp:tabs' ),
-		'commerce'     => array( 'woocommerce', 'ssi-item-template-', 'staticSiteImporterArchiveDocument', 'staticSiteImporterCartLink', 'staticSiteImporterItemSlot', 'staticSiteImporterListingControl', 'staticSiteImporterListingQuery', 'staticSiteImporterFieldPresentation', 'staticSiteImporterGalleryIdentity' ),
-	);
-
-	/** Runtime lifecycle capabilities whose providers render through an optional runtime. */
-	private const FEATURE_CAPABILITIES = array(
-		'form' => 'forms',
-		'shop' => 'commerce',
-	);
+	/**
+	 * Merge the runtime features that selected provider adapters declare into a
+	 * payload's own `runtime_features` declaration.
+	 *
+	 * A provider adapter that emits a document needing an optional runtime (a
+	 * form or commerce provider) declares it as `runtime_features` on its adapter
+	 * definition. Nothing is inferred from content: a payload without its own
+	 * declaration is left for payload validation to reject.
+	 *
+	 * @param array<string,mixed> $payload   Runtime payload.
+	 * @param array<string,mixed> $lifecycle Runtime lifecycle with selected provider adapters.
+	 * @return array<string,mixed>
+	 */
+	public static function with_declared_features( array $payload, array $lifecycle = array() ): array {
+		if ( ! is_array( $payload['runtime_features'] ?? null ) ) {
+			return $payload;
+		}
+		$adapters = array();
+		foreach ( array( 'dependencies', 'entities' ) as $kind ) {
+			foreach ( is_array( $lifecycle[ $kind ] ?? null ) ? $lifecycle[ $kind ] : array() as $entry ) {
+				$features = is_array( $entry ) ? ( $entry['adapter']['runtime_features'] ?? array() ) : array();
+				$adapters = array_merge( $adapters, is_array( $features ) ? $features : array() );
+			}
+		}
+		$adapters                    = array_intersect( Static_Site_Importer_Companion_Plugin::RUNTIME_FEATURES, $adapters );
+		$payload['runtime_features'] = array_values( array_unique( array_merge( $payload['runtime_features'], $adapters ), SORT_REGULAR ) );
+		return $payload;
+	}
 
 	/**
-	 * Scope a theme runtime payload to what the site uses: declare the optional
-	 * runtime features its content and lifecycle need, and keep only generated
-	 * blocks that a materialized block document references.
+	 * Scope a theme runtime payload to what the site uses: merge the runtime
+	 * features its producers and provider adapters declare, and keep only the
+	 * generated blocks that a materialized block document references.
 	 *
 	 * @param array<string,mixed> $payload   Theme runtime payload.
 	 * @param array<mixed>        $content   Resolved plan and other documents the theme renders.
@@ -37,25 +55,9 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 	 * @return array<string,mixed>
 	 */
 	public static function scoped_payload( array $payload, array $content, array $lifecycle = array() ): array {
-		$strings = array();
-		array_walk_recursive(
-			$content,
-			static function ( $value ) use ( &$strings ): void {
-				if ( is_string( $value ) && '' !== $value ) {
-					$strings[] = $value;
-				}
-			}
-		);
-		$used_blocks = array();
-		foreach ( $strings as $value ) {
-			if ( preg_match_all( '~wp:([a-z][a-z0-9-]*)\\\\?/([a-z0-9-]+)~', $value, $matches, PREG_SET_ORDER ) ) {
-				foreach ( $matches as $match ) {
-					$used_blocks[ $match[1] . '/' . $match[2] ] = true;
-				}
-			}
-		}
-		$namespace = Static_Site_Importer_Companion_Plugin::block_namespace( $payload );
-		$blocks    = array();
+		$used_blocks = array_flip( self::referenced_block_names( $content ) );
+		$namespace   = Static_Site_Importer_Companion_Plugin::block_namespace( $payload );
+		$blocks      = array();
 		foreach ( is_array( $payload['blocks'] ?? null ) ? $payload['blocks'] : array() as $block ) {
 			if ( ! is_array( $block ) ) {
 				$blocks[] = $block; // Left for payload validation to reject.
@@ -65,33 +67,42 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 			$name     = '' !== $declared ? $declared : $namespace . '/' . ( is_string( $block['name'] ?? null ) ? $block['name'] : '' );
 			if ( isset( $used_blocks[ $name ] ) ) {
 				$blocks[] = $block;
-				if ( is_string( $block['render'] ?? null ) ) {
-					$strings[] = $block['render'];
-				}
 			}
 		}
 		if ( array_key_exists( 'blocks', $payload ) ) {
 			$payload['blocks'] = $blocks;
 		}
-		$features = array();
-		foreach ( array_merge( $lifecycle['dependencies'] ?? array(), $lifecycle['entities'] ?? array() ) as $entry ) {
-			$feature = self::FEATURE_CAPABILITIES[ (string) ( $entry['adapter']['capability'] ?? ( $entry['declaration']['capability'] ?? '' ) ) ] ?? '';
-			if ( '' !== $feature ) {
-				$features[ $feature ] = true;
-			}
-		}
-		foreach ( self::FEATURE_MARKERS as $feature => $markers ) {
-			foreach ( $strings as $value ) {
-				foreach ( isset( $features[ $feature ] ) ? array() : $markers as $marker ) {
-					if ( false !== stripos( $value, $marker ) ) {
-						$features[ $feature ] = true;
-						break;
+		return self::with_declared_features( $payload, $lifecycle );
+	}
+
+	/**
+	 * Block names that serialized block documents reference, from their block
+	 * delimiters. Core blocks are returned with their `core/` namespace.
+	 *
+	 * @param array<mixed> $content Documents, plans or other nested values.
+	 * @return array<int,string>
+	 */
+	public static function referenced_block_names( array $content ): array {
+		$names = array();
+		array_walk_recursive(
+			$content,
+			static function ( $value ) use ( &$names ): void {
+				if ( ! is_string( $value ) || ! str_contains( $value, 'wp:' ) ) {
+					return;
+				}
+				if ( preg_match_all( '~wp:([a-z][a-z0-9-]*)\\\\?/([a-z0-9-]+)~', $value, $matches, PREG_SET_ORDER ) ) {
+					foreach ( $matches as $match ) {
+						$names[ $match[1] . '/' . $match[2] ] = true;
+					}
+				}
+				if ( preg_match_all( '~<!--\s+wp:([a-z][a-z0-9-]*)\s~', $value, $matches ) ) {
+					foreach ( $matches[1] as $core ) {
+						$names[ 'core/' . $core ] = true;
 					}
 				}
 			}
-		}
-		$payload['runtime_features'] = array_values( array_intersect( Static_Site_Importer_Companion_Plugin::RUNTIME_FEATURES, array_keys( $features ) ) );
-		return $payload;
+		);
+		return array_keys( $names );
 	}
 
 	/**

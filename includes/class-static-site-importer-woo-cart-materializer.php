@@ -51,6 +51,7 @@ final class Static_Site_Importer_Woo_Cart_Materializer {
 			'rejected_rows_degrade'    => true,
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
+			'runtime_features'         => array( 'commerce' ),
 			'label'                    => (string) $spec['label'],
 			'waiver_arg'               => 'allow_missing_woocommerce',
 			'validator'                => $spec['validator'],

@@ -64,6 +64,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			'rejected_rows_degrade'    => true,
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
+			'runtime_features'         => array( 'commerce' ),
 			'label'                    => 'WooCommerce product archive',
 			'waiver_arg'               => 'allow_missing_woocommerce',
 			'validator'                => array( 'Static_Site_Importer_Entity_Materializer_Registry', 'validate_product_listings_manifest' ),

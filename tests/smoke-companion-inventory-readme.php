@@ -115,10 +115,11 @@ $ssi_1972_rrmdir = static function ( string $dir ) use ( &$ssi_1972_rrmdir ): vo
 // Generic payload: one metadata block, one scoped island, one editor script, and
 // imported form visual states so every owned functionality family is present.
 $payload = array(
-	'schema'             => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'          => 'Example Site',
-	'site_name'          => 'Example Site',
-	'blocks'             => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'Example Site',
+	'site_name'        => 'Example Site',
+	'blocks'           => array(
 		array(
 			'name'       => 'custom-hero',
 			'block_json' => array(
@@ -138,7 +139,7 @@ $payload = array(
 			),
 		),
 	),
-	'preserved_js'       => array(
+	'preserved_js'     => array(
 		array(
 			'handle'      => 'hero-island',
 			'content'     => 'document.addEventListener("DOMContentLoaded",function(){});',
@@ -146,7 +147,7 @@ $payload = array(
 			'source_path' => '/wp-content/themes/source/hero.js',
 		),
 	),
-	'editor_scripts'     => array(
+	'editor_scripts'   => array(
 		array(
 			'handle'       => 'ssi-example-site-editor',
 			'src'          => 'editor/core-enhancement.js',
@@ -154,7 +155,7 @@ $payload = array(
 			'dependencies' => array( 'wp-element' ),
 		),
 	),
-	'provenance'         => array(
+	'provenance'       => array(
 		'schema'         => 'blocks-engine/generated-artifact-provenance/v1',
 		'generator'      => 'blocks-engine@2.3.4',
 		'engine_version' => 'php-transformer@0.32.3',

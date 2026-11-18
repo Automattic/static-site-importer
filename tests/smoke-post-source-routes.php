@@ -47,6 +47,7 @@ foreach ( array( 'rewrite_rules_array', 'post_link', 'redirect_canonical' ) as $
 $check( ! class_exists( 'Static_Site_Importer_Site_Plan_Persistence', false ), 'SSI persistence must not be loaded' );
 $payload = array(
 	'schema'             => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features'   => array(),
 	'site_slug'          => 'post-routes',
 	'site_name'          => 'Post routes',
 	'blocks'             => array(),

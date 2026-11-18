@@ -31,9 +31,10 @@ $source = file_get_contents( __DIR__ . '/fixtures/companion-empty-comments/index
 preg_match( '#<a href="/" class="logo-link">.*?</a>#s', $source, $match );
 $content = $match[0];
 $payload = array(
-	'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug' => 'comment-regression',
-	'blocks' => array( array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'comment-regression',
+	'blocks'           => array( array(
 		'name' => 'responsive-media',
 		'renderer' => 'blocks-engine/responsive-media/v1',
 		'block_json' => array(
