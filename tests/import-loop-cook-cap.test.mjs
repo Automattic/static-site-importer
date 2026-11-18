@@ -21,6 +21,8 @@ test('Cook history counts failures and design rounds since guidance', () => {
     [[accept, note], { failed: 2, designs: 0, accepted: false }],
     [[note, design, accept, cap, guidance], { failed: 0, designs: 0, accepted: false }],
     [[rework, rework, design, rework], { failed: 1, designs: 1, accepted: false }],
-    [[note, note, elsewhere, accept], { failed: 1, designs: 1, accepted: false }],
+    [[note, note, elsewhere, accept], { failed: 3, designs: 0, accepted: false }],
+    // Two sites opening rounds together use up neither's rounds.
+    [[note, note, design, elsewhere, elsewhere, note], { failed: 1, designs: 1, accepted: false }],
   ]) assert.deepEqual(cookHistory(comments, 'https://a.test/'), history);
 });
