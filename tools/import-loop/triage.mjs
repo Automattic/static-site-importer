@@ -373,14 +373,11 @@ function acceptanceGate(item, repo) {
 }
 
 stageGateTools();
-// Bisect starts alongside triage. Join only before writing Cook guidance;
-// reduction and head checks need not wait for attribution.
-let bisect;
-if (args.bisect) {
-  const deadline = Date.now() + 3 * 3600_000;
-  while (!fs.existsSync(args.bisect) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1000));
-  if (fs.existsSync(args.bisect)) bisect = JSON.parse(fs.readFileSync(args.bisect, 'utf8'));
-}
+// Bisect runs alongside triage and the pass never waits for it: triage reports
+// this pass's attribution when it is already done, else the previous pass's,
+// which lands one pass later. The report's marker makes either safe to repeat.
+const bisectAt = (file) => (file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null);
+const bisect = [bisectAt(args.bisect), bisectAt(args.bisect?.replace(`-p${args.iteration}-bisect`, `-p${Number(args.iteration) - 1}-bisect`))].find((b) => b?.status === 'complete');
 const regressionNotes = args['dry-run'] ? new Map() : reportRegression(bisect, tracked, result.url, gh);
 const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.

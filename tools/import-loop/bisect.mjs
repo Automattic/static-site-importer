@@ -80,7 +80,22 @@ if (skip) {
           return counts;
         } finally { active--; waiting.shift()?.(); }
       };
-      const result = await bisectSearch(commits, prev, probe, (counts) => signatures.some((s) => counts[s.signature] > s.before), Object.fromEntries(signatures.map((s) => [s.signature, s.before])), (range) => { narrowed = range; });
+      // Reproduce before searching: probe both ends of the range on this
+      // capture, and keep only signatures that grow from one to the other. A
+      // count that moves between passes but not between the two ends is
+      // measurement noise, and ends the step after one round of probes.
+      const memo = new Map();
+      const once = (commit) => { if (!memo.has(commit)) memo.set(commit, probe(commit)); return memo.get(commit); };
+      if (!commits.length) throw new Error('no non-release commits');
+      const [base, head] = await Promise.all([once(prev), once(commits.at(-1))]);
+      signatures = signatures.filter((s) => head[s.signature] > base[s.signature]).map((s) => ({ ...s, before: base[s.signature] }));
+      if (!signatures.length) {
+        const value = write({ status: 'not_reproduced', reason: 'no added signature grows between the range ends on this capture', prev, cur, probes, signatures });
+        fs.writeFileSync(cache, JSON.stringify(value, null, 2));
+        console.log(JSON.stringify({ bisect_path: output, status: value.status }));
+        process.exit(0);
+      }
+      const result = await bisectSearch(commits, prev, once, (counts) => signatures.some((s) => counts[s.signature] > s.before), base, (range) => { narrowed = range; });
       let culprit;
       if (result.status === 'complete') {
         const subject = git('show', '-s', '--format=%s', result.commit);

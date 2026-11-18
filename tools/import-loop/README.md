@@ -63,8 +63,14 @@ After evaluation, `bisect.mjs` runs alongside triage when `progress.added` is
 non-empty and the preceding pass's `triage.json` records a different Blocks
 Engine base. It searches non-release first-parent commits using the same
 capture and importer zip, comparing only added signatures on their recorded
-cells against the preceding evaluation's counts. The current pass supplies
-the bad endpoint; the previous evaluation supplies the good baseline.
+cells. It first probes both ends of the range on this capture and keeps only
+signatures that grow between them: a count that moved between passes but not
+between the ends is measurement noise, and the step ends `not_reproduced`
+after that one round. The fresh probe of the previous base is the baseline.
+
+Triage never waits for the bisect. It reports this pass's attribution if it is
+already complete, else the previous pass's, on the regressed issues and the
+culprit PR, and adds the culprit to those issues' Cook prompts.
 
 `<slug>-p<N>-bisect/bisect.json` records probes, signatures, the boundary and
 culprit PR (including its diff stat), or an inconclusive narrowed range.
