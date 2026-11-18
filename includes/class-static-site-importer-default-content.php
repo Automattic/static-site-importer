@@ -154,8 +154,7 @@ final class Static_Site_Importer_Default_Content {
 	 * @return WP_Post[]
 	 */
 	private static function navigation_fallbacks(): array {
-		$fallbacks = array();
-		$posts     = get_posts(
+		$posts = get_posts(
 			array(
 				'post_type'   => 'wp_navigation',
 				'post_status' => 'publish',
@@ -165,12 +164,7 @@ final class Static_Site_Importer_Default_Content {
 				'order'       => 'ASC',
 			)
 		);
-		foreach ( is_array( $posts ) ? $posts : array() as $post ) {
-			if ( $post instanceof WP_Post && self::is_navigation_fallback( $post ) ) {
-				$fallbacks[] = $post;
-			}
-		}
-		return $fallbacks;
+		return array_values( array_filter( $posts, array( self::class, 'is_navigation_fallback' ) ) );
 	}
 
 	/** Whether a Navigation post is still exactly what create_default_fallback() wrote. */
