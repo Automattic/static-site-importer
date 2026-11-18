@@ -13,6 +13,7 @@ if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
 }
 require_once __DIR__ . '/class-static-site-importer-companion-replacement.php';
+require_once __DIR__ . '/class-static-site-importer-published-file-mode.php';
 
 /**
  * Installs and activates declared WordPress.org plugins before entity seeding.
@@ -557,6 +558,7 @@ class Static_Site_Importer_Plugin_Materializer {
 					sprintf( 'Failed to write companion-plugin file: %s', $path )
 				);
 			}
+			Static_Site_Importer_Published_File_Mode::apply_file_mode( (string) $path );
 		}
 
 		return true;

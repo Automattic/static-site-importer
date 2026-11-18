@@ -243,6 +243,7 @@
           "tests/smoke-ability-error-report-summary.php",
           "tests/smoke-ability-import-success-diagnostics.php",
           "tests/smoke-ability-registration-idempotent.php",
+          "tests/smoke-theme-file-permissions.php",
           "tests/smoke-admin-bar-top-chrome.php",
           "tests/smoke-payload-reference-errors.php",
           "tests/smoke-artifact-run-primitives.php",

@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+require_once __DIR__ . '/class-static-site-importer-published-file-mode.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -2101,6 +2102,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( $error ) {
 				return $error;
 			}
+			Static_Site_Importer_Published_File_Mode::apply_file_mode( $path );
 			return array(
 				'target_path'             => $write['target_path'],
 				'hash'                    => self::file_hash( $path ),
@@ -2123,7 +2125,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$stream  = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
 		$written = is_resource( $stream ) && self::write_all( $stream, $data, $chunk_writer ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes complete canonical write bytes before publication.
 		$closed  = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
-		if ( false === $data || false === $temp || ! $written || ! $closed || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
+		$moded   = $written && $closed && Static_Site_Importer_Published_File_Mode::apply_file_mode( (string) $temp );
+		if ( false === $data || false === $temp || ! $moded || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
 			}
