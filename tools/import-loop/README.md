@@ -3,8 +3,8 @@
 `loop.json` is a Homeboy workflow that turns a public site into a WordPress
 site and fixes what the import gets wrong, one pass at a time. Each pass:
 
-1. **imports** the site: the first pass captures every route with the pinned
-   capture client in `compare-client.json`, freezing reference evidence for each
+1. **imports** the site: the first pass captures every route with the latest released
+   capture client (`compare-client.json`), freezing reference evidence for each
    one so every route is compared, and every pass re-imports that frozen capture through the latest Static Site
    Importer release with the Blocks Engine transformer at trunk;
 2. **evaluates** the import (the checks below) into `findings.json`;
@@ -50,9 +50,11 @@ Each pass first pins the tools at the current commit of `$LOOP_TOOLS_REF`
 (default `origin/main`) in the checkout it was started from (`tools.sh`), so a
 merged change to the loop's scripts reaches every running chain on its next
 pass. Set `LOOP_TOOLS_REF` to a commit to hold a run on fixed tools. A change to
-`loop.json` itself takes effect on the next launch. When the capture client or
-its arguments in `compare-client.json` change, the next pass captures the site
-again.
+`loop.json` itself takes effect on the next launch. The capture client is the
+latest release of `compare-client.json`'s repository, resolved each pass; when
+a newer one is released or its arguments change, the next pass captures the
+site again, and evaluate, triage and every gate compare with the client the
+capture was taken with.
 
 `homeboy runs show <instance>` reports progress. Pass output lands in
 `<runs>/<slug>-p<N>-{eval,triage,confirm}/`.

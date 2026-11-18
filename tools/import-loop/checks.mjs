@@ -76,6 +76,8 @@ export async function checkImport(args) {
   for (const key of ['url', 'wp-url', 'site', 'source', 'out', 'wp-cli']) if (!args[key]) throw new Error(`evaluate_argument_missing: --${key}`);
   fs.mkdirSync(args.out, { recursive: true });
   const captureRoot = path.join(args.source, new URL(args.url).hostname);
+  // The release the capture was taken with (import.sh): compare with the same one.
+  const capturedWith = JSON.parse(fs.readFileSync(path.join(captureRoot, '.capture-client.json'), 'utf8')).package;
   const scope = args['check-scope'];
   const scopedCell = (route, width) => !scope || scope.some((s) => s.cells.some((c) => c.route === route && (c.width == null || width == null || c.width === width)));
   const routes = captureRoutes(captureRoot).filter((route) => !scope || scope.some((s) => s.cells.some((c) => c.route == null || c.route === route)));
@@ -97,7 +99,7 @@ export async function checkImport(args) {
   fs.rmSync(capture, { recursive: true, force: true });
   fs.cpSync(captureRoot, capture, { recursive: true, dereference: true });
   // A client candidate (gates/client-candidate.sh) compares with its own package.
-  const command = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || compareClient.package}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
+  const command = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || capturedWith}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
   const reportPath = path.join(capture, 'compare', 'materialization', 'report.json');
   fs.rmSync(reportPath, { force: true });
   let compareCommand = command;
@@ -105,7 +107,7 @@ export async function checkImport(args) {
   if (scope) {
     const scopeFile = path.resolve(args.out, 'check-scope.json');
     fs.writeFileSync(scopeFile, JSON.stringify(scope));
-    compareCommand = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || compareClient.package}`, '-c', `node "$IMPORT_LOOP_BISECT_COMPARE" "$IMPORT_LOOP_COMPARE_EXECUTABLE" "$IMPORT_LOOP_COMPARE_CAPTURE" "$IMPORT_LOOP_COMPARE_CANDIDATE" "$IMPORT_LOOP_COMPARE_SCOPE"`];
+    compareCommand = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || capturedWith}`, '-c', `node "$IMPORT_LOOP_BISECT_COMPARE" "$IMPORT_LOOP_COMPARE_EXECUTABLE" "$IMPORT_LOOP_COMPARE_CAPTURE" "$IMPORT_LOOP_COMPARE_CANDIDATE" "$IMPORT_LOOP_COMPARE_SCOPE"`];
     compareEnv = { ...process.env,
       IMPORT_LOOP_BISECT_COMPARE: new URL('./bisect-compare.mjs', import.meta.url).pathname,
       IMPORT_LOOP_COMPARE_EXECUTABLE: compareClient.executable,

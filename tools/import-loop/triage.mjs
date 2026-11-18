@@ -58,11 +58,11 @@ if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['sta
 // What each candidate is merged onto: the commits this pass measured. Blocks
 // Engine's is the trunk the import re-imported; the importer's is the commit of
 // the release whose zip it imported through. The capture client's is the
-// commit of the release compare-client.json pins.
+// commit of the release the capture was taken with (import.sh).
 const ssiVersion = execFileSync('unzip', ['-p', reimport.ssi_zip, 'static-site-importer/static-site-importer.php'], { encoding: 'utf8', maxBuffer: 16 << 20 }).match(/^\s*\*\s*Version:\s*(\S+)/m)?.[1];
 if (!ssiVersion) throw new Error('triage_ssi_release_version_missing');
 const compareClient = JSON.parse(fs.readFileSync(path.join(here, 'compare-client.json'), 'utf8'));
-const clientTag = compareClient.package.match(/\/releases\/download\/([^/]+)\//)?.[1];
+const clientTag = JSON.parse(fs.readFileSync(path.join(reimport.capture, '.capture-client.json'), 'utf8')).package.match(/\/releases\/download\/([^/]+)\//)?.[1];
 if (!clientTag) throw new Error('triage_client_release_tag_missing');
 const releaseCommit = (repo, tag) => gh('api', `repos/${repos[repo].github}/commits/${tag}`, '--jq', '.sha').trim();
 const bases = { 'blocks-engine': trunk, 'static-site-importer': releaseCommit('static-site-importer', `v${ssiVersion}`), [compareClient.owner_repo]: releaseCommit(compareClient.owner_repo, clientTag) };

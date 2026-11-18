@@ -2,11 +2,14 @@
 # Loop step: materialize the source at Blocks Engine trunk and report where the
 # evidence lives.
 #
-# The first pass captures the source with the capture client and arguments
-# pinned in compare-client.json (the release evaluate compares with) and keeps
-# the capture: `--reference-sample all --route-limit all` freezes reference
-# evidence for every route, so every route is compared. A pass re-captures when
-# that pin has changed since the kept capture. Every pass, including the first,
+# The capture client is the latest release of compare-client.json's repository,
+# resolved at runtime as Studio resolves its importer. The first pass captures
+# the source with it and the arguments in compare-client.json, and keeps the
+# capture with the client it used (<capture>/.capture-client.json, which
+# evaluate, triage and every gate compare with): `--reference-sample all
+# --route-limit all` freezes reference evidence for every route, so every route
+# is compared. A pass re-captures when a newer client has been released, or the
+# arguments changed, since the kept capture. Every pass, including the first,
 # re-imports the frozen capture through the latest Static Site Importer release
 # with the transformer from Blocks Engine `trunk` (gates/reimport.sh, as triage, the Cook gate and
 # confirm do). A merged fix is therefore measured on the very next pass, without
@@ -27,7 +30,13 @@ bare="$runs/bare-wp"
 # their loops still use their servers.
 for pid in "${pass%-p*}"-p[0-9]*/site/.server.pid; do [ -f "$pid" ] && kill -- "-$(cat "$pid")" 2> /dev/null || true; done
 
-client="$here/compare-client.json"
+# The newest release with its package uploaded: auto-release publishes the tag
+# a few minutes before its asset.
+repo=$(jq -r --arg r "$(jq -r .owner_repo "$here/compare-client.json")" '.[$r].github' "$here/repos.json")
+package=$(gh api "repos/$repo/releases?per_page=10" --jq "[.[] | select((.draft or .prerelease) | not) | .assets[] | select(.state == \"uploaded\" and (.name | endswith(\"$(jq -r .asset "$here/compare-client.json")\")))][0].browser_download_url")
+[ -n "$package" ] || { echo "no released capture client package in $repo" >&2; exit 1; }
+client="$pass-capture-client.json"
+jq --arg package "$package" '{package: $package} + del(.asset)' "$here/compare-client.json" > "$client"
 if [ ! -f "$capture/capture-receipt.json" ] || ! cmp -s "$client" "$capture/.capture-client.json"; then
   first="$pass-capture"
   rm -rf "$first-source"
