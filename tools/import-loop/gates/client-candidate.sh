@@ -5,7 +5,8 @@
 # `capture_args` into <capture>, then import that capture on <php-transformer
 # dir> (gates/reimport.sh) and print the served site's URL. The packed client
 # stays as <capture>/.client.tgz so the compare uses the same build
-# (IMPORT_LOOP_CLIENT_PACKAGE in checks.mjs).
+# (IMPORT_LOOP_CLIENT_PACKAGE in checks.mjs). The merged tree is no git
+# checkout, so pack skips the release's provenance stamp (prepack).
 #
 # Usage: client-candidate.sh <client source> <url> <capture> <php-transformer dir> <site dir>
 # Env: BARE_WP, SSI_ZIP (as gates/reimport.sh)
@@ -14,7 +15,7 @@ src=$(cd "$1" && pwd); url=$2; capture=$3; transformer=$4; site=$5
 here=$(cd "$(dirname "$0")" && pwd)
 client="$here/../compare-client.json"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-(cd "$src" && npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm pack --pack-destination "$work") >&2 \
+(cd "$src" && npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm pack --ignore-scripts --pack-destination "$work") >&2 \
   || { echo "import_failed: the candidate client does not build" >&2; exit 1; }
 package=$(ls "$work"/*.tgz | head -1)
 capture_args=(); while IFS= read -r arg; do capture_args+=("$arg"); done < <(jq -r '.capture_args[]' "$client")

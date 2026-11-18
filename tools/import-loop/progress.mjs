@@ -54,13 +54,22 @@ const regressed = (before, after) => [...classCounts(after)].some(([cls, n]) => 
 // A check that could not run: its findings are missing, not fixed.
 export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
 
+// Blockers are compared on the routes both imports measured. A candidate that
+// changes the capture's scope (a capture client that keeps routes the release
+// folded away) measures routes the base never did: their blockers are newly
+// measured scope, reported in `new_scope`, not a regression. Site-wide
+// occurrences (no route) always count.
+const onRoutes = (finding, routes) => finding && routes ? { ...finding, occurrences: finding.occurrences.filter((o) => o.route == null || routes.has(o.route)) } : finding;
+
 export function compareImports(before, after, signature, cells) {
   const blockers = { removed: [], added: [], unchanged: [] };
+  const shared = before.routes && after.routes ? new Set(before.routes.filter((r) => after.routes.includes(r))) : null;
   const a = new Map(before.findings.filter((f) => f.severity === 'blocker').map((f) => [f.signature, f]));
   const b = new Map(after.findings.filter((f) => f.severity === 'blocker').map((f) => [f.signature, f]));
+  const new_scope = { routes: shared ? after.routes.filter((r) => !shared.has(r)) : [], blockers: shared ? [...b.values()].map((f) => ({ signature: f.signature, count: occurrences(f) - occurrences(onRoutes(f, shared)) })).filter((f) => f.count > 0) : [] };
   for (const key of new Set([...a.keys(), ...b.keys()])) {
-    const was = occurrences(a.get(key)), now = occurrences(b.get(key));
-    const wasExcess = excess(a.get(key)), nowExcess = excess(b.get(key));
+    const was = occurrences(onRoutes(a.get(key), shared)), now = occurrences(onRoutes(b.get(key), shared));
+    const wasExcess = excess(onRoutes(a.get(key), shared)), nowExcess = excess(onRoutes(b.get(key), shared));
     const moved = change(was, now, wasExcess, nowExcess);
     blockers[moved < 0 ? 'removed' : moved > 0 ? 'added' : 'unchanged'].push({ signature: key, before: was, after: now, delta: now - was, ...(wasExcess || nowExcess ? { excess: { before: wasExcess, after: nowExcess } } : {}) });
   }
@@ -85,5 +94,5 @@ export function compareImports(before, after, signature, cells) {
   const unchecked = [...before.findings, ...after.findings].filter((f) => UNCHECKED.has(f.check));
   const measured = (before.visual || []).length > unmeasured.length;
   const pass = Boolean(signature && change(own.before, own.after, ownExcess.before, ownExcess.after) < 0 && !unchecked.length && !blockers.added.some((f) => f.signature !== signature) && !regressions.length && measured && after.visual?.length);
-  return { pass, own, blockers, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };
+  return { pass, own, blockers, new_scope, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };
 }
