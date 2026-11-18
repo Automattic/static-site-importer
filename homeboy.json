@@ -204,6 +204,7 @@
           "tests/smoke-woo-cart-links.php",
           "tests/smoke-product-grid-inline-svg-import.php",
           "tests/smoke-listing-card-decline-import.php",
+          "tests/smoke-runtime-package-usage.php",
           "tests/smoke-media-rebind-error.php",
           "tests/smoke-raw-html-companion-quality.php",
           "tests/smoke-product-summary-readability.php",

@@ -68,6 +68,12 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'blocks'    => array(),
 			);
 			$runtime_payload = self::resolve_companion_asset_references( $runtime_payload, $prepared['plan'], $prepared['resolved'] );
+			// The theme ships only the blocks and shared runtimes this site uses.
+			$capabilities = array();
+			foreach ( array_merge( $lifecycle['dependencies'] ?? array(), $lifecycle['entities'] ?? array() ) as $declared ) {
+				$capabilities[] = (string) ( $declared['adapter']['capability'] ?? '' );
+			}
+			$runtime_payload = Static_Site_Importer_Companion_Plugin::scoped_to_usage( $runtime_payload, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : $prepared['base_resolved'], $capabilities );
 			$package         = Static_Site_Importer_Generated_Runtime_Package::theme( $runtime_payload, (string) $prepared['theme']['slug'] );
 			if ( is_wp_error( $package ) ) {
 				return $package;
@@ -97,11 +103,13 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_theme_runtime_preflight_failed' ), (string) ( $error['message'] ?? 'Theme runtime destination preflight failed.' ), $rejection );
 			}
 			$companion = array(
-				'status'          => 'theme_owned',
-				'owner'           => 'theme',
-				'owner_slug'      => $package['owner_slug'],
-				'block_names'     => $package['block_names'],
-				'runtime_scripts' => $package['runtime_scripts'],
+				'status'             => 'theme_owned',
+				'owner'              => 'theme',
+				'owner_slug'         => $package['owner_slug'],
+				'block_names'        => $package['block_names'],
+				'runtime_scripts'    => $package['runtime_scripts'],
+				'runtime_files'      => array_keys( $package['files'] ),
+				'runtime_file_count' => count( $package['files'] ),
 			);
 		} else {
 			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
