@@ -10,8 +10,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Static_Site_Importer_Default_Content {
-	/** Capture core seed records before imported posts clear the fresh-site marker. */
-	public static function discover(): array {
+	/**
+	 * Capture core seed records before imported posts clear the fresh-site marker.
+	 *
+	 * @param bool $include_navigation_fallback Whether core's default fallback
+	 *                                          Navigation is installation content.
+	 *                                          An existing-theme import keeps it:
+	 *                                          the theme's header menu is its target.
+	 */
+	public static function discover( bool $include_navigation_fallback = true ): array {
 		$result = array(
 			'eligible' => (bool) get_option( 'fresh_site', false ),
 			'posts'    => array(),
@@ -30,6 +37,15 @@ final class Static_Site_Importer_Default_Content {
 				'id'          => $id,
 				'fingerprint' => self::post_fingerprint( $post ),
 			);
+		}
+
+		if ( $include_navigation_fallback ) {
+			foreach ( self::navigation_fallbacks() as $post ) {
+				$result['posts'][] = array(
+					'id'          => (int) $post->ID,
+					'fingerprint' => self::post_fingerprint( $post ),
+				);
+			}
 		}
 
 		$comment = get_comment( 1 );
@@ -123,6 +139,56 @@ final class Static_Site_Importer_Default_Content {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Core's default fallback Navigation, still exactly as core created it.
+	 *
+	 * Rendering a Navigation block without a menu (any block theme header,
+	 * including the default theme before the import activates its own) makes
+	 * WP_Navigation_Fallback::create_default_fallback() publish a "Navigation"
+	 * post holding only a Page List. Nobody authored it, so on a fresh site it
+	 * is installation content like the seed posts. A fallback converted from a
+	 * classic menu carries that menu's items and name and is never matched.
+	 *
+	 * @return WP_Post[]
+	 */
+	private static function navigation_fallbacks(): array {
+		$fallbacks = array();
+		$posts     = get_posts(
+			array(
+				'post_type'   => 'wp_navigation',
+				'post_status' => 'publish',
+				'name'        => 'navigation',
+				'numberposts' => 10,
+				'orderby'     => 'ID',
+				'order'       => 'ASC',
+			)
+		);
+		foreach ( is_array( $posts ) ? $posts : array() as $post ) {
+			if ( $post instanceof WP_Post && self::is_navigation_fallback( $post ) ) {
+				$fallbacks[] = $post;
+			}
+		}
+		return $fallbacks;
+	}
+
+	/** Whether a Navigation post is still exactly what create_default_fallback() wrote. */
+	private static function is_navigation_fallback( WP_Post $post ): bool {
+		if ( 'wp_navigation' !== $post->post_type || 'publish' !== $post->post_status || 'navigation' !== $post->post_name ) {
+			return false;
+		}
+		// Core's own title string, in core's default text domain.
+		if ( _x( 'Navigation', 'Title of a Navigation menu' ) !== $post->post_title ) { // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- Core's default text domain owns this string.
+			return false;
+		}
+		// WP_Navigation_Fallback::get_default_fallback_blocks(): a Page List, or nothing without core/page-list.
+		if ( ! in_array( (string) $post->post_content, array( '<!-- wp:page-list /-->', '' ), true ) ) {
+			return false;
+		}
+		// Saved since creation, or written by an import: someone owns it.
+		return (string) $post->post_modified_gmt === (string) $post->post_date_gmt
+			&& '' === (string) get_post_meta( (int) $post->ID, '_static_site_importer_provenance', true );
 	}
 
 	private static function is_core_seed( WP_Post $post, int $id ): bool {

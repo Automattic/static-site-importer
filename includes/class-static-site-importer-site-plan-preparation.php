@@ -1745,7 +1745,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	public static function discover_default_content( array &$args ): array {
 		$requested                      = isset( $args['remove_default_content'] ) ? (bool) $args['remove_default_content'] : true;
 		$args['remove_default_content'] = (bool) apply_filters( 'static_site_importer_remove_default_content', $requested, $args );
-		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover() : array(
+		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover( 'existing_theme' !== ( $args['destination'] ?? '' ) ) : array(
 			'eligible' => false,
 			'posts'    => array(),
 			'comments' => array(),
