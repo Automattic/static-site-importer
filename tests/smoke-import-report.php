@@ -177,6 +177,20 @@ $persisted  = $projection['report']->to_array();
 $assert( array( $compiler_warning ) === ( $persisted['diagnostics'] ?? null ), 'persisted-import-report-retains-compiler-warning' );
 $summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $persisted, array() );
 $assert( $compiler_warning['context'] === ( $summary['diagnostics'][0]['context'] ?? null ), 'compact-summary-retains-bounded-compiler-warning-context' );
+$shell_receipt = $receipt;
+$shell_receipt['plan']['template_parts'] = array(
+	array( 'slug' => 'masthead', 'area' => 'header', 'placement' => array( 'kind' => 'shared_shell', 'excluded_template_slugs' => array( 'page-auth' ) ) ),
+	array( 'slug' => 'header-alternate', 'placement' => array( 'kind' => 'shared_shell', 'excluded_template_slugs' => array( 'page-auth', 'page-standalone' ) ) ),
+	array( 'slug' => 'footer', 'placement' => array( 'kind' => 'shared_shell', 'excluded_template_slugs' => array( 'page-auth' ) ) ),
+	array( 'slug' => 'header-local', 'placement' => array( 'kind' => 'page', 'excluded_template_slugs' => array( 'page-stray' ) ) ),
+	array( 'slug' => 'sidebar', 'placement' => array( 'kind' => 'shared_shell', 'excluded_template_slugs' => array( 'page-stray' ) ) ),
+	array( 'slug' => 'footer-local', 'area' => 'uncategorized', 'placement' => array( 'kind' => 'shared_shell', 'excluded_template_slugs' => array( 'page-stray' ) ) ),
+);
+$shell_projection = Static_Site_Importer_Receipt_Projection::compose( $shell_receipt, array(), array(), array(), array(), 'shell-exclusions-run', array(), array() );
+$assert(
+	array( 'header' => array( 'page-auth', 'page-standalone' ), 'footer' => array( 'page-auth' ) ) === $shell_projection['report']['materialization_receipt']['scorecard_context']['shell_exclusions'],
+	'receipt-merges-shared-shell-exclusions-by-explicit-or-conventional-area'
+);
 $skipped_asset_finding = array(
 	'code'        => 'static_site_importer_non_static_file_skipped',
 	'type'        => 'static-site-importer',

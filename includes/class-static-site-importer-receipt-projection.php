@@ -203,9 +203,24 @@ class Static_Site_Importer_Receipt_Projection {
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
 		}
+		$shell_exclusions = array();
+		foreach ( $plan['template_parts'] as $part ) {
+			if ( 'shared_shell' !== ( $part['placement']['kind'] ?? '' ) ) {
+				continue;
+			}
+			$area = $part['area'] ?? '';
+			if ( ! $area && preg_match( '/^(header|footer)(?:-|$)/', $part['slug'], $match ) ) {
+				$area = $match[1];
+			}
+			if ( ! in_array( $area, array( 'header', 'footer' ), true ) ) {
+				continue;
+			}
+			$shell_exclusions[ $area ] = array_values( array_unique( array_merge( $shell_exclusions[ $area ] ?? array(), $part['placement']['excluded_template_slugs'] ?? array() ) ) );
+		}
 		$receipt['scorecard_context']      = array(
 			'source_css_bytes'   => $receipt['design_system']['metrics']['unique_source_css_bytes'] ?? null,
 			'distinct_menus'     => count( $plan['menus'] ?? array() ),
+			'shell_exclusions'   => $shell_exclusions,
 			'editability_report' => $args['source_reports']['editability_report'] ?? array(),
 		);
 		$report['materialization_receipt'] = self::report_receipt( $receipt );

@@ -188,6 +188,11 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 					}
 				}
 			}
+			foreach ( $context['shell_exclusions'] ?? array() as $area => $excluded_slugs ) {
+				if ( in_array( $slug, $excluded_slugs, true ) ) {
+					$areas[ $area ] = true;
+				}
+			}
 			if ( array_diff_key( $required_areas, $areas ) ) {
 				$missing_shell[] = $slug;
 			}
