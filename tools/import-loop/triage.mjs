@@ -25,6 +25,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
 
+import { reportRegression } from './bisect-report.mjs';
+
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
@@ -402,6 +404,12 @@ function acceptanceGate(item, repo) {
 }
 
 stageGateTools();
+// Bisect runs alongside triage and the pass never waits for it: triage reports
+// this pass's attribution when it is already done, else the previous pass's,
+// which lands one pass later. The report's marker makes either safe to repeat.
+const bisectAt = (file) => (file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null);
+const bisect = [bisectAt(args.bisect), bisectAt(args.bisect?.replace(`-p${args.iteration}-bisect`, `-p${Number(args.iteration) - 1}-bisect`))].find((b) => b?.status === 'complete');
+const regressionNotes = args['dry-run'] ? new Map() : reportRegression(bisect, tracked, result.url, gh);
 const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
@@ -451,6 +459,7 @@ for (const item of tracked) {
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
+      regressionNotes.get(item.signature) || '',
       '',
       ...(item.design ? [
         `This is design round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix, and their reports are the issue's latest comments. Read them all before changing anything, then decide what this finding needs and act on it:`,

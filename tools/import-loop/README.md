@@ -57,6 +57,37 @@ again.
 `homeboy runs show <instance>` reports progress. Pass output lands in
 `<runs>/<slug>-p<N>-{eval,triage,confirm}/`.
 
+## Regression attribution
+
+After evaluation, `bisect.mjs` runs alongside triage when `progress.added` is
+non-empty and the preceding pass's `triage.json` records a different Blocks
+Engine base. It searches non-release first-parent commits using the same
+capture and importer zip, comparing only added signatures on their recorded
+cells. It first probes both ends of the range on this capture and keeps only
+signatures that grow between them: a count that moved between passes but not
+between the ends is measurement noise, and the step ends `not_reproduced`
+after that one round. The fresh probe of the previous base is the baseline.
+
+Triage never waits for the bisect. It reports this pass's attribution if it is
+already complete, else the previous pass's, on the regressed issues and the
+culprit PR, and adds the culprit to those issues' Cook prompts.
+
+`<slug>-p<N>-bisect/bisect.json` records probes, signatures, the boundary and
+culprit PR (including its diff stat), or an inconclusive narrowed range.
+Build, import and unmeasured-check failures never name a culprit. The search
+uses at most `ceil(log2(N)) + 1` probes, at most two simultaneous workers within
+`checkHeads`' CPU-derived width, and a step deadline. A runs-directory cache
+keyed by site and both bases avoids repeating a range, including inconclusive
+ranges. Trunk history is assumed monotone for the added signatures.
+
+Triage joins attribution before producing Cook prompts, posts retry-safe
+`import-loop:regressed-by` comments on tracked findings and the culprit PR,
+and adds the cause and diff stat to affected Cook guidance. Standalone
+replays may override `--prev`, `--cur`, `--previous` and `--previous-findings`;
+they also require `--findings`, `--source`, `--ssi-zip`, `--blocks-engine` and
+`--work`. Normal workflow runs derive preceding artifact paths from `--slug`
+and `--iteration`.
+
 ## Shared import checks
 
 `evaluate.mjs` and `gates/accept.mjs` call `checks.mjs`. Parity runs the pinned

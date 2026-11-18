@@ -23,7 +23,7 @@ const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/headin
 // bounded: a page with dozens of images must not dominate the whole run.
 const SAVED_IMAGE_PROBES = 5;
 
-export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
+export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) {
   const [command, ...prefix] = wpCli.split(/\s+/);
   const wp = (...argv) => execFileSync(command, [...prefix, `--path=${site}`, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
@@ -50,6 +50,7 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
     await Promise.all([page.waitForNavigation(), page.click('#wp-submit')]);
     const result = [];
     for (const { ID, url } of pages) {
+      if (cells && !cells.some((c) => c.route == null || (c.route === new URL(url).pathname && (c.width == null || c.width === 1440)))) continue;
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
       // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
       // opens with zero blocks, and that is what an editor gets. The wait

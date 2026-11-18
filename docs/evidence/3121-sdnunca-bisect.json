@@ -1,0 +1,343 @@
+{
+  "prev": "206290e98f",
+  "cur": "a718034600",
+  "probes": [
+    {
+      "commit": "f1947d6b39e2865f1fc798db10d60fefa179f84d",
+      "counts": {
+        "055bae0c7d93": 28,
+        "23f3a7336bc8": 1,
+        "3371170ac8fe": 4,
+        "5fc336e7f5ed": 1,
+        "66d46cf249a7": 3,
+        "673fe72b3463": 1,
+        "67f7a3da7960": 3,
+        "6d8bf4985b52": 6,
+        "8a2556bee4eb": 2,
+        "90798b19beeb": 1,
+        "b256052f4b91": 3,
+        "ba5a797c79bc": 5,
+        "bef4614d433d": 149
+      }
+    },
+    {
+      "commit": "1e0f58af1f4585d2d3315245dbba6a6829ae5407",
+      "counts": {
+        "055bae0c7d93": 11,
+        "23f3a7336bc8": 0,
+        "3371170ac8fe": 0,
+        "5fc336e7f5ed": 0,
+        "66d46cf249a7": 0,
+        "673fe72b3463": 0,
+        "67f7a3da7960": 0,
+        "6d8bf4985b52": 0,
+        "8a2556bee4eb": 0,
+        "90798b19beeb": 0,
+        "b256052f4b91": 0,
+        "ba5a797c79bc": 0,
+        "bef4614d433d": 0
+      }
+    },
+    {
+      "commit": "922cfc736e80e1e7071c415d7474b58b28f62231",
+      "counts": {
+        "055bae0c7d93": 28,
+        "23f3a7336bc8": 1,
+        "3371170ac8fe": 4,
+        "5fc336e7f5ed": 1,
+        "66d46cf249a7": 3,
+        "673fe72b3463": 1,
+        "67f7a3da7960": 3,
+        "6d8bf4985b52": 6,
+        "8a2556bee4eb": 2,
+        "90798b19beeb": 1,
+        "b256052f4b91": 3,
+        "ba5a797c79bc": 5,
+        "bef4614d433d": 149
+      }
+    },
+    {
+      "commit": "401b9e714030f0f08d5a4edf76d8b1e3d916c140",
+      "counts": {
+        "055bae0c7d93": 27,
+        "23f3a7336bc8": 1,
+        "3371170ac8fe": 4,
+        "5fc336e7f5ed": 1,
+        "66d46cf249a7": 3,
+        "673fe72b3463": 1,
+        "67f7a3da7960": 3,
+        "6d8bf4985b52": 6,
+        "8a2556bee4eb": 2,
+        "90798b19beeb": 1,
+        "b256052f4b91": 3,
+        "ba5a797c79bc": 5,
+        "bef4614d433d": 149
+      }
+    },
+    {
+      "commit": "e3429a416ea5897418b95ec07ce21ed7dcd5778d",
+      "counts": {
+        "055bae0c7d93": 27,
+        "23f3a7336bc8": 1,
+        "3371170ac8fe": 4,
+        "5fc336e7f5ed": 1,
+        "66d46cf249a7": 3,
+        "673fe72b3463": 1,
+        "67f7a3da7960": 3,
+        "6d8bf4985b52": 6,
+        "8a2556bee4eb": 2,
+        "90798b19beeb": 1,
+        "b256052f4b91": 3,
+        "ba5a797c79bc": 5,
+        "bef4614d433d": 149
+      }
+    }
+  ],
+  "signatures": [
+    {
+      "signature": "055bae0c7d93",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 11,
+      "after": 28
+    },
+    {
+      "signature": "23f3a7336bc8",
+      "cells": [
+        {
+          "route": "/",
+          "width": 768
+        }
+      ],
+      "before": 0,
+      "after": 1
+    },
+    {
+      "signature": "3371170ac8fe",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 4
+    },
+    {
+      "signature": "5fc336e7f5ed",
+      "cells": [
+        {
+          "route": null,
+          "width": null
+        }
+      ],
+      "before": 0,
+      "after": 1
+    },
+    {
+      "signature": "66d46cf249a7",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        }
+      ],
+      "before": 0,
+      "after": 3
+    },
+    {
+      "signature": "673fe72b3463",
+      "cells": [
+        {
+          "route": "/",
+          "width": 768
+        }
+      ],
+      "before": 0,
+      "after": 1
+    },
+    {
+      "signature": "67f7a3da7960",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 3
+    },
+    {
+      "signature": "6d8bf4985b52",
+      "cells": [
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 3
+    },
+    {
+      "signature": "8a2556bee4eb",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        }
+      ],
+      "before": 0,
+      "after": 2
+    },
+    {
+      "signature": "90798b19beeb",
+      "cells": [
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 1
+    },
+    {
+      "signature": "b256052f4b91",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 3
+    },
+    {
+      "signature": "ba5a797c79bc",
+      "cells": [
+        {
+          "route": "/",
+          "width": 1440
+        },
+        {
+          "route": "/",
+          "width": 1440
+        },
+        {
+          "route": "/",
+          "width": 1440
+        },
+        {
+          "route": "/",
+          "width": 1440
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 5
+    },
+    {
+      "signature": "bef4614d433d",
+      "cells": [
+        {
+          "route": "/",
+          "width": 390
+        },
+        {
+          "route": "/",
+          "width": 768
+        },
+        {
+          "route": "/",
+          "width": 1440
+        }
+      ],
+      "before": 0,
+      "after": 150
+    }
+  ],
+  "status": "complete",
+  "commit": "e3429a416ea5897418b95ec07ce21ed7dcd5778d",
+  "parent": "1e0f58af1f4585d2d3315245dbba6a6829ae5407",
+  "before": {
+    "055bae0c7d93": 11,
+    "23f3a7336bc8": 0,
+    "3371170ac8fe": 0,
+    "5fc336e7f5ed": 0,
+    "66d46cf249a7": 0,
+    "673fe72b3463": 0,
+    "67f7a3da7960": 0,
+    "6d8bf4985b52": 0,
+    "8a2556bee4eb": 0,
+    "90798b19beeb": 0,
+    "b256052f4b91": 0,
+    "ba5a797c79bc": 0,
+    "bef4614d433d": 0
+  },
+  "after": {
+    "055bae0c7d93": 27,
+    "23f3a7336bc8": 1,
+    "3371170ac8fe": 4,
+    "5fc336e7f5ed": 1,
+    "66d46cf249a7": 3,
+    "673fe72b3463": 1,
+    "67f7a3da7960": 3,
+    "6d8bf4985b52": 6,
+    "8a2556bee4eb": 2,
+    "90798b19beeb": 1,
+    "b256052f4b91": 3,
+    "ba5a797c79bc": 5,
+    "bef4614d433d": 149
+  },
+  "culprit": {
+    "commit": "e3429a416ea5897418b95ec07ce21ed7dcd5778d",
+    "pr": "https://github.com/Automattic/blocks-engine/pull/6356",
+    "diff_stat": ".../src/ArtifactCompiler/StagedTransport.php       | 43 ++++++++++++--\n .../tests/contract/box-tree-staged-references.php  | 65 ++++++++++++++++++++++\n 2 files changed, 102 insertions(+), 6 deletions(-)"
+  }
+}
