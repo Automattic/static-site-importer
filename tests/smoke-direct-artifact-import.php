@@ -554,7 +554,15 @@ $replay = Static_Site_Importer_Canonical_Import_Service::import( $resume( $impor
 $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'terminal replay must return the durable response without compile or mutation' );
 
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+// One-page shards send any multi-page CLI batch to process workers, and here
+// argv[0] is this smoke script, so each worker would re-run the whole smoke.
+// Keep this run in-process; the fake WP-CLI worker below covers process fanout.
+$original_argv_zero = $_SERVER['argv'][0] ?? null;
+unset( $_SERVER['argv'][0] );
 $clean_receipt = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
+if ( null !== $original_argv_zero ) {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
 $clean = $clean_receipt['response'] ?? array();
 // The fixture import fails its quality gate, so the CLI receipt carries the
 // single failed verdict over the same evidence the ability returned.
@@ -564,7 +572,7 @@ $canonical = static function ( array $response ): array {
 	return $response;
 };
 $clean_work = $clean['artifact_run']['work'] ?? array();
-$assert( empty( $clean['continuation'] ) && 1 === ( $clean_work['compile_batches'] ?? 0 ) && 3 === ( $clean_work['pages_compiled'] ?? 0 ), 'the CLI worker must compile a multi-page artifact with one shared-analysis batch' );
+$assert( empty( $clean['continuation'] ) && 3 === ( $clean_work['pages_compiled'] ?? 0 ), 'the CLI import must compile every page of a multi-page artifact' );
 $assert( empty( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] ) && 2 === $GLOBALS['ssi_direct_mutations'] && $canonical( $terminal ) === $canonical( $clean ), 'the CLI policy must remain scoped while clean and resumed canonical apply outputs match' );
 $canonical_compiled = static function ( array $result ) use ( &$canonical_compiled ): array {
 	unset( $result['metrics'], $result['work'] );
@@ -1321,7 +1329,7 @@ $bounded_fanout = static_site_importer_cli_compile_artifact_pages_fanout( str_re
 $bounded_log    = (array) file( $bounded_events, FILE_IGNORE_NEW_LINES );
 $third_start    = array_search( 'start:three', $bounded_log, true );
 $first_end      = min( array_keys( array_filter( $bounded_log, static fn ( string $event ): bool => str_starts_with( $event, 'end:' ) ) ) ?: array( PHP_INT_MAX ) );
-$assert( true === $bounded_fanout && array( 'start:one', 'start:two' ) === array_slice( $bounded_log, 0, 2 ) && false !== $third_start && $third_start > $first_end, 'a bounded CLI fan-out starts shards in order and dispatches the next shard only when a worker frees up: ' . implode( ' ', $bounded_log ) );
+$assert( true === $bounded_fanout && array( 'start:one', 'start:two' ) === ( static function ( array $first ): array { sort( $first, SORT_STRING ); return $first; } )( array_slice( $bounded_log, 0, 2 ) ) && false !== $third_start && $third_start > $first_end, 'a bounded CLI fan-out starts the first shards together and dispatches the next shard only when a worker frees up: ' . implode( ' ', $bounded_log ) );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
 $assert( is_wp_error( $process_failure ) && 'Compile worker 2 of 2 exited with status 2: Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12.' === $process_failure->get_error_message(), 'a failed CLI worker must name itself, its status and its fatal in the error message, not only that some worker failed' );
@@ -1487,7 +1495,8 @@ foreach ( array( 'tiny.html' => 1, 'huge.html' => 400, 'mid.html' => 80 ) as $na
 $sized_dispatch = array();
 $sized_workers  = array();
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
-	static fn ( array $policy ): array => array_merge(
+	static function ( array $policy ) use ( &$sized_dispatch, &$sized_workers ): array {
+		return array_merge(
 		$policy,
 		array(
 			'compile_fanout_pages'           => 8,
@@ -1506,7 +1515,8 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 				return true;
 			},
 		)
-	),
+	);
+	},
 );
 $sized = $drive_apply( $sized_input );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
