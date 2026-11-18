@@ -59,6 +59,16 @@ test('an inset card keeps its title, edge, width and stretched control per break
  assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:0px;}${selector}{left:0!important;right:0!important;width:auto!important;max-width:none!important;margin:0!important;}${stretch}`));
  assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:24px;}${selector}{border-radius:7px;}${selector}{right:24px!important;left:auto!important;margin:0!important;width:400px!important;max-width:none!important;}${stretch}`));
 });
+test('a centered modal card rests mid-viewport at its content width, not as an edge bar', () => {
+ const css = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'modal'], { encoding: 'utf8' });
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ assert.ok(css.includes(`${selector}{top:50%;bottom:auto;transform:translateY(-50%);`), css);
+ assert.doesNotMatch(css, /bottom:\d/);
+ assert.ok(css.includes(`${selector}{left:0!important;right:0!important;margin:0 auto!important;width:fit-content!important;max-width:calc(100% - 20px)!important;}`), css);
+ // An edge-anchored card keeps its edge and recorded width.
+ const card = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'card'], { encoding: 'utf8' });
+ assert.doesNotMatch(card, /translateY|fit-content/);
+});
 test('presentation gap accepts one or two typed lengths in row-column order', () => {
  const run = gap => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'gap', JSON.stringify(gap)], { encoding: 'utf8' });
  const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
