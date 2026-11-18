@@ -48,6 +48,10 @@ function add_filter( string $hook, callable $callback ): bool {
 	$GLOBALS['ssi_omitted_filters'][ $hook ][] = $callback;
 	return true;
 }
+function remove_filter( string $hook, callable $callback ): bool {
+	$GLOBALS['ssi_omitted_filters'][ $hook ] = array_values( array_filter( $GLOBALS['ssi_omitted_filters'][ $hook ] ?? array(), static fn ( $registered ): bool => $registered !== $callback ) );
+	return true;
+}
 function do_action( string $hook, ...$args ): void {}
 function __( string $message ): string { return $message; }
 
@@ -241,6 +245,64 @@ $use_policy(
 );
 $verify_omission( $drive( $input() ), 'worker' );
 $assert( 3 === $worker_calls, 'worker: every page, including the omitted one, is compiled by its own worker' );
+
+// Public CLI coordinator with a real child that never exits. Other shards
+// publish real receipts before their lightweight child exits.
+class WP_CLI {
+	public static function get_runner(): object { return (object) array( 'config' => array() ); }
+	public static function warning( string $message ): void {}
+}
+$GLOBALS['ssi_omitted_filters']['static_site_importer_direct_artifact_compiler'] = array();
+$use_policy( array() );
+$sleep_command = static function ( array $command, string $import_id, array $page_ids ): array {
+	if ( in_array( 'website/pricing.html', $page_ids, true ) ) {
+		return array( PHP_BINARY, '-r', 'fwrite(STDERR, "stuck pricing fixture\\n"); sleep(60);' );
+	}
+	$published = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+	if ( is_wp_error( $published ) ) {
+		throw new RuntimeException( $published->get_error_message() );
+	}
+	return array( PHP_BINARY, '-r', 'exit(0);' );
+};
+$short_window = static fn (): float => 0.3;
+add_filter( 'static_site_importer_cli_compile_worker_command', $sleep_command );
+add_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+$started = microtime( true );
+$request = $input();
+$request['import_deadline_seconds'] = 15;
+try {
+	$stalled = static_site_importer_cli_run_import_host( $request, 'static_site_importer_cli_import' );
+} finally {
+	remove_filter( 'static_site_importer_cli_compile_worker_command', $sleep_command );
+	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+}
+$assert( microtime( true ) - $started < 15, 'stalled: finalizes before the import deadline' );
+$assert( ! empty( $stalled['response']['success'] ) && 2 === count( $stalled['response']['result']['pages'] ?? array() ), 'stalled: keeps two of three pages' );
+$evidence = wp_json_encode( $stalled );
+$assert( str_contains( $evidence, 'compile_worker_stalled' ) && str_contains( $evidence, 'pricing.html' ) && str_contains( $evidence, 'stuck pricing fixture' ), 'stalled: receipt names the page and includes stderr' );
+
+// A stalled multi-page shard retains receipts published before the stall.
+$use_policy( array(
+	'compile_shard_pages' => 2,
+	'compile_fanout_pages' => 4,
+	'compile_fanout' => 'static_site_importer_cli_compile_artifact_pages_fanout',
+) );
+$partial_command = static function ( array $command, string $import_id, array $page_ids ): array {
+	$published = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, array_slice( $page_ids, 0, 1 ) );
+	if ( is_wp_error( $published ) ) {
+		throw new RuntimeException( $published->get_error_message() );
+	}
+	return array( PHP_BINARY, '-r', 1 < count( $page_ids ) ? 'fwrite(STDERR, "partial shard stalled"); sleep(60);' : 'exit(0);' );
+};
+add_filter( 'static_site_importer_cli_compile_worker_command', $partial_command );
+add_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+try {
+	$partial = $drive( $input() );
+} finally {
+	remove_filter( 'static_site_importer_cli_compile_worker_command', $partial_command );
+	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+}
+$assert( ! empty( $partial['success'] ) && 2 === count( $partial['result']['pages'] ?? array() ), 'partial shard: already published receipts survive worker termination' );
 
 // An entrypoint that cannot be represented fails the import before any persistence.
 $imports_before = count( $GLOBALS['ssi_omitted_imports'] );
