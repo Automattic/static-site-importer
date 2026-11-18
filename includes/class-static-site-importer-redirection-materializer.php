@@ -397,10 +397,19 @@ final class Static_Site_Importer_Redirection_Materializer {
 
 	// phpcs:enable WordPress.Security.NonceVerification, WordPress.WP.GlobalVariablesOverride.Prohibited
 
-	/** Draft hierarchy rows must never hide a genuine published route owner. */
+	/**
+	 * Draft hierarchy rows must never hide a genuine published route owner.
+	 *
+	 * A post owns a route only when its URI equals the request up to case and
+	 * percent-encoding: `/~about` is not owned by the `about` page it sanitizes to.
+	 */
 	public static function published_route_owner( string $path ) {
-		$parts = array_map( 'sanitize_title_for_query', explode( '/', rawurldecode( trim( $path, '/' ) ) ) );
+		$raw   = rawurldecode( trim( $path, '/' ) );
+		$parts = array_map( 'sanitize_title_for_query', explode( '/', $raw ) );
 		$path  = implode( '/', $parts );
+		if ( mb_strtolower( $raw ) !== rawurldecode( $path ) ) {
+			return null;
+		}
 		$posts = get_posts( array(
 			'name'        => end( $parts ),
 			'post_type'   => array( 'page', 'post' ),

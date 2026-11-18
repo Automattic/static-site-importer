@@ -179,6 +179,23 @@ $after = array(
 	'front'         => get_option( 'page_on_front' ),
 );
 $assert( $before === $after && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION ) === $owned, 'Rollback restores hierarchy status, editable content, runtime options and native redirect ownership.' );
+
+// `/~about` only sanitizes to `about`; it is not occupied by the `/about/` page (#3097).
+$tilde_files = array();
+foreach ( array( 'index.html', 'about/index.html', '~about/index.html' ) as $tilde_path ) {
+	$tilde_files[] = array(
+		'path'    => 'website/' . $tilde_path,
+		'content' => file_get_contents( dirname( __DIR__ ) . '/fixtures/tilde-route-twins/' . $tilde_path ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local fixture.
+	);
+}
+$tilde                    = $request;
+$tilde['slug']            = 'tilde-route-neutral';
+$tilde['source']['files'] = $tilde_files;
+$tilde_result             = $import( $tilde );
+$about                    = get_page_by_path( 'about', OBJECT, 'page' );
+$assert( ! empty( $tilde_result['success'] ), 'A tilde route beside its sanitized twin imports: ' . wp_json_encode( $tilde_result['error'] ?? array() ) );
+$assert( $about instanceof WP_Post && (int) Static_Site_Importer_Redirection_Materializer::published_route_owner( '/about' )->ID === (int) $about->ID, 'The page whose URI is /about still owns /about.' );
+$assert( null === Static_Site_Importer_Redirection_Materializer::published_route_owner( '/~about' ), 'No page owns /~about merely by sanitizing to it.' );
 echo wp_json_encode( array(
 	'status'            => 'passed',
 	'parent_id'         => $parent->ID,
