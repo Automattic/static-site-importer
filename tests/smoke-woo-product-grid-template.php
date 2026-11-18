@@ -91,6 +91,7 @@ $card = static fn( string $name, string $chip, string $blurb, string $price, str
 	. '<!-- wp:paragraph {"className":"blurb"} --><p class="blurb">' . $blurb . '</p><!-- /wp:paragraph -->'
 	. '<!-- wp:paragraph {"className":"price"} --><p class="price">' . $price . '</p><!-- /wp:paragraph -->'
 	. '<!-- wp:html --><button class="btn-add" data-add="' . $id . '">Add to cart</button><!-- /wp:html -->'
+	. '<!-- wp:group {"className":"card-img"} --><div class="wp-block-group card-img"><!-- wp:image --><figure class="wp-block-image"><img src="https://example.com/product.jpg" width="256" height="340" alt="Product"/></figure><!-- /wp:image --></div><!-- /wp:group -->'
 	. '</article><!-- /wp:group -->';
 $alpha    = $card( 'Alpha Item', 'Sunny', 'Alpha blurb', '$10.00', 'a' );
 $beta     = $card( 'Beta Item', 'Shady', 'Beta blurb', '$12.00', 'b' );
@@ -134,6 +135,11 @@ $grid     = array(
 				'id'   => 'slot-4',
 				'role' => 'add_to_cart',
 				'path' => array( 4 ),
+			),
+			array(
+				'id'   => 'slot-5',
+				'role' => 'image',
+				'path' => array( 5 ),
 			),
 		),
 	),
@@ -236,7 +242,7 @@ $assert( 'woocommerce/product-collection' === ( $loop['blockName'] ?? '' ) && ar
 $template = $loop['innerBlocks'][0]['innerBlocks'][0] ?? array();
 $names    = array_column( $template['innerBlocks'] ?? array(), 'blockName' );
 $assert( 'woocommerce/product-template' === ( $loop['innerBlocks'][0]['blockName'] ?? '' ) && 'card' === ( $template['attrs']['className'] ?? '' ) && ! isset( $template['attrs']['metadata']['name'] ), 'product-template-is-the-source-card', (string) wp_json_encode( $template['attrs'] ?? null ) );
-$assert( array( 'core/paragraph', 'core/post-title', 'core/paragraph', 'woocommerce/product-price', 'core/html' ) === $names, 'name-and-price-slots-become-live-product-blocks', (string) wp_json_encode( $names ) );
+$assert( array( 'core/paragraph', 'core/post-title', 'core/paragraph', 'woocommerce/product-price', 'core/html', 'woocommerce/product-image' ) === $names, 'name-and-price-slots-become-live-product-blocks', (string) wp_json_encode( $names ) );
 $title = $template['innerBlocks'][1]['attrs'] ?? array();
 $price = $template['innerBlocks'][3]['attrs'] ?? array();
 $assert( 3 === ( $title['level'] ?? 0 ) && 'card-title' === ( $title['className'] ?? '' ) && 'price' === ( $price['className'] ?? '' ), 'live-product-blocks-keep-the-source-classes', (string) wp_json_encode( array( $title, $price ) ) );
@@ -303,6 +309,22 @@ $untemplated = $grid;
 unset( $untemplated['item_template'] );
 $validated = Static_Site_Importer_Entity_Materializer_Registry::validate_product_grids_manifest( array( 'product_grids' => array( $untemplated, $grid ) ) );
 $assert( 1 === count( $validated['product_grids'] ) && '$.product_grids[0]' === ( $validated['errors'][0]['path'] ?? '' ), 'validator-rejects-a-grid-without-an-item-template', (string) wp_json_encode( $validated['errors'] ) );
+
+// Source aspect-ratio boxes must survive WooCommerce's inserted image link.
+$image = $template['innerBlocks'][5] ?? array();
+$assert( 'card-img' === ( $image['attrs']['className'] ?? '' ) && true === ( $image['attrs']['isLink'] ?? false ), 'imported-image-keeps-source-box-and-native-link' );
+$css = Static_Site_Importer_Product_Grid_Runtime::layout_css();
+$assert( str_contains( $css, '.ssi-item-template-card.ssi-item-template-card .wc-block-components-product-image > a{display:block;width:100%;height:100%;}' ), 'image-link-fills-box-only-in-imported-cards' );
+
+// The browser regression consumes this real materialized grid and runtime CSS.
+if ( in_array( '--image-browser-fixture', $argv, true ) && empty( $failures ) ) {
+	echo wp_json_encode( array(
+		'cardClass' => Static_Site_Importer_Product_Grid_Runtime::CARD_CLASS,
+		'imageClass' => $image['attrs']['className'],
+		'css' => '.card-img{width:279px;aspect-ratio:4/5}.card-img img{width:100%;height:100%;object-fit:cover}' . $css,
+	) );
+	exit;
+}
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

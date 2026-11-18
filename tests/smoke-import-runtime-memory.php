@@ -74,6 +74,17 @@ $GLOBALS['ssi_harness_filters']['static_site_importer_direct_artifact_run_policy
 	return $policy;
 };
 
+// Load every Blocks Engine class before measuring. Compiled engine code is a fixed
+// cost that grows with each engine release, not with the site; counted inside the
+// compose step it made this bound move with every engine refresh.
+$engine_src = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/';
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $engine_src, FilesystemIterator::SKIP_DOTS ) ) as $engine_file ) {
+	if ( 'php' === $engine_file->getExtension() ) {
+		$engine_class = 'Automattic\\BlocksEngine\\PhpTransformer\\' . str_replace( '/', '\\', substr( $engine_file->getPathname(), strlen( $engine_src ), -4 ) );
+		class_exists( $engine_class ) || interface_exists( $engine_class ) || trait_exists( $engine_class ) || enum_exists( $engine_class );
+	}
+}
+
 $reset_runtime = new ReflectionProperty( Static_Site_Importer_Direct_Artifact_Import::class, 'checkpoint_read_cache' );
 $steps         = array();
 $request       = array(
@@ -129,12 +140,10 @@ $apply_bounds = array( 3.5, 5.8 );
 foreach ( array_slice( $steps, -2 ) as $index => $step ) {
 	$assert( $step['growth'] <= $apply_bounds[ $index ] * $source_bytes, sprintf( 'apply step %d grew the heap by %.2f x the source bytes, above the %.1f x bound', $index + 1, $step['growth'] / $source_bytes, $apply_bounds[ $index ] ) );
 }
-// Compilation and composition dominate. Engine v0.45.560 measured 22.49 x
-// (CI: 22.44 x). The v0.45.544–560 owner extractions add cold class-loading
-// overhead: preloading those owners restores 22.00 x, matching v0.45.543.
-// This is engine code heap, not retained SSI plans; keep the apply bounds above.
+// Compilation and composition dominate: 9.17 x measured with engine code preloaded
+// (22.56 x when engine v0.45.589 code loaded inside the step). This catches a runaway.
 $worst = max( array_column( $steps, 'growth' ) );
-$assert( $worst <= 22.6 * $source_bytes, sprintf( 'the worst step grew the heap by %.2f x the source bytes, above the 22.6 x bound', $worst / $source_bytes ) );
+$assert( $worst <= 11.0 * $source_bytes, sprintf( 'the worst step grew the heap by %.2f x the source bytes, above the 11.0 x bound', $worst / $source_bytes ) );
 
 ssi_harness_cleanup();
 

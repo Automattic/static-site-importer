@@ -112,6 +112,14 @@ try {
 		$assert( 'core/group' === $blocks[0]['blockName'] && str_starts_with( $blocks[0]['attrs']['className'], 'ssi-page-' ), 'page has one stable classed root group' );
 	}
 	$assert( 2 === count( $imported ), 'two imported pages' );
+	$template_slug = get_post_meta( $imported[0], '_wp_page_template', true );
+	$template = get_block_template( get_stylesheet() . '//' . $template_slug, 'wp_template' );
+	$assert( $template && 'custom' === $template->source, 'import owns a user template scoped to this theme' );
+	$template_id = $template->wp_id;
+	$assert( $template_slug === get_post_meta( $imported[1], '_wp_page_template', true ), 'import pages share one owned template' );
+	$assert( ! str_contains( $template->content, 'wp:post-title' ) && str_contains( $template->content, '"layout":{"type":"default"}' ), 'template has unconstrained post content and no theme title' );
+	$assert( str_contains( $template->content, '"slug":"header"' ) && str_contains( $template->content, '"slug":"footer"' ), 'owner header and footer template parts are retained' );
+	$assert( str_contains( $css, ':where(h1,h2,h3,h4,h5,h6,a,button' ) && str_contains( $css, 'font-family:revert' ), 'scoped typography resets precede imported CSS' );
 	$after_files = $snapshot();
 	$assert( $before === $after_files, 'themes/plugins/mu-plugins hash before equals after: ' . wp_json_encode( array_keys( array_diff_assoc( $after_files, $before ) ) ) );
 	$assert( 'twentytwentyfive' === get_stylesheet() && $seed_before === get_post( $seed )->to_array(), 'theme and edited owner page unchanged' );
@@ -122,6 +130,7 @@ try {
 	WP_Theme_JSON_Resolver::clean_cached_data();
 	$again = WP_Theme_JSON_Resolver::get_user_data()->get_raw_data()['styles']['css'];
 	$assert( $css === $again, 're-import replaces its section without duplication' );
+	$assert( $template_id === get_block_template( get_stylesheet() . '//' . $template_slug, 'wp_template' )->wp_id, 're-import reuses owned template' );
 	// Core CSS emission is independent of any importer callbacks or registration.
 	// A new CLI process with --skip-plugins=static-site-importer verifies this.
 	if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -129,12 +138,18 @@ try {
 		$assert( str_contains( $rendered, '@media(min-width:700px)' ) && str_contains( $rendered, 'ssi-page-' ), 'deactivated importer: frontend core emits scoped conditional CSS and page content' );
 	}
 	preg_match( '~/\* static-site-importer:([a-f0-9]+):start \*/~', $css, $match );
+	// An owner can adopt an imported template. Keep it until the last user leaves.
+	update_post_meta( $seed, '_wp_page_template', $template_slug );
 	$removed = Static_Site_Importer_Existing_Theme_Styles::remove( $match[1] );
+	$assert( null !== get_post( $template_id ), 'removal retains owned template while an owner page uses it' );
+	delete_post_meta( $seed, '_wp_page_template' );
+	Static_Site_Importer_Existing_Theme_Styles::remove( $match[1] );
 	$assert( ! is_wp_error( $removed ), 'import section removal succeeds' );
 	foreach ( $imported as $id ) {
 		clean_post_cache( $id );
 		$assert( null === get_post( $id ), 'removal deletes only import-owned pages' );
 	}
+	$assert( null === get_post( $template_id ), 'removal deletes unused import-owned template' );
 	$after = WP_Theme_JSON_Resolver::get_user_data()->get_raw_data();
 	$assert( $owner_css === $after['styles']['css'] && '19px' === $after['styles']['spacing']['blockGap'], 'removal preserves only owner CSS and unrelated Global Styles settings' );
 	$assert( $before === $snapshot(), 're-import and removal write no protected files' );

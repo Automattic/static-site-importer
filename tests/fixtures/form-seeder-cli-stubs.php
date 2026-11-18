@@ -97,6 +97,11 @@ namespace {
 			return '<!-- wp:' . $name . $attrs . ' -->' . $inner . '<!-- /wp:' . $name . ' -->';
 		}
 	}
+	if ( ! function_exists( '__' ) ) {
+		function __( string $text, string $domain = 'default' ): string {
+			return $text;
+		}
+	}
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__, 2 ) . '/' );
 	}

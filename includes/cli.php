@@ -154,8 +154,11 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 				'reserve_bytes'   => $reserve,
 			);
 			$policy['compile_workers']      = static_site_importer_cli_compile_worker_count( $available, $budget, $reserve );
-			$policy['compile_shard_pages']  = 4;
-			$policy['compile_fanout_pages'] = $policy['compile_workers'] * $policy['compile_shard_pages'];
+			// One page per shard: the fanout keeps compile_workers shards running and
+			// starts the next (largest remaining) page whenever a worker finishes, so
+			// the largest page never queues small pages behind it on one worker.
+			$policy['compile_shard_pages']  = 1;
+			$policy['compile_fanout_pages'] = $policy['compile_workers'] * 4;
 			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
 			// Receipt workers are separate processes, so the host step stays small;
 			// keep compiling until the invocation deadline instead of one batch per step.
@@ -169,16 +172,19 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 	/**
 	 * Run bounded receipt workers concurrently; return null when process spawning is unavailable.
 	 *
+	 * At most $workers shards run at once, dispatched in the given order as
+	 * workers free up; null runs every shard at once.
+	 *
 	 * A worker killed by SIGKILL most likely met the out-of-memory killer while
 	 * its siblings held memory too, so its shard is retried on its own, one shard
 	 * at a time. Workers skip receipts they already published, so a retry only
 	 * compiles the pages the killed worker did not finish.
 	 */
-	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards ) {
+	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards, ?int $workers = null ) {
 		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
 			return null;
 		}
-		$run = static_site_importer_cli_run_compile_workers( $import_id, $shards );
+		$run = static_site_importer_cli_run_compile_workers( $import_id, $shards, $workers );
 		if ( $run['spawn_error'] && empty( $run['results'] ) ) {
 			return null;
 		}
@@ -239,13 +245,17 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 
 if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 	/**
-	 * Run one receipt worker per shard concurrently and collect how each ended.
+	 * Run one receipt worker per shard and collect how each ended.
 	 *
-	 * @param string                 $import_id Retained run id.
-	 * @param array<int|string,array> $shards    Page id shards keyed by worker index.
+	 * Shards start in order, at most $concurrency at a time; each finished worker
+	 * frees its slot for the next pending shard.
+	 *
+	 * @param string                 $import_id   Retained run id.
+	 * @param array<int|string,array> $shards      Page id shards keyed by worker index, in dispatch order.
+	 * @param int|null               $concurrency Maximum concurrent workers; null runs every shard at once.
 	 * @return array{spawn_error:bool,results:array<int|string,array{signal:int,exitcode:int,error:string,output:string}>}
 	 */
-	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards ): array {
+	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards, ?int $concurrency = null ): array {
 		// Bundled WP-CLI PHARs are readable PHP entrypoints, not necessarily executables.
 		$base_command = array( PHP_BINARY, '-d', 'memory_limit=' . ini_get( 'memory_limit' ), (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
 		$config       = WP_CLI::get_runner()->config ?? array();
@@ -254,40 +264,26 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 				$base_command[] = '--' . $key . '=' . (string) $config[ $key ];
 			}
 		}
+		$concurrency = null === $concurrency ? max( 1, count( $shards ) ) : max( 1, $concurrency );
+		$queue       = $shards;
 		$processes   = array();
+		$results     = array();
 		$spawn_error = false;
-		foreach ( $shards as $index => $page_ids ) {
-			$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
-			$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
-			$pipes   = array();
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
-			$process = proc_open(
-				$command,
-				array(
-					1 => array( 'pipe', 'w' ),
-					2 => array( 'pipe', 'w' ),
-				),
-				$pipes,
-				null,
-				null,
-				array( 'bypass_shell' => true )
-			);
-			if ( ! is_resource( $process ) ) {
-				$spawn_error = true;
-				break;
+		while ( ! empty( $processes ) || ( ! $spawn_error && ! empty( $queue ) ) ) {
+			while ( ! $spawn_error && ! empty( $queue ) ) {
+				if ( count( $processes ) >= $concurrency ) {
+					break;
+				}
+				$index    = array_key_first( $queue );
+				$page_ids = $queue[ $index ];
+				unset( $queue[ $index ] );
+				$spawned = static_site_importer_cli_spawn_compile_worker( $base_command, $import_id, $page_ids );
+				if ( null === $spawned ) {
+					$spawn_error = true;
+					break;
+				}
+				$processes[ $index ] = $spawned;
 			}
-			stream_set_blocking( $pipes[1], false );
-			stream_set_blocking( $pipes[2], false );
-			$processes[ $index ] = array(
-				'process' => $process,
-				'pipes'   => $pipes,
-				'output'  => '',
-				'error'   => '',
-			);
-		}
-
-		$results = array();
-		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
 				$worker['error']  = substr( $worker['error'] . (string) stream_get_contents( $worker['pipes'][2] ), -16000 );
@@ -320,6 +316,45 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 		return array(
 			'spawn_error' => $spawn_error,
 			'results'     => $results,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_spawn_compile_worker' ) ) {
+	/**
+	 * Start one receipt worker for a page shard.
+	 *
+	 * @param string[] $base_command WP-CLI command prefix.
+	 * @param string   $import_id    Retained run id.
+	 * @param array    $page_ids     Page ids the worker compiles.
+	 * @return array{process:resource,pipes:array,output:string,error:string}|null Null when the process could not start.
+	 */
+	function static_site_importer_cli_spawn_compile_worker( array $base_command, string $import_id, array $page_ids ): ?array {
+		$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
+		$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
+		$pipes   = array();
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
+		$process = proc_open(
+			$command,
+			array(
+				1 => array( 'pipe', 'w' ),
+				2 => array( 'pipe', 'w' ),
+			),
+			$pipes,
+			null,
+			null,
+			array( 'bypass_shell' => true )
+		);
+		if ( ! is_resource( $process ) ) {
+			return null;
+		}
+		stream_set_blocking( $pipes[1], false );
+		stream_set_blocking( $pipes[2], false );
+		return array(
+			'process' => $process,
+			'pipes'   => $pipes,
+			'output'  => '',
+			'error'   => '',
 		);
 	}
 }
@@ -520,11 +555,12 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * they stay bounded, but it converts none of them, so the budget sized for
 	 * page source does not describe what they cost.
 	 *
-	 * `max_media_total_bytes` and `max_report_total_bytes` are enforced through
-	 * the per-file ceiling below, which shrinks to whatever remains of them, so
-	 * a capture of any shape is still refused once it passes an aggregate.
+	 * Reports receive 4 MiB per captured HTML route document, with a 64 MiB
+	 * baseline and a 128 MiB hard ceiling (also the compiler's hard ceiling).
+	 * Their aggregate is checked separately from the fixed 32 MiB file ceiling;
+	 * media retains a per-file ceiling that shrinks to its remaining budget.
 	 */
-	function static_site_importer_cli_request_bundle_limits(): array {
+	function static_site_importer_cli_request_bundle_limits( int $route_documents = 0 ): array {
 		$limits = array(
 			'max_files'                => 5000,
 			'max_media_files'          => 20000,
@@ -533,7 +569,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 			'max_report_file_bytes'    => 33554432,
 			'max_total_bytes'          => 268435456,
 			'max_media_total_bytes'    => 1073741824,
-			'max_report_total_bytes'   => 67108864,
+			'max_report_total_bytes'   => max( 67108864, min( 32, max( 0, $route_documents ) ) * 4194304 ),
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
@@ -621,7 +657,8 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * A declared capture report is read, so it is not media, but it is evidence
 	 * about the capture rather than page source: Blocks Engine hydrates it and
 	 * only ever decodes the few reports a projector names, converting none of
-	 * them. It gets the same two-sided treatment on the report budget.
+	 * them. Its fixed per-file ceiling is independent of the route-scaled
+	 * aggregate, checked after counting the captured documents.
 	 *
 	 * @param array<string,true> $reports Declared report lookup set.
 	 */
@@ -630,9 +667,17 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 			return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
 		}
 		if ( static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
-			return min( $limits['max_report_file_bytes'], max( 0, $limits['max_report_total_bytes'] - $report_bytes_used ) );
+			return $limits['max_report_file_bytes'];
 		}
 		return $limits['max_file_bytes'];
+	}
+
+	/** Report aggregate refusals with the full declared total, never a file remainder. */
+	function static_site_importer_cli_request_bundle_report_total_error( int $bytes, int $maximum ): WP_Error {
+		return new WP_Error(
+			'static_site_importer_cli_request_bundle_report_total_too_large',
+			sprintf( 'Declared capture reports total %1$s (%2$d bytes), exceeding the %3$s aggregate report budget (%4$d bytes).', static_site_importer_cli_request_bundle_mib( $bytes ), $bytes, static_site_importer_cli_request_bundle_mib( $maximum ), $maximum )
+		);
 	}
 
 	/** Format a byte count as whole or one-decimal MiB for an error message. */
@@ -756,13 +801,16 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$queue_root = is_file( $directory . '/media-queue.json' ) ? $directory : dirname( $directory );
-		$deferred   = Static_Site_Importer_Deferred_Media_Stage::queue( $queue_root );
-		$limits     = static_site_importer_cli_request_bundle_limits();
-		$reports    = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
-		$walk       = array( array( $directory, false ) );
+		$queue_root     = is_file( $directory . '/media-queue.json' ) ? $directory : dirname( $directory );
+		$deferred       = Static_Site_Importer_Deferred_Media_Stage::queue( $queue_root );
+		$limits         = static_site_importer_cli_request_bundle_limits();
+		$reports        = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$walk           = array( array( $directory, false ) );
+		$website_prefix = '';
 		if ( '' !== $report_root && $report_root !== $directory ) {
-			$walk = array( array( $directory, true ) );
+			$walk           = array( array( $directory, true ) );
+			$website_root   = (string) realpath( $directory );
+			$website_prefix = str_starts_with( $website_root, $report_root . DIRECTORY_SEPARATOR ) ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $website_root, strlen( $report_root ) + 1 ) ) . '/' : '';
 			foreach ( array_keys( $reports ) as $report_path ) {
 				$candidate = $report_root . DIRECTORY_SEPARATOR . str_replace( '/', DIRECTORY_SEPARATOR, $report_path );
 				if ( ! file_exists( $candidate ) && ! is_link( $candidate ) ) {
@@ -780,6 +828,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$total_bytes     = 0;
 		$media_bytes     = 0;
 		$report_bytes    = 0;
+		$route_documents = 0;
 		$generated_files = array();
 		$media_files     = 0;
 		try {
@@ -811,8 +860,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( isset( $deferred[ $relative ] ) || 'media-queue.json' === $relative ) {
 					continue;
 				}
-				// Declared reports come from the capture root, never the website tree.
-				if ( $reports_elsewhere && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
+				// Declared reports come from the capture root, never the website tree,
+				// including a report that lives inside the website tree.
+				if ( $reports_elsewhere && ( static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) || static_site_importer_cli_request_bundle_is_declared_report( $website_prefix . $relative, $reports ) ) ) {
 					continue;
 				}
 				if ( '' === $relative || ( function_exists( 'static_site_importer_rest_artifact_path' ) && '' === static_site_importer_rest_artifact_path( $relative ) ) ) {
@@ -852,8 +902,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( $read_source && ! $report && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
-				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
+				$is_html           = ! $report && (bool) preg_match( '/\.html?$/i', $relative );
 				$inline_expansions = $is_html ? array_diff_key( array_flip( static_site_importer_cli_inline_expansion_keys( $absolute ) ), $generated_files ) : array();
+
+				$route_documents += $is_html ? 1 : 0;
 				// Media the compiler never opens has its own file budget; the
 				// file budget bounds what it parses.
 				$media = ! $read_source && ! $report;
@@ -899,6 +951,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		}
 		if ( empty( $files ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source tree contains no static files.' );
+		}
+		$limits = static_site_importer_cli_request_bundle_limits( $route_documents );
+		if ( $report_bytes > $limits['max_report_total_bytes'] ) {
+			return static_site_importer_cli_request_bundle_report_total_error( $report_bytes, $limits['max_report_total_bytes'] );
 		}
 		usort( $files, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
 		return array(

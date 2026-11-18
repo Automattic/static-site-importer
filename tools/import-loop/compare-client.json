@@ -1,5 +1,11 @@
 {
-  "package": "https://github.com/Automattic/data-liberation-agent/releases/download/v0.33.204/data-liberation-0.33.204.tgz",
+  "package": "https://github.com/Automattic/data-liberation-agent/releases/download/v0.35.41/data-liberation-0.35.41.tgz",
   "executable": "data-liberation",
-  "owner_repo": "data-liberation-agent"
+  "owner_repo": "data-liberation-agent",
+  "capture_args": [
+    "--reference-sample",
+    "all",
+    "--route-limit",
+    "all"
+  ]
 }

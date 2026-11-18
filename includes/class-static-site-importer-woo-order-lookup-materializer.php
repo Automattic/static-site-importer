@@ -26,6 +26,7 @@ final class Static_Site_Importer_Woo_Order_Lookup_Materializer {
 			'entity_collection'        => 'order_lookups',
 			'capability'               => 'shop',
 			'provider'                 => 'woocommerce',
+			'runtime_features'         => array( 'commerce' ),
 			'label'                    => 'WooCommerce order tracking',
 			'waiver_arg'               => 'allow_missing_woocommerce',
 			'validator'                => array( 'Static_Site_Importer_Entity_Materializer_Registry', 'validate_order_lookups_manifest' ),

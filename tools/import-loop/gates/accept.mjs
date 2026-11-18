@@ -16,5 +16,5 @@ const after = (await checkImport({ ...common, site: args['candidate-site'], 'wp-
 const result = compareImports(before, after, args.signature, args.cells ? JSON.parse(args.cells) : undefined);
 fs.writeFileSync(path.join(args.out, 'acceptance.json'), JSON.stringify(result, null, 2));
 // The verdict, compact: a gate report keeps only its output's tail.
-console.log(JSON.stringify({ pass: result.pass, own: result.own, blockers_added: result.blockers.added.map((f) => `${f.signature}:${f.after}`), blockers_removed: result.blockers.removed.map((f) => `${f.signature}:${f.before}->${f.after}`), visual_regressions: result.visual_regressions, visual_unmeasured: result.visual_unmeasured.length }));
+console.log(JSON.stringify({ pass: result.pass, own: result.own, blockers_added: result.blockers.added.map((f) => `${f.signature}:${f.after}`), blockers_removed: result.blockers.removed.map((f) => `${f.signature}:${f.before}->${f.after}`), new_scope: { routes: result.new_scope.routes.length, blockers: result.new_scope.blockers.map((f) => `${f.signature}:${f.count}`) }, visual_regressions: result.visual_regressions, visual_unmeasured: result.visual_unmeasured.length }));
 process.exitCode = result.pass ? 0 : 1;

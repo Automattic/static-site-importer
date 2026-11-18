@@ -86,7 +86,40 @@ foreach ( array( 'twentytwentyfive', 'generated' ) as $host ) {
 	$assert( $before === get_post( $about )->to_array(), 'owner about unchanged' );
 	$assert( $settings === array_map( 'get_option', array( 'show_on_front', 'page_on_front', 'page_for_posts', 'permalink_structure', 'blogname', 'blogdescription' ) ), 'site settings unchanged' );
 	$assert( $menus == get_posts( array( 'post_type' => 'wp_navigation', 'post_status' => 'any', 'numberposts' => -1 ) ), 'menus unchanged' );
-	foreach ( array_merge( array( $about, $parent, $menu_id ), array_map( static fn( $p ) => $p->ID, $added ) ) as $id ) {
+	$original_menu = get_post( $menu_id )->post_content;
+	$header_id = wp_insert_post( array( 'post_type' => 'wp_template_part', 'post_name' => 'header', 'post_title' => 'Header', 'post_status' => 'publish', 'post_content' => '<!-- wp:navigation {"ref":' . $menu_id . '} /-->' ) );
+	wp_set_object_terms( $header_id, get_stylesheet(), 'wp_theme' );
+	wp_set_object_terms( $header_id, 'header', 'wp_template_part_area' );
+	$input['navigation'] = true;
+	$input['operation'] = 'plan';
+	$draft_plan = $run( $input );
+	$assert( str_contains( wp_json_encode( $draft_plan ), 'existing_theme_navigation_skipped_unpublished' ), 'unpublished navigation links diagnosed' );
+	$input['post_status'] = 'publish';
+	$nav_plan = $run( $input );
+	$assert( $menu_id === ( $nav_plan['navigation']['post_id'] ?? 0 ) && 2 === count( $nav_plan['navigation']['links'] ?? array() ), 'plan resolves header navigation and two additions' );
+	$input['operation'] = 'apply';
+	$nav_result = $run( $input );
+	$assert( ! empty( $nav_result['success'] ) && 2 === count( $nav_result['result']['materialization_receipt_summary']['navigation']['links'] ?? array() ), 'receipt reports navigation additions' );
+	clean_post_cache( $menu_id );
+	$nav_content = get_post( $menu_id )->post_content;
+	$nav_blocks = array_values( array_filter( parse_blocks( $nav_content ), static fn( $block ) => 'core/navigation-link' === $block['blockName'] ) );
+	$assert( str_starts_with( $nav_content, $original_menu ) && 3 === count( $nav_blocks ), 'two links appended after owner link' );
+	$assert( (int) $added['about-us']->ID === $nav_blocks[1]['attrs']['id'] && (int) $added['pricing']->ID === $nav_blocks[2]['attrs']['id'] && 'post-type' === $nav_blocks[1]['attrs']['kind'] && 'page' === $nav_blocks[1]['attrs']['type'], 'links use source order and page IDs' );
+	$nav_again = $run( $input );
+	clean_post_cache( $menu_id );
+	$assert( ! empty( $nav_again['success'] ) && $nav_content === get_post( $menu_id )->post_content, 'navigation reimport is byte-identical' );
+	$section = Static_Site_Importer_Existing_Theme_Styles::identity( array( 'args' => $input ) );
+	$removed = Static_Site_Importer_Existing_Theme_Styles::remove( $section );
+	$assert( ! is_wp_error( $removed ) && $original_menu === get_post( $menu_id )->post_content, 'removal restores exact owner navigation bytes' );
+	wp_update_post( array( 'ID' => $header_id, 'post_content' => '<!-- wp:paragraph --><p>No navigation</p><!-- /wp:paragraph -->' ) );
+	$other_menu = wp_insert_post( array( 'post_type' => 'wp_navigation', 'post_title' => 'Other', 'post_status' => 'publish', 'post_content' => $original_menu ) );
+	$input['slug'] .= '-unresolved';
+	$input['operation'] = 'apply';
+	$unresolved = $run( $input );
+	$assert( ! empty( $unresolved['success'] ) && str_contains( wp_json_encode( $unresolved ), 'existing_theme_navigation_unresolved' ), 'ambiguous navigation leaves page import successful with diagnostic' );
+	$assert( $original_menu === get_post( $menu_id )->post_content && $original_menu === get_post( $other_menu )->post_content, 'unresolved navigation changes no menus' );
+	Static_Site_Importer_Existing_Theme_Styles::remove( Static_Site_Importer_Existing_Theme_Styles::identity( array( 'args' => $input ) ) );
+	foreach ( array_merge( array( $about, $parent, $menu_id, $other_menu, $header_id ), array_map( static fn( $p ) => $p->ID, $added ) ) as $id ) {
 		wp_delete_post( $id, true );
 	}
 }

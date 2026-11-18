@@ -1,5 +1,6 @@
 // Authenticated Playwright checks; REST requests run in the owner's browser
 // with its nonce, not from unauthenticated external report counters.
+import { styleTokens, themeCss, QUALITY } from './quality.mjs';
 export async function themeChecks(page, wpUrl, routes, report) {
   await page.goto(new URL('/wp-admin/site-editor.php', wpUrl).href, { waitUntil: 'load' });
   await page.waitForFunction(() => window.wp?.apiFetch, null, { timeout: 120_000 });
@@ -12,7 +13,7 @@ export async function themeChecks(page, wpUrl, routes, report) {
     if (result.error) throw new Error(`apiFetch ${JSON.stringify(result.error)}`);
     return result.ok;
   };
-  const fail = (check, evidence, severity = 'blocker') => report({ stage: 'theme', check, severity, owner_repo: 'blocks-engine', subject: check, evidence });
+  const fail = (check, evidence) => report({ stage: 'theme', check, owner_repo: 'blocks-engine', subject: check, evidence });
   const templates = await api('/wp/v2/templates?context=edit&per_page=100');
   const parts = await api('/wp/v2/template-parts?context=edit&per_page=100');
   const pages = await api('/wp/v2/pages?context=edit&per_page=100');
@@ -25,6 +26,8 @@ export async function themeChecks(page, wpUrl, routes, report) {
   }
   const menus = [...templates, ...parts, ...pages].flatMap((p) => [...p.content.raw.matchAll(/<!-- wp:navigation\b([^]*?)-->/g)].map((m) => m[1]));
   if (!menus.length || menus.some((m) => !navigation.some((n) => m.includes(`"ref":${n.id}`)))) fail('theme_saved_navigation', { menus, saved: navigation.map((n) => n.id) });
+  const tokens = styleTokens([...templates, ...parts, ...pages].map((p) => p.content.raw).join('\n'));
+  if (tokens.share > QUALITY.literal_share) fail('theme_literal_style', { ...tokens, threshold: QUALITY.literal_share, measure: { value: tokens.share, limit: QUALITY.literal_share } });
   const themes = await api('/wp/v2/themes?status=active');
   const theme = themes[0]?.stylesheet;
   if (!theme) throw new Error('Active theme unavailable');
@@ -55,6 +58,15 @@ export async function themeChecks(page, wpUrl, routes, report) {
     return snapshots;
   };
   try {
+    // The CSS each route loads, before the restyle below changes Global Styles.
+    for (const route of routes) {
+      await front.goto(new URL(route, wpUrl).href);
+      const css = themeCss(await front.evaluate(async () => [
+        ...await Promise.all([...document.querySelectorAll('link[rel=stylesheet]')].map(async (l) => ({ href: l.href, bytes: (await (await fetch(l.href)).text()).length }))),
+        ...[...document.querySelectorAll('style')].map((s) => ({ id: s.id, bytes: s.textContent.length })),
+      ]));
+      if (css.kb > QUALITY.theme_css_kb) report({ stage: 'theme', check: 'theme_css_weight', owner_repo: 'blocks-engine', subject: 'theme_css_weight', route, evidence: { ...css, threshold_kb: QUALITY.theme_css_kb, measure: { value: css.kb, limit: QUALITY.theme_css_kb } } });
+    }
     const before = await observe();
     const styles = structuredClone(original.styles || {});
     styles.color = { ...styles.color, background: '#132435', text: '#e1d2c3' };

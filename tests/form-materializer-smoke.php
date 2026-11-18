@@ -78,9 +78,33 @@ $radio_groups = array(
 	'fieldset legend'       => '<fieldset><legend>Pick an area</legend>%s</fieldset>',
 	'aria group name'       => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
 	'plain preceding label' => '<div><label>Pick an area</label>%s</div>',
+	'single radio declined' => '<div role="radiogroup" aria-label="Pick an area">%s</div>',
+	'bootstrap reused ids'  => '<div class="col"><label class="form-label">Tell us about yourself</label><div id="who">%s</div></div><div class="col"><label class="form-label">How did you hear about us</label><div id="heard">%s</div></div>',
+	'bootstrap six options' => '<div><label>Tell us about yourself</label><div id="g">%s</div></div>',
 );
 foreach ( $radio_groups as $case => $group ) {
 	$radios = '<label><input type="radio" name="area" value="north"> North</label><label><input type="radio" name="area" value="south"> South</label>';
+	if ( 'single radio declined' === $case ) {
+		$radios = '<label><input type="radio" name="area" value="north"> North</label>';
+	}
+	$expected_options = array( 'North', 'South' );
+	$expected_label = 'Pick an area';
+	if ( 'bootstrap six options' === $case ) {
+		$expected_options = array( 'Publisher', 'Author', 'Corporate', 'Editor', 'Agent', 'Other' );
+		$expected_label = 'Tell us about yourself';
+		$radios = '';
+		foreach ( $expected_options as $i => $label ) {
+			$radios .= '<div class="form-check"><input type="radio" name="who" id="o' . $i . '" value="' . $label . '"><label for="o' . $i . '">' . $label . '</label></div>';
+		}
+	}
+	if ( 'bootstrap reused ids' === $case ) {
+		$expected_options = array( 'Publisher', 'Author', 'Other' );
+		$radios = '';
+		foreach ( $expected_options as $label ) {
+			$radios .= '<div class="form-check"><input class="form-check-input" type="radio" name="who" id="' . strtolower( $label ) . '" value="' . $label . '" required><label class="form-check-label" for="' . strtolower( $label ) . '">' . $label . '</label></div>';
+		}
+		$group = sprintf( $group, $radios, str_replace( 'name="who"', 'name="heard"', $radios ) );
+	}
 	$html   = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Radio group</title></head><body><main><form action="/submit" method="post"><div><label for="email">Email</label><input type="email" id="email" name="email"></div>' . sprintf( $group, $radios ) . '<button type="submit">Send</button></form></main></body></html>';
 	$plan   = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray()['source_reports']['wordpress_site_plan'];
 	$decl   = current( array_filter( $plan['runtime_declarations'], static fn( array $row ): bool => 'forms' === ( $row['type'] ?? null ) ) );
@@ -96,9 +120,50 @@ foreach ( $radio_groups as $case => $group ) {
 		return $found;
 	};
 	$fields = $find( parse_blocks( (string) $radio['block_markup'] ) );
+	if ( 'single radio declined' === $case ) {
+		$checks['declined radio never emits an option-less field'] = array() === $fields;
+		$checks['declined radio reports a named loss'] = str_contains( json_encode( $radio ), 'radio_group_without_options' );
+		continue;
+	}
+	if ( 'bootstrap reused ids' === $case ) {
+		$checks[ $case . ' maps both groups' ] = 'mapped' === $radio['status'] && 2 === count( $fields );
+		foreach ( array( 'Tell us about yourself', 'How did you hear about us' ) as $index => $label ) {
+			$checks[ $case . ' caption ' . $index ] = array( 'label' => $label, 'requiredIndicator' => false, 'className' => 'form-label' ) === ( $fields[ $index ]['innerBlocks'][0]['attrs'] ?? null );
+			$checks[ $case . ' options ' . $index ] = $expected_options === ( $fields[ $index ]['attrs']['options'] ?? null ) && $expected_options === array_column( array_column( $fields[ $index ]['innerBlocks'][1]['innerBlocks'] ?? array(), 'attrs' ), 'label' );
+		}
+		$copy = array();
+		$collect = static function ( array $blocks ) use ( &$collect, &$copy ): void {
+			foreach ( $blocks as $block ) {
+				if ( empty( $block['innerBlocks'] ) ) {
+					$text = trim( html_entity_decode( strip_tags( $block['innerHTML'] ?? '' ) ) );
+					$text = '' !== $text ? $text : ( $block['attrs']['label'] ?? '' );
+					$copy[] = $text;
+				}
+				$collect( $block['innerBlocks'] ?? array() );
+			}
+		};
+		$collect( parse_blocks( (string) $radio['block_markup'] ) );
+		$counts = array_count_values( $copy );
+		$checks[ $case . ' visible captions once' ] = 1 === ( $counts['Tell us about yourself'] ?? 0 ) && 1 === ( $counts['How did you hear about us'] ?? 0 );
+		$checks[ $case . ' consumes every local option label' ] = 2 === ( $counts['Other'] ?? 0 ) && ! str_contains( $radio['block_markup'], 'wp:custom/authored-label' );
+		continue;
+	}
 	$checks[ $case . ' radio group maps to one radio field' ] = 'mapped' === $radio['status'] && 1 === count( $fields );
-	$checks[ $case . ' radio field carries one option per input' ] = array( 'North', 'South' ) === ( $fields[0]['attrs']['options'] ?? null ) && array( 'North', 'South' ) === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
-	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => 'Pick an area' ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
+	$checks[ $case . ' radio field carries one option per input' ] = $expected_options === ( $fields[0]['attrs']['options'] ?? null ) && $expected_options === array_map( static fn( array $option ): string => (string) ( $option['attrs']['label'] ?? '' ), $fields[0]['innerBlocks'][1]['innerBlocks'] ?? array() );
+	$checks[ $case . ' radio options carry the saved block class' ] = "\n<ul class=\"wp-block-jetpack-options\">" === ( $fields[0]['innerBlocks'][1]['innerContent'][0] ?? null );
+	$checks[ $case . ' radio field is named by the group label' ] = array( 'label' => $expected_label ) === ( $fields[0]['innerBlocks'][0]['attrs'] ?? null );
+}
+
+// Options save through useBlockProps.save(), unlike other div/ul wrappers.
+foreach ( array( 'ul', 'div' ) as $wrapper ) {
+	foreach ( array( array(), array( 'className' => '' ), array( 'className' => '  custom-choice  ' ), array( 'className' => 'choice&more' ) ) as $attrs ) {
+		$custom = trim( $attrs['className'] ?? '' );
+		foreach ( array( 'jetpack/options', 'jetpack/other' ) as $name ) {
+			$block = Static_Site_Importer_Form_Field_Markup::parsed_block( array( 'name' => $name, 'attrs' => $attrs, 'wrapper' => $wrapper ) );
+			$class = 'jetpack/options' === $name ? ' class="wp-block-jetpack-options' . ( '' !== $custom ? ' ' . htmlspecialchars( $custom, ENT_QUOTES, 'UTF-8' ) : '' ) . '"' : '';
+			$checks[ $name . ' ' . $wrapper . ' saved wrapper ' . json_encode( $attrs ) ] = "\n<" . $wrapper . $class . '>' === $block['innerContent'][0] && '</' . $wrapper . ">\n" === $block['innerContent'][1] && $attrs === $block['attrs'];
+		}
+	}
 }
 
 // A donation-intent form materializes as the Jetpack Donations block and its

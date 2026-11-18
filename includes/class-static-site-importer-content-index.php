@@ -45,7 +45,7 @@ final class Static_Site_Importer_Content_Index {
 	 *
 	 * @param array<string,mixed> $artifact       Website artifact.
 	 * @param object|null         $payload_reader Opaque payload reference reader.
-	 * @return array{artifact:array<string,mixed>,aliases:array<int,array{from:string,to:string}>}|WP_Error
+	 * @return array{artifact:array<string,mixed>,aliases:array<int,array{from:string,to:string}>,findings:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function extract( array $artifact, ?object $payload_reader = null ) {
 		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
@@ -77,6 +77,7 @@ final class Static_Site_Importer_Content_Index {
 			return array(
 				'artifact' => $artifact,
 				'aliases'  => array(),
+				'findings' => array(),
 			);
 		}
 
@@ -86,10 +87,17 @@ final class Static_Site_Importer_Content_Index {
 				$by_route[ Static_Site_Importer_Source_Route::public_source_route( (string) $file['path'] ) ] = $position;
 			}
 		}
-		$rules = array();
+		$rules    = array();
+		$claimed  = array();
+		$findings = array();
 		foreach ( $index['posts'] ?? array() as $post ) {
 			$position = is_array( $post ) ? self::file_position( $post['path'] ?? null, $by_route ) : null;
 			if ( null === $position || ! in_array( $post['kind'] ?? null, array( 'post', 'page' ), true ) ) {
+				continue;
+			}
+			$source = self::url_path( $post['permalink'] ?? null );
+			$route  = self::canonical_route( $source );
+			if ( ! self::claim_route( $route, (string) $kept[ $position ]['path'], $claimed, $findings ) ) {
 				continue;
 			}
 			$declared = array();
@@ -98,6 +106,9 @@ final class Static_Site_Importer_Content_Index {
 					$declared[ $key ] = trim( $post[ $key ] );
 				}
 			}
+			if ( is_string( $post['title'] ?? null ) ) {
+				$declared['title'] = trim( $post['title'] );
+			}
 			if ( is_array( $post['terms'] ?? null ) ) {
 				$terms = array_values( array_filter( $post['terms'], static fn( mixed $term ): bool => is_string( $term ) && '' !== trim( $term ) ) );
 				if ( array() !== $terms ) {
@@ -105,8 +116,6 @@ final class Static_Site_Importer_Content_Index {
 				}
 			}
 			$metadata = array( 'post_type' => $post['kind'] );
-			$source   = self::url_path( $post['permalink'] ?? null );
-			$route    = self::canonical_route( $source );
 			if ( '' !== $route ) {
 				$metadata['route_path'] = $route;
 				if ( self::differs( $source, $route, (string) $post['path'] ) ) {
@@ -118,14 +127,41 @@ final class Static_Site_Importer_Content_Index {
 			}
 			$kept[ $position ]['metadata'] = array_merge( is_array( $kept[ $position ]['metadata'] ?? null ) ? $kept[ $position ]['metadata'] : array(), $metadata );
 		}
+		$term_archives   = array();
+		$archive_targets = array();
+		$removed         = array();
 		foreach ( $index['terms'] ?? array() as $term ) {
 			$position = is_array( $term ) && 'term-archive' === ( $term['kind'] ?? null ) && is_string( $term['name'] ?? null ) && '' !== trim( $term['name'] ) ? self::file_position( $term['path'] ?? null, $by_route ) : null;
 			if ( null === $position ) {
 				continue;
 			}
-			$metadata = array( 'declared_content' => array( 'term_archive' => array( 'name' => trim( $term['name'] ) ) ) );
-			$source   = self::url_path( $term['sourceUrl'] ?? null );
-			$route    = self::canonical_route( $source );
+			$source = self::url_path( $term['sourceUrl'] ?? null );
+			$route  = self::canonical_route( $source );
+			$name   = trim( $term['name'] );
+			$key    = strtolower( $name );
+			$owner  = $term_archives[ $key ] ?? null;
+			if ( null !== $owner && $name !== $owner['name'] && $position !== $owner['position'] ) {
+				// Case-variant names identify the same term. Keep one archive
+				// capture, and bind every spelling and file alias to that capture.
+				$target = '/' . Static_Site_Importer_Source_Route::public_source_route( $owner['path'] );
+				$archive_targets[ self::url_path( $term['path'] ) ] = $target;
+				$rules[] = '/' . Static_Site_Importer_Source_Route::public_source_route( (string) $term['path'] ) . ' ' . $target;
+				if ( '' !== $source ) {
+					$rules[] = $source . ' ' . $target;
+				}
+				$removed[] = $kept[ $position ];
+				unset( $kept[ $position ] );
+				continue;
+			}
+			if ( ! self::claim_route( $route, (string) $kept[ $position ]['path'], $claimed, $findings ) ) {
+				continue;
+			}
+			$term_archives[ $key ] = array(
+				'name'     => $name,
+				'position' => $position,
+				'path'     => (string) $kept[ $position ]['path'],
+			);
+			$metadata              = array( 'declared_content' => array( 'term_archive' => array( 'name' => $name ) ) );
 			if ( '' !== $route ) {
 				$metadata['route_path'] = $route;
 				if ( self::differs( $source, $route, (string) $term['path'] ) ) {
@@ -137,9 +173,14 @@ final class Static_Site_Importer_Content_Index {
 		foreach ( $index['redirects'] ?? array() as $redirect ) {
 			$from = is_array( $redirect ) ? self::url_path( $redirect['from'] ?? null ) : '';
 			$to   = is_array( $redirect ) ? self::url_path( $redirect['to'] ?? null ) : '';
+			$to   = $archive_targets[ $to ] ?? $to;
 			if ( '' !== $from && '' !== $to ) {
 				$rules[] = $from . ' ' . $to;
 			}
+		}
+		$kept = self::without_orphaned_parts( $kept, $removed, $payload_reader );
+		if ( $kept instanceof WP_Error ) {
+			return $kept;
 		}
 		$artifact['files'] = array_values( $kept );
 
@@ -147,7 +188,72 @@ final class Static_Site_Importer_Content_Index {
 			'artifact' => $artifact,
 			// Same-site, de-duplicated and self-redirect-free, like `_redirects`.
 			'aliases'  => Static_Site_Importer_Redirects_Manifest::parse( implode( "\n", $rules ) ),
+			'findings' => $findings,
 		);
+	}
+
+	/**
+	 * Drop the `/parts/` includes that only collapsed archive captures used.
+	 *
+	 * An orphaned part has no page to bind to, so the compiler would emit it
+	 * as a standalone template part nobody renders.
+	 *
+	 * @param array<int,mixed>               $kept           Retained artifact files.
+	 * @param array<int,array<string,mixed>> $removed        Collapsed archive files.
+	 * @param object|null                    $payload_reader Opaque payload reference reader.
+	 * @return array<int,mixed>|WP_Error
+	 */
+	private static function without_orphaned_parts( array $kept, array $removed, ?object $payload_reader ) {
+		$parts = array();
+		foreach ( $kept as $position => $file ) {
+			if ( is_array( $file ) && is_string( $file['path'] ?? null ) && preg_match( '~(?:^|/)(parts/[a-zA-Z0-9_-]+\.html)$~D', $file['path'], $match ) ) {
+				$parts[ '/' . $match[1] ] = $position;
+			}
+		}
+		$includes = static function ( array $file ) use ( $payload_reader, $parts ) {
+			$content = Static_Site_Importer_Content_Policy::file_bytes( $file, $payload_reader );
+			if ( $content instanceof WP_Error ) {
+				return $content;
+			}
+			preg_match_all( '~<!--#include virtual="(/parts/[a-zA-Z0-9_-]+\.html)" -->~', (string) $content, $matches );
+			return array_intersect_key( $parts, array_flip( $matches[1] ) );
+		};
+		// Parts reached from collapsed captures, including nested parts.
+		$orphans = array();
+		$queue   = $removed;
+		while ( array() !== $queue ) {
+			$reached = $includes( array_shift( $queue ) );
+			if ( $reached instanceof WP_Error ) {
+				return $reached;
+			}
+			foreach ( $reached as $virtual => $position ) {
+				if ( ! isset( $orphans[ $virtual ] ) ) {
+					$orphans[ $virtual ] = $position;
+					$queue[]             = $kept[ $position ];
+				}
+			}
+		}
+		if ( array() === $orphans ) {
+			return $kept;
+		}
+		// Any retained HTML document outside the orphan set keeps what it includes alive.
+		$queue = array();
+		foreach ( $kept as $position => $file ) {
+			if ( is_array( $file ) && is_string( $file['path'] ?? null ) && preg_match( '/\.html?$/i', $file['path'] ) && ! in_array( $position, $orphans, true ) ) {
+				$queue[] = $file;
+			}
+		}
+		while ( array() !== $queue && array() !== $orphans ) {
+			$reached = $includes( array_shift( $queue ) );
+			if ( $reached instanceof WP_Error ) {
+				return $reached;
+			}
+			foreach ( array_intersect_key( $orphans, $reached ) as $virtual => $position ) {
+				unset( $orphans[ $virtual ] );
+				$queue[] = $kept[ $position ];
+			}
+		}
+		return array_diff_key( $kept, array_flip( $orphans ) );
 	}
 
 	/**
@@ -173,6 +279,36 @@ final class Static_Site_Importer_Content_Index {
 		return $aliases;
 	}
 
+	/**
+	 * Posts precede terms; the first declaration of a canonical route wins.
+	 * A skipped entry must not stamp content metadata or add an alias either.
+	 *
+	 * @param string                          $route    Canonical route, or '' when absent.
+	 * @param string                          $path     Artifact file path.
+	 * @param array<string,string>            $claimed  Route owners.
+	 * @param array<int,array<string,mixed>>   $findings Intake warnings.
+	 */
+	private static function claim_route( string $route, string $path, array &$claimed, array &$findings ): bool {
+		if ( '' === $route ) {
+			return true;
+		}
+		if ( isset( $claimed[ $route ] ) ) {
+			$findings[] = array(
+				'code'        => 'content_index_route_skipped',
+				'type'        => 'static-site-importer',
+				'severity'    => 'warning',
+				'stage'       => 'content_index',
+				'source_path' => $path,
+				'path'        => $path,
+				'reason_code' => 'duplicate_canonical_route',
+				'message'     => sprintf( 'Skipped content-index declaration for %1$s: route %2$s is already claimed by %3$s; the file keeps its file-derived route.', $path, $route, $claimed[ $route ] ),
+			);
+			return false;
+		}
+		$claimed[ $route ] = $path;
+		return true;
+	}
+
 	/** @param array<string,int> $by_route */
 	private static function file_position( mixed $path, array $by_route ): ?int {
 		if ( ! is_string( $path ) || '' === $path ) {
@@ -194,19 +330,24 @@ final class Static_Site_Importer_Content_Index {
 	/**
 	 * A source URL path as a canonical plan route: lowercase `[a-z0-9-]`
 	 * segments without a document extension, as WordPress slugs are spelled.
+	 * Return no explicit route if a non-empty segment is lost; let the compiler derive it.
 	 */
 	private static function canonical_route( string $path ): string {
 		$path     = (string) preg_replace( '/\.html?$/i', '', $path );
 		$segments = array();
 		foreach ( explode( '/', $path ) as $segment ) {
+			if ( '' === $segment ) {
+				continue;
+			}
 			$segment = rawurldecode( $segment );
 			if ( function_exists( 'remove_accents' ) ) {
 				$segment = remove_accents( $segment );
 			}
 			$segment = trim( substr( trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $segment ) ), '-' ), 0, 200 ), '-' );
-			if ( '' !== $segment ) {
-				$segments[] = $segment;
+			if ( '' === $segment ) {
+				return '';
 			}
+			$segments[] = $segment;
 		}
 		return array() === $segments ? '' : '/' . implode( '/', $segments );
 	}

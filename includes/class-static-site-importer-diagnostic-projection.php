@@ -99,8 +99,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 			$provider = isset( $report['provider'] ) && is_scalar( $report['provider'] ) ? (string) $report['provider'] : '';
 			foreach ( array(
-				'forms'    => 'form',
-				'products' => 'product',
+				'forms'            => 'form',
+				'products'         => 'product',
+				'product_listings' => 'product_listing',
 			) as $collection => $entity_type ) {
 				foreach ( is_array( $report[ $collection ] ?? null ) ? $report[ $collection ] : array() as $row ) {
 					if ( ! is_array( $row ) || ! Static_Site_Importer_Entity_Materializer_Registry::entity_result_declined( $row ) ) {

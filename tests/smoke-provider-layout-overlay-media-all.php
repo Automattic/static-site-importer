@@ -158,4 +158,27 @@ $range_result = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph,
 $assert( 1 === preg_match( '/@media screen and \(min-width: 1px\) and \(max-width: 750px\)\{[^{}]*\.ssi-node-000000000000 > \.wp-block-button__link\{[^}]*font-size:15px/', (string) ( $range_result['css'] ?? '' ) ), 'an and-chained range compiles as its own breakpoint: ' . json_encode( $range_result ) );
 $assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $range_result['overlay'] ), 'the range overlay is admitted' );
 
+// Squarespace sizes its buttons per orientation, in a query list, with the
+// whitespace its stylesheet keeps; each query compiles in one spelling.
+$oriented        = array(
+	'controls' => array(),
+	'variants' => array_map(
+		static fn( string $query, string $size ): array => array(
+			'index'       => 0,
+			'role'        => 'control',
+			'condition'   => array(
+				'kind'  => 'media',
+				'query' => $query,
+			),
+			'style_patch' => array( 'font_size' => $size ),
+		),
+		array( 'screen and (max-width:  767px ) and (orientation: portrait)', 'screen and (min-width:  768px ),screen and (orientation:landscape)' ),
+		array( '16px', '17.68px' )
+	),
+);
+$oriented_result = Static_Site_Importer_Form_Presentation_Overlay::compile( $graph, $map, $oriented );
+$oriented_css    = (string) ( $oriented_result['css'] ?? '' );
+$assert( str_contains( $oriented_css, '@media screen and (max-width: 767px) and (orientation: portrait){' ) && str_contains( $oriented_css, '@media screen and (min-width: 768px),screen and (orientation:landscape){' . $scope . $scope . ' .ssi-node-000000000000 > .wp-block-button__link{font-size:17.68px' ), 'orientation queries and query lists compile as breakpoints: ' . json_encode( $oriented_result ) );
+$assert( null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $oriented_result['overlay'] ), 'the oriented overlay is admitted' );
+
 echo "provider layout overlay media all smoke passed ({$assertions} assertions)\n";

@@ -30,9 +30,25 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
-	private const MEDIA_FEATURE = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+	// Builders such as Squarespace pair a width with the viewport's orientation.
+	private const MEDIA_FEATURE = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|orientation: ?(?:portrait|landscape))\)';
 	// Builders such as Wix state a range as `screen and (min-width: 1px) and (max-width: 750px)`.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?' . self::MEDIA_FEATURE . '(?: and ' . self::MEDIA_FEATURE . '){0,3}';
+
+	/** Property families whose members set each other through shorthand or logical forms. */
+	private const PROPERTY_FAMILY_ALIASES = array(
+		'top'     => 'inset',
+		'right'   => 'inset',
+		'bottom'  => 'inset',
+		'left'    => 'inset',
+		'row'     => 'gap',
+		'column'  => 'gap',
+		'columns' => 'gap',
+		'place'   => 'align',
+		'justify' => 'align',
+		'inline'  => 'width',
+		'block'   => 'height',
+	);
 
 	public const SURFACE_FRONT_END = 'front_end';
 	public const SURFACE_EDITOR    = 'editor';
@@ -322,7 +338,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			if ( 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
 				continue;
 			}
-			$condition = $variant['condition'] ?? null;
+			$condition = self::canonical_condition( $variant['condition'] ?? null );
 			if ( self::is_media_all( $condition ) ) {
 				$condition = null;
 			} elseif ( ! self::safe_condition( $condition ) || 'state' === ( $condition['kind'] ?? null ) ) {
@@ -560,7 +576,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			// It is still a patch: the base pass (or the reset pass above) already
 			// released provider defaults, so it must not repeat those resets after
 			// the base rule and undo the authored values there.
-			$condition = self::is_media_all( $variant['condition'] ?? null ) ? null : ( $variant['condition'] ?? null );
+			$condition = self::canonical_condition( $variant['condition'] ?? null );
+			$condition = self::is_media_all( $condition ) ? null : $condition;
 			if ( 'control_container' === $role ) {
 				$destinations = self::destinations_for( $pass, $index, 'control_container' );
 				if ( ! is_int( $index ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
@@ -725,7 +742,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	}
 
 	/**
-	 * Merge equivalent rules only across provably disjoint mapped node selectors.
+	 * Merge equivalent rules only across intervening rules that provably cannot
+	 * compete: disjoint mapped nodes, distinct subject elements, or declarations
+	 * in disjoint property families.
 	 *
 	 * @param string[] $rules Compiled rules in cascade order.
 	 * @return string[]
@@ -758,7 +777,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 					$merged              = true;
 					break;
 				}
-				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) ) {
+				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) && ! self::disjoint_subject_elements( $parts[2], $candidate[2] ) && ! self::disjoint_declarations( $parts[3], $candidate[3] ) ) {
 					break;
 				}
 			}
@@ -790,7 +809,10 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	 * Only simple, per-node boxes prove that two selector lists cannot compete.
 	 * A node's core/button link is its own box too: only that node's wrapper
 	 * holds it, so distinct nodes' links never share an element. A node's
-	 * placeholder belongs to that node's own control in the same way.
+	 * placeholder belongs to that node's own control in the same way. Labels
+	 * reached as `> label` are unclassed provider markup (the editor RichText or
+	 * a choice option label) under the node that carries the label class, and
+	 * the provider's required marker is likewise an unclassed span.
 	 *
 	 * @param string $left  First selector list.
 	 * @param string $right Second selector list.
@@ -801,7 +823,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		foreach ( array( $left, $right ) as $selectors ) {
 			$group = array();
 			foreach ( explode( ', ', $selectors ) as $selector ) {
-				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31})| > \.wp-block-button__link)?(?:::placeholder)?$/D', $selector, $match ) ) {
+				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31})| > \.wp-block-button__link| > label(?: > \.grunion-label-required)?| > \.grunion-label-required)?(?:::placeholder)?$/D', $selector, $match ) ) {
 					return false;
 				}
 				$group[] = $match[1];
@@ -809,6 +831,87 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$nodes[] = $group;
 		}
 		return ! array_intersect( $nodes[0], $nodes[1] );
+	}
+
+	/**
+	 * Selectors whose subjects name different element types never match one element.
+	 * Jetpack's editor option block is known markup too: the block `div` carrying
+	 * the choice-label marker holds the native checkbox and a label wrapper with the
+	 * label RichText `div` and the required `span`, so those roles never share an
+	 * element even where their tags agree.
+	 *
+	 * @param string $left  First selector list.
+	 * @param string $right Second selector list.
+	 * @return bool
+	 */
+	private static function disjoint_subject_elements( string $left, string $right ): bool {
+		$subjects = array();
+		foreach ( array( $left, $right ) as $selectors ) {
+			$group = array();
+			foreach ( explode( ', ', $selectors ) as $selector ) {
+				$subject = self::subject_element( $selector );
+				if ( null === $subject ) {
+					return false;
+				}
+				$group[] = $subject;
+			}
+			$subjects[] = $group;
+		}
+		foreach ( $subjects[0] as $one ) {
+			foreach ( $subjects[1] as $other ) {
+				if ( $one[0] === $other[0] && ( null === $one[1] || null === $other[1] || $one[1] === $other[1] ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The subject's element type, and its role in known provider markup if any.
+	 *
+	 * @param string $selector One complex selector.
+	 * @return array{0:string,1:?string}|null
+	 */
+	private static function subject_element( string $selector ): ?array {
+		foreach ( array(
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]*$/D' => array( 'div', 'option' ),
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]* > \.jetpack-field-option__label-wrapper > \.rich-text$/D' => array( 'div', 'option_label' ),
+			'/ \.ssi-source-choice-label--[A-Za-z_][A-Za-z0-9_-]* > \.jetpack-field-option__label-wrapper > \.required$/D' => array( 'span', 'option_required' ),
+		) as $pattern => $subject ) {
+			if ( preg_match( $pattern, $selector ) ) {
+				return $subject;
+			}
+		}
+		return preg_match( '/(?:^|[ >+~])([a-z][a-z0-9]*)(?:[.#][a-zA-Z0-9_-]+)*$/D', $selector, $match ) ? array( $match[1], null ) : null;
+	}
+
+	/**
+	 * Rules that set no common property family cannot override each other, so
+	 * their relative order never changes the cascade. Families are deliberately
+	 * coarse: shorthands, longhands, logical and physical forms share one.
+	 *
+	 * @param string $left  First declaration block.
+	 * @param string $right Second declaration block.
+	 * @return bool
+	 */
+	private static function disjoint_declarations( string $left, string $right ): bool {
+		$families = array();
+		foreach ( array( $left, $right ) as $declarations ) {
+			$group = array();
+			foreach ( explode( ';', $declarations ) as $declaration ) {
+				if ( '' === trim( $declaration ) ) {
+					continue;
+				}
+				if ( ! preg_match( '/^\s*(-[a-z]+-)?([a-z][a-z0-9-]*)\s*:/D', $declaration, $match ) ) {
+					return false;
+				}
+				$family  = strtok( $match[2], '-' );
+				$group[] = self::PROPERTY_FAMILY_ALIASES[ $family ] ?? $family;
+			}
+			$families[] = $group;
+		}
+		return ! in_array( 'all', array_merge( ...$families ), true ) && ! array_intersect( $families[0], $families[1] );
 	}
 
 	/**
@@ -960,7 +1063,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		}
 		// Provider dropdown chrome may only be suppressed within a generated
 		// select hook. Do not admit arbitrary declarations on provider icons.
-		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
+		if ( preg_match( '/^\.ssi-form-([a-f0-9]{12})(?:\.ssi-form-\1)? \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
 			return true;
 		}
 		$body = self::unwrap_condition( $rule );
@@ -1090,6 +1193,23 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		) === $condition;
 	}
 
+	/**
+	 * One spelling of a source query. CSS ignores whitespace inside its
+	 * parentheses and around its commas, and source stylesheets keep it
+	 * (Squarespace's `(max-width:  767px )`).
+	 */
+	private static function canonical_condition( mixed $condition ): mixed {
+		if ( ! is_array( $condition ) ) {
+			return $condition;
+		}
+		if ( 'all' === ( $condition['kind'] ?? null ) && is_array( $condition['conditions'] ?? null ) ) {
+			$condition['conditions'] = array_map( array( self::class, 'canonical_condition' ), $condition['conditions'] );
+		} elseif ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) && is_string( $condition['query'] ?? null ) ) {
+			$condition['query'] = (string) preg_replace( array( '/\s+/', '/\( /', '/ \)/', '/ ?, ?/' ), array( ' ', '(', ')', ',' ), trim( $condition['query'] ) );
+		}
+		return $condition;
+	}
+
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
 			return false;
@@ -1101,7 +1221,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			) === $condition;
 		}
 		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
-			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^' . self::MEDIA_FEATURE_QUERY . '$/D', $condition['query'] );
+			// A media query list holds when any of its queries does.
+			$list = 'media' === $condition['kind'] ? '(?:,(?&query)){0,127}' : '';
+			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^(?<query>' . self::MEDIA_FEATURE_QUERY . ')' . $list . '$/D', $condition['query'] );
 		}
 		return 'all' === ( $condition['kind'] ?? null ) && array_keys( $condition ) === array( 'kind', 'conditions' ) && is_array( $condition['conditions'] ) && count( $condition['conditions'] ) >= 2 && count( $condition['conditions'] ) <= 4 && array_is_list( $condition['conditions'] ) && ! array_filter( $condition['conditions'], static fn ( $part ): bool => ! self::safe_condition( $part ) );
 	}
@@ -1497,6 +1619,12 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
 			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
+			// A select restored to its native appearance draws its own chevron;
+			// the provider's decorative chevron inside the same hook then hides.
+			if ( str_ends_with( $destination['selector'], ' select' ) && preg_grep( '/^appearance:auto(?:!important)?$/', $declarations ) ) {
+				$icon    = self::surface_selector( $prefix, self::authoritative_presentation_selector( substr( $destination['selector'], 0, -strlen( ' select' ) ) ) ) . ' .jetpack-field-dropdown__icon{display:none}';
+				$rules[] = null === $condition || $state ? $icon : self::conditional_rule( $condition, $icon );
+			}
 		}
 		// A captured property outside every ordinary destination's own vocabulary
 		// (see `positioned_control_only_presentation_property_keys()`) is not a

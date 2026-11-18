@@ -75,6 +75,27 @@ test('imported Jetpack control frames paint inputs and phone shells, not label-c
   } finally { await browser.close(); }
 });
 
+test('imported product image links fill source aspect-ratio boxes without affecting native Woo images', async () => {
+  const fixture = JSON.parse(execFileSync('php', ['tests/smoke-woo-product-grid-template.php', '--image-browser-fixture'], { encoding: 'utf8' }));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const image = '<img width="256" height="340" alt="Product" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22340%22/%3E">';
+    // Woo's native linked product-image structure; classes come from the import.
+    const box = `<div class="wc-block-components-product-image ${fixture.imageClass}"><a href="/product/">${image}</a></div>`;
+    await page.setContent(`<style>${fixture.css}</style><article class="${fixture.cardClass}">${box}</article><aside>${box}</aside>`);
+    await page.locator('img').evaluateAll(images => Promise.all(images.map(img => img.decode())));
+    const geometry = await page.locator('article .card-img').evaluate(box => {
+      const rect = node => { const r = node.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
+      return { box: rect(box), link: rect(box.querySelector('a')), image: rect(box.querySelector('img')), fit: getComputedStyle(box.querySelector('img')).objectFit };
+    });
+    assert.deepEqual(geometry.link, geometry.box);
+    assert.deepEqual(geometry.image, geometry.box);
+    assert.equal(geometry.fit, 'cover');
+    assert.equal(await page.locator('aside a').evaluate(node => getComputedStyle(node).display), 'inline', 'native Woo blocks outside imported cards are untouched');
+  } finally { await browser.close(); }
+});
+
 const selectors = selector => Object.fromEntries(['source', 'frontend', 'editor'].map(surface => [surface, selector]));
 const map = { schema: 'static-site-importer/editor-presentation-map/v1', targets: [
   { id: 'form', role: 'region', selectors: selectors('form'), containers: selectors('main') },

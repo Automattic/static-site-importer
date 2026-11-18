@@ -1,20 +1,27 @@
 // What an editor gets: every imported page opened in the block editor, as the
-// editor parsed it. Each page lists its blocks with name, nesting depth, and
-// whether the editor validated it, plus the wrapper tags and attribute names a
-// generated block keeps (see shape.mjs). An invalid block shows "This block contains
-// unexpected or invalid content" and cannot be edited until recovered.
+// editor parsed it. Each page lists its blocks with name, nesting depth,
+// className and anchor, and whether the editor validated it, plus the wrapper
+// tags and attribute names a generated block keeps (see shape.mjs). An invalid
+// block shows "This block contains unexpected or invalid content" and cannot
+// be edited until recovered.
 //
 // The site is a disposable import: its first administrator gets a fresh
 // password for the session. `wpCli` runs WP-CLI against `site` by path.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
+import { listViewEvidence } from './list-view.mjs';
 import { themeChecks } from './theme.mjs';
+import { imageSubject } from './image-subject.mjs';
 
 // Text the user can edit: Gutenberg marks template and template-part blocks
 // shown around the post as inert, and a rich-text block is itself the
 // contenteditable element.
 const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/heading"])[contenteditable="true"]:not([inert])';
+
+// Each Replace probe saves the post and loads the frontend, so the probes are
+// bounded: a page with dozens of images must not dominate the whole run.
+const SAVED_IMAGE_PROBES = 5;
 
 export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const [command, ...prefix] = wpCli.split(/\s+/);
@@ -22,6 +29,15 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
   wp('user', 'update', user, `--user_pass=${pass}`, '--skip-email');
+  // The Welcome Guide is a modal over the whole editor: until dismissed, no
+  // toolbar button is reachable and no canvas block is clickable. Closing it
+  // after load raced its render, and a guide that opened late failed every
+  // editor check on every page as a site defect. Store it dismissed instead.
+  wp('user', 'meta', 'update', user, 'wp_persisted_preferences', JSON.stringify({ 'core/edit-post': { welcomeGuide: false } }), '--format=json');
+  // The editor checks use English accessible names: a translated admin UI
+  // times out on those selectors and reports site defects. Set only the probe
+  // user's locale so the site language and imported content stay unchanged.
+  wp('user', 'meta', 'update', user, 'locale', 'en_US');
   const pages = JSON.parse(wp('post', 'list', '--post_type=page', '--post_status=publish', '--fields=ID,url', '--format=json'));
 
   const browser = await chromium.launch();
@@ -35,18 +51,37 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
     const result = [];
     for (const { ID, url } of pages) {
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
-      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getEditorBlocks().length > 0, null, { timeout: 30_000 });
+      // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
+      // opens with zero blocks, and that is what an editor gets. The wait
+      // shares the navigation's budget: on a loaded runner an editor takes
+      // over 30s to boot, and a shorter wait reports a working editor as
+      // editor_unreachable and refutes the fix under test.
+      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.__unstableIsEditorReady?.(), null, { timeout: 120_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
-        const walk = (list, depth) => list.forEach((b) => { all.push({ name: b.name, valid: b.isValid, depth, wrappers: Array.isArray(b.attributes?.wrappers) ? b.attributes.wrappers.map((w) => ({ tagName: w?.tagName, attributes: Object.fromEntries(Object.keys(w?.attributes || {}).map((n) => [n, ''])) })) : undefined }); walk(b.innerBlocks, depth + 1); });
-        walk(window.wp.data.select('core/editor').getEditorBlocks(), 1);
+        const walk = (list, depth, parent) => list.forEach((b) => {
+          const { className, anchor } = b.attributes || {};
+          const at = all.push({ name: b.name, valid: b.isValid, depth, parent, ...(className ? { className } : {}), ...(anchor ? { anchor } : {}), wrappers: Array.isArray(b.attributes?.wrappers) ? b.attributes.wrappers.map((w) => ({ tagName: w?.tagName, attributes: Object.fromEntries(Object.keys(w?.attributes || {}).map((n) => [n, ''])) })) : undefined }) - 1;
+          walk(b.innerBlocks, depth + 1, at);
+        });
+        walk(window.wp.data.select('core/editor').getEditorBlocks(), 1, -1);
         return all;
       });
       const route = new URL(url).pathname;
-      const check = async (name, action) => {
-        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: String(error.message || error).slice(0, 500) }); }
+      // The subject is the check, so a finding's signature stays stable across
+      // imports; `image` names the failing image in the evidence, so a Replace
+      // failure is never anonymous. Upload paths carry the month and
+      // WordPress's -1/-2 duplicate suffixes, so they cannot be a signature.
+      const check = async (name, action, image) => {
+        try { await action(); } catch (error) {
+          // A Playwright call log ends with why an action failed (the element
+          // that intercepts pointer events, say): keep its head and its tail.
+          const text = String(error.message || error);
+          const evidence = error.evidence ?? (text.length > 1000 ? `${text.slice(0, 400)} … ${text.slice(-600)}` : text);
+          report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: image ? { image, error: evidence } : evidence });
+        }
       };
-      await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
+
       const canvas = page.locator('iframe[name="editor-canvas"]');
       const frame = await canvas.count() ? page.frameLocator('iframe[name="editor-canvas"]') : page;
       await check('editor_canvas_parity', async () => {
@@ -67,7 +102,10 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         await page.getByRole('button', { name: /document overview|list view/i }).first().click();
         const tree = page.locator('.block-editor-list-view-tree');
         await tree.waitFor();
-        if (blocks.filter((b) => b.name === 'core/group').length > blocks.length / 2 && Math.max(...blocks.map((b) => b.depth)) > 8) throw new Error('List View dominated by deeply nested groups');
+        // The fixed evidence string gave an agent no path, counts, or target,
+        // so its attempts were blind (issue #2956): report the counts and the
+        // deepest chain, whose classNames and anchors map to the capture's DOM.
+        if (blocks.filter((b) => b.name === 'core/group').length > blocks.length / 2 && Math.max(...blocks.map((b) => b.depth)) > 8) throw Object.assign(new Error('List View dominated by deeply nested groups'), { evidence: listViewEvidence(blocks) });
       });
       // Save real edits, then restore the exact original post even on failure.
       const original = wp('post', 'get', String(ID), '--field=post_content');
@@ -80,30 +118,55 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
           const front = await browser.newPage();
           try {
             await front.goto(url);
-            if (!(await front.locator('body').innerText()).includes(marker)) throw new Error('Saved text absent from frontend');
+            // textContent is the saved text as written; innerText applies CSS such as text-transform.
+            if (!(await front.locator('body').textContent()).includes(marker)) throw new Error('Saved text absent from frontend');
           } finally { await front.close(); }
         });
-        if (blocks.some((b) => b.name === 'core/image')) await check('editor_saved_image', async () => {
-          await frame.locator('[data-type="core/image"]:not([inert])').first().click();
-          await page.getByRole('button', { name: /replace/i }).first().click();
-          await page.getByRole('menuitem', { name: /media library/i }).click();
-          const dialog = page.getByRole('dialog');
-          await dialog.waitFor();
-          // The modal can open on "Upload files"; choosing from the library is a tab away.
-          await dialog.getByRole('tab', { name: /media library/i }).click();
-          const choices = dialog.locator('.attachment');
-          await choices.nth(1).waitFor();
-          await choices.nth(1).click();
-          await dialog.getByRole('button', { name: /select|replace/i }).last().click();
-          await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
-          const image = await frame.locator('[data-type="core/image"] img').first().getAttribute('src');
-          const front = await browser.newPage();
-          try {
-            await front.goto(url);
-            const paths = await front.locator('img').evaluateAll((images) => images.map((i) => new URL(i.src).pathname));
-            if (!image || !paths.includes(new URL(image, wpUrl).pathname)) throw new Error('Replacement image absent from frontend');
-          } finally { await front.close(); }
-        });
+        // Probe every non-inert image up to a small bound: a fix that moves a
+        // header (with its logo) into a template part used to shift this probe
+        // onto an unrelated image, and its Replace timeout was scored against
+        // the fix without naming any image at all. Each probe reports its own
+        // image by src or anchor, so a failure points at the defect.
+        if (blocks.some((b) => b.name === 'core/image')) {
+          const images = frame.locator('[data-type="core/image"]:not([inert])');
+          const probes = Math.min(await images.count(), SAVED_IMAGE_PROBES);
+          for (let index = 0; index < probes; index++) {
+            const image = images.nth(index);
+            const identity = await image.evaluate((figure) => ({ src: figure.querySelector('img')?.getAttribute('src') ?? null, anchor: figure.querySelector('a[href]')?.getAttribute('href') ?? null })).catch(() => ({}));
+            await check('editor_saved_image', async () => {
+              await image.click();
+              await page.getByRole('button', { name: /replace/i }).first().click();
+              await page.getByRole('menuitem', { name: /media library/i }).click();
+              const dialog = page.getByRole('dialog');
+              await dialog.waitFor();
+              // The modal can open on "Upload files"; choosing from the library is a tab away.
+              await dialog.getByRole('tab', { name: /media library/i }).click();
+              // Replace opens with the image's current attachment selected, and
+              // clicking a selected attachment deselects it, leaving Select
+              // disabled: choose one that is not selected, and wait for it to
+              // be checked before selecting.
+              const choice = dialog.locator('.attachment:not(.selected)').first();
+              await choice.waitFor();
+              await choice.click();
+              await dialog.locator('.attachment[aria-checked="true"]').first().waitFor();
+              await dialog.getByRole('button', { name: /select|replace/i }).last().click();
+              await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
+              const replaced = await image.locator('img').first().getAttribute('src');
+              const front = await browser.newPage();
+              try {
+                await front.goto(url);
+                const paths = await front.locator('img').evaluateAll((list) => list.map((i) => new URL(i.src).pathname));
+                if (!replaced || !paths.includes(new URL(replaced, wpUrl).pathname)) throw new Error('Replacement image absent from frontend');
+              } finally { await front.close(); }
+            }, imageSubject(wpUrl, identity, index));
+            // A failed probe can leave the media modal open: dismiss it so the
+            // next probe fails on its own image, not on a leftover overlay.
+            if (await page.getByRole('dialog').count()) {
+              await page.keyboard.press('Escape');
+              await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 2500 }).catch(() => {});
+            }
+          }
+        }
       } finally {
         const file = `${site}/.import-loop-restore-${ID}.html`;
         const { writeFileSync, unlinkSync } = await import('node:fs');

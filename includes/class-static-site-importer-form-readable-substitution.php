@@ -919,18 +919,59 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			}
 		}
 		foreach ( $block['innerBlocks'] ?? array() as $slot => $child ) {
+			// A sibling option label belongs to the control in this wrapper,
+			// even when another group reuses its authored id.
+			if ( str_ends_with( (string) ( $child['blockName'] ?? '' ), '/authored-label' ) && 1 === count( self::control_indices( $block ) ) ) {
+				foreach ( self::control_indices( $block ) as $index ) {
+					$control = $state->controls[ $index ] ?? array();
+					if ( 'radio' === ( $control['type'] ?? '' ) && ( isset( $state->radio_groups['groups'][ $index ] ) || isset( $state->suppressed_controls[ $index ] ) ) && '' !== ( $control['id'] ?? '' ) && ( $child['attrs']['htmlFor'] ?? null ) === $control['id'] ) {
+						$consumed[ $slot ] = true;
+					}
+				}
+			}
 			if ( 'core/paragraph' !== ( $child['blockName'] ?? '' ) || isset( $child['form_control_index'] ) ) {
 				continue;
 			}
 			$next    = $block['innerBlocks'][ $slot + 1 ] ?? array();
-			$indices = self::control_indices( $next );
+			$indices = array_values( array_filter( self::control_indices( $next ), static fn( int $index ): bool => ! isset( $state->suppressed_controls[ $index ] ) ) );
 			if ( 1 !== count( $indices ) ) {
 				continue;
 			}
 			$index = $indices[0];
 			$field = $state->field_blocks[ $index ] ?? array();
 			$text  = trim( html_entity_decode( wp_strip_all_tags( $child['innerHTML'] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			// A separate group caption becomes the field caption, at this
+			// source position, rather than also surviving as paragraph copy.
+			$group = $state->radio_groups['groups'][ $index ] ?? null;
+			if ( is_array( $group ) && '' !== $text && ( $group['label'] ?? null ) === $text ) {
+				$state->field_blocks[ $index ] = self::with_legend_caption( $field, $child['innerHTML'] ?? '' );
+				$consumed[ $slot ]             = true;
+				continue;
+			}
 			if ( '' === $text || ( $field['attrs']['helpText'] ?? null ) !== $text ) {
+				continue;
+			}
+			// An unlabelled control's preceding copy is its visible caption,
+			// not help that Jetpack can discard from inside the field block.
+			// Only promote copy already bound as this field's description;
+			// explicit labels and unrelated paragraphs keep their contracts.
+			$control = $state->controls[ $index ] ?? array();
+			if ( '' === trim( (string) ( $control['label'] ?? '' ) ) && empty( $control['label_id'] ) ) {
+				foreach ( $state->field_blocks[ $index ]['innerBlocks'] ?? array() as $key => $label ) {
+					if ( 'jetpack/label' !== ( $label['name'] ?? '' ) ) {
+						continue;
+					}
+					$attrs          = &$state->field_blocks[ $index ]['innerBlocks'][ $key ]['attrs'];
+					$attrs['label'] = $text;
+					unset( $attrs['metadata']['blockVisibility'] );
+					if ( empty( $attrs['metadata'] ) ) {
+						unset( $attrs['metadata'] );
+					}
+					$attrs = array_replace( $attrs, array_intersect_key( $child['attrs'] ?? array(), array_flip( array( 'className', 'style' ) ) ) );
+					unset( $attrs );
+				}
+				unset( $state->field_blocks[ $index ]['attrs']['helpText'] );
+				$consumed[ $slot ] = true;
 				continue;
 			}
 			self::insert_description( $state->field_blocks[ $index ], array(
@@ -962,7 +1003,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		if ( ! $title instanceof DOMElement || trim( $title->textContent ) !== trim( $root->textContent ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
 			return $field;
 		}
-		$class = trim( $title->getAttribute( 'class' ) );
+		$class = trim( str_replace( 'blocks-engine-synthetic-paragraph', '', $title->getAttribute( 'class' ) ) );
 		foreach ( $field['innerBlocks'] ?? array() as $key => $child ) {
 			if ( 'jetpack/label' !== ( $child['name'] ?? '' ) ) {
 				continue;

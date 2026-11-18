@@ -34,7 +34,9 @@ require_once WP_PLUGIN_DIR . '/static-site-importer/static-site-importer.php';
 require_once WP_PLUGIN_DIR . '/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
 require_once WP_PLUGIN_DIR . '/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 $artifact = json_decode(base64_decode('${Buffer.from(JSON.stringify(artifact)).toString('base64')}'), true);
-$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact($artifact, array('slug' => '${slug}', 'activate' => true, 'overwrite' => true));
+$source = static_site_importer_source_runtime($artifact);
+if (is_wp_error($source)) { throw new RuntimeException($source->get_error_message()); }
+$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact($source['artifact'], array('slug' => '${slug}', 'activate' => true, 'overwrite' => true, 'source_metadata' => $source['source_metadata']));
 if (is_wp_error($compiled)) { throw new RuntimeException($compiled->get_error_message()); }
 $compiled['args']['source_metadata']['source_path'] = 'https://studio.example/';
 $result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize($compiled['plan'], $compiled['args']);
@@ -57,6 +59,17 @@ echo wp_json_encode(array('thumbnail' => $page ? (int) get_post_thumbnail_id($pa
     assert.match(socialSvg.lost[0].url, /\/media\/social\.svg$/);
     const sourceOrigin = await run('social-source', 'https://studio.example/media/missing.jpg');
     assert.equal(sourceOrigin.error, 'route_social_image_unresolved', JSON.stringify(sourceOrigin));
+    const omittedUrl = 'https://studio.example/default-og-image.png';
+    const declaredLoss = await run('social-declared-loss', omittedUrl, [{
+      path: 'website/source-findings.json',
+      content: JSON.stringify({
+        schema: 'static-site-importer/source-findings/v1',
+        findings: [{ code: 'image_resource_unresolved', severity: 'error', unit: 'asset', loss_class: 'omitted_unit', location: { url: omittedUrl }, message: 'Error: HTTP 404', owning_layer: 'data-liberation-agent' }],
+      }),
+    }]);
+    assert.equal(declaredLoss.status, 'completed', JSON.stringify(declaredLoss));
+    assert.equal(declaredLoss.thumbnail, 0, 'a declared source loss imports without a thumbnail');
+    assert.deepEqual(declaredLoss.lost, [{ reason_code: 'route_social_image_not_retained', source_path: 'website/index.html', key: 'og:image', url: omittedUrl }]);
     const image = 'https://images.cdn.example/photo.jpg?fm=jpg&q=85';
     const thirdParty = await run('social-third-party', image);
     assert.equal(thirdParty.status, 'completed', JSON.stringify(thirdParty));

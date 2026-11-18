@@ -1,20 +1,38 @@
 {
   "blocks-engine": {
     "github": "Automattic/blocks-engine",
-    "verify": "cd php-transformer && composer test:canonical && cd tools/visual-parity && npm ci --silent && npm test",
+    "branch": "trunk",
     "predicate_root": "php-transformer",
+    "candidate": {
+      "slot": "transformer",
+      "paths": [
+        "php-transformer"
+      ]
+    },
     "contracts": "gates/blocks-engine-contracts.sh",
-    "release_owned": ["php-transformer/VERSION", "php-transformer/CHANGELOG.md", "php-transformer/php-transformer.php"],
     "stage": "materialization"
   },
   "static-site-importer": {
     "github": "Automattic/static-site-importer",
-    "verify": "npm ci && npm test",
+    "candidate": {
+      "slot": "importer",
+      "paths": [
+        "static-site-importer.php",
+        "includes"
+      ]
+    },
+    "branch": "main",
     "stage": "import"
   },
   "data-liberation-agent": {
     "github": "Automattic/data-liberation-agent",
-    "verify": "npm ci && npx tsc --noEmit && npm test",
+    "branch": "main",
+    "candidate": {
+      "slot": "client",
+      "paths": [
+        "."
+      ]
+    },
     "stage": "capture"
   }
 }

@@ -45,15 +45,15 @@ final class Static_Site_Importer_Image_Assets {
 				return $bytes;
 			}
 			if ( ! is_string( $bytes ) || strlen( $bytes ) > 32 * 1024 * 1024 ) {
-				return self::invalid();
+				return self::invalid( 'report_unreadable', (string) ( $file['path'] ?? '' ) );
 			}
 			$data = json_decode( $bytes, true );
 			if ( ! is_array( $data ) ) {
-				return self::invalid();
+				return self::invalid( 'report_not_json', (string) ( $file['path'] ?? '' ) );
 			}
 			if ( 'image-assets.json' === $name ) {
 				if ( 1 !== ( $data['version'] ?? null ) || ! is_array( $data['images'] ?? null ) ) {
-					return self::invalid();
+					return self::invalid( 'report_schema', (string) ( $file['path'] ?? '' ) );
 				}
 				$records = $data['images'];
 			} else {
@@ -61,7 +61,7 @@ final class Static_Site_Importer_Image_Assets {
 				$files[] = $file;
 				if ( null === $records ) {
 					if ( 'blocks-engine-capture/capture-receipt/v1' !== ( $data['schema'] ?? null ) || ! is_array( $data['assets'] ?? null ) ) {
-						return self::invalid();
+						return self::invalid( 'receipt_schema', (string) ( $file['path'] ?? '' ) );
 					}
 					$records = array_values( array_filter( $data['assets'], static fn( mixed $asset ): bool => is_array( $asset ) && array_key_exists( 'original', $asset ) ) );
 				}
@@ -88,7 +88,7 @@ final class Static_Site_Importer_Image_Assets {
 		}
 		foreach ( $records as $record ) {
 			if ( ! is_array( $record ) || ! self::record_is_valid( $record, $aliases ) ) {
-				return self::invalid();
+				return self::invalid( 'record_invalid', $record );
 			}
 			foreach ( $record['source_urls'] as $url ) {
 				$aliases[ $url ] = true;
@@ -99,11 +99,11 @@ final class Static_Site_Importer_Image_Assets {
 				$matches = array_values( array_filter( $matches, static fn( string $path ): bool => $path === $record['path'] || 'website/' . $record['path'] === $path || 'website/' . $path === $record['path'] ) );
 			}
 			if ( empty( $matches ) ) {
-				return self::invalid();
+				return self::invalid( 'original_not_in_artifact', $record );
 			}
 			foreach ( $matches as $path ) {
 				if ( isset( $mapped[ $path ] ) ) {
-					return self::invalid();
+					return self::invalid( 'file_claimed_twice', $record );
 				}
 				$mapped[ $path ] = $record;
 			}
@@ -114,7 +114,7 @@ final class Static_Site_Importer_Image_Assets {
 			}
 			$html = Static_Site_Importer_Content_Policy::file_bytes( $file, $reader );
 			if ( ! is_string( $html ) ) {
-				return self::invalid();
+				return self::invalid( 'document_unreadable', (string) $file['path'] );
 			}
 			$tags = new WP_HTML_Tag_Processor( $html );
 			while ( $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
@@ -370,8 +370,23 @@ final class Static_Site_Importer_Image_Assets {
 		return null;
 	}
 
-	/** A record is authoritative: never silently fall back to a rendition or placeholder. */
-	private static function invalid(): WP_Error {
-		return new WP_Error( 'image_resource_unresolved', 'Capture asset records must identify an available, verified original with unambiguous source URLs.' );
+	/**
+	 * A record is authoritative: never silently fall back to a rendition or placeholder.
+	 * The error names why and, when there is one, which record or file failed.
+	 */
+	private static function invalid( string $reason, mixed $record = null ): WP_Error {
+		$data = array( 'reason' => $reason );
+		if ( is_array( $record ) ) {
+			$data['record'] = array_filter(
+				array(
+					'path'       => $record['path'] ?? null,
+					'source_url' => $record['source_urls'][0] ?? null,
+					'sha256'     => $record['original']['sha256'] ?? null,
+				)
+			);
+		} elseif ( is_string( $record ) ) {
+			$data['source_path'] = $record;
+		}
+		return new WP_Error( 'image_resource_unresolved', 'Capture asset records must identify an available, verified original with unambiguous source URLs.', $data );
 	}
 }

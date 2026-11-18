@@ -90,7 +90,7 @@ foreach ( array( 'li', 'div' ) as $card_tag ) {
 			$assert( $card instanceof DOMElement && $card->getAttribute( 'data-wp-key' ) === 'product-item-' . $product_id, $label . ': product key' );
 			$context = $card instanceof DOMElement ? json_decode( $card->getAttribute( 'data-wp-context' ), true ) : null;
 			$assert( ( $context['woocommerce/products']['productId'] ?? null ) === $product_id, $label . ': product context' );
-			$assert( $card instanceof DOMElement && str_contains( $card->getAttribute( 'class' ), 'post-' . $product_id ) && 'woocommerce/product-collection' === $card->getAttribute( 'data-wp-interactive' ), $label . ': classes and namespace' );
+			$assert( $card instanceof DOMElement && str_contains( $card->getAttribute( 'class' ), 'post-' . $product_id ) && str_contains( $card->getAttribute( 'class' ), Static_Site_Importer_Product_Grid_Runtime::CARD_CLASS ) && 'woocommerce/product-collection' === $card->getAttribute( 'data-wp-interactive' ), $label . ': classes, card marker and namespace' );
 		}
 		$features = $xpath->query( '//ul[@class="features"]/li' );
 		$assert( false !== $features && 2 === $features->length, $label . ': nested lists preserved' );

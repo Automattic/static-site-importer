@@ -320,6 +320,10 @@ class Static_Site_Importer_Consent_Banner {
 		if ( isset( $presentation['edge_offset'] ) ) {
 			$top  = 'top' === ( $fact['position'] ?? '' );
 			$css .= ( $top ? 'top' : 'bottom' ) . ':' . $presentation['edge_offset'] . ';' . ( $top ? 'bottom' : 'top' ) . ':auto;';
+		} elseif ( 'center' === ( $fact['position'] ?? '' ) && array() !== $presentation ) {
+			// A panel resting in the middle of the viewport (a modal card) has
+			// no edge; release Jetpack's bottom anchor and center it vertically.
+			$css .= 'top:50%;bottom:auto;transform:translateY(-50%);';
 		}
 		foreach ( array(
 			'font_family' => 'font-family',
@@ -332,7 +336,9 @@ class Static_Site_Importer_Consent_Banner {
 				$css .= $property . ':' . $presentation[ $key ] . ';';
 			}
 		}
-		$selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+		// The repeated class outranks Jetpack's `:not([role=document]).align*`
+		// rules (0,3,0), whose view.css loads after the theme stylesheet.
+		$selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
 		$flex     = isset( $presentation['text_margin'] ) || ! empty( $presentation['layout'] );
 		if ( $flex ) {
 			$css .= 'flex-wrap:nowrap;';
@@ -414,6 +420,10 @@ class Static_Site_Importer_Consent_Banner {
 		)[ $entry['inline'] ];
 		if ( isset( $entry['width'] ) ) {
 			$css .= 'width:' . $entry['width'] . 'px!important;max-width:none!important;';
+		} elseif ( 'center' === $entry['inline'] ) {
+			// An inset panel of unrecorded width is not Jetpack's wide bar: it
+			// keeps its content width, within the viewport.
+			$css .= 'width:fit-content!important;max-width:calc(100% - 20px)!important;';
 		}
 		return '' === $css ? '' : $selector . '{' . $css . '}';
 	}

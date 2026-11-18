@@ -13,6 +13,7 @@ require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
 require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
+require_once __DIR__ . '/class-static-site-importer-published-file-mode.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -1917,7 +1918,25 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
 		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): string {
-			$value = html_entity_decode( str_replace( '\\/', '/', (string) $matches[2] ), ENT_QUOTES, 'UTF-8' );
+			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
+			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
+			if ( ! is_string( $value ) ) {
+				return $matches[0];
+			}
+			$value = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			// Unlike href/action, data attributes may be flags or identifiers, not links.
+			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $matches[1] ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
+				return $matches[0];
+			}
+			$is_local = (bool) preg_match( '~^[#?]~', $value );
+			$encode   = static function ( string $reference ) use ( $is_json ): string {
+				if ( ! $is_json ) {
+					return $reference;
+				}
+				// Match serialize_block_attributes(), including comment-delimiter protection.
+				$json = (string) wp_json_encode( $reference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+				return substr( str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json ), 1, -1 );
+			};
 			if ( '' === $value ) {
 				return $matches[0];
 			}
@@ -1947,21 +1966,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'fragment' => $fragment,
 					);
 				}
-				if ( preg_match( '~^[#?]~', html_entity_decode( (string) $matches[2], ENT_QUOTES, 'UTF-8' ) ) ) {
+				if ( $is_local ) {
 					return $matches[0];
 				}
-				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+				return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
 			}
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
 				if ( '/search' === $route ) {
 					parse_str( ltrim( $suffix, '?' ), $query );
 					$target = wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
-					return $matches[1] . $target . $matches[3];
+					return $matches[1] . $encode( $target ) . $matches[3];
 				}
 				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
 				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
 				if ( '' !== $target ) {
-					return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) . $matches[3];
+					return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
 				}
 			}
 			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
@@ -1974,7 +1993,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
-			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
+			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
+			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
 		) as $pattern ) {
 			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
 		}
@@ -2084,6 +2104,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( $error ) {
 				return $error;
 			}
+			Static_Site_Importer_Published_File_Mode::apply_file_mode( $path );
 			return array(
 				'target_path'             => $write['target_path'],
 				'hash'                    => self::file_hash( $path ),
@@ -2106,7 +2127,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$stream  = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
 		$written = is_resource( $stream ) && self::write_all( $stream, $data, $chunk_writer ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes complete canonical write bytes before publication.
 		$closed  = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
-		if ( false === $data || false === $temp || ! $written || ! $closed || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
+		$moded   = $written && $closed && Static_Site_Importer_Published_File_Mode::apply_file_mode( (string) $temp );
+		if ( false === $data || false === $temp || ! $moded || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
 			}
@@ -3029,6 +3051,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY, false ),
 				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
+				'page_template'                           => get_post_meta( $id, '_wp_page_template', false ),
+				'css_section'                             => get_post_meta( $id, '_static_site_importer_css_section', false ),
 				'taxonomy_memberships'                    => get_post_meta( $id, '_static_site_importer_taxonomy_memberships', true ),
 				'taxonomy_memberships_exists'             => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
 			);
@@ -3429,6 +3453,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					foreach ( array(
 						'source_routes' => Static_Site_Importer_Source_Route::META_KEY,
 						'thumbnail'     => '_thumbnail_id',
+						'page_template' => '_wp_page_template',
+						'css_section'   => '_static_site_importer_css_section',
 					) as $snapshot => $meta_key ) {
 						if ( ! array_key_exists( $snapshot, $before ) ) {
 							continue;

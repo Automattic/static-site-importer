@@ -91,6 +91,10 @@ namespace {
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-presentation.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-commerce-presentation.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-grid-runtime.php';
+	if ( ! class_exists( 'WooCommerce' ) ) {
+		class WooCommerce {} // phpcs:ignore Generic.Files.OneObjectStructurePerFile.MultipleFound -- Stands in for the active store plugin.
+	}
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
@@ -178,7 +182,7 @@ namespace {
 	$commerce_css = $GLOBALS['ssi_test_inline_styles']['static-site-importer-commerce'] ?? '';
 	$assert( isset( $GLOBALS['ssi_test_inline_styles']['static-site-importer-commerce'] ), 'commerce-attaches-to-own-handle-name' );
 	preg_match_all( '/([^{}]+)\\{/', $commerce_css, $commerce_rules );
-	$selectors = array_filter( array_map( 'trim', explode( ',', implode( ',', $commerce_rules[1] ?? array() ) ) ) );
+	$selectors                = array_filter( array_map( 'trim', explode( ',', implode( ',', $commerce_rules[1] ?? array() ) ) ) );
 	$all_selectors_are_marked = ! empty( $selectors ) && count( $selectors ) === count( array_filter( $selectors, static fn( string $selector ): bool => str_contains( $selector, 'ssi-commerce-control' ) ) );
 	$assert( $all_selectors_are_marked, 'commerce-css-is-scoped-to-importer-marker' );
 	$ordinary_woo_inline_cart = '<p class="product woocommerce add_to_cart_inline"><span class="woocommerce-Price-amount">$24</span><a class="button add_to_cart_button">Add to cart</a></p>';
@@ -186,23 +190,37 @@ namespace {
 	$binding = \Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array(), array( 'id' => 42 ) );
 	$assert( str_contains( $binding, '[add_to_cart id="42" class="ssi-commerce-control"]' ) && str_contains( $commerce_css, 'ssi-commerce-control' ), 'materialized-commerce-binding-receives-ssi-styling' );
 
-	// WooCommerce's block-theme stylesheet, whose class-qualified bare-element
-	// rules outrank the source design, is re-delivered inside a cascade layer
-	// on source-design pages, keeping its inline additions after the import.
-	$blocktheme = (object) array( 'src' => '/wp-content/plugins/woocommerce/assets/css/woocommerce-blocktheme.css', 'ver' => '10.3.0', 'deps' => array() );
+	// The theme-shipped product runtime re-delivers WooCommerce's general
+	// stylesheets, whose class-qualified bare-element rules
+	// (`.woocommerce img{height:auto}`) outrank the source design, inside a
+	// cascade layer on source-design pages, keeping their media, layered
+	// dependencies and inline additions.
+	$woo_styles = array(
+		'woocommerce-layout'      => array( 'woocommerce-layout.css', array(), 'all', '' ),
+		'woocommerce-smallscreen' => array( 'woocommerce-smallscreen.css', array( 'woocommerce-layout' ), 'only screen and (max-width: 768px)', ' only screen and (max-width: 768px)' ),
+		'woocommerce-general'     => array( 'woocommerce.css', array(), 'all', '' ),
+		'woocommerce-blocktheme'  => array( 'woocommerce-blocktheme.css', array(), 'all', '' ),
+	);
 	foreach ( array( 'source page' => array( false, '' ), 'account page' => array( true, '' ), 'woo template' => array( false, 'woocommerce/woocommerce//single-product' ) ) as $label => $case ) {
 		$reset();
-		$GLOBALS['ssi_test_account_page']    = $case[0];
+		$GLOBALS['ssi_test_account_page']   = $case[0];
 		$GLOBALS['_wp_current_template_id'] = $case[1];
-		wp_styles()->registered['woocommerce-blocktheme'] = $blocktheme;
-		$GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] = true;
-		\Static_Site_Importer_Commerce_Presentation::enqueue();
-		$layered = $GLOBALS['ssi_test_inline_styles']['static-site-importer-woocommerce-blocktheme'] ?? null;
-		if ( 'source page' === $label ) {
-			$assert( '@import url("https://example.test/wp-content/plugins/woocommerce/assets/css/woocommerce-blocktheme.css?ver=10.3.0") layer(woocommerce);.woo-after{color:blue}' === $layered && ! isset( $GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] ), 'woo-blocktheme-layered-on-source-page' );
-		} else {
-			$assert( null === $layered && isset( $GLOBALS['ssi_test_enqueued']['woocommerce-blocktheme'] ), 'woo-blocktheme-kept-on-' . str_replace( ' ', '-', $label ) );
+		foreach ( $woo_styles as $handle => $style ) {
+			wp_styles()->registered[ $handle ]         = (object) array( 'src' => '/wp-content/plugins/woocommerce/assets/css/' . $style[0], 'ver' => '10.3.0', 'deps' => $style[1], 'args' => $style[2] );
+			$GLOBALS['ssi_test_registered'][ $handle ] = array();
+			$GLOBALS['ssi_test_enqueued'][ $handle ]   = true;
 		}
+		\Static_Site_Importer_Product_Grid_Runtime::enqueue_layout();
+		foreach ( $woo_styles as $handle => $style ) {
+			$layered = $GLOBALS['ssi_test_inline_styles'][ 'static-site-importer-' . $handle ] ?? null;
+			if ( 'source page' === $label ) {
+				$deps = array_map( static fn( string $dep ): string => 'static-site-importer-' . $dep, $style[1] );
+				$assert( '@import url("https://example.test/wp-content/plugins/woocommerce/assets/css/' . $style[0] . '?ver=10.3.0") layer(woocommerce)' . $style[3] . ';.woo-after{color:blue}' === $layered && ! isset( $GLOBALS['ssi_test_enqueued'][ $handle ] ) && $deps === $GLOBALS['ssi_test_registered'][ 'static-site-importer-' . $handle ]['deps'], $handle . '-layered-on-source-page' );
+			} else {
+				$assert( null === $layered && isset( $GLOBALS['ssi_test_enqueued'][ $handle ] ), $handle . '-kept-on-' . str_replace( ' ', '-', $label ) );
+			}
+		}
+		$assert( ( 'source page' === $label ? array() : array( 'woocommerce-general' ) ) === $GLOBALS['ssi_test_registered']['static-site-importer-product-grid']['deps'], 'product-grid-follows-plain-woo-only-on-' . str_replace( ' ', '-', $label ) );
 	}
 	unset( $GLOBALS['ssi_test_account_page'], $GLOBALS['_wp_current_template_id'] );
 

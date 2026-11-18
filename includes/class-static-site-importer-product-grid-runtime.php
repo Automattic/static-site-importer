@@ -38,6 +38,9 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Class on the product collection whose loop wrappers are flattened. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
+	/** Class on each imported card that replaced a flattened loop item. */
+	public const CARD_CLASS = 'ssi-item-template-card';
+
 	/** Register the shared runtime hooks once. */
 	public static function register(): void {
 		// Every copy (the importer's own, each generated companion's renamed one)
@@ -63,6 +66,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'render_block_woocommerce/add-to-cart-form', array( self::class, 'render_bound_layout' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
+		add_action( 'enqueue_block_assets', array( self::class, 'enqueue_editor_layout' ) );
 	}
 
 	/** Fill only the declared badge, preserving the surrounding source markup. */
@@ -671,6 +675,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 			if ( $needs_card && ! $close && null !== $item ) {
 				$card = new WP_HTML_Tag_Processor( substr( $content, $span[0], $span[1] ) );
 				$card->next_tag();
+				$card->add_class( self::CARD_CLASS );
 				$product_classes = preg_split( '/\s+/', (string) $item->get_attribute( 'class' ) );
 				foreach ( false === $product_classes ? array() : $product_classes as $class ) {
 					// Retain product/post classes, not the retired layout wrapper class.
@@ -707,13 +712,97 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		if ( ! class_exists( 'WooCommerce' ) || is_admin() ) {
 			return;
 		}
+		self::layer_store_styles();
 		$handle = 'static-site-importer-product-grid';
 		if ( ! wp_style_is( $handle, 'registered' ) ) {
-			$after = array_values( array_filter( array( 'wc-blocks-style', 'woocommerce-general' ), static fn( string $style ): bool => wp_style_is( $style, 'registered' ) ) );
+			$after = array_values( array_filter( array( 'wc-blocks-style', 'woocommerce-general' ), static fn( string $style ): bool => wp_style_is( $style, 'enqueued' ) ) );
 			wp_register_style( $handle, false, $after, '1' );
 		}
 		wp_enqueue_style( $handle );
 		wp_add_inline_style( $handle, self::layout_css() );
+	}
+
+	/** Attach the editor counterpart of the front end loop flattening. */
+	public static function enqueue_editor_layout(): void {
+		if ( ! is_admin() ) {
+			return;
+		}
+		$handle = 'static-site-importer-product-grid-editor';
+		wp_register_style( $handle, false, array(), '1' );
+		wp_enqueue_style( $handle );
+		wp_add_inline_style( $handle, self::editor_layout_css() );
+	}
+
+	/**
+	 * The editor renders the loop's collection, inner block list, product list
+	 * and item boxes that flatten_collection() removes on the front end. Keep
+	 * them boxless there too, so each card stays a cell of the source grid.
+	 */
+	public static function editor_layout_css(): string {
+		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
+		return $loop . ',' . $loop . ' .block-editor-block-list__layout:has(>.wc-block-product-template),'
+			. $loop . ' .wc-block-product-template,' . $loop . ' .wc-block-product-template>li{display:contents;}';
+	}
+
+	/**
+	 * WooCommerce's general stylesheets style bare elements on every store page
+	 * (`.woocommerce img`, `.woocommerce-page select`, `.woocommerce-page label`),
+	 * and their class-qualified selectors outrank the source design's own
+	 * element rules. On a page rendered from the source design, deliver each of
+	 * them inside a cascade layer instead: the unlayered source rules then win
+	 * wherever they set a property, and every WooCommerce rule still applies
+	 * where the source says nothing (store notice, select2, cart tables).
+	 * Surfaces WooCommerce renders itself keep the plain stylesheets.
+	 */
+	public static function layer_store_styles(): void {
+		if ( self::is_store_rendered_surface() ) {
+			return;
+		}
+		$handles = array( 'woocommerce-layout', 'woocommerce-smallscreen', 'woocommerce-general', 'woocommerce-blocktheme' );
+		$styles  = wp_styles();
+		foreach ( $handles as $handle ) {
+			$style = $styles->registered[ $handle ] ?? null;
+			if ( ! wp_style_is( $handle, 'enqueued' ) || ! is_object( $style ) || ! is_string( $style->src ) || '' === $style->src ) {
+				continue;
+			}
+			$src = $style->src;
+			if ( is_rtl() && 'replace' === $styles->get_data( $handle, 'rtl' ) ) {
+				$src = str_replace( '.css', '-rtl.css', $src );
+			}
+			if ( ! preg_match( '#^(https?:)?//#', $src ) ) {
+				$src = $styles->base_url . $src;
+			}
+			if ( $style->ver ) {
+				$src = add_query_arg( 'ver', $style->ver, $src );
+			}
+			$src   = (string) apply_filters( 'style_loader_src', $src, $handle );
+			$media = is_string( $style->args ?? null ) && '' !== $style->args && 'all' !== $style->args ? ' ' . $style->args : '';
+			// A layered sibling stays layered instead of pulling the plain stylesheet back in.
+			$deps  = array_map( static fn( string $dep ): string => in_array( $dep, $handles, true ) ? 'static-site-importer-' . $dep : $dep, (array) $style->deps );
+			$layer = 'static-site-importer-' . $handle;
+			wp_dequeue_style( $handle );
+			wp_register_style( $layer, false, $deps, $style->ver );
+			wp_enqueue_style( $layer );
+			wp_add_inline_style( $layer, '@import url("' . esc_url_raw( $src ) . '") layer(woocommerce)' . $media . ';' );
+			foreach ( (array) $styles->get_data( $handle, 'after' ) as $after ) {
+				if ( is_string( $after ) && '' !== $after ) {
+					wp_add_inline_style( $layer, $after );
+				}
+			}
+		}
+	}
+
+	/**
+	 * Whether WooCommerce, not the imported design, renders this request: My
+	 * Account, an endpoint such as order-received, or a template WooCommerce
+	 * supplies because the imported theme has none.
+	 */
+	private static function is_store_rendered_surface(): bool {
+		if ( ( function_exists( 'is_account_page' ) && is_account_page() ) || ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url() ) ) {
+			return true;
+		}
+		$template = isset( $GLOBALS['_wp_current_template_id'] ) ? (string) $GLOBALS['_wp_current_template_id'] : '';
+		return str_starts_with( $template, 'woocommerce/woocommerce//' );
 	}
 
 	/**
@@ -725,10 +814,15 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	public static function layout_css(): string {
 		// Keep the collection and notices boxless where they wrap the listing.
 		$loop = '.' . self::LOOP_CLASS . '.' . self::LOOP_CLASS;
+		$card = '.' . self::CARD_CLASS . '.' . self::CARD_CLASS;
 		// The card list may sit deeper than the loop: a store listing's loop
 		// wraps the whole listing and the list sits in its grid element.
 		return '.ssi-purchase-quantity-label{display:block;}'
 			. $loop . ',' . $loop . ' > .wc-block-components-notices{display:contents;}'
+			// Woo inserts a link between the source image box and its image.
+			// Keep percentage image sizing relative to that box, only in imported cards.
+			// Hand-picked loops lose their collection wrapper, so scope to the card.
+			. $card . ' .wc-block-components-product-image > a{display:block;width:100%;height:100%;}'
 			// A store notice spans the whole grid row instead of taking a card's cell.
 			. $loop . ' > .wc-block-components-notices > *{grid-column:1/-1;}';
 	}

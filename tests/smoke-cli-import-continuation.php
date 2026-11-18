@@ -586,8 +586,7 @@ $over_report = static_site_importer_cli_request_bundle_files( $over_report_dir, 
 $assert( is_wp_error( $over_report ) && 'static_site_importer_cli_request_bundle_report_file_too_large' === $over_report->get_error_code(), 'request-bundle-refuses-a-declared-report-past-the-report-budget-under-its-own-code' );
 $assert( str_contains( $over_report->get_error_message(), 'asset-evidence.json' ) && str_contains( $over_report->get_error_message(), '32 MiB' ), 'request-bundle-report-rejection-message-names-the-report-and-its-limit' );
 
-// The aggregate report budget shrinks the per-file ceiling the same way the
-// media budget does, so a capture that keeps adding reports is still refused.
+// Aggregate refusals name the full total and budget, not a per-file remainder.
 $report_aggregate_handle = fopen( $over_report_dir . '/diagnostics.json', 'w' );
 ftruncate( $report_aggregate_handle, 33554432 );
 fclose( $report_aggregate_handle );
@@ -598,8 +597,8 @@ $report_overflow_handle = fopen( $over_report_dir . '/cleanup-evidence.json', 'w
 ftruncate( $report_overflow_handle, 1 );
 fclose( $report_overflow_handle );
 $report_aggregate = static_site_importer_cli_request_bundle_files( $over_report_dir, array( 'asset-evidence.json', 'diagnostics.json', 'cleanup-evidence.json' ) );
-$assert( is_wp_error( $report_aggregate ) && 'static_site_importer_cli_request_bundle_report_file_too_large' === $report_aggregate->get_error_code(), 'request-bundle-shrinks-the-report-ceiling-to-what-remains-of-the-report-budget' );
-$assert( str_contains( $report_aggregate->get_error_message(), '0 MiB' ), 'request-bundle-report-aggregate-rejection-reports-the-remaining-budget' );
+$assert( is_wp_error( $report_aggregate ) && 'static_site_importer_cli_request_bundle_report_total_too_large' === $report_aggregate->get_error_code(), 'request-bundle-rejects-the-report-aggregate-independently' );
+$assert( is_wp_error( $report_aggregate ) && str_contains( $report_aggregate->get_error_message(), '67108865 bytes' ) && str_contains( $report_aggregate->get_error_message(), '64 MiB aggregate report budget' ), 'request-bundle-report-aggregate-rejection-reports-total-and-budget' );
 foreach ( scandir( $over_report_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $over_report_dir . '/' . $entry );
@@ -619,6 +618,53 @@ foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $report
 	$report_item->isDir() ? rmdir( $report_item->getPathname() ) : unlink( $report_item->getPathname() );
 }
 rmdir( $report_dir );
+
+// A realistic box-tree capture must pass the public request path, admission,
+// and compiler normalization, not just the filesystem scanner.
+$large_capture = sys_get_temp_dir() . '/ssi-scaled-reports-' . bin2hex( random_bytes( 6 ) );
+mkdir( $large_capture . '/large-source/website', 0777, true );
+mkdir( $large_capture . '/large-source/box-tree' );
+$large_reports = array();
+for ( $route = 0; $route < 110; ++$route ) {
+	file_put_contents( $large_capture . '/large-source/website/route-' . $route . '.html', '<main>Route ' . $route . '</main>' );
+	$large_reports[] = 'box-tree/route-' . $route . '.json';
+	file_put_contents( $large_capture . '/large-source/box-tree/route-' . $route . '.json', '{"nodes":"' . str_repeat( 'x', 681564 ) . '"}' );
+}
+$large_request = $large_capture . '/request.json';
+file_put_contents( $large_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:large-source', 'metadata' => array( 'reports' => $large_reports ) ) ) ) );
+$large_input = static_site_importer_cli_import_input( array(), array( 'request' => $large_request ) );
+$assert( is_array( $large_input ), 'large-capture-public-request-admitted: ' . ( is_wp_error( $large_input ) ? $large_input->get_error_code() . ': ' . $large_input->get_error_message() : get_debug_type( $large_input ) ) );
+$large_resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:large-source', 'files' );
+$assert( is_array( $large_resolved ), 'large-capture-reference-resolves: ' . ( is_wp_error( $large_resolved ) ? $large_resolved->get_error_code() . ': ' . $large_resolved->get_error_message() : get_debug_type( $large_resolved ) ) );
+if ( is_array( $large_resolved ) ) {
+	$large_runtime = static_site_importer_source_runtime( $large_resolved['source'], $large_resolved['payload_reader'] ?? null );
+	$assert( is_array( $large_runtime ), 'large-capture-runtime-admitted: ' . ( is_wp_error( $large_runtime ) ? $large_runtime->get_error_code() . ': ' . $large_runtime->get_error_message() : get_debug_type( $large_runtime ) ) );
+	if ( is_array( $large_runtime ) ) {
+		$assert( 220 === count( $large_runtime['artifact']['files'] ), 'large-capture-retains-all-routes-and-reports' );
+		$large_admission = Static_Site_Importer_Content_Policy::admit_artifact( $large_runtime['artifact'], $large_resolved['payload_reader'] );
+		$assert( is_array( $large_admission ) && 220 === count( $large_admission['artifact']['files'] ), 'large-capture-content-policy-admits-all-reports' );
+		$large_rest_artifact = $large_runtime['artifact'];
+		unset( $large_rest_artifact['compiler_limits'] );
+		$large_rest_admission = Static_Site_Importer_Content_Policy::admit_artifact( $large_rest_artifact, $large_resolved['payload_reader'] );
+		$assert( is_array( $large_rest_admission ) && 134217728 === $large_rest_admission['artifact']['compiler_limits']['max_report_total_bytes'], 'artifact-admission-without-cli-limits-receives-scaled-report-budget' );
+		$large_normalized = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactNormalizer() )->normalize( $large_runtime['artifact'], $large_resolved['payload_reader'] );
+		$assert( 220 === count( $large_normalized['files'] ?? array() ), 'large-capture-compiler-normalizer-retains-all-reports' );
+	}
+}
+// Stay below the per-file cap but exceed the scaled 128 MiB hard bound.
+foreach ( $large_reports as $large_report ) {
+	$large_handle = fopen( $large_capture . '/large-source/' . $large_report, 'w' );
+	ftruncate( $large_handle, 1300000 );
+	fclose( $large_handle );
+}
+$large_overflow = static_site_importer_cli_import_input( array(), array( 'request' => $large_request ) );
+$assert( is_wp_error( $large_overflow ) && 'static_site_importer_cli_request_bundle_report_total_too_large' === $large_overflow->get_error_code(), 'large-capture-public-request-rejects-scaled-aggregate' );
+$assert( is_wp_error( $large_overflow ) && str_contains( $large_overflow->get_error_message(), '143000000 bytes' ) && str_contains( $large_overflow->get_error_message(), '128 MiB aggregate report budget' ), 'large-capture-aggregate-error-names-full-total-and-scaled-budget' );
+$assert( 83886080 === static_site_importer_cli_request_bundle_limits( 20 )['max_report_total_bytes'], 'report-budget-scales-per-route-before-hard-ceiling' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $large_capture, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $large_item ) {
+	$large_item->isDir() ? rmdir( $large_item->getPathname() ) : unlink( $large_item->getPathname() );
+}
+rmdir( $large_capture );
 
 // Blocks Engine hydrates a declared report too, so the two sides must agree on
 // the budget that bounds it, exactly as they agree on the read-source rule.
@@ -1189,7 +1235,8 @@ $reset_oom_state();
 // The smallest units a retried runtime works in.
 $base_policy = array( 'compile_fanout_pages' => 2, 'compile_workers' => 1, 'compile_shard_pages' => 2, 'compile_fanout' => null, 'compile_in_process_pages' => 1, 'compile_batches_per_invocation' => 1 );
 $normal      = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
-$assert( $normal['compile_workers'] === static_site_importer_cli_compile_worker_count( $normal['compile_memory']['available_bytes'], $normal['compile_memory']['budget_bytes'], $normal['compile_memory']['reserve_bytes'] ) && $normal['compile_fanout_pages'] === $normal['compile_workers'] * $normal['compile_shard_pages'], 'normal-policy-sizes-workers-and-batches-from-reported-memory-inputs' );
+$assert( $normal['compile_workers'] === static_site_importer_cli_compile_worker_count( $normal['compile_memory']['available_bytes'], $normal['compile_memory']['budget_bytes'], $normal['compile_memory']['reserve_bytes'] ) && $normal['compile_fanout_pages'] === $normal['compile_workers'] * 4, 'normal-policy-sizes-workers-and-batches-from-reported-memory-inputs' );
+$assert( 1 === $normal['compile_shard_pages'], 'normal-policy-dispatches-one-page-per-worker-so-the-largest-page-never-shares-a-worker' );
 static_site_importer_cli_constrained_runtime( true );
 $small = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
 static_site_importer_cli_constrained_runtime( false );

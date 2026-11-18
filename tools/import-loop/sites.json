@@ -1,0 +1,11 @@
+{
+  "_comment": "Sites the import loop runs by name (run.sh <name>). control: sites the loop has solved, so any failure there is the loop's own. hard: sites that measure what the importer can do.",
+  "agency": { "url": "https://startbootstrap.github.io/startbootstrap-agency/", "set": "control" },
+  "bizcasual": { "url": "https://startbootstrap.github.io/startbootstrap-business-casual/", "set": "control" },
+  "sdnunca": { "url": "https://sdnunca.wixsite.com/my-site-1/", "set": "hard" },
+  "bolt-lumen": { "url": "https://lumen-studio-portfol-lrr6.bolt.host/", "set": "hard" },
+  "lovable-apex": { "url": "https://apex-auto-crafted.lovable.app/", "set": "hard" },
+  "base44-imb": { "url": "https://imb-culinary-craft.base44.app/", "set": "hard" },
+  "replit-zach": { "url": "https://zach-richards-site.replit.app/", "set": "hard" },
+  "squarespace-bedford": { "url": "https://bedford-demo.squarespace.com/", "set": "hard" }
+}

@@ -292,7 +292,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 						$paged_target    = rtrim( $target, '/' ) . '/' . $pagination_base . '/$1/';
 					}
 					if ( isset( $routes[ $pattern ] ) && $routes[ $pattern ] !== $paged_target ) {
-						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.', array( 'source_route' => $pattern ) );
 					}
 					$routes[ $pattern ] = $paged_target;
 				}
@@ -304,7 +304,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( str_starts_with( $from, '^' ) ) {
 				foreach ( $routes as $other => $destination ) {
 					if ( ! str_starts_with( $other, '^' ) && 1 === preg_match( '~' . $from . '~', $other ) ) {
-						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'An exact source route overlaps an archive pagination family.' );
+						return new WP_Error( 'static_site_importer_redirect_ambiguous', 'An exact source route overlaps an archive pagination family.', array( 'source_route' => $other ) );
 					}
 				}
 			}
@@ -337,7 +337,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			return true;
 		}
 		if ( isset( $routes[ $request_path ] ) && $routes[ $request_path ] !== $target ) {
-			return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
+			return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.', array( 'source_route' => $request_path ) );
 		}
 		$occupied = self::published_route_owner( $from );
 		if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $post_id ) {
@@ -397,10 +397,19 @@ final class Static_Site_Importer_Redirection_Materializer {
 
 	// phpcs:enable WordPress.Security.NonceVerification, WordPress.WP.GlobalVariablesOverride.Prohibited
 
-	/** Draft hierarchy rows must never hide a genuine published route owner. */
+	/**
+	 * Draft hierarchy rows must never hide a genuine published route owner.
+	 *
+	 * A post owns a route only when its URI equals the request up to case and
+	 * percent-encoding: `/~about` is not owned by the `about` page it sanitizes to.
+	 */
 	public static function published_route_owner( string $path ) {
-		$parts = array_map( 'sanitize_title_for_query', explode( '/', rawurldecode( trim( $path, '/' ) ) ) );
+		$raw   = rawurldecode( trim( $path, '/' ) );
+		$parts = array_map( 'sanitize_title_for_query', explode( '/', $raw ) );
 		$path  = implode( '/', $parts );
+		if ( mb_strtolower( $raw ) !== rawurldecode( $path ) ) {
+			return null;
+		}
 		$posts = get_posts( array(
 			'name'        => end( $parts ),
 			'post_type'   => array( 'page', 'post' ),

@@ -2,10 +2,13 @@
 # Loop step: materialize the source at Blocks Engine trunk and report where the
 # evidence lives.
 #
-# The first pass captures the source with `studio create --from --keep-source`
-# and keeps the capture. Every pass, including the first, re-imports that frozen
-# capture through the latest Static Site Importer release with the transformer
-# from Blocks Engine `trunk` (gates/reimport.sh, as triage, the Cook gate and
+# The first pass captures the source with the capture client and arguments
+# pinned in compare-client.json (the release evaluate compares with) and keeps
+# the capture: `--reference-sample all --route-limit all` freezes reference
+# evidence for every route, so every route is compared. A pass re-captures when
+# that pin has changed since the kept capture. Every pass, including the first,
+# re-imports the frozen capture through the latest Static Site Importer release
+# with the transformer from Blocks Engine `trunk` (gates/reimport.sh, as triage, the Cook gate and
 # confirm do). A merged fix is therefore measured on the very next pass, without
 # waiting for a release to carry it into Studio.
 #
@@ -19,21 +22,23 @@ mkdir -p "$(dirname "$pass")"
 runs=$(cd "$(dirname "$pass")" && pwd)
 bare="$runs/bare-wp"
 
-# Earlier passes served their sites from `php -S`; stop them.
-for pid in "$runs"/*/.server.pid; do [ -f "$pid" ] && kill "$(cat "$pid")" 2> /dev/null || true; done
+# This slug's earlier passes served their sites from `php -S` (reimport.sh
+# records the server in <pass>/site); stop them. Other slugs share $runs and
+# their loops still use their servers.
+for pid in "${pass%-p*}"-p[0-9]*/site/.server.pid; do [ -f "$pid" ] && kill -- "-$(cat "$pid")" 2> /dev/null || true; done
 
-if [ ! -f "$capture/capture-receipt.json" ]; then
+client="$here/compare-client.json"
+if [ ! -f "$capture/capture-receipt.json" ] || ! cmp -s "$client" "$capture/.capture-client.json"; then
   first="$pass-capture"
-  studio site list --format json 2>/dev/null | jq -e --arg site "$runs/$(basename "$first")" '.[] | select(.path == $site)' > /dev/null &&
-    studio site delete "$runs/$(basename "$first")" > /dev/null 2>&1
-  rm -rf "$first" "$first-source"
-  status=0
-  studio create --path "$first" --from "$url" --keep-source --skip-browser 2>&1 | tee "$first.log" || status=$?
-  # Only a preserved quality-failed preview is a usable non-zero result.
-  if (( status != 0 )) && ! grep -q 'static_site_importer_quality_failed' "$first.log"; then exit "$status"; fi
-  [ -f "$first-source/$host/capture-receipt.json" ] || { echo "studio create kept no capture for $host" >&2; exit 1; }
-  rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; cp -a "$first-source/$host" "$capture"
-  studio site stop --path "$first" > /dev/null 2>&1 || true
+  rm -rf "$first-source"
+  capture_args=(); while IFS= read -r arg; do capture_args+=("$arg"); done < <(jq -r '.capture_args[]' "$client")
+  npx --yes "--package=$(jq -r .package "$client")" "$(jq -r .executable "$client")" "$url" --output "$first-source" \
+    "${capture_args[@]}" 2>&1 | tee "$first.log" || true
+  # The client names the capture after the site's host and path.
+  kept=$(dirname "$(ls "$first-source"/*/capture-receipt.json 2> /dev/null | head -1 || true)")
+  [ -f "$kept/capture-receipt.json" ] || { echo "the capture client kept no capture for $url (see $first.log)" >&2; exit 1; }
+  rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; mv "$kept" "$capture"; cp "$client" "$capture/.capture-client.json"
+  rm -rf "$first-source"
 fi
 
 # The transformer at Blocks Engine trunk, and the importer release Studio installs.

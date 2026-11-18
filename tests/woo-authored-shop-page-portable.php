@@ -18,10 +18,11 @@ $GLOBALS['l10n']['static-site-importer'] = new NOOP_Translations(); // phpcs:ign
 
 $package = Static_Site_Importer_Generated_Runtime_Package::theme(
 	array(
-		'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-		'site_slug' => 'authored-shop-portable',
-		'site_name' => 'Authored shop',
-		'blocks'    => array(),
+		'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+		'runtime_features' => array( 'commerce' ),
+		'site_slug'        => 'authored-shop-portable',
+		'site_name'        => 'Authored shop',
+		'blocks'           => array(),
 	)
 );
 if ( is_wp_error( $package ) ) {

@@ -44,10 +44,11 @@ $existing_shop = get_page_by_path( 'shop' );
 try {
 	$package = Static_Site_Importer_Generated_Runtime_Package::theme(
 		array(
-			'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-			'site_slug' => $slug,
-			'site_name' => 'Authored shop',
-			'blocks'    => array(),
+			'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+			'runtime_features' => array( 'commerce' ),
+			'site_slug'        => $slug,
+			'site_name'        => 'Authored shop',
+			'blocks'           => array(),
 		)
 	);
 	$assert( ! is_wp_error( $package ), 'Could not generate theme runtime.' );

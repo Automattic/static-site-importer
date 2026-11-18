@@ -95,6 +95,25 @@ final class Static_Site_Importer_Jetpack_Forms_Runtime {
 	}
 
 	/**
+	 * Whether this site can accept visitor uploads through Jetpack's file field.
+	 *
+	 * Jetpack resolves `field-file` availability from the site's plan (or its
+	 * WordPress.com features) and sends each file to the WordPress.com
+	 * unauthenticated-upload endpoint for the site's WordPress.com ID. A field
+	 * mapped without both would render an upgrade nudge or a dead upload.
+	 */
+	public static function file_upload_available(): bool {
+		if ( ! class_exists( 'WP_Block_Type_Registry' ) || ! WP_Block_Type_Registry::get_instance()->is_registered( 'jetpack/field-file' ) ) {
+			return false;
+		}
+		if ( ! self::runtime_static_method_exists( 'Jetpack_Gutenberg', 'get_cached_availability' ) || ! self::runtime_static_method_exists( 'Jetpack_Options', 'get_option' ) ) {
+			return false;
+		}
+		$availability = self::invoke_runtime_static_method( 'Jetpack_Gutenberg', 'get_cached_availability' );
+		return ! empty( $availability['field-file']['available'] ) && ! empty( self::invoke_runtime_static_method( 'Jetpack_Options', 'get_option', array( 'id' ) ) );
+	}
+
+	/**
 	 * Determine whether the Jetpack Forms runtime is available to host seeded forms.
 	 *
 	 * Public so the registry availability callback and the dependency gate can run

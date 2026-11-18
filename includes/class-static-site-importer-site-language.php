@@ -394,9 +394,53 @@ final class Static_Site_Importer_Site_Language {
 			$report['kept_locale'] = self::default_locale();
 			return $report;
 		}
-		$report['status'] = 'applied';
-		$report['locale'] = $locale;
+		$report['status']       = 'applied';
+		$report['locale']       = $locale;
+		$report['translations'] = self::install_code_translations( $locale );
 		return $report;
+	}
+
+	/**
+	 * Installed plugins and themes speak the site language too. Plugins the
+	 * import installed (a store, a forms provider) arrive before the language
+	 * is set, so core's post-install translation pass found nothing to fetch.
+	 * Ask WordPress.org for their packs in the new locale through the same
+	 * update check and language-pack upgrader core runs on its schedule.
+	 *
+	 * @param string $locale Applied site locale.
+	 * @return array<int,string> Installed packs as `type:slug`.
+	 */
+	private static function install_code_translations( string $locale ): array {
+		if ( self::default_locale() === $locale ) {
+			return array();
+		}
+		foreach ( array( 'wp-includes/update.php', 'wp-admin/includes/update.php', 'wp-admin/includes/file.php', 'wp-admin/includes/misc.php', 'wp-admin/includes/class-wp-upgrader.php' ) as $file ) {
+			if ( is_readable( ABSPATH . $file ) ) {
+				require_once ABSPATH . $file; // phpcs:ignore WordPress.WP.EnqueuedResourceParameters -- Core update and upgrader APIs.
+			}
+		}
+		if ( ! function_exists( 'wp_update_plugins' ) || ! function_exists( 'wp_get_translation_updates' ) || ! class_exists( 'Language_Pack_Upgrader' ) || ! wp_is_file_mod_allowed( 'download_language_pack' ) ) {
+			return array();
+		}
+		// A fresh check: the cached one predates the locale.
+		wp_clean_update_cache();
+		wp_update_plugins();
+		wp_update_themes();
+		// Core offers each pack as an object with type, slug and language fields.
+		$updates = array_values( array_filter( wp_get_translation_updates(), static fn( $update ): bool => ( get_object_vars( $update )['language'] ?? null ) === $locale && in_array( get_object_vars( $update )['type'] ?? null, array( 'plugin', 'theme' ), true ) ) );
+		if ( array() === $updates ) {
+			return array();
+		}
+		$results   = ( new Language_Pack_Upgrader( new Automatic_Upgrader_Skin() ) )->bulk_upgrade( $updates, array( 'clear_update_cache' => false ) );
+		$installed = array();
+		foreach ( $updates as $index => $update ) {
+			$result = is_array( $results ) ? ( $results[ $index ] ?? null ) : null;
+			if ( null !== $result && false !== $result && ! is_wp_error( $result ) ) {
+				$fields      = get_object_vars( $update );
+				$installed[] = $fields['type'] . ':' . ( $fields['slug'] ?? '' );
+			}
+		}
+		return $installed;
 	}
 
 	/**

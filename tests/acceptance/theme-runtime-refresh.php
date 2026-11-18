@@ -6,9 +6,10 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 require_once ABSPATH . 'wp-content/plugins/static-site-importer/includes/class-static-site-importer-generated-runtime-package.php';
 $directory = get_theme_root() . '/ssi-runtime-refresh-' . wp_generate_uuid4();
 $payload   = array(
-	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug' => 'refresh-probe',
-	'blocks'    => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'refresh-probe',
+	'blocks'           => array(
 		array(
 			'name'       => 'probe',
 			'block_json' => array(

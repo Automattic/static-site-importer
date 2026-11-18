@@ -500,7 +500,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'success'      => true,
 			'operation'    => 'plan',
 			'pages'        => class_exists( 'Static_Site_Importer_Page_Choices' ) ? Static_Site_Importer_Page_Choices::rows( $prepared['resolved']['pages'] ?? $prepared['receipt']['plan']['pages'] ?? $compiled['plan']['pages'] ) : array(),
-			'page_choices' => array_intersect_key( $args, array_flip( array( 'pages', 'page_routes', 'post_status', 'slug' ) ) ),
+			'navigation'   => $prepared['navigation'] ?? array(),
+			'page_choices' => array_intersect_key( $args, array_flip( array( 'pages', 'page_routes', 'post_status', 'slug', 'navigation' ) ) ),
 			'destination'  => $args['destination'] ?? 'generated_theme',
 			'plan'         => $compiled['plan'],
 			'diagnostics'  => array_merge(
@@ -865,12 +866,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$receipt                                   = $payloads['materialization_receipt'] ?? array();
 		$receipt_summary                           = array_filter(
 			array(
-				'schema'              => $receipt['schema'] ?? null,
-				'status'              => $receipt['status'] ?? null,
-				'receipt_instance_id' => $receipt['receipt_instance_id'] ?? null,
-				'plan_identity'       => $receipt['plan_identity'] ?? null,
+				'schema'                 => $receipt['schema'] ?? null,
+				'status'                 => $receipt['status'] ?? null,
+				'receipt_instance_id'    => $receipt['receipt_instance_id'] ?? null,
+				'navigation'             => $receipt['completed']['navigation'] ?? null,
+				'navigation_diagnostics' => array_values( array_filter( $receipt['diagnostics'] ?? array(), static fn( array $row ): bool => str_starts_with( $row['reason_code'] ?? '', 'existing_theme_navigation_' ) ) ),
+				'plan_identity'          => $receipt['plan_identity'] ?? null,
 			),
-			static fn ( $value ): bool => null !== $value
+			static fn ( $value ): bool => null !== $value && array() !== $value
 		);
 		$result['materialization_receipt_summary'] = $receipt_summary;
 		if ( isset( $payloads['materialization_receipt']['plan'] ) ) {
