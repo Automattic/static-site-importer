@@ -1,4 +1,63 @@
-# Shared import checks
+# Import loop
+
+`loop.json` is a Homeboy workflow that turns a public site into a WordPress
+site and fixes what the import gets wrong, one pass at a time. Each pass:
+
+1. **imports** the site: the first pass captures every route with the pinned
+   capture client in `compare-client.json`, freezing reference evidence for each
+   one so every route is compared, and every pass re-imports that frozen capture through the latest Static Site
+   Importer release with the Blocks Engine transformer at trunk;
+2. **evaluates** the import (the checks below) into `findings.json`;
+3. **triages** each blocker into a GitHub issue on its owning repository;
+4. **cooks** a fix for each issue, accepted only if the whole-site gate measures
+   its finding reduced with nothing else regressed;
+5. **confirms** each fix PR by re-measuring its exact head merged onto what
+   the pass measured: a Blocks Engine head as the transformer, a Static Site
+   Importer head as the importer, and a Data Liberation Agent head as the
+   capture client, which captures the source again and compares with itself
+   (`gates/client-candidate.sh`), and
+6. **merges** it once it is green, at that head. Each Cook's fix is confirmed
+   and merged as soon as that Cook settles (a `per_item` step), and open fixes
+   no Cook works this pass are confirmed alongside the Cooks;
+7. **scores** the pass into `<runs>/<slug>-scoreboard.jsonl`.
+
+A refuted fix goes back to a Cook on its own branch. Each rework is recorded
+on the issue and counts toward its Cook cap like a failed Cook, so a fix that
+keeps failing reaches a design round and then an exception; an excepted
+finding's refuted PR is closed.
+
+It starts the next pass until no blocker is left with an issue to work on,
+the blockers are unchanged for 3 passes, or 60 passes have run.
+
+## Run the loop
+
+Give it a URL:
+
+```sh
+LOOP_COOK_MODEL=<model route> tools/import-loop/run.sh https://example.com/
+```
+
+`run.sh` derives the slug from the URL's host and path, keeps runs in
+`$LOOP_RUNS_DIR` (default `~/loop-runs`), and keeps its own Blocks Engine
+clone at `<runs>/clones/blocks-engine`, fetching `trunk` into it each pass.
+Reusing a slug continues that site's captures and issues; pass a second
+argument for a fresh run. `LOOP_COOK_PLACEMENT` and `LOOP_WP_CLI` override
+the workflow defaults (`auto` and `studio wp`), and any further arguments,
+such as `--notification-transport` and `--notification-route`, go to
+`homeboy workflow run`.
+
+Each pass first pins the tools at the current commit of `$LOOP_TOOLS_REF`
+(default `origin/main`) in the checkout it was started from (`tools.sh`), so a
+merged change to the loop's scripts reaches every running chain on its next
+pass. Set `LOOP_TOOLS_REF` to a commit to hold a run on fixed tools. A change to
+`loop.json` itself takes effect on the next launch. When the capture client or
+its arguments in `compare-client.json` change, the next pass captures the site
+again.
+
+`homeboy runs show <instance>` reports progress. Pass output lands in
+`<runs>/<slug>-p<N>-{eval,triage,confirm}/`.
+
+## Shared import checks
 
 `evaluate.mjs` and `gates/accept.mjs` call `checks.mjs`. Parity runs the pinned
 Data Liberation release through `npx --yes --package=<release tgz>` (as Studio
@@ -18,6 +77,18 @@ the deepest root-to-leaf chain with each level's className/anchor
 Theme checks run authenticated browser REST requests and render a reversible
 Global Styles restyle. These are disposable test imports: authentication resets
 the first administrator's password, as the previous editor checker did.
+
+Quality checks hold the import to what developer-built block themes do
+(`quality.mjs`). A page of 25 or more blocks may have at most 1.1 groups per
+content block and a nesting depth of 10, and at most 10% of the site's block
+style values may be literal rather than theme presets (CSS-wide keywords such
+as `inherit` count as neither). Each threshold sits just past the maximum
+`calibrate.mjs` measures across Twenty Twenty-Five, Twenty Twenty-Four, Ollie
+and Frost; rerun it with more themes or `--site <imported WordPress>` to see an
+import against them. Each route may load at most 90 KB of theme CSS beyond
+Global Styles and core block styles; developer block themes load 1.5-36 KB,
+and Extendable, the heaviest measured, 85 KB. A structure repeated three or more times on a page stays
+an advisory, because developer pages repeat cards from one pattern too.
 
 `progress.mjs` compares block instance counts (not boolean predicate results).
 Acceptance requires fewer own occurrences in the recorded cells, no growing or

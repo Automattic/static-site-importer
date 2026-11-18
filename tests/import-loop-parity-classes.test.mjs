@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { parityFailureClass, parityCellReports } from '../tools/import-loop/checks.mjs';
+import { parityCellReports } from '../tools/import-loop/checks.mjs';
+import { parityFailureClass } from '../tools/import-loop/progress.mjs';
 import { occurrences, compareImports } from '../tools/import-loop/progress.mjs';
 
 // Failure strings exactly as the pinned scorer emitted them on sdnunca `/`
@@ -17,6 +18,8 @@ const failures = {
   backgroundGeometry: 'background geometry differs for 1 source background(s)',
   pageHeight: 'page height 3472px !== source 3359px (Δ113)',
   imageDecoding: 'images 1 visible image(s) pending or failed decoding',
+  // Data Liberation 0.35.37 on agency `/` (#3081).
+  pixelRegion: 'pixel region 144,768 96x96 (4 tiles)',
 };
 
 test('each scorer failure class names its own subject and owner', () => {
@@ -25,7 +28,7 @@ test('each scorer failure class names its own subject and owner', () => {
     [failures.link, 'link'], [failures.anchor, 'link'], [failures.motion, 'motion'],
     [failures.textPosition, 'text_position'], [failures.textContent, 'text_content'],
     [failures.imageGeometry, 'image_geometry'], [failures.backgroundGeometry, 'background_geometry'],
-    [failures.pageHeight, 'page_height'], [failures.imageDecoding, 'image_decoding'],
+    [failures.pageHeight, 'page_height'], [failures.imageDecoding, 'image_decoding'], [failures.pixelRegion, 'pixel_region'],
   ]) assert.deepEqual(parityFailureClass(text), { subject, owner_repo: 'blocks-engine' });
 });
 
@@ -65,6 +68,12 @@ test('a passing verified cell reports nothing; a failed state without strings st
   // still fails.
   assert.deepEqual(parityCellReports(cell([], { pending: [{ state: 'baseline' }] })).map((r) => r.subject), ['unverified']);
   assert.deepEqual(parityCellReports(cell([{ state: 'baseline', profile: 'desktop', failures: [], pass: false }])).map((r) => r.subject), ['unverified']);
+});
+
+test('a route the imported site answers with 404 is the importer\'s route_missing finding', () => {
+  const reason = 'Error: Observation HTTP 404: http://127.0.0.1:52543/privacy-policy/';
+  const reports = parityCellReports(cell([], { route: '/privacy-policy/', pending: [{ state: 'baseline', reason }, { state: 'baseline', reason }] }));
+  assert.deepEqual(reports, [{ owner_repo: 'static-site-importer', subject: 'route_missing', evidence: { route: '/privacy-policy/', reasons: [reason] } }]);
 });
 
 test('per-class signatures are distinct, so each class is measured on its own', () => {

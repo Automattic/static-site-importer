@@ -25,6 +25,43 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
  * Emits Jetpack field and contact-form block markup.
  */
 final class Static_Site_Importer_Form_Field_Markup {
+	/** Include hidden authored-input slots the producer omits from its control inventory. */
+	public static function with_hidden_controls( array $form ): array {
+		$walk = static function ( array $block ) use ( &$walk, &$form ): array {
+			if ( ! isset( $block['form_control_index'] ) && str_ends_with( (string) ( $block['blockName'] ?? '' ), '/authored-input' ) && 'hidden' === strtolower( (string) ( $block['attrs']['type'] ?? '' ) ) ) {
+				$form['controls'][]          = array_merge(
+					$block['attrs'],
+					array(
+						'tag'  => 'input',
+						'type' => 'hidden',
+					)
+				);
+				$block['form_control_index'] = array_key_last( $form['controls'] );
+			}
+			foreach ( $block['innerBlocks'] ?? array() as $index => $child ) {
+				$block['innerBlocks'][ $index ] = $walk( $child );
+			}
+			return $block;
+		};
+		foreach ( $form['readable_blocks'] ?? array() as $index => $block ) {
+			$form['readable_blocks'][ $index ] = $walk( $block );
+		}
+		return $form;
+	}
+
+	/** Jetpack converts defaultValue to its hidden field's shortcode default. */
+	public static function hidden_field_block( array $control ): array {
+		$name = trim( (string) $control['name'] );
+		return array(
+			'name'  => 'jetpack/field-hidden',
+			'attrs' => array(
+				'label'        => $name,
+				'id'           => $name,
+				'defaultValue' => (string) $control['value'],
+			),
+		);
+	}
+
 	/** The country Jetpack's phone field editor selects when none is set. */
 	private const PROVIDER_DEFAULT_COUNTRY = 'US';
 
@@ -80,9 +117,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
-	 * Aggregate only an exact labelled radio-group topology that Jetpack can
-	 * represent as one field: a wrapper whose children are each a label
-	 * wrapping one radio, holding every radio of that name in the form. The
+	 * Aggregate labelled radios into one provider field. Explicit radiogroup
+	 * nodes supply descendant membership regardless of option wrappers; older
+	 * topology retains the label-wrapped fallback. The
 	 * generic topology supplies membership; the group's label is its fieldset
 	 * legend, its ARIA group name, or else the nearest preceding label in the
 	 * wrapper that wraps no control. No provider semantics are inferred.
@@ -114,7 +151,17 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 		unset( $siblings );
 
-		$legends = self::labelled_fieldset_legends( $form, $nodes );
+		$descendants = static function ( string $id ) use ( &$descendants, $children ): array {
+			$members = array();
+			foreach ( $children[ $id ] ?? array() as $child ) {
+				if ( 'control' === ( $child['kind'] ?? null ) && is_int( $child['control'] ?? null ) ) {
+					$members[] = $child['control'];
+				}
+				$members = array_merge( $members, $descendants( $child['id'] ) );
+			}
+			return $members;
+		};
+		$legends     = self::labelled_fieldset_legends( $form, $nodes );
 
 		$all_radio_names = array();
 		foreach ( $controls as $control_index => $control ) {
@@ -127,7 +174,33 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 
-		foreach ( $nodes as $group ) {
+		$groups = array();
+		foreach ( $nodes as $node ) {
+			$radiogroup = 'radiogroup' === ( $node['group_role'] ?? null );
+			// A captioned fieldset is the same named group: its legend names the
+			// radios however each option is wrapped.
+			if ( ! $radiogroup && ! isset( $legends[ $node['id'] ] ) ) {
+				$groups[] = $node;
+				continue;
+			}
+			$by_name = array();
+			foreach ( $descendants( $node['id'] ) as $index ) {
+				$control = $controls[ $index ] ?? array();
+				if ( 'input' === strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) && 'radio' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+					$by_name[ trim( (string) ( $control['name'] ?? '' ) ) ][] = $index;
+				}
+			}
+			// One legend names one radio group; a fieldset of several keeps the
+			// per-option label shape below.
+			if ( ! $radiogroup && 1 !== count( $by_name ) ) {
+				$groups[] = $node;
+				continue;
+			}
+			foreach ( $by_name as $members ) {
+				$groups[] = $node + array( 'radio_members' => $members );
+			}
+		}
+		foreach ( $groups as $group ) {
 			if ( ! is_array( $group ) || 'wrapper' !== ( $group['kind'] ?? null ) || 'label' === ( $group['tag'] ?? null ) || ! is_string( $group['id'] ?? null ) ) {
 				continue;
 			}
@@ -138,7 +211,8 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) ) {
 				$labels = $children[ $labels[0]['id'] ];
 			}
-			foreach ( $labels as $label ) {
+			$explicit_group = isset( $group['radio_members'] );
+			foreach ( $explicit_group ? array() : $labels as $label ) {
 				$label_children = $children[ $label['id'] ] ?? array();
 				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
 					$unambiguous_shape = false;
@@ -147,7 +221,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$members[]        = $label_children[0]['control'];
 				$semantic_nodes[] = $label['id'];
 			}
-			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) || isset( $result['groups'][ $members[0] ] ) || isset( $result['suppressed_controls'][ $members[0] ] ) ) {
+			if ( $explicit_group ) {
+				$members = $group['radio_members'];
+			}
+			if ( ! $unambiguous_shape || count( $members ) < 2 || count( $members ) !== count( array_unique( $members ) ) || isset( $result['groups'][ $members[0] ] ) || isset( $result['suppressed_controls'][ $members[0] ] ) ) {
 				continue;
 			}
 			$first          = $controls[ $members[0] ] ?? null;
@@ -172,16 +249,21 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$options[] = $option;
 				$required  = $required || ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) );
 			}
-			if ( ! $unambiguous_shape || '' === $name || count( $all_radio_names[ $name ] ?? array() ) !== count( $members ) ) {
+			if ( ! $unambiguous_shape || '' === $name || ( ! $explicit_group && count( $all_radio_names[ $name ] ?? array() ) !== count( $members ) ) ) {
 				continue;
 			}
 			$is_fieldset = isset( $legends[ $group['id'] ] );
-			$group_label = $is_fieldset ? $legends[ $group['id'] ] : self::radio_group_label( $form, $group, (string) ( $first['selector'] ?? '' ) );
+			$group_label = self::radio_group_label( $form, $group, (string) ( $first['selector'] ?? '' ) );
+			if ( empty( $group['group_label'] ) && $is_fieldset ) {
+				$group_label = $legends[ $group['id'] ];
+			}
 			if ( '' === $group_label ) {
 				continue;
 			}
 
-			$group_control            = $first;
+			$group_control = $first;
+			// The first option's label presentation does not name the group.
+			unset( $group_control['label_class'], $group_control['label_classes'], $group_control['label_marker'] );
 			$group_control['text']    = $group_label;
 			$group_control['label']   = $group_label;
 			$group_control['options'] = $options;
@@ -308,6 +390,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array(), bool $responsive_border = false ): ?array {
 		$map = Static_Site_Importer_Jetpack_Forms_Runtime::field_block_map();
+		// The file field is plan- and connection-gated; callers only ask for it
+		// after Static_Site_Importer_Jetpack_Forms_Runtime::file_upload_available().
+		$map['file'] = 'jetpack/field-file';
 
 		$lookup = 'textarea' === $tag ? 'textarea' : ( 'select' === $tag ? 'select' : $type );
 		if ( 'select-multiple' === $type ) {
@@ -364,8 +449,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 		if ( 'radio' === $lookup ) {
+			// An option-less Jetpack radio field renders nothing. Callers must
+			// report the declined control rather than serialize an invisible field.
+			if ( empty( $attrs['options'] ) ) {
+				return null;
+			}
 			$checked_option = isset( $control['checked_option'] ) && is_scalar( $control['checked_option'] ) ? trim( (string) $control['checked_option'] ) : '';
-			if ( '' !== $checked_option && in_array( $checked_option, (array) ( $attrs['options'] ?? array() ), true ) ) {
+			if ( '' !== $checked_option && in_array( $checked_option, $attrs['options'], true ) ) {
 				$attrs['defaultValue'] = $checked_option;
 			}
 		}
@@ -478,6 +568,32 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'attrs'       => array( 'type' => 'radio' === $lookup ? 'radio' : 'checkbox' ),
 				'innerBlocks' => $option_blocks,
 				'wrapper'     => 'ul',
+			);
+		} elseif ( 'file' === $lookup ) {
+			// Jetpack takes one file of its own accepted types; a source that asks
+			// for several files or narrows the types keeps that as a named loss.
+			foreach ( array( 'multiple', 'accept' ) as $attribute ) {
+				if ( ! empty( $control[ $attribute ] ) ) {
+					$losses[] = array(
+						'dimension'         => 'control',
+						'reason_code'       => 'unsupported_control_attribute',
+						'attribute'         => $attribute,
+						'control_type_hash' => hash( 'sha256', $type ),
+					);
+				}
+			}
+			$inner_blocks[] = array(
+				'name'        => 'jetpack/dropzone',
+				'attrs'       => array(),
+				'innerBlocks' => array(
+					array(
+						'name'    => 'core/paragraph',
+						'attrs'   => array(),
+						'wrapper' => 'paragraph',
+						'content' => '' !== $placeholder ? $placeholder : __( 'Drag and drop or click to select a file.', 'static-site-importer' ),
+					),
+				),
+				'wrapper'     => 'dropzone',
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
 			$input_attrs = array();
@@ -635,7 +751,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @return bool
 	 */
 	private static function provider_renders_help_text( string $lookup ): bool {
-		return ! in_array( $lookup, array( 'checkbox', 'radio' ), true );
+		return ! in_array( $lookup, array( 'checkbox', 'radio', 'file' ), true );
 	}
 
 	/**
@@ -1019,11 +1135,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '"' . ( '' !== $style ? ' style="' . self::escape_attribute( rtrim( $style, ';' ) ) . '"' : '' ) . '>';
 			$suffix = '</' . $tag . ">\n";
+		} elseif ( 'dropzone' === $wrapper ) {
+			$prefix = "\n<div class=\"wp-block-jetpack-dropzone\">";
+			$suffix = "</div>\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
-			// The options list saves through useBlockProps.save(): a custom class is saved with the block's generated class.
-			$custom = 'jetpack/options' === $name && is_string( $attrs['className'] ?? null ) ? trim( $attrs['className'] ) : '';
-			$prefix = "\n<" . $wrapper . ( '' !== $custom ? ' class="' . self::escape_attribute( 'wp-block-jetpack-options ' . $custom ) . '"' : '' ) . '>';
-			$suffix = '</' . $wrapper . ">\n";
+			// The options list saves through useBlockProps.save(): always include the generated class.
+			$custom  = 'jetpack/options' === $name && is_string( $attrs['className'] ?? null ) ? trim( $attrs['className'] ) : '';
+			$classes = 'jetpack/options' === $name ? 'wp-block-jetpack-options' . ( '' !== $custom ? ' ' . $custom : '' ) : '';
+			$prefix  = "\n<" . $wrapper . ( '' !== $classes ? ' class="' . self::escape_attribute( $classes ) . '"' : '' ) . '>';
+			$suffix  = '</' . $wrapper . ">\n";
 		}
 
 		$inner_content = array();

@@ -341,7 +341,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** Add the importer-owned report targets before canonical destination preflight. */
 	public static function with_report_destinations( array $args ): array {
-		$theme_dir = trailingslashit( get_theme_root() ) . sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		$theme_dir = trailingslashit( get_theme_root() ) . Static_Site_Importer_Site_Identity::sanitize_slug( (string) ( $args['slug'] ?? '' ) );
 		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $args['destination'] ?? '' ) ) {
 			$args['report_destinations']          = array();
 			$args['external_report_destinations'] = array();
@@ -494,7 +494,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$destination = null;
 		}
 		if ( null === $destination ) {
-			$slug        = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+			$slug        = Static_Site_Importer_Site_Identity::sanitize_slug( (string) ( $args['slug'] ?? '' ) );
 			$theme_root  = get_theme_root();
 			$theme_uri   = trailingslashit( get_theme_root_uri() ) . $slug;
 			$theme_dir   = trailingslashit( $theme_root ) . $slug;
@@ -736,6 +736,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: integrity
 			throw new InvalidArgumentException( 'post_conflict' );
 		}
+		require_once __DIR__ . '/class-static-site-importer-existing-theme-navigation.php';
+		Static_Site_Importer_Existing_Theme_Navigation::prepare( $state );
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'], $import_run_id );
 		if ( null === $state['ordered_pages'] ) {
 			// ssi-error-class: representability:page
@@ -1601,11 +1603,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */
 	public static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
+		// An untouched core seed is a placeholder, not an owner's status choice.
+		// Adopt the planned import status; only real existing pages retain their status.
 		$id                               = (int) $existing->ID;
 		$protected                        = Static_Site_Importer_Protected_Page_Policy::is_protected_page( $existing );
 		$page['planned_existing_id']      = $id;
 		$page['action']                   = 'update';
-		$page['materialized_post_status'] = $state['args']['post_status'] ?? ( ! empty( $page['synthetic'] ) ? $page['materialized_post_status'] : $existing->post_status );
+		$page['materialized_post_status'] = $state['args']['post_status'] ?? ( ! empty( $page['synthetic'] ) || 'default_content_seed_match' === $reason ? $page['materialized_post_status'] : $existing->post_status );
 		$page['post_status']              = $page['materialized_post_status'];
 		$state['page_ids'][ $page['reconciliation_identity'] ] = $id;
 		$state['source_ids'][ $page['source_path'] ]           = $id;

@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-
+require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 
 /**
  * Resolves where a canonical plan materializes and what it may write there.
@@ -61,7 +61,7 @@ final class Static_Site_Importer_Import_Destination {
 	 * @return array|WP_Error
 	 */
 	private static function generated_theme_destination( array $args ) {
-		$slug = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		$slug = Static_Site_Importer_Site_Identity::sanitize_slug( (string) ( $args['slug'] ?? '' ) );
 		if ( '' === $slug ) {
 			return new WP_Error( 'invalid_theme_slug', 'A generated-theme destination requires a theme slug.' );
 		}

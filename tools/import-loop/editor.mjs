@@ -29,6 +29,15 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
   wp('user', 'update', user, `--user_pass=${pass}`, '--skip-email');
+  // The Welcome Guide is a modal over the whole editor: until dismissed, no
+  // toolbar button is reachable and no canvas block is clickable. Closing it
+  // after load raced its render, and a guide that opened late failed every
+  // editor check on every page as a site defect. Store it dismissed instead.
+  wp('user', 'meta', 'update', user, 'wp_persisted_preferences', JSON.stringify({ 'core/edit-post': { welcomeGuide: false } }), '--format=json');
+  // The editor checks use English accessible names: a translated admin UI
+  // times out on those selectors and reports site defects. Set only the probe
+  // user's locale so the site language and imported content stay unchanged.
+  wp('user', 'meta', 'update', user, 'locale', 'en_US');
   const pages = JSON.parse(wp('post', 'list', '--post_type=page', '--post_status=publish', '--fields=ID,url', '--format=json'));
 
   const browser = await chromium.launch();
@@ -42,7 +51,12 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
     const result = [];
     for (const { ID, url } of pages) {
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
-      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getEditorBlocks().length > 0, null, { timeout: 30_000 });
+      // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
+      // opens with zero blocks, and that is what an editor gets. The wait
+      // shares the navigation's budget: on a loaded runner an editor takes
+      // over 30s to boot, and a shorter wait reports a working editor as
+      // editor_unreachable and refutes the fix under test.
+      await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.__unstableIsEditorReady?.(), null, { timeout: 120_000 });
       const blocks = await page.evaluate(() => {
         const all = [];
         const walk = (list, depth, parent) => list.forEach((b) => {
@@ -54,13 +68,20 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
         return all;
       });
       const route = new URL(url).pathname;
-      // A finding's subject names the defect: callers may pass an image
-      // identity so a Replace failure is never reported anonymously.
-      const check = async (name, action, subject) => {
-        try { await action(); } catch (error) { report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: subject || name, route, width: 1440, evidence: error.evidence ?? String(error.message || error).slice(0, 500) }); }
+      // The subject is the check, so a finding's signature stays stable across
+      // imports; `image` names the failing image in the evidence, so a Replace
+      // failure is never anonymous. Upload paths carry the month and
+      // WordPress's -1/-2 duplicate suffixes, so they cannot be a signature.
+      const check = async (name, action, image) => {
+        try { await action(); } catch (error) {
+          // A Playwright call log ends with why an action failed (the element
+          // that intercepts pointer events, say): keep its head and its tail.
+          const text = String(error.message || error);
+          const evidence = error.evidence ?? (text.length > 1000 ? `${text.slice(0, 400)} … ${text.slice(-600)}` : text);
+          report({ stage: 'editability', check: name, owner_repo: 'blocks-engine', subject: name, route, width: 1440, evidence: image ? { image, error: evidence } : evidence });
+        }
       };
 
-      await page.getByRole('button', { name: /close/i }).first().click({ timeout: 1500 }).catch(() => {});
       const canvas = page.locator('iframe[name="editor-canvas"]');
       const frame = await canvas.count() ? page.frameLocator('iframe[name="editor-canvas"]') : page;
       await check('editor_canvas_parity', async () => {
@@ -120,9 +141,14 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}) {
               await dialog.waitFor();
               // The modal can open on "Upload files"; choosing from the library is a tab away.
               await dialog.getByRole('tab', { name: /media library/i }).click();
-              const choices = dialog.locator('.attachment');
-              await choices.nth(1).waitFor();
-              await choices.nth(1).click();
+              // Replace opens with the image's current attachment selected, and
+              // clicking a selected attachment deselects it, leaving Select
+              // disabled: choose one that is not selected, and wait for it to
+              // be checked before selecting.
+              const choice = dialog.locator('.attachment:not(.selected)').first();
+              await choice.waitFor();
+              await choice.click();
+              await dialog.locator('.attachment[aria-checked="true"]').first().waitFor();
               await dialog.getByRole('button', { name: /select|replace/i }).last().click();
               await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
               const replaced = await image.locator('img').first().getAttribute('src');

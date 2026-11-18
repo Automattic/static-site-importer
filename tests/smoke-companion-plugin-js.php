@@ -79,10 +79,11 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 // theme. Generic; no fixture-specific strings.
 $island_body = 'window.__ssiIslandMarker=function(){return 42;};';
 $payload     = array(
-	'schema'       => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'    => 'Example Site',
-	'site_name'    => 'Example Site',
-	'blocks'       => array(
+	'schema'           => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'runtime_features' => array(),
+	'site_slug'        => 'Example Site',
+	'site_name'        => 'Example Site',
+	'blocks'           => array(
 		array(
 			'name'       => 'custom-hero',
 			'block_json' => array(
@@ -92,7 +93,7 @@ $payload     = array(
 			'render'     => '<div class="ssi-hero">Example hero</div>',
 		),
 	),
-	'preserved_js' => array(
+	'preserved_js'     => array(
 		array(
 			'handle'  => 'hero-island',
 			'content' => $island_body,
@@ -101,7 +102,7 @@ $payload     = array(
 			'source_path' => 'index.html',
 		),
 	),
-	'runtime_effects' => array(
+	'runtime_effects'  => array(
 		'units' => array(
 			array(
 				'id' => 'effect_carousel',

@@ -1,5 +1,5 @@
 <?php
-/** Regression for #2619: compile the reduced artifact and reuse the moved site's seed. */
+/** Regressions for #2619 and #2986: reuse the moved site's seed with the planned status. */
 define( 'SSI_PLAN_HARNESS_ONLY', true );
 require __DIR__ . '/smoke-wordpress-site-plan-materializer.php';
 
@@ -54,6 +54,8 @@ foreach ( array( false, true ) as $edited ) {
 	} else {
 		$assert( 'completed' === $receipt['status'], 'Moved untouched seed must import: ' . json_encode( $receipt['errors'] ) );
 		$assert( 3 === ( $receipt['completed']['pages']['privacy-policy/index.html'] ?? null ), 'Policy must reuse post 3' );
+		$assert( 'publish' === $GLOBALS['ssi_plan_posts'][3]['post_status'], 'Adopted privacy seed must be published, not retain the placeholder draft status (#2986)' );
+		$assert( 'https://example.test/privacy-policy/' === get_permalink( 3 ), 'Adopted privacy seed must serve the imported route' );
 		$home_id = $receipt['completed']['pages']['index.html'] ?? 0;
 		$home_markup = stripslashes( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_content'] ?? '' );
 		$assert( str_contains( $home_markup, 'Hello.' ) && str_contains( $home_markup, '/privacy-policy' ), 'Compiled home blocks must retain the policy link' );
@@ -62,6 +64,26 @@ foreach ( array( false, true ) as $edited ) {
 	}
 	$assert( 'https://moved.test' === get_option( 'home' ), 'Install-home filter must not leak' );
 }
+// Overwriting an owner's existing policy must not publish their draft.
+$GLOBALS['ssi_plan_posts'] = array( 3 => array_replace( $seed, array( 'post_content' => 'An owner-authored policy.' ) ) );
+$GLOBALS['ssi_plan_meta'] = array( 3 => array( '_wp_page_template' => 'default' ) );
+$GLOBALS['ssi_plan_options']['fresh_site'] = '1';
+$GLOBALS['ssi_plan_options']['wp_page_for_privacy_policy'] = 3;
+$existing_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'privacy-existing-draft', 'overwrite' => true ) );
+$assert( 'completed' === $existing_receipt['status'], 'Explicit overwrite of an existing policy must complete' );
+$assert( 3 === ( $existing_receipt['completed']['pages']['privacy-policy/index.html'] ?? null ), 'Existing policy overwrite must reuse its post' );
+$assert( 'draft' === $GLOBALS['ssi_plan_posts'][3]['post_status'], 'Existing owner-authored drafts must retain their status' );
+
+// Seed adoption must still honor an explicitly requested non-public import.
+$GLOBALS['ssi_plan_posts'] = array( 3 => $seed );
+$GLOBALS['ssi_plan_meta'] = array( 3 => array( '_wp_page_template' => 'default' ) );
+$GLOBALS['ssi_plan_options']['fresh_site'] = '1';
+$GLOBALS['ssi_plan_options']['wp_page_for_privacy_policy'] = 3;
+$draft_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'privacy-seed-draft', 'overwrite' => false, 'post_status' => 'draft' ) );
+$assert( 'completed' === $draft_receipt['status'], 'Explicit draft import must complete' );
+$assert( 3 === ( $draft_receipt['completed']['pages']['privacy-policy/index.html'] ?? null ), 'Explicit draft import must reuse the seed' );
+$assert( 'draft' === $GLOBALS['ssi_plan_posts'][3]['post_status'], 'Explicit import status must override the planned publish status' );
+
 // A URL move must not weaken any of the other seed eligibility checks.
 foreach ( array(
 	array( 'post_status', 'publish', 'metadata_mismatch' ),

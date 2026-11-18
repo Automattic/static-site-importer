@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, gh, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -52,12 +52,33 @@ process.env.PREDICATE_CAPTURE = reimport.capture;
 // release is not filed again.
 execFileSync('git', ['-C', path.dirname(transformer), 'fetch', '-q', 'origin', 'trunk']);
 execFileSync('git', ['-C', path.dirname(transformer), 'checkout', '-q', '--detach', 'FETCH_HEAD']);
+if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['static-site-importer'].github, '-p', 'static-site-importer.zip', '-O', reimport.ssi_zip);
+// What each candidate is merged onto: the commits this pass measured. Blocks
+// Engine's is the trunk the import re-imported; the importer's is the commit of
+// the release whose zip it imported through. The capture client's is the
+// commit of the release compare-client.json pins.
+const ssiVersion = execFileSync('unzip', ['-p', reimport.ssi_zip, 'static-site-importer/static-site-importer.php'], { encoding: 'utf8', maxBuffer: 16 << 20 }).match(/^\s*\*\s*Version:\s*(\S+)/m)?.[1];
+if (!ssiVersion) throw new Error('triage_ssi_release_version_missing');
+const compareClient = JSON.parse(fs.readFileSync(path.join(here, 'compare-client.json'), 'utf8'));
+const clientTag = compareClient.package.match(/\/releases\/download\/([^/]+)\//)?.[1];
+if (!clientTag) throw new Error('triage_client_release_tag_missing');
+const releaseCommit = (repo, tag) => gh('api', `repos/${repos[repo].github}/commits/${tag}`, '--jq', '.sha').trim();
+const bases = { 'blocks-engine': trunk, 'static-site-importer': releaseCommit('static-site-importer', `v${ssiVersion}`), [compareClient.owner_repo]: releaseCommit(compareClient.owner_repo, clientTag) };
+const runsRoot = path.dirname(path.dirname(path.resolve(args['blocks-engine'])));
+const clones = { 'blocks-engine': args['blocks-engine'], 'static-site-importer': repoClone(repos['static-site-importer'].github, runsRoot), [compareClient.owner_repo]: repoClone(repos[compareClient.owner_repo].github, runsRoot) };
+// An importer candidate runs on this pass's trunk transformer, frozen here so a
+// later trunk cannot change it mid-pass.
+const trunkTransformer = path.join(args.work, 'trunk-transformer');
+if (!fs.existsSync(trunkTransformer)) execFileSync('bash', [path.join(here, 'gates', 'merge-onto.sh'), args['blocks-engine'], trunk, trunk, trunkTransformer, ...repos['blocks-engine'].candidate.paths]);
 
 const log = (...parts) => console.error('[triage]', ...parts);
 
 function existingIssue(finding) {
-  const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository', '-L', '20'));
-  const known = hits.filter((h) => repos[h.repository.name]);
+  // The finding's record is the issue the loop filed for it, which states its
+  // signature on its own line. An issue that only mentions the signature (a
+  // checker issue, a closing note, quoted evidence) is not the record.
+  const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository,body', '-L', '20'));
+  const known = hits.filter((h) => repos[h.repository.name] && (h.body || '').includes(`Loop signature: \`${finding.signature}\``));
   return known.find((h) => h.state === 'open') || known[0] || null;
 }
 
@@ -68,7 +89,7 @@ function routePage(route) {
     const website = path.join(args.source, new URL(result.url).hostname, 'website');
     const file = path.join(args.work, 'pages', `${route.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'home'}.html`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    execFileSync('node', [path.join(here, 'inline.mjs'), path.join(website, route.replace(/^\//, ''), 'index.html'), file], { stdio: 'ignore' });
+    execFileSync('node', [path.join(here, 'inline.mjs'), routeDocument(website, route), file], { stdio: 'ignore' });
     pages.set(route, file);
   }
   return pages.get(route);
@@ -83,7 +104,7 @@ function findingPage(finding, cell, env = predicateEnv(finding.subject, cell, re
   const key = `${finding.signature}@${cell.route}`;
   if (!findingPages.has(key)) {
     const inlined = routePage(cell.route || '/');
-    const document = path.join(reimport.capture, 'website', (cell.route || '/').replace(/^\//, ''), 'index.html');
+    const document = routeDocument(path.join(reimport.capture, 'website'), cell.route || '/');
     const page = predicateExit(predicatePath(finding.check), transformer, inlined, env) !== 0 && fs.existsSync(document) && predicateExit(predicatePath(finding.check), transformer, document, env) === 0 ? document : inlined;
     findingPages.set(key, page);
   }
@@ -102,7 +123,6 @@ function acceptanceCells(finding) {
   const cells = finding.occurrences.filter((o) => o.route).map((o) => ({ route: o.route, width: o.width, evidence: o.evidence, page: findingPage(finding, o) }));
   if (!repos[finding.owner_repo]?.predicate_root) return cells;
   if (!trunkSite) {
-    if (!fs.existsSync(reimport.ssi_zip)) gh('release', 'download', '-R', repos['static-site-importer'].github, '-p', 'static-site-importer.zip', '-O', reimport.ssi_zip);
     trunkSite = reimportSite(transformer, reimport, path.join(args.work, 'trunk-site'));
   }
   return cells.filter((cell) => predicateExit(predicatePath(finding.check), transformer, cell.page, { ...predicateEnv(finding.subject, cell, result.site), PREDICATE_SITE_URL: trunkSite }) === 0);
@@ -240,9 +260,9 @@ for (const finding of blockers) {
   (record.status === 'tracked' ? tracked : untracked).push(record);
 }
 
-// Cook promotes only when the repository's own checks pass and, where the
-// predicates run this repository's code, the defect is gone from every
-// acceptance cell. The gate runs from the root of Cook's worktree, on whichever
+// Cook promotes only when, where the predicates run this repository's code,
+// the defect is gone from every acceptance cell; CI runs the repository's own
+// checks on the pull request. The gate runs from the root of Cook's worktree, on whichever
 // runner Cook places it. Everything it reads beyond that worktree is a declared
 // Cook gate input (Homeboy `--gate-input`): a content-addressed snapshot that
 // Homeboy ships to the runner and names by environment variable, so the gate
@@ -268,28 +288,27 @@ const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
 // Cook lists every file of a directory's evidence in the provider prompt, and a
 // capture's hundreds of entries overflow the provider's argument. A directory
 // reaches the agent as one archive instead, built once per pass.
+// Cook's content-addressed artifact limit for one provider evidence file.
+const EVIDENCE_LIMIT = 64 << 20;
 const archives = new Map();
 function evidenceFile(source, id) {
   if (!fs.statSync(source).isDirectory()) return source;
-  if (!archives.has(id)) {
-    const archive = path.join(args.work, 'evidence', `${id}.tgz`);
-    fs.mkdirSync(path.dirname(archive), { recursive: true });
-    execFileSync('tar', ['-czhf', archive, '-C', source, '.']);
-    archives.set(id, archive);
-  }
+  if (!archives.has(id)) archives.set(id, evidenceArchive(source, path.join(args.work, 'evidence', `${id}.tgz`)));
   return archives.get(id);
 }
 
 function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
-  const checked = repo.predicate_root && item.cells.length;
+  const checked = repo.candidate && item.cells.length;
+  const importer = repo.candidate?.slot === 'importer';
+  const client = repo.candidate?.slot === 'client';
   // Contracts CI runs that the repository's verify command does not.
   const contracts = repo.contracts ? `"$tools"/${quote(repo.contracts)}` : null;
   const reimportLine = (transformer, site) => `SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/reimport.sh" ${transformer} "$IMPORT_LOOP_CAPTURE" ${site}`;
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
     'tools="${IMPORT_LOOP_TOOLS:?}/tools/import-loop"; failed=0; scratch=$(mktemp -d); bare="$scratch/wp"; site="$scratch/site"',
-    `trap 'kill $(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$scratch"' EXIT`,
+    `trap 'kill -- -$(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$scratch"' EXIT`,
     // One line per phase, so a gate report shows where its time went.
     'phase() { echo "import-loop-gate phase=$1 seconds=$((SECONDS - mark))"; mark=$SECONDS; }; mark=$SECONDS',
     ...(checked || contracts ? ['bash "$tools/gates/bare-wp.sh" "$bare" "$IMPORT_LOOP_BARE_WP" >/dev/null || exit 1; phase bare_wp'] : []),
@@ -305,9 +324,13 @@ function acceptanceGate(item, repo) {
       // A staged merge (MERGE_HEAD, e.g. trunk merged to resolve a conflict) ships as a merge.
       'parents=(-p HEAD); while read -r merged; do parents+=(-p "$merged"); done < <(cat "$(git rev-parse --git-path MERGE_HEAD)" 2>/dev/null)',
       'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" "${parents[@]}" -m candidate) || exit 1',
-      `bash "$tools/gates/merge-onto.sh" . ${quote(trunk)} "$candidate" '${repo.predicate_root}' "$scratch/merged" || exit 1; phase merge_onto_trunk`,
-      `url=$(${reimportLine(`"$scratch/merged/${repo.predicate_root}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
-      `node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "$IMPORT_LOOP_CAPTURE" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
+      `bash "$tools/gates/merge-onto.sh" . ${quote(bases[item.repo])} "$candidate" "$scratch/merged" ${repo.candidate.paths.map(quote).join(' ')} || exit 1; phase merge_onto_base`,
+      client
+        ? `url=$(SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/client-candidate.sh" "$scratch/merged" ${quote(result.url)} "$scratch/capture" "$IMPORT_LOOP_TRANSFORMER/php-transformer" "$site") || exit 1; url=$(tail -n1 <<<"$url"); phase capture_reimport`
+        : importer
+          ? `url=$(SSI_SOURCE="$scratch/merged" ${reimportLine('"$IMPORT_LOOP_TRANSFORMER/php-transformer"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`
+          : `url=$(${reimportLine(`"$scratch/merged/${repo.candidate.paths[0]}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,
+      `${client ? 'IMPORT_LOOP_CLIENT_PACKAGE="$scratch/capture/.client.tgz" ' : ''}node "$tools/gates/accept.mjs" --base-findings "$IMPORT_LOOP_BASE" --candidate-url "$url" --candidate-site "$site" --capture "${client ? '$scratch/capture' : '$IMPORT_LOOP_CAPTURE'}" --url ${quote(result.url)} --signature ${quote(item.signature)} --cells ${quote(JSON.stringify(item.cells.map(({ route, width }) => ({ route, width }))))} --wp-cli "php $bare/wp-cli.phar" --out "\${IMPORT_LOOP_OUT:-$scratch/checks}" || failed=1; phase accept`,
     ] : []),
     'exit $failed',
   ].join('\n') + '\n');
@@ -322,31 +345,45 @@ function acceptanceGate(item, repo) {
       { id: 'pages', source: path.join(args.work, 'pages'), env: 'IMPORT_LOOP_PAGES' },
       { id: 'ssi-zip', source: reimport.ssi_zip, env: 'IMPORT_LOOP_SSI_ZIP' },
       { id: 'base', source: path.resolve(args.findings), env: 'IMPORT_LOOP_BASE' },
+      ...(importer || client ? [{ id: 'transformer', source: trunkTransformer, env: 'IMPORT_LOOP_TRANSFORMER' }] : []),
     ] : []),
   ];
   // Prompts stay free of machine-local paths. Cook's gates receive the inputs
   // as gate inputs; the agent receives the same files as provider evidence
-  // under the same ids, so it can run the whole-site check itself. Bare
-  // WordPress is over the evidence size limit: without it the gate installs one.
+  // under the same ids, so it can run the whole-site check itself. An input
+  // over Cook's evidence limit (bare WordPress, a capture with every route's
+  // reference) reaches the gate only: the gate's verdict stands without it.
+  const evidence = inputs.filter((input) => input.id !== 'bare-wp')
+    .map(({ id, source }) => ({ id, source: evidenceFile(source, id) }))
+    .filter(({ source }) => fs.statSync(source).size <= EVIDENCE_LIMIT);
   return {
-    // The repository's checks and acceptance are independent: run them side
-    // by side, then print acceptance's output after the repository's. A
-    // heartbeat runs for as long as acceptance does, so neither a quiet
-    // repository check nor a long acceptance meets Cook's no-output limit.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & (${repo.verify}); repo=$?; wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate repository_exit=$repo acceptance_exit=$accept"; [ $repo -eq 0 ] && [ $accept -eq 0 ]`,
+    // The gate is whole-site acceptance alone. The repository's own suite is
+    // GitHub CI's job: it runs on every pull request, triage refutes a head
+    // whose CI fails, and the next Cook receives those failures. On the Lab it
+    // took about half the CPU and caught 20 of 244 candidates, each of which
+    // CI catches one pass later. A heartbeat runs for as long as acceptance
+    // does, so a long acceptance never meets Cook's no-output limit.
+    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate acceptance_exit=$accept"; [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
-    provider_evidence: inputs.filter((input) => input.id !== 'bare-wp').map(({ id, source }) => JSON.stringify({ id, source: evidenceFile(source, id) })),
+    provider_evidence: evidence.map((input) => JSON.stringify(input)),
+    omitted: inputs.filter((input) => input.id !== 'bare-wp' && !evidence.some((e) => e.id === input.id)).map((input) => input.id),
   };
 }
 
 stageGateTools();
 const cook_items = [];
+// Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
+const COOK_CAP = Number(args['cook-cap'] || 2);
+const DESIGN_ROUNDS = Number(args['design-rounds'] || 2);
+const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, url: result.url, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
+const openPrs = new Map(tracked.map((item) => [item, linkedPullRequests(item.issue_url)[0]]));
+await checkHeads(tracked.filter((item) => openPrs.get(item) && repos[item.repo]?.candidate && item.cells.length).map((item) => ({ item, pr: openPrs.get(item), at: headAt(item) })));
 for (const item of tracked) {
   const repo = repos[item.repo];
-  const pr = linkedPullRequests(item.issue_url)[0];
+  const pr = openPrs.get(item);
   item.open_pr = pr?.url || null;
-  const checkable = repo?.predicate_root && item.cells.length;
-  const at = { clone: args['blocks-engine'], root: repo?.predicate_root, work: args.work, reimport, site: result.site, routes: result.routes, trunk, base_findings: path.resolve(args.findings) };
+  const checkable = repo?.candidate && item.cells.length;
+  const at = headAt(item);
   const cells = pr && checkable ? cellsAtHead(item, pr, at) : [];
   const refuted = cells.filter((cell) => cell.exit === 'import_failed');
   const collateral = pr && checkable && !refuted.length ? collateralAtHead(item, pr, at) : null;
@@ -356,16 +393,42 @@ for (const item of tracked) {
   const health = pr ? prHealth(pr) : { failed: [] };
   // A head that cannot merge onto the pass's trunk is judged nowhere: say so
   // first, with the commit and files, whatever GitHub's mergeability says.
-  const trunkConflict = refuted.find((c) => /conflicts with trunk/.test(c.reason || ''));
+  const trunkConflict = refuted.find((c) => /head conflicts with/.test(c.reason || ''));
   const conflicting = health.mergeable === 'CONFLICTING' || Boolean(trunkConflict);
   if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
+  // A finding Cooks keep failing needs a design decision, not another
+  // attempt. The loop makes it: past the cap it opens a design round, a Cook
+  // that decides the scope from every earlier report, then implements it or
+  // accepts the finding. A finding accepted, or still failing after its design
+  // rounds, is out of scope: the loop stops cooking it and says so once, and a
+  // human comment re-arms it.
+  const comments = JSON.parse(gh('issue', 'view', item.issue_url, '--json', 'comments')).comments;
+  const history = cookHistory(comments, result.url);
+  if (history.accepted || (history.failed >= COOK_CAP && history.designs >= DESIGN_ROUNDS)) {
+    item.excepted = { reason: history.accepted ? 'accepted by design round' : `${history.designs} design rounds failed`, failed_cooks: history.failed, designs: history.designs };
+    if (!args['dry-run'] && !comments.at(-1)?.body.startsWith(CAP_NOTICE)) {
+      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${item.excepted.reason}. It counts as an accepted exception to ${result.url}'s import. Comment with guidance and the next pass cooks it again.\n\n${disclosure}`);
+    }
+    log(`excepted ${item.issue_url}: ${item.excepted.reason}`);
+  } else if (history.failed >= COOK_CAP) {
+    item.design = history.designs + 1;
+    log(`design round ${item.design} for ${item.issue_url}: ${history.failed} failed Cooks since guidance`);
+  }
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if ((!pr || item.refuted) && repo && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  if ((!pr || item.refuted) && repo && !item.excepted && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
       `Fix ${item.issue_url}.`,
       '',
+      ...(item.design ? [
+        `This is design round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix, and their reports are the issue's latest comments. Read them all before changing anything, then decide what this finding needs and act on it:`,
+        '- **narrow**: fix the part of the finding that has a sound root-cause fix, and say which occurrences remain and why.',
+        '- **approach**: the earlier attempts share a wrong approach; fix it a different way and say what changed.',
+        '- **accept**: the finding is correct output for this site, or no sound fix exists in the owning code path; change nothing.',
+        'Begin your final summary with `Decision: narrow`, `Decision: approach` or `Decision: accept`, followed by the reason in one sentence. The loop reads that line: `accept` ends cooking for this finding, so use it only when the evidence supports it.',
+        '',
+      ] : []),
       `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. ${item.site ? 'It is a whole-site check: the issue holds its occurrences and evidence, and there is no reduced page; the whole re-import is the reproduction.' : 'The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.'} Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
       ...(refuted.length && !trunkConflict ? [
         '',
@@ -375,7 +438,11 @@ for (const item of tracked) {
       ] : []),
       ...(conflicting ? [
         '',
-        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since${trunkConflict ? ` (${trunkConflict.reason.replace(/^import_failed: /, '')})` : ''}. The acceptance gate measures your branch merged onto trunk \`${trunk}\`, so it fails until that merge is clean. First: \`git fetch origin trunk && git merge ${trunk}\`, resolve the conflicts keeping both trunk's behavior and this fix, and commit the merge. Then continue on the fix.`,
+        // The gate merges onto the pass's measured Blocks Engine trunk; any
+        // other repository merges onto its own base branch.
+        repo.predicate_root
+          ? `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with trunk, where other fixes have merged since${trunkConflict ? ` (${trunkConflict.reason.replace(/^import_failed: /, '')})` : ''}. The acceptance gate measures your branch merged onto trunk \`${trunk}\`, so it fails until that merge is clean. First: \`git fetch origin ${repo.branch} && git merge ${trunk}\`, resolve the conflicts keeping both trunk's behavior and this fix, and commit the merge. Then continue on the fix.`
+          : `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) conflicts with \`${repo.branch}\`, where other fixes have merged since. First: \`git fetch origin ${repo.branch} && git merge origin/${repo.branch}\`, resolve the conflicts keeping both \`${repo.branch}\`'s behavior and this fix, and commit the merge. Then continue on the fix.`,
       ] : []),
       ...(health.failed.length ? [
         '',
@@ -391,21 +458,49 @@ for (const item of tracked) {
       'Done looks like:',
       '- The root cause is fixed in the owning code path, not special-cased for the reduced page.',
       ...(checkable ? [
-        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it, and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
+        '- The defect is gone from every cell below on a whole import of the captured site with your change. The acceptance gate checks exactly that, and Cook runs it before your change can be published. It is attached as provider evidence `acceptance-gate` so you can read it. ' + (repo.candidate.slot === 'client'
+          ? 'It merges your worktree onto `' + bases[item.repo] + '`, the commit of the capture client release this pass captured and compares with (a conflict fails it), builds and packs that client, captures the source URL again with it, imports that capture with Blocks Engine trunk `' + trunk + '` (provider evidence `transformer`) and the Static Site Importer release, serves it, compares it with the same packed client,'
+          : repo.candidate.slot === 'importer'
+          ? 'It merges your worktree onto `' + bases[item.repo] + '`, the commit of the Static Site Importer release this pass imported through (a conflict fails it), lays its `' + repo.candidate.paths.join('`, `') + '` over that release, re-imports the capture with Blocks Engine trunk `' + trunk + '` (provider evidence `transformer`), serves it,'
+          : 'It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it,') + ' and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Put every clone, re-import and scratch file under `$TMPDIR`, which is yours for this attempt and removed when it ends. `/tmp` is shared with every other Cook on the runner.',
-        '- Trunk is already measured: provider evidence `base` is this pass\'s whole-site evaluation of trunk, and the check compares your change against it. Read the finding\'s trunk occurrences there; there is no need to reproduce them. Run the whole-site check yourself on your change before declaring the review form complete. Its inputs are the declared provider evidence under the same ids. A directory input arrives as a `.tgz` archive: extract it into a scratch directory (`mkdir -p "$d" && tar -xzf <evidence path> -C "$d"`) and use that directory. From your worktree root, set each variable to its file or extracted directory: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
-        '- The finding’s own occurrence count must fall in its recorded cells on a whole candidate re-import. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
+        '- Trunk is already measured: provider evidence `base` is this pass\'s whole-site evaluation of trunk, and the check compares your change against it. Read the finding\'s trunk occurrences there; there is no need to reproduce them. You can run the whole-site check yourself on your change as a diagnostic. Its inputs are the declared provider evidence under the same ids. A directory input arrives as a `.tgz` archive: extract it into a scratch directory (`mkdir -p "$d" && tar -xzf <evidence path> -C "$d"`) and use that directory. From your worktree root, set each variable to its file or extracted directory: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
+        ...(gate.omitted.length ? [`- Provider evidence ${gate.omitted.map((id) => `\`${id}\``).join(', ')} is over Cook's evidence size limit and is not attached, so you cannot run the gate yourself. Cook's gate receives it in full and its verdict decides; the issue and \`base\` carry the occurrences.`] : []),
+        '- Declare the review form complete when your change fixes the root cause and your regression test and the tests nearest your change pass. Run those, not the whole repository suite: CI runs it on the pull request and the loop sends any failure back to the next Cook, and every Cook on the runner shares its CPU. Acceptance is the gate\'s verdict: Cook runs it on the pass\'s exact WordPress, and confirm re-measures the head before anything merges. A local run installs WordPress fresh and can differ from the pass, for example by serving a route the pass\'s import answers with 404, so a regression only your local run shows is evidence to report, not a reason to declare the task incomplete.',
+        '- The finding must improve in its recorded cells on a whole candidate re-import: fewer occurrences, or as many with less excess past their limits. That is the gate\'s measure of progress, and a change that meets it is done even when occurrences remain. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
         '- No other blocker may appear or grow anywhere on the site, and visual parity must not regress on any route or width.',
         ...(item.site ? [] : ['- The site-wide import plans shared template parts and route styles together, which the reduced page alone does not show: reason about the whole import, not only the reduced page.']),
         '',
         ...item.cells.map((cell) => `  - ${cell.route ? `\`${cell.route}\`` : 'site-wide'}${cell.width ? ` at ${cell.width}px` : ''}: \`${evidenceText(cell.evidence).slice(0, 600)}\``),
-      ] : ['- The issue\'s predicate exits non-zero on the reduced page with your change.']),
+      ] : repo?.predicate_root ? ['- The issue\'s predicate exits non-zero on the reduced page with your change.'] : [
+        `- The whole-site gate rebuilds only the materializer, so it cannot run this repository's code: the acceptance gate records that and exits zero. The next pass imports the site through the released importer and measures this fix there. Done is the focused regression test below and the tests nearest your change; declare the task complete when they pass. CI runs the repository's suite on the pull request.`,
+      ]),
       '- One focused regression test that fails before the fix and passes after, through the public interface.',
     ].join('\n'));
     // Cook resolves the issue itself: it reworks the one open linked PR on
     // its branch, or starts a fresh branch derived from the issue.
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, prompt: `@${prompt}`, ...gate });
+    // A refuted pull request is reworked on its own branch: Cook's task is that
+    // pull request, so its workspace starts at the head this prompt describes.
+    // Cook only resolves an issue to a pull request GitHub links to close it,
+    // and its own draft publications only name the issue.
+    // The notice opens the round on the issue: it is the guidance the next
+    // round's count starts from.
+    // A rework's Cook reports on the pull request: record the rework on the
+    // issue, where the cap counts it (cookHistory).
+    if (item.refuted && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${REWORK_NOTE}\nPass ${args.iteration} on ${result.url} refuted ${pr.url} at head \`${pr.headRefOid.slice(0, 8)}\`; a Cook reworks it on its branch. Reworks count toward this issue's Cook cap.\n\n${disclosure}`);
+    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\n${designScope({ site: result.url, instance: process.env.HOMEBOY_WORKFLOW_INSTANCE || null })}\nDesign round ${item.design} of ${DESIGN_ROUNDS} on ${result.url}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope on this site from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
+    const { omitted, ...cook } = gate;
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
   }
+}
+
+// An excepted finding's refuted pull request has nothing left to land: close
+// it, unless it is still the open fix for a finding the loop keeps cooking.
+for (const item of tracked.filter((t) => t.excepted && t.refuted)) {
+  if (args['dry-run'] || tracked.some((t) => !t.excepted && t.open_pr === item.refuted.pr)) continue;
+  gh('pr', 'close', item.refuted.pr, '--comment', `Closing: the import loop excepted ${item.issue_url} (${item.excepted.reason}) and this head \`${item.refuted.head.slice(0, 8)}\` does not fix it on a whole re-import. The issue's comments hold every attempt; a comment there with guidance re-arms the loop.\n\n${disclosure}`);
+  item.closed_pr = item.refuted.pr;
+  log(`closed ${item.refuted.pr}: ${item.issue_url} excepted`);
 }
 
 const output = {
@@ -415,6 +510,8 @@ const output = {
   routes: result.routes,
   findings_path: path.resolve(args.findings),
   trunk,
+  bases,
+  transformer: path.join(trunkTransformer, 'php-transformer'),
   url: result.url,
   progress: result.progress,
   blocker_count: blockers.length,
@@ -423,10 +520,19 @@ const output = {
   tracked_count: tracked.length,
   cook_items,
   cook_count: cook_items.length,
+  excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
+  design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
   // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
   // stops the chain when evaluate's blocker signatures repeat.
-  continue: blockers.length > 0 && tracked.length > 0,
+  continue: blockers.length > 0 && tracked.some((item) => !item.excepted),
 };
-fs.writeFileSync(path.join(args.work, 'triage.json'), JSON.stringify(output, null, 2));
-fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
-log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length}`);
+const triagePath = path.join(args.work, 'triage.json');
+fs.writeFileSync(triagePath, JSON.stringify(output, null, 2));
+// The step output carries what the workflow routes on (continue, cook_items,
+// counts); per-cell evidence stays in triage.json, which confirm and score
+// read. A site with many tracked cells would otherwise pass Homeboy's step
+// output limit, and an over-limit output reads as no output: no Cook and no
+// next pass.
+const { tracked: _tracked, untracked: _untracked, ...routed } = output;
+fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ ...routed, triage_path: triagePath }));
+log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} design=${output.design.length} excepted=${output.excepted.length}`);

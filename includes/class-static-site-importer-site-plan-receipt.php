@@ -123,7 +123,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'receipt_instance_id'       => self::valid_receipt_instance_id( $state['receipt_instance_id'] ?? null ) ? $state['receipt_instance_id'] : self::receipt_instance_id(),
 			'plan'                      => $resolved_plan,
 			'pages'                     => class_exists( 'Static_Site_Importer_Page_Choices' ) ? Static_Site_Importer_Page_Choices::rows( $receipt_pages ) : array(),
-			'page_choices'              => array_intersect_key( $state['args'] ?? array(), array_flip( array( 'pages', 'page_routes', 'post_status' ) ) ),
+			'page_choices'              => array_intersect_key( $state['args'] ?? array(), array_flip( array( 'pages', 'page_routes', 'post_status', 'navigation' ) ) ),
 			'theme'                     => $state['theme'] ?? array(),
 			'destination'               => $state['destination'] ?? array(),
 			'applied'                   => array( 'comment_entities' => $state['applied']['comment_entities'] ?? array() ),
@@ -165,6 +165,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
+				'navigation'                 => $state['applied']['navigation'] ?? array(),
 				'global_styles'              => $state['applied']['global_styles'] ?? array( 'status' => 'not_requested' ),
 				'runtime_policy'             => array(
 					'disable_smilies'            => array(

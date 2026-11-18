@@ -6,7 +6,8 @@
 # stops when the caller kills the process group or removes the site.
 #
 # Usage: reimport.sh <php-transformer dir> <capture root> <site dir>
-# Env: BARE_WP (template from bare-wp.sh), SSI_ZIP (Static Site Importer release zip)
+# Env: BARE_WP (template from bare-wp.sh), SSI_ZIP (Static Site Importer release zip),
+#      SSI_SOURCE (optional: a candidate importer's sources, laid over the release's)
 set -euo pipefail
 # The capture resolves to its physical path: the importer refuses a symlinked source.
 transformer=$(cd "$1" && pwd); capture=$(cd "$2" && pwd -P); site=$3
@@ -24,6 +25,11 @@ $wp rewrite structure '/%postname%/' --quiet
 # entries that pin the bundled copy's files.
 unzip -q "${SSI_ZIP:?}" -d "$site/wp-content/plugins"
 ssi="$site/wp-content/plugins/static-site-importer"
+# A candidate importer replaces the release's PHP sources (repos.json
+# `candidate.paths`); its built assets and dependencies stay as released.
+if [ -n "${SSI_SOURCE:-}" ]; then
+  for entry in "$SSI_SOURCE"/*; do rm -rf "$ssi/$(basename "$entry")"; cp -a "$entry" "$ssi/"; done
+fi
 slot="$ssi/vendor/automattic/blocks-engine-php-transformer"
 rm -rf "$slot"; mkdir -p "$slot"
 cp -a "$transformer/php-transformer.php" "$transformer/src" "$transformer/resources" "$transformer/VERSION" "$transformer/composer.json" "$slot/"
@@ -59,7 +65,10 @@ if ( is_file( $file ) ) return false;
 require __DIR__ . '/index.php';
 PHP
 # The block editor fires dozens of parallel requests; one worker serializes them.
-PHP_CLI_SERVER_WORKERS=8 setsid php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
+# The server leads its own process group, so its owner stops it with its
+# workers (`kill -- -<pid>`). Retention stops it once the pass is scored; the
+# deadline bounds a server whose owner died before that.
+PHP_CLI_SERVER_WORKERS=8 setsid timeout -k 30 "${IMPORT_LOOP_SERVER_TTL:-24h}" php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
 echo $! > "$site/.server.pid"
 for _ in $(seq 50); do curl -fs -o /dev/null "$url/" && break; sleep 0.2; done
 echo "$url"

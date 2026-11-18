@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+require_once __DIR__ . '/class-static-site-importer-published-file-mode.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
@@ -1921,7 +1922,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! is_string( $value ) ) {
 				return $matches[0];
 			}
-			$value    = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			$value = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+			// Unlike href/action, data attributes may be flags or identifiers, not links.
+			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $matches[1] ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
+				return $matches[0];
+			}
 			$is_local = (bool) preg_match( '~^[#?]~', $value );
 			$encode   = static function ( string $reference ) use ( $is_json ): string {
 				if ( ! $is_json ) {
@@ -2098,6 +2103,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( $error ) {
 				return $error;
 			}
+			Static_Site_Importer_Published_File_Mode::apply_file_mode( $path );
 			return array(
 				'target_path'             => $write['target_path'],
 				'hash'                    => self::file_hash( $path ),
@@ -2120,7 +2126,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$stream  = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
 		$written = is_resource( $stream ) && self::write_all( $stream, $data, $chunk_writer ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes complete canonical write bytes before publication.
 		$closed  = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
-		if ( false === $data || false === $temp || ! $written || ! $closed || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
+		$moded   = $written && $closed && Static_Site_Importer_Published_File_Mode::apply_file_mode( (string) $temp );
+		if ( false === $data || false === $temp || ! $moded || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
 			}
@@ -3043,6 +3050,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route::META_KEY, false ),
 				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
+				'page_template'                           => get_post_meta( $id, '_wp_page_template', false ),
+				'css_section'                             => get_post_meta( $id, '_static_site_importer_css_section', false ),
 				'taxonomy_memberships'                    => get_post_meta( $id, '_static_site_importer_taxonomy_memberships', true ),
 				'taxonomy_memberships_exists'             => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
 			);
@@ -3443,6 +3452,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					foreach ( array(
 						'source_routes' => Static_Site_Importer_Source_Route::META_KEY,
 						'thumbnail'     => '_thumbnail_id',
+						'page_template' => '_wp_page_template',
+						'css_section'   => '_static_site_importer_css_section',
 					) as $snapshot => $meta_key ) {
 						if ( ! array_key_exists( $snapshot, $before ) ) {
 							continue;

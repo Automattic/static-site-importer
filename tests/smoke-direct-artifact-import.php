@@ -554,7 +554,15 @@ $replay = Static_Site_Importer_Canonical_Import_Service::import( $resume( $impor
 $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'terminal replay must return the durable response without compile or mutation' );
 
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+// One-page shards send any multi-page CLI batch to process workers, and here
+// argv[0] is this smoke script, so each worker would re-run the whole smoke.
+// Keep this run in-process; the fake WP-CLI worker below covers process fanout.
+$original_argv_zero = $_SERVER['argv'][0] ?? null;
+unset( $_SERVER['argv'][0] );
 $clean_receipt = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
+if ( null !== $original_argv_zero ) {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
 $clean = $clean_receipt['response'] ?? array();
 // The fixture import fails its quality gate, so the CLI receipt carries the
 // single failed verdict over the same evidence the ability returned.
@@ -564,7 +572,7 @@ $canonical = static function ( array $response ): array {
 	return $response;
 };
 $clean_work = $clean['artifact_run']['work'] ?? array();
-$assert( empty( $clean['continuation'] ) && 1 === ( $clean_work['compile_batches'] ?? 0 ) && 3 === ( $clean_work['pages_compiled'] ?? 0 ), 'the CLI worker must compile a multi-page artifact with one shared-analysis batch' );
+$assert( empty( $clean['continuation'] ) && 3 === ( $clean_work['pages_compiled'] ?? 0 ), 'the CLI import must compile every page of a multi-page artifact' );
 $assert( empty( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] ) && 2 === $GLOBALS['ssi_direct_mutations'] && $canonical( $terminal ) === $canonical( $clean ), 'the CLI policy must remain scoped while clean and resumed canonical apply outputs match' );
 $canonical_compiled = static function ( array $result ) use ( &$canonical_compiled ): array {
 	unset( $result['metrics'], $result['work'] );
@@ -1316,6 +1324,12 @@ $events = file( $worker_events, FILE_IGNORE_NEW_LINES );
 $starts = array_slice( is_array( $events ) ? $events : array(), 0, 3 );
 sort( $starts, SORT_STRING );
 $assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
+$bounded_events = $test_root . '/worker-events-bounded.log';
+$bounded_fanout = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'e', 64 ), array( array( $bounded_events, 'one' ), array( $bounded_events, 'two' ), array( $bounded_events, 'three' ) ), 2 );
+$bounded_log    = (array) file( $bounded_events, FILE_IGNORE_NEW_LINES );
+$third_start    = array_search( 'start:three', $bounded_log, true );
+$first_end      = min( array_keys( array_filter( $bounded_log, static fn ( string $event ): bool => str_starts_with( $event, 'end:' ) ) ) ?: array( PHP_INT_MAX ) );
+$assert( true === $bounded_fanout && array( 'start:one', 'start:two' ) === ( static function ( array $first ): array { sort( $first, SORT_STRING ); return $first; } )( array_slice( $bounded_log, 0, 2 ) ) && false !== $third_start && $third_start > $first_end, 'a bounded CLI fan-out starts the first shards together and dispatches the next shard only when a worker frees up: ' . implode( ' ', $bounded_log ) );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
 $assert( is_wp_error( $process_failure ) && 'Compile worker 2 of 2 exited with status 2: Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12.' === $process_failure->get_error_message(), 'a failed CLI worker must name itself, its status and its fatal in the error message, not only that some worker failed' );
@@ -1470,6 +1484,46 @@ static_site_importer_cli_run_import_host(
 );
 $assert( 3 === $fanout_calls && array( 0, 2, 4, 6 ) === array_column( $published_progress, 'completed_units' ) && array( 6 ) === array_values( array_unique( array_column( $published_progress, 'total_units' ) ) ) && array( 'compile_pages' ) === array_values( array_unique( array_column( $published_progress, 'phase' ) ) ), 'the existing CLI progress record must announce planned pages after preparation and advancing receipts once per fanout batch' );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+
+// One page per worker, largest first (#3090): the entrypoint gets its own shard
+// and the remaining pages are dispatched by payload size to workers as they free up.
+$sized_input         = $input( 'plan' );
+$sized_input['slug'] = 'fanout-largest-first-fixture';
+foreach ( array( 'tiny.html' => 1, 'huge.html' => 400, 'mid.html' => 80 ) as $name => $paragraphs ) {
+	$sized_input['source']['files'][] = array( 'path' => 'website/' . $name, 'content' => '<!doctype html><html><body><h1>Sized</h1>' . str_repeat( '<p>Sized page paragraph text.</p>', $paragraphs ) . '</body></html>' );
+}
+$sized_dispatch = array();
+$sized_workers  = array();
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static function ( array $policy ) use ( &$sized_dispatch, &$sized_workers ): array {
+		return array_merge(
+		$policy,
+		array(
+			'compile_fanout_pages'           => 8,
+			'compile_workers'                => 2,
+			'compile_shard_pages'            => 1,
+			'compile_batches_per_invocation' => 1000,
+			'compile_fanout'                 => static function ( string $import_id, array $shards, ?int $workers = null ) use ( &$sized_dispatch, &$sized_workers ) {
+				$sized_workers[] = $workers;
+				foreach ( $shards as $ids ) {
+					$sized_dispatch[] = $ids;
+					$result           = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $ids );
+					if ( is_wp_error( $result ) ) {
+						return $result;
+					}
+				}
+				return true;
+			},
+		)
+	);
+	},
+);
+$sized = $drive_apply( $sized_input );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+$sized_order = array_map( static fn ( array $ids ): string => implode( ',', $ids ), $sized_dispatch );
+$assert( ! empty( $sized['success'] ) && array( 2 ) === $sized_workers && 6 === count( $sized_dispatch ) && array( 1 ) === array_values( array_unique( array_map( 'count', $sized_dispatch ) ) ), 'fanout dispatches every page as its own shard to the policy worker count in one batch' );
+$assert( array( 'website/index.html', 'website/huge.html', 'website/mid.html' ) === array_slice( $sized_order, 0, 3 ) && 'website/tiny.html' === end( $sized_order ), 'the entrypoint gets its own shard first and the remaining pages dispatch largest payload first: ' . implode( ' ', $sized_order ) );
+$assert( array( 1, 1, 1, 1, 1, 1 ) === array_values( $sized['artifact_run']['work']['page_compile_counts'] ?? array() ), 'largest-first dispatch compiles every page exactly once' );
 
 // A single inline page used to skip preparation and propagate the dependency
 // manager's pending_fresh_runtime WP_Error as a terminal canonical failure.

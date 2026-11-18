@@ -25,6 +25,15 @@ test('unmeasured or regressed visual cell fails closed', () => {
     assert.equal(compareImports(result(finding('a', 7)), { findings: [finding('a', 5)], visual: next }, 'a').pass, false);
   }
 });
+test('a visual cell regresses when a failure class appears or grows, not when its numbers change', () => {
+  const cell = (...failures) => [{ ...visual[0], scores: [{ state: 'baseline', failures }] }];
+  const was = cell('text 3173 chars !== source 3175', 'text position differs for 86 matched text run(s)');
+  for (const [now, regressed] of [
+    [cell('text 3176 chars !== source 3165', 'text position differs for 3 matched text run(s)'), false],
+    [cell('text 3176 chars !== source 3165', 'text position differs for 3 matched text run(s)', 'page height 9365px !== source 10264px (Δ-899)'), true],
+    [cell('text 3176 chars !== source 3165', 'text 12 chars !== source 40', 'text position differs for 3 matched text run(s)'), true],
+  ]) assert.equal(compareImports({ findings: [finding('a', 7)], visual: was }, { findings: [finding('a', 5)], visual: now }, 'a').pass, !regressed);
+});
 test('a cell unmeasured on both sides is reported, not a regression; nothing measured fails', () => {
   const blind = { route: '/about/', width: 1440, verified: false, scores: [] };
   const v = compareImports({ findings: [finding('a', 7)], visual: [...visual, blind] }, { findings: [finding('a', 5)], visual: [...visual, blind] }, 'a');
@@ -32,3 +41,18 @@ test('a cell unmeasured on both sides is reported, not a regression; nothing mea
   assert.equal(compareImports({ findings: [finding('a', 7)], visual: [blind] }, { findings: [finding('a', 5)], visual: [blind] }, 'a').pass, false);
 });
 test('counts block instances rather than just cells', () => assert.equal(occurrences(finding('a', 7)), 7));
+test('a threshold blocker passes on less excess at the same count, and fails on more', () => {
+  const measured = (signature, value) => ({ signature, severity: 'blocker', occurrences: [{ route: '/', evidence: { measure: { value, limit: 90 } } }] });
+  for (const [before, after, pass] of [[125, 100, true], [125, 125, false], [125, 130, false]]) {
+    assert.equal(compareImports(result(measured('css', before)), result(measured('css', after)), 'css').pass, pass);
+  }
+  // Another threshold blocker growing past its limit is a regression.
+  assert.equal(compareImports(result(finding('a', 7), measured('css', 100)), result(finding('a', 5), measured('css', 110)), 'a').pass, false);
+});
+test('blockers on routes only the candidate measured are new scope; a shared route still regresses', () => {
+  const was = { routes: ['/'], findings: [finding('folded', 22)], visual };
+  const wider = (b) => ({ routes: ['/', '/about/'], findings: [finding('folded', 0), finding('b', 9, '/about/'), ...(b ? [finding('b', b)] : [])], visual });
+  const v = compareImports(was, wider(0), 'folded');
+  assert.deepEqual([v.pass, v.new_scope], [true, { routes: ['/about/'], blockers: [{ signature: 'b', count: 9 }] }]);
+  assert.equal(compareImports(was, wider(1), 'folded').pass, false);
+});

@@ -92,6 +92,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return $content_index;
 		}
+		$args      = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $content_index['findings'] );
 		$artifact  = $content_index['artifact'];
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, $payload_reader );
 		if ( is_wp_error( $redirects ) ) {
@@ -578,6 +579,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 							return self::fail( $workspace, $run, 'prepare_pages', $ref, array( $page_id ) );
 						}
 						$run['refs']['pages'][ $page_id ]       = $ref;
+						// Payload size orders fanout dispatch; it is never part of a checkpoint identity.
+						$run['page_bytes'][ $page_id ]          = (int) ( $page_plan['summary']['bytes'] ?? 0 );
 						$run['work']['page_plans_prepared']     = count( $run['refs']['pages'] );
 						$run['progress']['prepared_page_count'] = count( $run['refs']['pages'] );
 						$run['progress']['updated_at']          = gmdate( 'c' );
@@ -651,8 +654,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					if ( in_array( $entry_id, $pending, true ) ) {
 						$pending = array_merge( array( $entry_id ), array_values( array_diff( $pending, array( $entry_id ) ) ) );
 					}
+					if ( 'fanout' === $policy['compile_mode'] ) {
+						$pending = self::largest_pages_first( $pending, $run['page_bytes'] ?? array(), $entry_id );
+					}
 					$batch_limit = 'fanout' === $policy['compile_mode']
-					? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
+					? $policy['compile_fanout_pages']
 					: $policy['compile_in_process_pages'];
 					$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
 					if ( empty( $batch_ids ) ) {
@@ -668,7 +674,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					self::before_phase( 'compile_pages', $run, $batch_ids );
 					$plans  = array();
 					$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
-					$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
+					// Shards are in dispatch order; the fanout runs at most compile_workers at once
+					// and starts the next shard as soon as a worker frees up.
+					$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards, $policy['compile_workers'] ) : null;
 					if ( is_wp_error( $fanout ) ) {
 						return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
 					}
@@ -1336,6 +1344,27 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 		}
 		return $ordered;
+	}
+
+	/**
+	 * Order pending pages for fanout dispatch: the entrypoint stays first so a
+	 * short budget still builds it, then the remaining pages largest payload
+	 * first, so the longest compiles start early and short ones fill workers as
+	 * they free up. Equal or unrecorded sizes keep their relative order.
+	 *
+	 * @param string[]          $pending    Pending page ids.
+	 * @param array<string,int> $page_bytes Prepared page payload bytes by page id.
+	 * @param string            $entry_id   Entrypoint page id.
+	 * @return string[]
+	 */
+	private static function largest_pages_first( array $pending, array $page_bytes, string $entry_id ): array {
+		$position = array_flip( $pending );
+		$rest     = array_values( array_diff( $pending, array( $entry_id ) ) );
+		usort(
+			$rest,
+			static fn ( string $a, string $b ): int => array( (int) ( $page_bytes[ $b ] ?? -1 ), $position[ $a ] ) <=> array( (int) ( $page_bytes[ $a ] ?? -1 ), $position[ $b ] )
+		);
+		return in_array( $entry_id, $pending, true ) ? array_merge( array( $entry_id ), $rest ) : $rest;
 	}
 
 	private static function validate_page_plan( $plan, array $shared, string $page_id ) {

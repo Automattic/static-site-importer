@@ -80,6 +80,7 @@ class Static_Site_Importer_Form_Seeder {
 			'rejected_rows_degrade'    => true,
 			'capability'               => 'form',
 			'provider'                 => 'jetpack',
+			'runtime_features'         => array( 'forms' ),
 			'label'                    => 'Jetpack contact form',
 			'report_key'               => 'form_seeding',
 			'waiver_arg'               => 'allow_missing_jetpack',
@@ -308,6 +309,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Prepare readable fields, presentation destinations and the support decision. */
 	private static function plan_form( array $form, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
+		$form = Static_Site_Importer_Form_Field_Markup::with_hidden_controls( $form );
 		if ( ! Static_Site_Importer_Form_Readable_Substitution::supports( $form ) ) {
 			return self::skipped_plan( $form, (string) ( $form['selector'] ?? '' ), (string) ( $form['source_path'] ?? '' ), 'incomplete_readable_form_tree' );
 		}
@@ -544,7 +546,13 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return;
 		}
-		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
+		if ( 'input' === $tag && 'hidden' === $type && '' !== trim( (string) ( $control['name'] ?? '' ) ) && is_scalar( $control['value'] ?? null ) && '' !== (string) $control['value'] ) {
+			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::hidden_field_block( $control );
+			$state->mapped_types[]                 = 'jetpack/field-hidden';
+			$state->record_mapped( $control_index, 'jetpack/field-hidden' );
+			return;
+		}
+		if ( ( 'input' === $tag && 'hidden' === $type ) || self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
 			$state->suppressed_controls[ $control_index ] = true;
 			$state->skipped[]                             = 'hidden_bookkeeping';
 			$state->record_suppressed( $control_index, 'hidden_bookkeeping' );
@@ -585,9 +593,9 @@ class Static_Site_Importer_Form_Seeder {
 			return;
 		}
 
-		if ( 'file' === $type && 'input' === $tag ) {
-			// A file upload is a functional control the provider cannot represent
-			// here; it is never downgraded to text or dropped without a name.
+		if ( 'file' === $type && 'input' === $tag && ! Static_Site_Importer_Jetpack_Forms_Runtime::file_upload_available() ) {
+			// Without the plan feature and a WordPress.com site ID Jetpack cannot
+			// accept the upload; it is never downgraded to text or dropped without a name.
 			$state->skipped[]                  = 'file';
 			$state->unsupported_capabilities[] = array(
 				'capability'    => 'file_upload',
@@ -674,6 +682,13 @@ class Static_Site_Importer_Form_Seeder {
 			self::control_has_responsive_border( $state->form['presentation_graph']['variants'] ?? array(), $control_index )
 		);
 		if ( null === $field_block ) {
+			if ( 'radio' === $type ) {
+				$state->control_attribute_losses[] = array(
+					'dimension'     => 'control',
+					'reason_code'   => 'radio_group_without_options',
+					'control_index' => $control_index,
+				);
+			}
 			$state->skipped[] = '' !== $type ? $type : $tag;
 			// No provider field exists for this control type. That is an explicit
 			// owner handoff, never a silent removal or downgrade.

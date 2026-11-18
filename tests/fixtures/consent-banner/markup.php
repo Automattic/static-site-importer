@@ -49,6 +49,13 @@ if ( 'policy-link' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::markup( $fact ) . Static_Site_Importer_Consent_Banner::stylesheet( $fact );
 } elseif ( 'card' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::markup( $args['consent_banner'] ) . "\n---\n" . Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
+} elseif ( 'modal' === ( $argv[1] ?? '' ) ) {
+	// A card resting mid-viewport: no edge offset, centered, width not recorded.
+	$fact             = $args['consent_banner'];
+	$fact['position'] = 'center';
+	unset( $fact['presentation']['edge_offset'] );
+	$fact['presentation']['layout'] = array( array( 'direction' => 'column', 'align_items' => 'center', 'border_radius' => '40px', 'span' => 'inset', 'inline' => 'center' ) );
+	echo Static_Site_Importer_Consent_Banner::stylesheet( $fact );
 } elseif ( 'css' === ( $argv[1] ?? '' ) ) {
 	echo Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] );
 } elseif ( 'top' === ( $argv[1] ?? '' ) ) {

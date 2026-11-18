@@ -77,6 +77,10 @@ $assert(
 	'a generated-theme import may still activate the theme it created'
 );
 
+$explicit = Static_Site_Importer_Import_Destination::normalize( array( 'slug' => 'Photo _ Studio' ) );
+$assert( ! is_wp_error( $explicit ) && 'photo-studio' === $explicit['slug'], 'explicit slugs use the shared identity normalization' );
+$assert( $GLOBALS['ssi_theme_root'] . '/photo-studio' === $explicit['theme_dir'], 'the destination directory uses the normalized owner slug' );
+
 // An existing-theme import lands in the theme the destination site already runs.
 $existing = Static_Site_Importer_Import_Destination::normalize( array( 'destination' => 'existing_theme' ) );
 $assert( ! is_wp_error( $existing ), 'an existing-theme destination resolves from the active theme' );

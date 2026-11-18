@@ -27,7 +27,7 @@ $old_theme = wp_get_theme();
 $option = 'woocommerce_hooked_blocks_version';
 $previous = get_option( $option );
 try {
-	$package = Static_Site_Importer_Generated_Runtime_Package::theme( array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => $slug, 'site_name' => 'Source header', 'blocks' => array() ) );
+	$package = Static_Site_Importer_Generated_Runtime_Package::theme( array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => $slug, 'site_name' => 'Source header', 'blocks' => array(), 'runtime_features' => array() ) );
 	$assert( ! is_wp_error( $package ), 'Could not generate theme runtime.' );
 	foreach ( $package['files'] as $path => $bytes ) {
 		wp_mkdir_p( dirname( $dir . '/' . $path ) );

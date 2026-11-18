@@ -26,7 +26,11 @@ function get_author_posts_url( $id ) { return $GLOBALS['archive_links'][ $id ]; 
 function get_permalink( $id ) { return $GLOBALS['permalinks'][ $id ] ?? 'https://native.test/' . ( 1 === $id ? '' : 'native-' . $id . '/' ); }
 function home_url( $path = '' ) { return ( $GLOBALS['home'] ?? 'https://native.test' ) . $path; }
 function wp_parse_url( $url, $component ) { return parse_url( $url, $component ); }
-function sanitize_title_for_query( $value ) { return $value; }
+// Core-like slug sanitizing: lowercase, encode UTF-8, drop other punctuation.
+function sanitize_title_for_query( $value ) {
+	$value = preg_replace_callback( '/[\x80-\xff]+/', static fn( $m ) => strtolower( rawurlencode( $m[0] ) ), mb_strtolower( $value ) );
+	return trim( preg_replace( '/[\s-]+/', '-', preg_replace( '/[^%a-z0-9 _-]/', '', $value ) ), '-' );
+}
 function get_posts( $args ) { return $GLOBALS['route_owners'] ?? array(); }
 function get_page_uri( $post ) { return $post->path; }
 class Static_Site_Importer_Plugin_Materializer {
@@ -59,6 +63,19 @@ $receipt['completed']['pages']['website/about.html'] = 2;
 $GLOBALS['route_owners'] = array( (object) array( 'ID' => 99, 'post_status' => 'publish', 'path' => 'about' ) );
 $error = Static_Site_Importer_Redirection_Materializer::routes( $receipt, array() );
 $assert( $error instanceof WP_Error && 'static_site_importer_redirect_route_occupied' === $error->code, 'Published content cannot be shadowed.' );
+// A route that only sanitizes to an unrelated page's URI is not owned by it (#3097).
+$tilde_pages   = array(
+	array( 'source_path' => 'website/about/index.html', 'route' => array( 'path' => '/about/' ) ),
+	array( 'source_path' => 'website/~about/index.html', 'route' => array( 'path' => '/~about/' ) ),
+);
+$GLOBALS['permalinks'] = array( 2 => 'https://native.test/about/', 3 => 'https://native.test/about-2/' );
+$GLOBALS['route_owners'] = array( (object) array( 'ID' => 2, 'post_status' => 'publish', 'path' => 'about' ) );
+$tilde_routes  = Static_Site_Importer_Redirection_Materializer::routes( array( 'plan' => array( 'pages' => $tilde_pages ), 'completed' => array( 'pages' => array( 'website/about/index.html' => 2, 'website/~about/index.html' => 3 ) ) ), array() );
+$assert( array( '/~about' => 'https://native.test/about-2/', '/~about/' => 'https://native.test/about-2/' ) === $tilde_routes, 'A tilde route redirects to its own page instead of colliding with the page it sanitizes to.' );
+$GLOBALS['route_owners'] = array( (object) array( 'ID' => 4, 'post_status' => 'publish', 'path' => 'caf%c3%a9' ) );
+$assert( 4 === ( Static_Site_Importer_Redirection_Materializer::published_route_owner( '/Caf%C3%A9/' )->ID ?? 0 ), 'Non-ASCII routes still match their encoded page URI.' );
+$assert( null === Static_Site_Importer_Redirection_Materializer::published_route_owner( '/caf é' ), 'Paths changed beyond case and encoding are not owned.' );
+$GLOBALS['permalinks'] = array();
 $GLOBALS['route_owners'] = array();
 $receipt['plan']['pages'][2]['route']['path'] = '/about';
 $error = Static_Site_Importer_Redirection_Materializer::routes( $receipt, array() );

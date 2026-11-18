@@ -141,6 +141,25 @@ $assert( 2 === substr_count( $stored, '/entity/42/' ), 'Both references store th
 $assert( str_contains( $stored, '/entity/88/' ), 'Cart stores the Woo page permalink at import.' );
 $assert( str_contains( $stored, '?s=field%20kit&post_type=product' ), 'Search is a local product search.' );
 $assert( null === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/products/not-field-kit', array( '/products/field-kit' => '/?p=42' ) ), 'Other handles do not match.' );
+// Data URL attributes can also contain flags; only URL-shaped values are links.
+foreach ( array( '"', "'", '\\"', '\\u0022', '\\u005cu0022' ) as $quote ) {
+	$fixture = '<product-info data-update-url="true" data-url="/products/x"><a href="/products/x">x</a></product-info>';
+	$fixture = str_replace( '"', $quote, $fixture );
+	$unresolved = array();
+	$rewritten = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $fixture, array( '/products/x' => '/local/x' ), $unresolved, '', array(), '/website/products/x/index.html' );
+	$assert( str_replace( '/products/x', '/local/x', $fixture ) === $rewritten && array() === $unresolved, 'Neutral product fixture rewrites real links without reporting the boolean flag.' );
+	foreach ( array( 'true', 'false', '', '42', '1.5', 'variant' ) as $value ) {
+		$attribute = 'data-update-url=' . $quote . $value . $quote;
+		$unresolved = array();
+		$rewritten = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $attribute, array( '/website/products/x/' . $value => '/must-not-rewrite' ), $unresolved, '', array(), '/website/products/x/index.html' );
+		$assert( $attribute === $rewritten && array() === $unresolved, 'Non-URL data values are neither rewritten nor diagnosed.' );
+	}
+	foreach ( array( '/products/x', 'products/x', './products/x', '../products/x', 'x.html', 'https://source.example/products/x', '//source.example/products/x', '?view=all', '#details' ) as $value ) {
+		$unresolved = array();
+		Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( 'data-url=' . $quote . $value . $quote, array(), $unresolved, 'https://source.example/', array(), '/current.html' );
+		$assert( array() !== $unresolved, 'URL-shaped data values remain link candidates.' );
+	}
+}
 $unresolved = array();
 $relative   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="../../products/field-kit?ref=nav#details">Relative</a>', array( '/products/field-kit' => '/?p=42' ), $unresolved, 'https://source.example/', array(), '/collections/tools/index.html' );
 $nested     = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '{"html":"\\u005cu003ca href=\\u005cu0022https://source.example/products/field-kit\\u005cu0022\\u005cu003e"}', array(), $unresolved, 'https://source.example/', array( '/products/field-kit' => '/?p=42' ) );

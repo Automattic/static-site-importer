@@ -66,6 +66,7 @@ try {
 			'published' => '2025-01-10T09:00:00.000-08:00',
 			'updated'   => '2025-02-01T12:00:00Z',
 			'author'    => 'Ada',
+			'title'     => 'First trip',
 			'terms'     => array( 'Travel', 'Food' ),
 		) === ( $first['declared_content'] ?? null ),
 		'Posts declare their content record without its HTML.'
@@ -75,13 +76,29 @@ try {
 	$aliases = array_column( $extracted['aliases'], 'to', 'from' );
 	$assert( 'search/label/Travel.html' === ( $aliases['search/label/Travel'] ?? null ) && ! isset( $aliases['2025/01/post-0.html'] ), 'Index redirects become aliases; self-redirects drop: ' . json_encode( $aliases ) );
 
+	// Declared titles distinguish an explicit empty title from an absent title.
+	foreach ( array(
+		'non-empty' => array( array( 'title' => '  Source title  ' ), array( 'title' => 'Source title' ) ),
+		'empty'     => array( array( 'title' => '' ), array( 'title' => '' ) ),
+		'absent'    => array( array(), array() ),
+	) as $case => list( $input, $expected ) ) {
+		$title_index = array(
+			'schema' => 'data-liberation-agent/content-index/v1',
+			'posts'  => array( array_merge( array( 'kind' => 'post', 'path' => '/post.html', 'slug' => 'post' ), $input ) ),
+		);
+		$title_result = Static_Site_Importer_Content_Index::extract( array( 'files' => array(
+			array( 'path' => 'website/post.html', 'content' => '<h1>HTML title</h1>' ),
+			array( 'path' => 'website/content-index.json', 'content' => json_encode( $title_index ) ),
+		) ) );
+		$declared = $title_result['artifact']['files'][0]['metadata']['declared_content'];
+		$assert( array_merge( array( 'slug' => 'post' ), $expected ) === $declared, 'Declared title (' . $case . '): ' . json_encode( $declared ) );
+	}
+
 	// Artifacts without a content index pass through unchanged, and a
 	// differently shaped content-index.json is an ordinary asset.
 	$plain = array( 'files' => array_slice( $files, 0, 4 ) );
-	$assert( array(
-		'artifact' => $plain,
-		'aliases'  => array(),
-	) === Static_Site_Importer_Content_Index::extract( $plain ), 'No content index changes nothing.' );
+	$plain_result = Static_Site_Importer_Content_Index::extract( $plain );
+	$assert( $plain === $plain_result['artifact'] && array() === $plain_result['aliases'] && empty( $plain_result['findings'] ), 'No content index changes nothing.' );
 	$foreign = array(
 		'files' => array(
 			array(
@@ -92,10 +109,104 @@ try {
 	);
 	$assert( $foreign === Static_Site_Importer_Content_Index::extract( $foreign )['artifact'], 'A foreign content-index.json stays an asset.' );
 
+	// Issue #3006: query variants must remain ordinary documents, not duplicate archives.
+	$news_index = array(
+		'schema' => 'data-liberation-agent/content-index/v1',
+		'posts'  => array(),
+		'terms'  => array(
+			array( 'name' => 'News', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/label/news', 'path' => '/label/news/index.html' ),
+			array( 'name' => 'News', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/label/news?start=2', 'path' => '/label/news/index-query-1.html' ),
+		),
+		'redirects' => array(),
+	);
+	$news_files = array();
+	foreach ( array( 'index.html' => 'Home', 'label/news/index.html' => 'News', 'label/news/index-query-1.html' => 'Older news' ) as $path => $title ) {
+		$news_files[] = array( 'path' => 'website/' . $path, 'content' => '<!doctype html><html><head><title>' . $title . '</title></head><body><main><h1>' . $title . '</h1><p>Stories from our community.</p></main></body></html>' );
+	}
+	$news_files[] = array( 'path' => 'website/content-index.json', 'content' => json_encode( $news_index ) );
+	$news = Static_Site_Importer_Content_Index::extract( array( 'files' => $news_files ) );
+	$stamped = array_column( $news['artifact']['files'], null, 'path' );
+	$archive = $stamped['website/label/news/index.html']['metadata'] ?? array();
+	$assert( '/label/news' === ( $archive['route_path'] ?? null ) && array( 'term_archive' => array( 'name' => 'News' ) ) === ( $archive['declared_content'] ?? null ), 'The first News archive keeps its route and term.' );
+	$assert( empty( $stamped['website/label/news/index-query-1.html']['metadata'] ), 'The query variant has no explicit route or declared content.' );
+	$assert( array() === $news['aliases'], 'The skipped archive creates no alias.' );
+	$assert( 1 === count( $news['findings'] ) && 'warning' === $news['findings'][0]['severity'] && str_contains( $news['findings'][0]['message'], 'website/label/news/index.html' ) && str_contains( $news['findings'][0]['message'], 'website/label/news/index-query-1.html' ), 'A warning names both conflicting files.' );
+
+	// Canonical normalization and ownership apply across posts and terms, even
+	// when the repeated entry names the same file as the original owner.
+	$ordered_index = $news_index;
+	$ordered_index['posts'] = array(
+		array( 'kind' => 'post', 'path' => '/label/news/index.html', 'permalink' => 'https://example.test/Label/NEWS.html', 'slug' => 'winner' ),
+		array( 'kind' => 'page', 'path' => '/label/news/index.html', 'permalink' => '/label/news', 'slug' => 'overwrite' ),
+		array( 'kind' => 'post', 'path' => '/label/news/index-query-1.html', 'permalink' => '/label/news?start=2', 'slug' => 'loser' ),
+	);
+	$ordered_files = $news_files;
+	$ordered_files[3]['content'] = json_encode( $ordered_index );
+	$ordered = Static_Site_Importer_Content_Index::extract( array( 'files' => $ordered_files ) );
+	$stamped = array_column( $ordered['artifact']['files'], null, 'path' );
+	$winner = $stamped['website/label/news/index.html']['metadata'];
+	$assert( 'post' === $winner['post_type'] && array( 'slug' => 'winner' ) === $winner['declared_content'] && '/label/news' === $winner['route_path'], 'The first post wins over later posts and terms, including same-file declarations.' );
+	$assert( empty( $stamped['website/label/news/index-query-1.html']['metadata'] ) && 4 === count( $ordered['findings'] ), 'All later declarations are skipped.' );
+	$assert( 1 === count( $ordered['aliases'] ) && 'label/news/index.html' === $ordered['aliases'][0]['to'], 'Only the winning declaration contributes an alias.' );
+
 	if ( ! class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\DeclaredContent' ) ) {
 		// The installed producer predates declared content (Automattic/blocks-engine#5699).
 		echo "Content index extraction passed; plan assertions need a Blocks Engine with declared content (set BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT).\n";
 		return;
+	}
+
+	$news_result = ssi_harness_drive( array( 'operation' => 'apply', 'slug' => 'news-index', 'source' => array( 'type' => 'files', 'files' => $news_files ) ) );
+	$assert( ! empty( $news_result['success'] ), 'Duplicate archive import must complete without colliding page routes: ' . json_encode( $news_result ) );
+	$news_import = end( $GLOBALS['ssi_harness_imports'] );
+	$news_pages = array_column( $news_import['plan']['pages'], null, 'source_path' );
+	$assert( isset( $news_pages['website/label/news/index-query-1.html'] ), 'The query variant imports as an ordinary document.' );
+	$assert( ! empty( $news_import['args']['source_metadata']['intake_findings'] ), 'The duplicate declaration warning reaches the import.' );
+
+	// Issue #3012: case-variant archives bind to one term, never a fallback page.
+	$pending_index = array(
+		'schema' => 'data-liberation-agent/content-index/v1',
+		'terms' => array(
+			array( 'name' => 'PENDING', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/collections/all/PENDING', 'path' => '/terms/upper.html' ),
+			array( 'name' => 'pending', 'kind' => 'term-archive', 'sourceUrl' => 'https://example.test/collections/all/pending', 'path' => '/terms/lower.html' ),
+		),
+		'redirects' => array(
+			array( 'from' => 'https://example.test/collections/all/PENDING', 'to' => '/terms/upper.html' ),
+			array( 'from' => 'https://example.test/collections/all/pending', 'to' => '/terms/lower.html' ),
+		),
+	);
+	$pending_files = array( $news_files[0] );
+	// Each capture includes a shared part; the collapsed one also has its own.
+	foreach ( array( 'upper', 'lower' ) as $variant ) {
+		$own             = 'lower' === $variant ? '<!--#include virtual="/parts/footer-lower.html" -->' : '';
+		$pending_files[] = array( 'path' => 'website/terms/' . $variant . '.html', 'content' => '<html><head><title>Pending</title></head><body><!--#include virtual="/parts/header-shared.html" --><main><h1>Pending</h1></main>' . $own . '</body></html>' );
+	}
+	$pending_files[] = array( 'path' => 'website/parts/header-shared.html', 'content' => '<header><p>Shared</p></header>' );
+	$pending_files[] = array( 'path' => 'website/parts/footer-lower.html', 'content' => '<footer><form class="newsletter-form"><input name="email"></form></footer>' );
+	$pending_files[] = array( 'path' => 'website/content-index.json', 'content' => json_encode( $pending_index ) );
+	$pending_result = ssi_harness_drive( array( 'operation' => 'apply', 'slug' => 'pending-index', 'source' => array( 'type' => 'files', 'files' => $pending_files ) ) );
+	$assert( ! empty( $pending_result['success'] ), 'Case-variant archive import completes: ' . json_encode( $pending_result ) );
+	$pending_import = end( $GLOBALS['ssi_harness_imports'] );
+	$pending_pages = array_column( $pending_import['plan']['pages'], null, 'source_path' );
+	$assert( ! isset( $pending_pages['website/terms/lower.html'] ) && ! isset( $pending_pages['website/terms/upper.html'] ), 'Neither archive is planned as a page.' );
+	$assert( 1 === count( $pending_import['plan']['taxonomy_entities'] ), 'Case variants share one term.' );
+	$pending_parts = wp_json_encode( $pending_import['plan']['template_parts'] ?? array() );
+	$assert( str_contains( $pending_parts, 'Shared' ) && ! str_contains( $pending_parts, 'newsletter-form' ), 'Only the collapsed capture\'s own part leaves the site: ' . $pending_parts );
+	$GLOBALS['term_slugs'][9] = 'pending';
+	$pending_completed = array();
+	foreach ( $pending_import['plan']['taxonomy_entities'] as $entity ) {
+		$pending_completed[] = array( 'term_id' => 9, 'taxonomy' => $entity['taxonomy'], 'slug' => $entity['slug'], 'archive_route' => $entity['archive']['source_route'] );
+	}
+	$pending_receipt = array(
+		'plan' => $pending_import['plan'],
+		'completed' => array(
+			'pages' => array_combine( array_keys( $pending_pages ), range( 100, 99 + count( $pending_pages ) ) ),
+			'taxonomy_entities' => $pending_completed,
+		),
+	);
+	$pending_routes = Static_Site_Importer_Redirection_Materializer::routes( $pending_receipt, $pending_import['args'] );
+	$assert( is_array( $pending_routes ), 'Case-variant routes bind: ' . json_encode( $pending_routes ) );
+	foreach ( array( '/collections/all/PENDING', '/collections/all/pending', '/terms/lower.html' ) as $from ) {
+		$assert( get_term_link( 9, 'post_tag' ) === ( $pending_routes[ $from ] ?? null ), 'Archive alias redirects to the shared term: ' . $from );
 	}
 
 	// The public import: declared slugs, dates and labels reach the plan.
@@ -171,6 +282,52 @@ try {
 		$link = 'https://native.test/tag/' . $slug . '/';
 		$assert( $link === ( $routes[ '/search/label/' . $label ] ?? null ) && $link === ( $routes[ '/search/label/' . $slug ] ?? null ), 'Label URL redirects to its term: ' . $label . ' ' . json_encode( $routes ) );
 	}
+	// Non-Latin archive segments must fall back to distinct derived page routes.
+	$archive_files = array( $files[0] );
+	$archive_terms = array();
+	foreach ( array( '%D9%85%DA%A9%DA%BE%D9%86' => 'مکھن', '%D8%B4%DA%A9%D8%B1' => 'شکر' ) as $segment => $name ) {
+		$path            = '/collections/all/' . $segment;
+		$archive_files[] = array(
+			'path'    => 'website' . $path . '/index.html',
+			'content' => '<!doctype html><html><head><meta charset="utf-8"><title>' . $name . '</title></head><body><main><h1>' . $name . '</h1><p>Collection archive.</p></main></body></html>',
+		);
+		$archive_terms[] = array(
+			'name'      => $name,
+			'kind'      => 'term-archive',
+			'sourceUrl' => 'https://example.com' . $path,
+			'path'      => $path . '/index.html',
+		);
+	}
+	$archive_files[] = array(
+		'path'    => 'website/content-index.json',
+		'content' => json_encode( array( 'schema' => 'example/content-index/v1', 'terms' => $archive_terms ) ),
+	);
+	$result         = ssi_harness_drive(
+		array(
+			'operation' => 'apply',
+			'slug'      => 'non-latin-archives',
+			'source'    => array(
+				'type'  => 'files',
+				'files' => $archive_files,
+			),
+		)
+	);
+	$assert( ! empty( $result['success'] ), 'Non-Latin archives must import: ' . json_encode( $result ) );
+	$import = end( $GLOBALS['ssi_harness_imports'] );
+	// Declared term listings materialize as taxonomy archives, not ordinary pages.
+	$archives = array_column( array_column( $import['plan']['taxonomy_entities'], 'archive' ), null, 'source_path' );
+	$routes   = array();
+	foreach ( $archive_terms as $term ) {
+		$archive = $archives[ 'website' . $term['path'] ] ?? array();
+		$assert( ! empty( $archive['source_route'] ) && ! empty( $archive['presentation_markup'] ), 'Each non-Latin archive materializes with content and a route: ' . json_encode( $archive ) );
+		$routes[] = $archive['source_route'];
+	}
+	$assert( 2 === count( array_unique( $routes ) ), 'Non-Latin archives have distinct derived routes: ' . json_encode( $routes ) );
+	$extracted = Static_Site_Importer_Content_Index::extract( array( 'files' => $archive_files ) );
+	foreach ( $extracted['artifact']['files'] as $file ) {
+		$assert( ! isset( $file['metadata']['route_path'] ), 'A lost segment must not declare an explicit parent route.' );
+	}
+	$assert( array() === $extracted['aliases'], 'A lost segment must not create a route alias.' );
 } finally {
 	ssi_harness_cleanup();
 }

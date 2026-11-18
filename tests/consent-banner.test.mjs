@@ -31,7 +31,7 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.match(markup, /"spacing":\{"padding":"8px 40px"\}/);
  assert.match(markup, /"typography":\{"fontSize":"13.5px","lineHeight":"16.2px"\}/);
  assert.match(markup, /line-height:16\.2px/);
- const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
  const css = run('css');
  assert.ok(css.includes(`${selector}{bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;flex-wrap:nowrap;}`));
  assert.ok(css.includes(`${selector} > p{flex:1 1 auto;margin:0px;}`));
@@ -40,7 +40,7 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.ok(run('top').includes(`${selector}{top:0px;`));
  assert.doesNotMatch(run('top'), /bottom:[^a]/);
  assert.doesNotMatch(run('hostile'), /flex-direction|flex-wrap|margin:|line-height:/);
- assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"]){bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
+ assert.equal(run('legacy'), '\n.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"]){bottom:0px;top:auto;font-family:Calibri, sans-serif;font-size:15px;line-height:18px;}\n');
  assert.doesNotMatch(run('hostile'), /display:none|body\{|has-border-color|border-width:|border-style:|border-color:/);
  assert.ok(css.indexOf(' > p{flex:1 1 auto;margin:0px;}') < css.indexOf('@media'));
 });
@@ -50,7 +50,7 @@ test('an inset card keeps its title, edge, width and stretched control per break
  assert.equal(result.ok, true, JSON.stringify(result.failures));
  assert.match(markup, /"align":"right"/);
  assert.ok(markup.includes('<p><strong class="ssi-consent-banner__title">This website uses cookies.</strong> We use cookies'));
- const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
  assert.ok(css.includes(`${selector} > p > .ssi-consent-banner__title{display:block;font-size:22px;line-height:27.5px;font-weight:400;margin:0px;padding:0px 0px 8px;}`));
  assert.match(markup, /"typography":\{"fontSize":"12px","fontWeight":"700","letterSpacing":"0.852px"\}/);
  assert.ok(css.includes('box-shadow:rgba(0, 0, 0, 0.3) 0px 2px 6px 0px;'));
@@ -59,9 +59,19 @@ test('an inset card keeps its title, edge, width and stretched control per break
  assert.ok(css.includes(`@media (max-width:767px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:0px;}${selector}{left:0!important;right:0!important;width:auto!important;max-width:none!important;margin:0!important;}${stretch}`));
  assert.ok(css.includes(`@media (min-width:768px){${selector}{flex-direction:column;}${selector} > p{margin:0px;}${selector}{bottom:24px;}${selector}{border-radius:7px;}${selector}{right:24px!important;left:auto!important;margin:0!important;width:400px!important;max-width:none!important;}${stretch}`));
 });
+test('a centered modal card rests mid-viewport at its content width, not as an edge bar', () => {
+ const css = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'modal'], { encoding: 'utf8' });
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
+ assert.ok(css.includes(`${selector}{top:50%;bottom:auto;transform:translateY(-50%);`), css);
+ assert.doesNotMatch(css, /bottom:\d/);
+ assert.ok(css.includes(`${selector}{left:0!important;right:0!important;margin:0 auto!important;width:fit-content!important;max-width:calc(100% - 20px)!important;}`), css);
+ // An edge-anchored card keeps its edge and recorded width.
+ const card = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'card'], { encoding: 'utf8' });
+ assert.doesNotMatch(card, /translateY|fit-content/);
+});
 test('presentation gap accepts one or two typed lengths in row-column order', () => {
  const run = gap => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'gap', JSON.stringify(gap)], { encoding: 'utf8' });
- const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner:not([role="document"])';
+ const selector = '.wp-block-jetpack-cookie-consent.ssi-consent-banner.ssi-consent-banner:not([role="document"])';
  for (const gap of ['0px', '4px 1rem', ' 0px 2px ', '0']) {
   const output = run(gap);
   assert.ok(output.endsWith(`\n${selector}{gap:${gap.trim()};}\n`));
@@ -104,4 +114,27 @@ test('consent intent serializes against actual Jetpack save and core buttons', (
  assert.equal(result.blocksChecked, 3);
  const upstream = validateMarkup(readFileSync('tests/fixtures/consent-banner/jetpack/serialized.html', 'utf8'));
  assert.equal(upstream.ok, true, JSON.stringify(upstream.failures));
+});
+test('consent geometry outranks Jetpack alignment rules loaded after the theme stylesheet', () => {
+ // view.css is Jetpack's cookie-consent frontend stylesheet; WordPress enqueues it after style.css,
+ // so an equal-specificity Jetpack rule (e.g. `.alignwide{width:100vw!important}`) would win.
+ const specificity = selector => {
+  let s = selector.replace(/:not\(([^)]*)\)/g, ' $1 ');
+  const attrs = (s.match(/\[[^\]]*\]/g) || []).length; s = s.replace(/\[[^\]]*\]/g, ' ');
+  const classes = (s.match(/[.:][\w-]+/g) || []).length; s = s.replace(/[.:][\w-]+/g, ' ');
+  return [(s.match(/#[\w-]+/g) || []).length, attrs + classes, (s.match(/(^|[\s>+~])[a-z][\w-]*/gi) || []).length];
+ };
+ const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+ const jetpack = readFileSync('tests/fixtures/consent-banner/jetpack/view.css.txt', 'utf8').replace(/@media[^{]*\{/g, '');
+ const geometry = /(?:^|[;{])\s*(left|right|width|max-width|margin)\s*:/;
+ const align = [...jetpack.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, , body]) => geometry.test(body)).flatMap(([, selectors]) => selectors.split(',')).filter(selector => /\.align(wide|full|left|right)/.test(selector));
+ assert.ok(align.some(selector => selector.includes('.alignwide')), 'fixture carries Jetpack alignwide geometry');
+ const css = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'card'], { encoding: 'utf8' }).split('\n---\n')[1];
+ const ssi = [...css.matchAll(/([^{}]+)\{[^}]*width:400px!important/g)].map(([, selector]) => selector.replace(/^@media[^{]*\{/, '').trim());
+ assert.ok(ssi.length > 0, css);
+ for (const ours of ssi) {
+  for (const theirs of align) {
+   assert.ok(compare(specificity(ours), specificity(theirs)) > 0, `${ours} ${specificity(ours)} must outrank ${theirs.trim()} ${specificity(theirs)}`);
+  }
+ }
 });

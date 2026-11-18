@@ -35,7 +35,14 @@ test( 'materialized placeholders preserve source colours, responsive rules and f
 				await page.locator( 'textarea' ).focus();
 				assert.deepEqual( await colours(), focused );
 			}
+			// Placeholders keep the authored token reference rather than a baked colour.
+			// The editor restates root tokens on its canvas wrapper, so a token override
+			// lands there; the frontend has no wrapper and follows :root.
 			await page.locator( 'textarea' ).blur();
+			await page.addStyleTag( { content: '.editor-styles-wrapper{--hint-color:#15803d}' } );
+			assert.equal( ( await colours() )[ 1 ], 'rgb(21, 128, 61)' );
+			await page.setContent( `<style>${ provider }${ fixture.css }</style><form class="contact-form ${ scope }">${ controls }</form>` );
+			assert.deepEqual( await colours(), base );
 			await page.addStyleTag( { content: ':root{--hint-color:#15803d}' } );
 			assert.equal( ( await colours() )[ 1 ], 'rgb(21, 128, 61)' );
 			await page.addStyleTag( { content: `.${ scope } input::placeholder,.${ scope } textarea::placeholder{color:#15803d!important}` } );
