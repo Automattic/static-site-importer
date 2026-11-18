@@ -73,6 +73,32 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			return;
 		}
 
+		static_site_importer_register_ability_once(
+			'static-site-importer/media',
+			array(
+				'label'               => __( 'Import deferred media', 'static-site-importer' ),
+				'description'         => __( 'Resume a bounded batch of capture media.', 'static-site-importer' ),
+				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
+				'input_schema'        => array(
+					'type'       => 'object',
+					'required'   => array( 'ref' ),
+					'properties' => array(
+						'ref'   => array( 'type' => 'string' ),
+						'batch' => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => 500,
+						),
+					),
+				),
+				'output_schema'       => array( 'type' => 'object' ),
+				'permission_callback' => static function (): bool {
+					return current_user_can( 'import' ) && current_user_can( 'upload_files' );
+				},
+				'execute_callback'    => array( Static_Site_Importer_Deferred_Media_Stage::class, 'run' ),
+			)
+		);
+
 		$import_properties = Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES;
 
 		static_site_importer_register_ability_once(
@@ -237,7 +263,7 @@ if ( ! function_exists( 'static_site_importer_ability_read_runtime_manifest_perm
 	 * @return bool
 	 */
 	function static_site_importer_ability_read_runtime_manifest_permission_callback(): bool {
-		/**
+		/*
 		 * Filters whether the current request may inspect runtime package profiles.
 		 *
 		 * @param bool $allowed Whether manifest inspection is allowed.
@@ -302,7 +328,7 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 
 		$allowed = ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
 
-		/**
+		/*
 		 * Filters whether the current request may run import abilities.
 		 *
 		 * @param bool $allowed Whether the current request is allowed.

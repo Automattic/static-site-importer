@@ -117,6 +117,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			);
 		}
 		$receipt = array(
+			'media'                     => $state['deferred_media'] ?? array(),
 			'schema'                    => Static_Site_Importer_WordPress_Site_Plan_Materializer::RECEIPT_SCHEMA,
 			'status'                    => $status,
 			'plan_identity'             => $state['plan_identity'],
