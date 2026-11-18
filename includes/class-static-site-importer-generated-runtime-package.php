@@ -49,13 +49,18 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 	 * features its producers and provider adapters declare, and keep only the
 	 * generated blocks that a materialized block document references.
 	 *
+	 * Selected provider entities count as documents: their bindings render the
+	 * entity's readable fallback (a form's preserved source wrappers, say) into
+	 * a page after this runtime is packaged, so blocks they carry must ship.
+	 *
 	 * @param array<string,mixed> $payload   Theme runtime payload.
 	 * @param array<mixed>        $content   Resolved plan and other documents the theme renders.
 	 * @param array<string,mixed> $lifecycle Runtime lifecycle with selected provider adapters.
 	 * @return array<string,mixed>
 	 */
 	public static function scoped_payload( array $payload, array $content, array $lifecycle = array() ): array {
-		$used_blocks = array_flip( self::referenced_block_names( $content ) );
+		$entities    = array_map( static fn( $entity ) => is_array( $entity ) ? ( $entity['manifest'] ?? array() ) : array(), is_array( $lifecycle['entities'] ?? null ) ? $lifecycle['entities'] : array() );
+		$used_blocks = array_flip( self::referenced_block_names( array( $content, $entities ) ) );
 		$namespace   = Static_Site_Importer_Companion_Plugin::block_namespace( $payload );
 		$blocks      = array();
 		foreach ( is_array( $payload['blocks'] ?? null ) ? $payload['blocks'] : array() as $block ) {
@@ -76,8 +81,9 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 	}
 
 	/**
-	 * Block names that serialized block documents reference, from their block
-	 * delimiters. Core blocks are returned with their `core/` namespace.
+	 * Block names that block documents reference: serialized documents by their
+	 * block delimiters, parsed blocks by their `blockName`. Core blocks are
+	 * returned with their `core/` namespace.
 	 *
 	 * @param array<mixed> $content Documents, plans or other nested values.
 	 * @return array<int,string>
@@ -86,7 +92,11 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		$names = array();
 		array_walk_recursive(
 			$content,
-			static function ( $value ) use ( &$names ): void {
+			static function ( $value, $key ) use ( &$names ): void {
+				if ( 'blockName' === $key && is_string( $value ) && preg_match( '~^[a-z][a-z0-9-]*/[a-z0-9-]+$~', $value ) ) {
+					$names[ $value ] = true;
+					return;
+				}
 				if ( ! is_string( $value ) || ! str_contains( $value, 'wp:' ) ) {
 					return;
 				}

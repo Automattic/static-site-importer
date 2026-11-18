@@ -148,6 +148,39 @@ $assert( ! in_array( 'ssi-runtime/includes/product-grid-runtime.php', $form_file
 $undeclared_form = Static_Site_Importer_Generated_Runtime_Package::theme( Static_Site_Importer_Generated_Runtime_Package::scoped_payload( $payload, array( $form_resolved ), array() ), 'photo-studio' );
 $assert( ! is_wp_error( $undeclared_form ) && ! isset( $undeclared_form['files']['ssi-runtime/includes/provider-form-runtime-v1.php'] ), 'form-runtime-follows-the-declaration-not-the-markup' );
 
+// A provider entity's readable fallback carries generated blocks as parsed
+// blocks, not delimiters; its binding renders them into the page after the
+// runtime is packaged, so they ship (lipsum.com's generator form keeps its
+// table wrappers in a layout-shell).
+$entity_lifecycle = array(
+	'entities' => array(
+		'forms' => array(
+			'manifest' => array(
+				'forms' => array(
+					array(
+						'readable_blocks' => array(
+							array(
+								'blockName'   => 'core/group',
+								'attrs'       => array( 'tagName' => 'form' ),
+								'innerBlocks' => array(
+									array(
+										'blockName'   => 'ssi-photo-studio/live-clock',
+										'attrs'       => array(),
+										'innerBlocks' => array(),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+	),
+);
+$entity_package   = Static_Site_Importer_Generated_Runtime_Package::theme( Static_Site_Importer_Generated_Runtime_Package::scoped_payload( $payload, array( $resolved ), $entity_lifecycle ), 'photo-studio' );
+$entity_files     = is_wp_error( $entity_package ) ? array() : Static_Site_Importer_Generated_Runtime_Package::shipped_files( $entity_package );
+$assert( in_array( 'ssi-runtime/blocks/live-clock/block.json', $entity_files, true ) && ! in_array( 'ssi-runtime/blocks/motion-sequence/block.json', $entity_files, true ), 'entity-readable-blocks-ship-their-generated-blocks: ' . implode( ', ', $entity_files ) );
+
 // A selected commerce adapter declares commerce the same way.
 $shop_lifecycle = array( 'dependencies' => array( 'shop' => array( 'adapter' => Static_Site_Importer_Woo_Product_Seeder::adapter() ) ) );
 $shop_package   = Static_Site_Importer_Generated_Runtime_Package::theme( Static_Site_Importer_Generated_Runtime_Package::scoped_payload( $payload, array( $resolved ), $shop_lifecycle ), 'photo-studio' );
