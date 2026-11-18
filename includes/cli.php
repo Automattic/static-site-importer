@@ -152,8 +152,11 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 				'reserve_bytes'   => $reserve,
 			);
 			$policy['compile_workers']      = static_site_importer_cli_compile_worker_count( $available, $budget, $reserve );
-			$policy['compile_shard_pages']  = 4;
-			$policy['compile_fanout_pages'] = $policy['compile_workers'] * $policy['compile_shard_pages'];
+			// One page per shard: the fanout keeps compile_workers shards running and
+			// starts the next (largest remaining) page whenever a worker finishes, so
+			// the largest page never queues small pages behind it on one worker.
+			$policy['compile_shard_pages']  = 1;
+			$policy['compile_fanout_pages'] = $policy['compile_workers'] * 4;
 			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
 			// Receipt workers are separate processes, so the host step stays small;
 			// keep compiling until the invocation deadline instead of one batch per step.
@@ -167,16 +170,19 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 	/**
 	 * Run bounded receipt workers concurrently; return null when process spawning is unavailable.
 	 *
+	 * At most $workers shards run at once, dispatched in the given order as
+	 * workers free up; null runs every shard at once.
+	 *
 	 * A worker killed by SIGKILL most likely met the out-of-memory killer while
 	 * its siblings held memory too, so its shard is retried on its own, one shard
 	 * at a time. Workers skip receipts they already published, so a retry only
 	 * compiles the pages the killed worker did not finish.
 	 */
-	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards ) {
+	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards, ?int $workers = null ) {
 		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
 			return null;
 		}
-		$run = static_site_importer_cli_run_compile_workers( $import_id, $shards );
+		$run = static_site_importer_cli_run_compile_workers( $import_id, $shards, $workers );
 		if ( $run['spawn_error'] && empty( $run['results'] ) ) {
 			return null;
 		}
@@ -237,13 +243,17 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 
 if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 	/**
-	 * Run one receipt worker per shard concurrently and collect how each ended.
+	 * Run one receipt worker per shard and collect how each ended.
 	 *
-	 * @param string                 $import_id Retained run id.
-	 * @param array<int|string,array> $shards    Page id shards keyed by worker index.
+	 * Shards start in order, at most $concurrency at a time; each finished worker
+	 * frees its slot for the next pending shard.
+	 *
+	 * @param string                 $import_id   Retained run id.
+	 * @param array<int|string,array> $shards      Page id shards keyed by worker index, in dispatch order.
+	 * @param int|null               $concurrency Maximum concurrent workers; null runs every shard at once.
 	 * @return array{spawn_error:bool,results:array<int|string,array{signal:int,exitcode:int,error:string,output:string}>}
 	 */
-	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards ): array {
+	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards, ?int $concurrency = null ): array {
 		// Bundled WP-CLI PHARs are readable PHP entrypoints, not necessarily executables.
 		$base_command = array( PHP_BINARY, '-d', 'memory_limit=' . ini_get( 'memory_limit' ), (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
 		$config       = WP_CLI::get_runner()->config ?? array();
@@ -252,40 +262,23 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 				$base_command[] = '--' . $key . '=' . (string) $config[ $key ];
 			}
 		}
+		$concurrency = null === $concurrency ? max( 1, count( $shards ) ) : max( 1, $concurrency );
+		$queue       = $shards;
 		$processes   = array();
+		$results     = array();
 		$spawn_error = false;
-		foreach ( $shards as $index => $page_ids ) {
-			$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
-			$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
-			$pipes   = array();
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
-			$process = proc_open(
-				$command,
-				array(
-					1 => array( 'pipe', 'w' ),
-					2 => array( 'pipe', 'w' ),
-				),
-				$pipes,
-				null,
-				null,
-				array( 'bypass_shell' => true )
-			);
-			if ( ! is_resource( $process ) ) {
-				$spawn_error = true;
-				break;
+		while ( ! empty( $processes ) || ( ! $spawn_error && ! empty( $queue ) ) ) {
+			while ( ! $spawn_error && ! empty( $queue ) && count( $processes ) < $concurrency ) {
+				$index    = array_key_first( $queue );
+				$page_ids = $queue[ $index ];
+				unset( $queue[ $index ] );
+				$spawned = static_site_importer_cli_spawn_compile_worker( $base_command, $import_id, $page_ids );
+				if ( null === $spawned ) {
+					$spawn_error = true;
+					break;
+				}
+				$processes[ $index ] = $spawned;
 			}
-			stream_set_blocking( $pipes[1], false );
-			stream_set_blocking( $pipes[2], false );
-			$processes[ $index ] = array(
-				'process' => $process,
-				'pipes'   => $pipes,
-				'output'  => '',
-				'error'   => '',
-			);
-		}
-
-		$results = array();
-		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
 				$worker['error']  = substr( $worker['error'] . (string) stream_get_contents( $worker['pipes'][2] ), -16000 );
@@ -318,6 +311,45 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 		return array(
 			'spawn_error' => $spawn_error,
 			'results'     => $results,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_spawn_compile_worker' ) ) {
+	/**
+	 * Start one receipt worker for a page shard.
+	 *
+	 * @param string[] $base_command WP-CLI command prefix.
+	 * @param string   $import_id    Retained run id.
+	 * @param array    $page_ids     Page ids the worker compiles.
+	 * @return array{process:resource,pipes:array,output:string,error:string}|null Null when the process could not start.
+	 */
+	function static_site_importer_cli_spawn_compile_worker( array $base_command, string $import_id, array $page_ids ): ?array {
+		$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
+		$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
+		$pipes   = array();
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
+		$process = proc_open(
+			$command,
+			array(
+				1 => array( 'pipe', 'w' ),
+				2 => array( 'pipe', 'w' ),
+			),
+			$pipes,
+			null,
+			null,
+			array( 'bypass_shell' => true )
+		);
+		if ( ! is_resource( $process ) ) {
+			return null;
+		}
+		stream_set_blocking( $pipes[1], false );
+		stream_set_blocking( $pipes[2], false );
+		return array(
+			'process' => $process,
+			'pipes'   => $pipes,
+			'output'  => '',
+			'error'   => '',
 		);
 	}
 }
