@@ -68,7 +68,13 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'blocks'    => array(),
 			);
 			$runtime_payload = self::resolve_companion_asset_references( $runtime_payload, $prepared['plan'], $prepared['resolved'] );
-			$package         = Static_Site_Importer_Generated_Runtime_Package::theme( $runtime_payload, (string) $prepared['theme']['slug'] );
+			// Ship only the runtime the site's documents and providers use. A prior
+			// composition's own runtime files are not evidence of use.
+			$site_documents           = is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array();
+			$site_documents['writes'] = array_values( array_filter( is_array( $site_documents['writes'] ?? null ) ? $site_documents['writes'] : array(), static fn( $write ): bool => ! is_array( $write ) || ! str_starts_with( (string) ( $write['target_path'] ?? '' ), Static_Site_Importer_Generated_Runtime_Package::DIRECTORY . '/' ) ) );
+			$runtime_payload          = Static_Site_Importer_Generated_Runtime_Package::scoped_payload( $runtime_payload, array( $site_documents, $prepared['args']['classic_theme_projection'] ?? array() ), $lifecycle );
+
+			$package = Static_Site_Importer_Generated_Runtime_Package::theme( $runtime_payload, (string) $prepared['theme']['slug'] );
 			if ( is_wp_error( $package ) ) {
 				return $package;
 			}
@@ -102,6 +108,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'owner_slug'      => $package['owner_slug'],
 				'block_names'     => $package['block_names'],
 				'runtime_scripts' => $package['runtime_scripts'],
+				'shipped_files'   => Static_Site_Importer_Generated_Runtime_Package::shipped_files( $package ),
 			);
 		} else {
 			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';

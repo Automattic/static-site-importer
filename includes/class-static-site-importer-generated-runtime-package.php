@@ -13,6 +13,99 @@ require_once __DIR__ . '/class-static-site-importer-companion-plugin.php';
 final class Static_Site_Importer_Generated_Runtime_Package {
 	public const DIRECTORY = 'ssi-runtime';
 
+	/** Materialized-content markers that prove a site uses an optional runtime feature. */
+	private const FEATURE_MARKERS = array(
+		'forms'        => array( 'wp:jetpack/', 'grunion', 'ssi-source-submit--', 'ssi-source-semantic-wrapper-' ),
+		'interactions' => array( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN, 'wp:tabs' ),
+		'commerce'     => array( 'woocommerce', 'ssi-item-template-', 'staticSiteImporterArchiveDocument', 'staticSiteImporterCartLink', 'staticSiteImporterItemSlot', 'staticSiteImporterListingControl', 'staticSiteImporterListingQuery', 'staticSiteImporterFieldPresentation', 'staticSiteImporterGalleryIdentity' ),
+	);
+
+	/** Runtime lifecycle capabilities whose providers render through an optional runtime. */
+	private const FEATURE_CAPABILITIES = array(
+		'form' => 'forms',
+		'shop' => 'commerce',
+	);
+
+	/**
+	 * Scope a theme runtime payload to what the site uses: declare the optional
+	 * runtime features its content and lifecycle need, and keep only generated
+	 * blocks that a materialized block document references.
+	 *
+	 * @param array<string,mixed> $payload   Theme runtime payload.
+	 * @param array<mixed>        $content   Resolved plan and other documents the theme renders.
+	 * @param array<string,mixed> $lifecycle Runtime lifecycle with selected provider adapters.
+	 * @return array<string,mixed>
+	 */
+	public static function scoped_payload( array $payload, array $content, array $lifecycle = array() ): array {
+		$strings = array();
+		array_walk_recursive(
+			$content,
+			static function ( $value ) use ( &$strings ): void {
+				if ( is_string( $value ) && '' !== $value ) {
+					$strings[] = $value;
+				}
+			}
+		);
+		$used_blocks = array();
+		foreach ( $strings as $value ) {
+			if ( preg_match_all( '~wp:([a-z][a-z0-9-]*)\\\\?/([a-z0-9-]+)~', $value, $matches, PREG_SET_ORDER ) ) {
+				foreach ( $matches as $match ) {
+					$used_blocks[ $match[1] . '/' . $match[2] ] = true;
+				}
+			}
+		}
+		$namespace = Static_Site_Importer_Companion_Plugin::block_namespace( $payload );
+		$blocks    = array();
+		foreach ( is_array( $payload['blocks'] ?? null ) ? $payload['blocks'] : array() as $block ) {
+			if ( ! is_array( $block ) ) {
+				$blocks[] = $block; // Left for payload validation to reject.
+				continue;
+			}
+			$declared = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
+			$name     = '' !== $declared ? $declared : $namespace . '/' . ( is_string( $block['name'] ?? null ) ? $block['name'] : '' );
+			if ( isset( $used_blocks[ $name ] ) ) {
+				$blocks[] = $block;
+				if ( is_string( $block['render'] ?? null ) ) {
+					$strings[] = $block['render'];
+				}
+			}
+		}
+		if ( array_key_exists( 'blocks', $payload ) ) {
+			$payload['blocks'] = $blocks;
+		}
+		$features = array();
+		foreach ( array_merge( $lifecycle['dependencies'] ?? array(), $lifecycle['entities'] ?? array() ) as $entry ) {
+			$feature = self::FEATURE_CAPABILITIES[ (string) ( $entry['adapter']['capability'] ?? ( $entry['declaration']['capability'] ?? '' ) ) ] ?? '';
+			if ( '' !== $feature ) {
+				$features[ $feature ] = true;
+			}
+		}
+		foreach ( self::FEATURE_MARKERS as $feature => $markers ) {
+			foreach ( $strings as $value ) {
+				foreach ( isset( $features[ $feature ] ) ? array() : $markers as $marker ) {
+					if ( false !== stripos( $value, $marker ) ) {
+						$features[ $feature ] = true;
+						break;
+					}
+				}
+			}
+		}
+		$payload['runtime_features'] = array_values( array_intersect( Static_Site_Importer_Companion_Plugin::RUNTIME_FEATURES, array_keys( $features ) ) );
+		return $payload;
+	}
+
+	/**
+	 * Generated runtime files the package ships, for the import report.
+	 *
+	 * @param array<string,mixed> $package Theme runtime package.
+	 * @return array<int,string>
+	 */
+	public static function shipped_files( array $package ): array {
+		$files = array_map( 'strval', array_keys( $package['files'] ?? array() ) );
+		sort( $files );
+		return $files;
+	}
+
 	/** Build the same validated runtime for the theme destination, without a plugin or loader. */
 	public static function theme( array $payload, string $owner_slug = '' ) {
 		$package = Static_Site_Importer_Companion_Plugin::scaffold( $payload, 'theme', $owner_slug );

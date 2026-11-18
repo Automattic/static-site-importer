@@ -331,6 +331,7 @@
     "static_site_importer_companion_plugin_renderer_attributes_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_renderer_conflict": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_renderer_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
+    "static_site_importer_companion_plugin_runtime_features_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_companion_plugin_schema_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_script_dependencies_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_script_dependency_handle_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
