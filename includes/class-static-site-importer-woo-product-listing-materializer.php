@@ -125,6 +125,11 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			if ( '' === $reason && ( ( ! is_array( $listing['grid'] ?? null ) && empty( $listing['empty_listing'] ) ) || empty( $listing['bindings'] ) ) ) {
 				$reason = 'listing_grid_not_adopted';
 			}
+			// Products seed independently before listings. Decline an adopted grid
+			// whose card cannot become a WooCommerce template, before binding it.
+			if ( '' === $reason && is_array( $listing['grid'] ?? null ) && empty( $listing['empty_listing'] ) && '' === Static_Site_Importer_Woo_Product_Grid_Materializer::inherited_grid_block_markup( $listing['grid'] ) ) {
+				$reason = 'woocommerce_listing_card_unexpressible';
+			}
 			$status = '' === $reason ? 'mapped' : 'skipped';
 			$row    = array_filter(
 				array(
@@ -135,7 +140,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				),
 				static fn( string $value ): bool => '' !== $value
 			);
-			if ( $available && ! empty( $listing['category']['name'] ) && ! empty( $listing['category']['slug'] ) ) {
+			if ( $available && 'woocommerce_listing_card_unexpressible' !== $reason && ! empty( $listing['category']['name'] ) && ! empty( $listing['category']['slug'] ) ) {
 				$row = array_merge( $row, self::materialize_category( $listing ) );
 				if ( isset( $row['error'] ) ) {
 					$status           = 'error';
