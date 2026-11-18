@@ -165,7 +165,7 @@ add_filter( 'static_site_importer_theme_name', static fn ( string $name ): strin
 add_filter( 'static_site_importer_theme_slug', static fn ( string $slug ): string => 'custom-' . $slug );
 ```
 
-Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
+Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`: the seed post, page, privacy-policy draft and comment, and the default fallback Navigation (a Page List titled "Navigation") that core publishes when a block theme header renders before the import, unless the import targets an existing theme. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
 
 ## REST Imports
 
