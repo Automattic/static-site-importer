@@ -14,6 +14,7 @@
     { "path": "tests/blocks-engine-refresh-pr.test.mjs", "environment": "node" },
     { "path": "tests/smoke-page-choices.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-source-route-twins.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-accent-alias-route.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-recompose.php", "environment": "standalone-php" },
     { "path": "tests/smoke-media-rebind-error.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-grid-inline-svg-import.php", "environment": "standalone-php" },

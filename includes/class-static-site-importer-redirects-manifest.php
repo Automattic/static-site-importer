@@ -184,6 +184,70 @@ final class Static_Site_Importer_Redirects_Manifest {
 		return $aliases;
 	}
 
+	/**
+	 * An alias owns its source address. A page whose derived route is the
+	 * source of an alias bound to another page (`/café/` beside `/cafe` →
+	 * `/menú/`) would be published at that address and occupy the alias, so it
+	 * takes the next free numbered route, as two colliding pages do. Its own
+	 * served address still reaches it through the redirect planner.
+	 *
+	 * Run after twin collapse, with every alias the import will materialize.
+	 *
+	 * @param array<string,mixed>                     $artifact Website artifact.
+	 * @param array<int,array{from:string,to:string}> $rules    Source-route aliases.
+	 * @return array<string,mixed>
+	 */
+	public static function reserve_alias_routes( array $artifact, array $rules ): array {
+		$page_route = 'Automattic\\BlocksEngine\\PhpTransformer\\WordPressSitePlan\\PageRoute';
+		if ( array() === $rules || ! class_exists( $page_route ) || ! is_array( $artifact['files'] ?? null ) ) {
+			return $artifact;
+		}
+		$files      = $artifact['files'];
+		$entry_root = str_replace( '\\', '/', dirname( is_string( $artifact['entrypoint'] ?? null ) ? $artifact['entrypoint'] : '' ) );
+		$entry_root = in_array( $entry_root, array( '.', '/' ), true ) ? '' : $entry_root;
+		$documents  = array();
+		$routes     = array();
+		$taken      = array();
+		foreach ( $files as $index => $file ) {
+			$path = is_array( $file ) && is_string( $file['path'] ?? null ) ? $file['path'] : '';
+			if ( ! preg_match( '/\.html?$/i', $path ) ) {
+				continue;
+			}
+			$documents[] = $path;
+			$explicit    = $file['metadata']['route_path'] ?? null;
+			try {
+				$route = is_string( $explicit ) && '' !== $explicit ? $explicit : $page_route::fromSource( $path, $entry_root );
+			} catch ( InvalidArgumentException ) {
+				continue; // The compiler reports an unrepresentable route itself.
+			}
+			$taken[ $route ] = $path;
+			if ( ! is_string( $explicit ) || '' === $explicit ) {
+				$routes[ $index ] = $route;
+			}
+		}
+		// The address an alias answers, in the form a page URI is compared with it.
+		$claims = array();
+		foreach ( self::aliases_for_source_paths( $rules, $documents ) as $target => $sources ) {
+			foreach ( $sources as $source ) {
+				$address            = '/' . mb_strtolower( rawurldecode( trim( $source, '/' ) ) );
+				$claims[ $address ] = $target;
+				$taken[ $address ]  = $target;
+			}
+		}
+		foreach ( $routes as $index => $route ) {
+			$path   = $files[ $index ]['path'];
+			$served = '/' . mb_strtolower( rawurldecode( (string) preg_replace( '#/?index\.html?$#i', '', Static_Site_Importer_Source_Route::public_source_route( $path ) ) ) );
+			if ( ! isset( $claims[ $route ] ) || $claims[ $route ] === $path || $served === $route ) {
+				continue;
+			}
+			$route                                     = $page_route::disambiguated( $route, $taken );
+			$taken[ $route ]                           = $path;
+			$files[ $index ]['metadata']['route_path'] = $route;
+		}
+		$artifact['files'] = $files;
+		return $artifact;
+	}
+
 	private static function is_same_site_path( string $path ): bool {
 		return str_starts_with( $path, '/' ) && ! str_starts_with( $path, '//' ) && ! str_contains( $path, '://' ) && ! str_contains( $path, '*' ) && ! str_contains( $path, '?' ) && ! str_contains( $path, ':' );
 	}
