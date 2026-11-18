@@ -526,6 +526,13 @@ const output = {
   // stops the chain when evaluate's blocker signatures repeat.
   continue: blockers.length > 0 && tracked.some((item) => !item.excepted),
 };
-fs.writeFileSync(path.join(args.work, 'triage.json'), JSON.stringify(output, null, 2));
-fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
+const triagePath = path.join(args.work, 'triage.json');
+fs.writeFileSync(triagePath, JSON.stringify(output, null, 2));
+// The step output carries what the workflow routes on (continue, cook_items,
+// counts); per-cell evidence stays in triage.json, which confirm and score
+// read. A site with many tracked cells would otherwise pass Homeboy's step
+// output limit, and an over-limit output reads as no output: no Cook and no
+// next pass.
+const { tracked: _tracked, untracked: _untracked, ...routed } = output;
+fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ ...routed, triage_path: triagePath }));
 log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} design=${output.design.length} excepted=${output.excepted.length}`);
