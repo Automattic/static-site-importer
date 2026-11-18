@@ -90,31 +90,61 @@ export const routeDocument = (website, route = '/') => {
 // Cook decides from one site's capture. So an accept holds for that site only:
 // the design notice records its site and workflow instance (designScope), and
 // a Cook's note names its instance in its key. Every other site keeps cooking
-// the finding against its own evidence.
+// the finding against its own evidence. Design rounds count per site the same
+// way: several sites reaching the cap at once each open their own round, and
+// one site's rounds neither use up nor reset another's. Failed Cooks count from
+// every site, since each is evidence against the finding.
+//
+// A design round can also decide the defect is not in the owning repository:
+// `Decision: reroute <repo>`. That holds for its site only too. Triage files
+// the finding in that repository with a reroute scope naming the site, and
+// that site's passes track the finding there from then on (ownIssue); every
+// other site keeps the original issue.
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
+export const REROUTE_NOTICE = '<!-- import-loop:rerouted -->';
+export const rerouteScope = (scope) => `<!-- import-loop:reroute-scope ${JSON.stringify(scope)} -->`;
+const scopeOf = (body = '') => {
+  const scope = body.match(/<!-- import-loop:reroute-scope (\{.*?\}) -->/)?.[1];
+  return scope ? JSON.parse(scope) : null;
+};
+// The issue a site tracks a finding on: its own rerouted issue first, else the
+// shared one; open before closed, so a finding that returns reopens its record.
+export const ownIssue = (hits, signature, site, repoNames) => {
+  const known = hits.filter((h) => repoNames.includes(h.repository.name) && (h.body || '').includes(`Loop signature: \`${signature}\``));
+  for (const set of [known.filter((h) => scopeOf(h.body)?.site === site), known.filter((h) => !scopeOf(h.body))]) {
+    const pick = set.find((h) => h.state === 'open') || set[0];
+    if (pick) return pick;
+  }
+  return null;
+};
 export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
 export const DESIGN_NOTICE = '<!-- import-loop:design -->';
 export const designScope = (scope) => `<!-- import-loop:design-scope ${JSON.stringify(scope)} -->`;
 export const cookHistory = (comments, site) => {
-  let failed = 0, designs = 0, accepted = false;
+  let failed = 0, designs = 0, accepted = false, rerouted = null;
   const scopes = [];
   for (const { body = '' } of comments) {
     if (body.startsWith(COOK_NOTE)) {
       failed++;
       const key = body.slice(COOK_NOTE.length).split(' ')[0];
       const scope = scopes.find((s) => s.instance && key.startsWith(`${s.instance}-`));
-      if (designs && scope?.site === site && /Decision:\W*accept/i.test(body)) accepted = true;
+      if (designs && scope?.site === site) {
+        if (/Decision:\W*accept/i.test(body)) accepted = true;
+        const repo = body.match(/Decision:\W*reroute\W+(?:to\W+)?([\w./-]+)/i)?.[1].split('/').pop();
+        if (repo) rerouted = { repo, note: body };
+      }
     }
     else if (body.startsWith(REWORK_NOTE)) failed++;
     else if (body.startsWith(DESIGN_NOTICE)) {
-      failed = 0; designs++;
       const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1];
-      if (scope) scopes.push(JSON.parse(scope));
+      if (!scope) continue;
+      scopes.push(JSON.parse(scope));
+      if (scopes.at(-1).site === site) { failed = 0; designs++; }
     }
-    else if (!body.startsWith(CAP_NOTICE)) { failed = 0; designs = 0; accepted = false; }
+    else if (!body.startsWith(CAP_NOTICE) && !body.startsWith(REROUTE_NOTICE)) { failed = 0; designs = 0; accepted = false; rerouted = null; }
   }
-  return { failed, designs, accepted };
+  return { failed, designs, accepted, ...(rerouted ? { rerouted } : {}) };
 };
 
 export const predicateEnv = (subject, cell, site) => ({

@@ -1034,6 +1034,12 @@ class Static_Site_Importer_Canonical_Import_Service {
 						}
 					}
 				}
+				if ( 'import_report_summary' === $key && is_array( $value['block_theme_scorecard'] ?? null ) ) {
+					// The scorecard summary is a fixed-size verdict, appended last,
+					// so the shared budget would otherwise run out before it.
+					$verdict['block_theme_scorecard'] = $value['block_theme_scorecard'];
+					unset( $value['block_theme_scorecard'] );
+				}
 				// Paths are executable handles for CLI callers, not display snippets.
 				$bounded[ $key ] = self::bounded_inline_value( $value, $remaining );
 				if ( is_string( $value ) && ( str_ends_with( $key, '_path' ) || 'theme_dir' === $key ) ) {

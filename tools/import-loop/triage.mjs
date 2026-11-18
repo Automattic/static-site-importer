@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 import { reportRegression } from './bisect-report.mjs';
 
@@ -80,8 +80,37 @@ function existingIssue(finding) {
   // signature on its own line. An issue that only mentions the signature (a
   // checker issue, a closing note, quoted evidence) is not the record.
   const hits = JSON.parse(gh('search', 'issues', finding.signature, '--owner', 'Automattic', '--json', 'url,state,number,repository,body', '-L', '20'));
-  const known = hits.filter((h) => repos[h.repository.name] && (h.body || '').includes(`Loop signature: \`${finding.signature}\``));
-  return known.find((h) => h.state === 'open') || known[0] || null;
+  return ownIssue(hits, finding.signature, result.url, Object.keys(repos));
+}
+const issueComments = new Map();
+const commentsOf = (url) => {
+  if (!issueComments.has(url)) issueComments.set(url, JSON.parse(gh('issue', 'view', url, '--json', 'comments')).comments);
+  return issueComments.get(url);
+};
+
+// A design round on this site decided the defect is in another repository:
+// file the finding there, scoped to this site, and point the shared issue at it.
+function reroute(finding, issue, { repo: name, note }) {
+  const decision = note.slice(note.search(/Decision:/i)).slice(0, 4000);
+  const body = [
+    rerouteScope({ site: result.url, from: issue.url }),
+    '## Rerouted',
+    '',
+    `A design round on ${issue.url} decided that, on ${result.url}, this finding's defect originates in this repository. Its decision:`,
+    '',
+    ...decision.split('\n').map((line) => `> ${line}`),
+    '',
+    'The import loop tracks the finding here for that site; other sites keep the original issue.',
+    '',
+    siteFindingBody(finding),
+  ].join('\n');
+  const entry = fileIssue(finding, repos[name], body, { rerouted_from: issue.url });
+  if (entry.status === 'tracked') {
+    finding.owner_repo = name;
+    gh('issue', 'comment', issue.url, '--body', `${REROUTE_NOTICE}\nRerouted for ${result.url}: a design round placed the defect in ${repos[name].github}, tracked at ${entry.issue_url}. Other sites keep this issue.\n\n${disclosure}`);
+    log(`rerouted ${issue.url} -> ${entry.issue_url} for ${result.url}`);
+  }
+  return entry;
 }
 
 // One standalone HTML file per captured route, stylesheets inlined.
@@ -238,7 +267,9 @@ for (const finding of blockers) {
   // the cook item, its verify command, and its acceptance cells follow it.
   if (issue) finding.owner_repo = issue.repository.name;
   let entry;
-  if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
+  const rerouted = issue?.state === 'open' && cookHistory(commentsOf(issue.url), result.url).rerouted;
+  if (rerouted && repos[rerouted.repo] && rerouted.repo !== issue.repository.name) entry = reroute(finding, issue, rerouted);
+  else if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
   else if (issue) {
     // The fix did not hold: the issue is the finding's record, so it reopens
     // with the evidence and the loop keeps working it.
@@ -410,7 +441,7 @@ for (const item of tracked) {
   // accepts the finding. A finding accepted, or still failing after its design
   // rounds, is out of scope: the loop stops cooking it and says so once, and a
   // human comment re-arms it.
-  const comments = JSON.parse(gh('issue', 'view', item.issue_url, '--json', 'comments')).comments;
+  const comments = item.filed ? [] : commentsOf(item.issue_url);
   const history = cookHistory(comments, result.url);
   if (history.accepted || (history.failed >= COOK_CAP && history.designs >= DESIGN_ROUNDS)) {
     item.excepted = { reason: history.accepted ? 'accepted by design round' : `${history.designs} design rounds failed`, failed_cooks: history.failed, designs: history.designs };
@@ -434,8 +465,9 @@ for (const item of tracked) {
         `This is design round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix, and their reports are the issue's latest comments. Read them all before changing anything, then decide what this finding needs and act on it:`,
         '- **narrow**: fix the part of the finding that has a sound root-cause fix, and say which occurrences remain and why.',
         '- **approach**: the earlier attempts share a wrong approach; fix it a different way and say what changed.',
-        '- **accept**: the finding is correct output for this site, or no sound fix exists in the owning code path; change nothing.',
-        'Begin your final summary with `Decision: narrow`, `Decision: approach` or `Decision: accept`, followed by the reason in one sentence. The loop reads that line: `accept` ends cooking for this finding, so use it only when the evidence supports it.',
+        '- **accept**: the finding is correct output for this site, or no sound fix exists in any code path; change nothing.',
+        `- **reroute <repo>**: the defect originates in another repository's code path (one of ${Object.keys(repos).filter((name) => name !== item.repo).map((name) => `\`${name}\``).join(', ')}); change nothing here, and give the evidence that places it there and what the fix there must do.`,
+        'Begin your final summary with `Decision: narrow`, `Decision: approach`, `Decision: accept` or `Decision: reroute <repo>`, followed by the reason in one sentence. The loop reads that line: `accept` ends cooking for this finding, and `reroute` files it in that repository for this site with your summary as its diagnosis, so use them only when the evidence supports it.',
         '',
       ] : []),
       `The static-site import loop found \`${item.check}\` on \`${item.subject}\`. ${item.site ? 'It is a whole-site check: the issue holds its occurrences and evidence, and there is no reduced page; the whole re-import is the reproduction.' : 'The issue holds the reduced page, the evidence, and a predicate that exits 0 while the defect reproduces.'} Read its comments too (\`gh issue view ${item.issue_url} --comments\`): they carry diagnosis, clarified acceptance, and what earlier attempts tried. Where a comment's diagnosis of the whole site differs from the reduced page, the whole site is authoritative.`,
@@ -497,7 +529,7 @@ for (const item of tracked) {
     // A rework's Cook reports on the pull request: record the rework on the
     // issue, where the cap counts it (cookHistory).
     if (item.refuted && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${REWORK_NOTE}\nPass ${args.iteration} on ${result.url} refuted ${pr.url} at head \`${pr.headRefOid.slice(0, 8)}\`; a Cook reworks it on its branch. Reworks count toward this issue's Cook cap.\n\n${disclosure}`);
-    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\n${designScope({ site: result.url, instance: process.env.HOMEBOY_WORKFLOW_INSTANCE || null })}\nDesign round ${item.design} of ${DESIGN_ROUNDS} on ${result.url}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope on this site from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
+    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\n${designScope({ site: result.url, instance: process.env.HOMEBOY_WORKFLOW_INSTANCE || null })}\nDesign round ${item.design} of ${DESIGN_ROUNDS} on ${result.url}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope on this site from their reports (narrow, change approach, accept it as correct output, or reroute it to the repository the defect originates in) and acts on it.\n\n${disclosure}`);
     const { omitted, ...cook } = gate;
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
   }
@@ -531,6 +563,7 @@ const output = {
   cook_count: cook_items.length,
   excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
   design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
+  rerouted: tracked.filter((item) => item.rerouted_from).map(({ issue_url, rerouted_from }) => ({ issue_url, from: rerouted_from })),
   // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
   // stops the chain when evaluate's blocker signatures repeat.
   continue: blockers.length > 0 && tracked.some((item) => !item.excepted),

@@ -56,6 +56,7 @@ require dirname( __DIR__ ) . '/includes/abilities.php';
 require dirname( __DIR__ ) . '/includes/abilities.php';
 
 $expected_abilities = array(
+	'static-site-importer/media',
 	'static-site-importer/get-runtime-package-manifest',
 	'static-site-importer/export-theme',
 	'static-site-importer/materialize-wordpress-site-plan',

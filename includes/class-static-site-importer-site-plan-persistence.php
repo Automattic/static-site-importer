@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 require_once __DIR__ . '/class-static-site-importer-consent-banner.php';
 require_once __DIR__ . '/class-static-site-importer-product-field-blocks.php';
+require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
 require_once __DIR__ . '/class-static-site-importer-published-file-mode.php';
 
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
@@ -612,6 +613,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $references ) ) {
 			return self::failed_receipt_from_error( $state, $references );
 		}
+		$state['deferred_media'] = Static_Site_Importer_Deferred_Media_Stage::register( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 
@@ -1701,18 +1703,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function rewrite_materialized_route_links( array &$state ) {
 		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
-			$source_path = (string) ( $page['source_path'] ?? '' );
-			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
-			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
-			$post_type   = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
+			$source_path  = (string) ( $page['source_path'] ?? '' );
+			$source_route = self::normalized_route_path( '/' . Static_Site_Importer_Source_Route::public_source_route( $source_path ) );
+			$route        = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
+			$post_id      = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$post_type    = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
 			if ( ! self::is_valid_post_type( $post_type ) ) {
 				$post_type = 'page';
 			}
 			if ( false === ( $page['selected'] ?? true ) ) {
-				$occupant         = Static_Site_Importer_Route_Occupant::find( $route, $post_type );
-				$reference        = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
-				$routes[ $route ] = $reference;
-				$routes[ self::normalized_route_path( '/' . $source_path ) ]                = $reference;
+				$occupant                = Static_Site_Importer_Route_Occupant::find( $route, $post_type );
+				$reference               = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
+				$routes[ $route ]        = $reference;
+				$routes[ $source_route ] = $reference;
+				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
 				$routes[ self::normalized_route_path( $page['original_route'] ?? $route ) ] = $reference;
 				continue;
 			}
@@ -1722,6 +1726,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( isset( $page['original_route'] ) ) {
 					$routes[ self::normalized_route_path( $page['original_route'] ) ] = $reference;
 				}
+				// Links name the source file (`about.html`) or its public route (`/about`).
+				$routes[ $source_route ] = $reference;
 				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
