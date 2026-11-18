@@ -90,7 +90,10 @@ export const routeDocument = (website, route = '/') => {
 // Cook decides from one site's capture. So an accept holds for that site only:
 // the design notice records its site and workflow instance (designScope), and
 // a Cook's note names its instance in its key. Every other site keeps cooking
-// the finding against its own evidence.
+// the finding against its own evidence. Design rounds count per site the same
+// way: several sites reaching the cap at once each open their own round, and
+// one site's rounds neither use up nor reset another's. Failed Cooks count from
+// every site, since each is evidence against the finding.
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
 export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
@@ -108,9 +111,10 @@ export const cookHistory = (comments, site) => {
     }
     else if (body.startsWith(REWORK_NOTE)) failed++;
     else if (body.startsWith(DESIGN_NOTICE)) {
-      failed = 0; designs++;
       const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1];
-      if (scope) scopes.push(JSON.parse(scope));
+      if (!scope) continue;
+      scopes.push(JSON.parse(scope));
+      if (scopes.at(-1).site === site) { failed = 0; designs++; }
     }
     else if (!body.startsWith(CAP_NOTICE)) { failed = 0; designs = 0; accepted = false; }
   }
