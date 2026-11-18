@@ -85,16 +85,33 @@ export const routeDocument = (website, route = '/') => {
 // branch, where Cook reports on the pull request instead: triage records each
 // rework on the issue (REWORK_NOTE), and it counts as a failed Cook, since the
 // head that Cook started from did not fix the finding.
+//
+// An issue is shared by every site whose import has the finding, but a design
+// Cook decides from one site's capture. So an accept holds for that site only:
+// the design notice records its site and workflow instance (designScope), and
+// a Cook's note names its instance in its key. Every other site keeps cooking
+// the finding against its own evidence.
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
 export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
 export const DESIGN_NOTICE = '<!-- import-loop:design -->';
-export const cookHistory = (comments) => {
+export const designScope = (scope) => `<!-- import-loop:design-scope ${JSON.stringify(scope)} -->`;
+export const cookHistory = (comments, site) => {
   let failed = 0, designs = 0, accepted = false;
+  const scopes = [];
   for (const { body = '' } of comments) {
-    if (body.startsWith(COOK_NOTE)) { failed++; if (designs && /Decision:\W*accept/i.test(body)) accepted = true; }
+    if (body.startsWith(COOK_NOTE)) {
+      failed++;
+      const key = body.slice(COOK_NOTE.length).split(' ')[0];
+      const scope = scopes.find((s) => s.instance && key.startsWith(`${s.instance}-`));
+      if (designs && scope?.site === site && /Decision:\W*accept/i.test(body)) accepted = true;
+    }
     else if (body.startsWith(REWORK_NOTE)) failed++;
-    else if (body.startsWith(DESIGN_NOTICE)) { failed = 0; designs++; }
+    else if (body.startsWith(DESIGN_NOTICE)) {
+      failed = 0; designs++;
+      const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1];
+      if (scope) scopes.push(JSON.parse(scope));
+    }
     else if (!body.startsWith(CAP_NOTICE)) { failed = 0; designs = 0; accepted = false; }
   }
   return { failed, designs, accepted };

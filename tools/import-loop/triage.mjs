@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, CAP_NOTICE, DESIGN_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -403,11 +403,11 @@ for (const item of tracked) {
   // rounds, is out of scope: the loop stops cooking it and says so once, and a
   // human comment re-arms it.
   const comments = JSON.parse(gh('issue', 'view', item.issue_url, '--json', 'comments')).comments;
-  const history = cookHistory(comments);
+  const history = cookHistory(comments, result.url);
   if (history.accepted || (history.failed >= COOK_CAP && history.designs >= DESIGN_ROUNDS)) {
     item.excepted = { reason: history.accepted ? 'accepted by design round' : `${history.designs} design rounds failed`, failed_cooks: history.failed, designs: history.designs };
     if (!args['dry-run'] && !comments.at(-1)?.body.startsWith(CAP_NOTICE)) {
-      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${item.excepted.reason}. It counts as an accepted exception to the site's import. Comment with guidance and the next pass cooks it again.\n\n${disclosure}`);
+      gh('issue', 'comment', item.issue_url, '--body', `${CAP_NOTICE}\nThe import loop has stopped cooking this issue: ${item.excepted.reason}. It counts as an accepted exception to ${result.url}'s import. Comment with guidance and the next pass cooks it again.\n\n${disclosure}`);
     }
     log(`excepted ${item.issue_url}: ${item.excepted.reason}`);
   } else if (history.failed >= COOK_CAP) {
@@ -488,7 +488,7 @@ for (const item of tracked) {
     // A rework's Cook reports on the pull request: record the rework on the
     // issue, where the cap counts it (cookHistory).
     if (item.refuted && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${REWORK_NOTE}\nPass ${args.iteration} on ${result.url} refuted ${pr.url} at head \`${pr.headRefOid.slice(0, 8)}\`; a Cook reworks it on its branch. Reworks count toward this issue's Cook cap.\n\n${disclosure}`);
-    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\nDesign round ${item.design} of ${DESIGN_ROUNDS}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
+    if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\n${designScope({ site: result.url, instance: process.env.HOMEBOY_WORKFLOW_INSTANCE || null })}\nDesign round ${item.design} of ${DESIGN_ROUNDS} on ${result.url}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope on this site from their reports (narrow, change approach, or accept it as correct output) and acts on it.\n\n${disclosure}`);
     const { omitted, ...cook } = gate;
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
   }
