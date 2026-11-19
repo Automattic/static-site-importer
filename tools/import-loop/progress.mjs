@@ -36,7 +36,10 @@ export const parityFailureClass = (failure) => {
     [/^images /, 'image_decoding', 'blocks-engine'],
     [/^pixel region /, 'pixel_region', 'blocks-engine'],
   ].find(([pattern]) => pattern.test(text));
-  if (known) return { subject: known[1], owner_repo: known[2] };
+  // A pixel region names what the copy draws there (`... in core/cover`): one
+  // class per block, so each gets its own finding, owner and Cook history.
+  const drawn = known?.[1] === 'pixel_region' && text.match(/ in ([a-z0-9-]+(?:\/[a-z0-9-]+)?)$/)?.[1];
+  if (known) return { subject: drawn ? `pixel_region:${drawn}` : known[1], owner_repo: known[2] };
   // A class this table has not seen: its leading words still give a stable
   // subject, so the scorer's new class is measured on its own, not bundled.
   const words = text.toLowerCase().match(/[a-z]+/g)?.slice(0, 3).join('_');

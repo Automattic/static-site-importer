@@ -29,6 +29,7 @@ test('each scorer failure class names its own subject and owner', () => {
     [failures.textPosition, 'text_position'], [failures.textContent, 'text_content'],
     [failures.imageGeometry, 'image_geometry'], [failures.backgroundGeometry, 'background_geometry'],
     [failures.pageHeight, 'page_height'], [failures.imageDecoding, 'image_decoding'], [failures.pixelRegion, 'pixel_region'],
+    [`${failures.pixelRegion} in core/cover`, 'pixel_region:core/cover'], [`${failures.pixelRegion} in img`, 'pixel_region:img'],
   ]) assert.deepEqual(parityFailureClass(text), { subject, owner_repo: 'blocks-engine' });
 });
 
