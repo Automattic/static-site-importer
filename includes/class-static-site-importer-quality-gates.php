@@ -940,7 +940,8 @@ final class Static_Site_Importer_Quality_Gates {
 				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
 			}
 		}
-		$native_cart = self::native_cart_receipt( $receipts, $report, $shared_hashes );
+		$native_cart    = self::native_cart_receipt( $receipts, $report, $shared_hashes );
+		$resolved_views = array();
 		foreach ( $region_findings as $index => list( $diagnostic, $identity, $fallback_hash, $source_path, $receipt, $resolved_by_provider ) ) {
 			// A cart or checkout view inside a product card is replaced with the
 			// whole region of a resolved grid around it (the registry drops its
@@ -999,7 +1000,42 @@ final class Static_Site_Importer_Quality_Gates {
 			$report->replace_diagnostic( $index, $diagnostic );
 			if ( $resolved_by_provider ) {
 				++$resolved;
+				$view_placement = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'source_selector' ) );
+				if ( '' !== self::commerce_view_fallback_region( $diagnostic ) && '' !== $view_placement ) {
+					$resolved_views[ $source_path . "\n" . $view_placement ] = array( $diagnostic, $resolution );
+				}
 			}
+			$resolutions[] = $resolution;
+		}
+
+		// The element-level finding Blocks Engine reports for the same source
+		// node as a resolved cart or checkout view (the drawer's `<dialog>`,
+		// which it drops to diagnostic metadata) is the same loss seen from the
+		// element side. It resolves on that view's proof: the same receipt, and
+		// the same `subsumed_by` native cart when the view was subsumed. An
+		// element finding at an unresolved view, or at no view, stays as it is.
+		foreach ( $report->diagnostics() as $index => $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || ! in_array( 'html_unsupported_element', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) {
+				continue;
+			}
+			$placement = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) ) . "\n" . Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'source_selector' ) );
+			if ( ! isset( $resolved_views[ $placement ] ) ) {
+				// Re-reconciling a report recomputes the verdict; a view that no
+				// longer resolves takes its element finding's resolution with it.
+				if ( isset( $diagnostic['fallback_resolution']['resolved_with'] ) ) {
+					unset( $diagnostic['fallback_resolution'] );
+					$report->replace_diagnostic( $index, $diagnostic );
+				}
+				continue;
+			}
+			list( $view, $resolution )         = $resolved_views[ $placement ];
+			$resolution['resolved_with']       = array(
+				'code'     => (string) ( $view['code'] ?? '' ),
+				'selector' => (string) ( $view['selector'] ?? '' ),
+			);
+			$diagnostic['fallback_resolution'] = array_merge( $view['fallback_resolution'], array( 'resolved_with' => $resolution['resolved_with'] ) );
+			$report->replace_diagnostic( $index, $diagnostic );
+			++$resolved;
 			$resolutions[] = $resolution;
 		}
 
