@@ -611,6 +611,139 @@ $mixed_shop = array_values( array_filter( is_array( $mixed_bindings ) ? $mixed_b
 $assert( 1 === count( $mixed_shop ) && str_contains( (string) ( $mixed_shop[0]['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[501,502,503]' ), 'mixed-grid-collection-hand-picks-every-card-including-the-nested-one' );
 $assert( 1 === count( $mixed_shop ) && $mixed_grid === ( $mixed_shop[0]['selector'] ?? '' ) && Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/shop.html', $mixed_grid )[0] === ( $mixed_shop[0]['fallback_reconciliation_identity'] ?? '' ), 'mixed-grid-collection-receipt-joins-its-anchorless-grid-finding' );
 
+// --- 11. A grid whose cards each carry their own cart dialog -------------
+//
+// Each card's "Add to bag" opens a per-card cart dialog, which the producer
+// declares as a cart view of the separate `carts` declaration. The products
+// anchor the whole grid as one `commerce_collection` region. That region
+// becomes one native product block rendering every card, so each card's
+// dialog lies inside a range the collection already replaces: the collection
+// subsumes it, whatever declaration it came from. The page-level cart view
+// outside the grid keeps its own `woocommerce/cart` binding, and a cart view
+// that only partly overlaps the grid, or claims the grid's own range, still
+// conflicts.
+
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-cart-materializer.php';
+
+$dialog_card   = static fn( string $name ): string => '<!-- wp:group {"tagName":"article"} --><article class="wp-block-group"><!-- wp:paragraph --><p>' . $name . '</p><!-- /wp:paragraph --><!-- wp:group {"tagName":"dialog"} --><dialog class="wp-block-group"><!-- wp:paragraph --><p>Your bag holds ' . $name . '</p><!-- /wp:paragraph --></dialog><!-- /wp:group --></article><!-- /wp:group -->';
+$dialog_view   = static fn( string $name ): string => '<!-- wp:group {"tagName":"dialog"} --><dialog class="wp-block-group"><!-- wp:paragraph --><p>Your bag holds ' . $name . '</p><!-- /wp:paragraph --></dialog><!-- /wp:group -->';
+$dialog_region = '<!-- wp:group {"className":"grid"} --><div class="wp-block-group grid">' . $dialog_card( 'Card A' ) . $dialog_card( 'Card B' ) . $dialog_card( 'Card C' ) . '</div><!-- /wp:group -->';
+$dialog_tail   = '<!-- wp:paragraph --><p>After the grid</p><!-- /wp:paragraph -->';
+$dialog_bag    = '<!-- wp:group {"tagName":"section"} --><section class="wp-block-group"><!-- wp:paragraph --><p>Your bag</p><!-- /wp:paragraph --></section><!-- /wp:group -->';
+$dialog_grid   = 'main > section > div.grid';
+$dialog_plan   = array(
+	'pages' => array(
+		array( 'source_path' => 'website/shop.html', 'resolved_block_markup' => '<!-- wp:heading --><h1>Shop</h1><!-- /wp:heading -->' . $dialog_region . $dialog_tail, 'skip_materialization' => false ),
+		array( 'source_path' => 'website/cart.html', 'resolved_block_markup' => $dialog_bag, 'skip_materialization' => false ),
+	),
+);
+$dialog_collection = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/shop.html', 'search_block_markup' => $dialog_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+$dialog_cart       = static fn( string $source, string $markup ): array => array( 'schema' => 'generic/block-binding/v1', 'source_path' => $source, 'search_block_markup' => $markup, 'occurrence' => 1, 'role' => 'commerce_cart' );
+$dialog_views      = array();
+foreach ( array( 'Card A', 'Card B', 'Card C' ) as $card => $name ) {
+	$dialog_views[] = array( 'source_path' => 'website/shop.html', 'selector' => $dialog_grid . ' > article:nth-of-type(' . ( $card + 1 ) . ') > dialog', 'bindings' => array( $dialog_cart( 'website/shop.html', $dialog_view( $name ) ) ) );
+}
+$dialog_views[]   = array( 'source_path' => 'website/cart.html', 'selector' => 'main > section', 'bindings' => array( $dialog_cart( 'website/cart.html', $dialog_bag ) ) );
+$dialog_products  = array(
+	array( 'name' => 'Card A', 'slug' => 'card-a', 'regular_price' => '10.00', 'bindings' => array( $dialog_collection ) ),
+	array( 'name' => 'Card B', 'slug' => 'card-b', 'regular_price' => '20.00', 'bindings' => array( $dialog_collection ) ),
+	array( 'name' => 'Card C', 'slug' => 'card-c', 'regular_price' => '30.00', 'bindings' => array( $dialog_collection ) ),
+);
+$dialog_lifecycle = array(
+	'entities' => array(
+		'products-declaration' => array(
+			'adapter'  => $adapter,
+			'manifest' => array( 'products' => $dialog_products ),
+		),
+		'carts-declaration'    => array(
+			'adapter'  => Static_Site_Importer_Woo_Cart_Materializer::adapter(),
+			'manifest' => array( 'carts' => $dialog_views ),
+		),
+	),
+);
+$dialog_unadopted = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $dialog_plan, $dialog_lifecycle, array() );
+$assert( is_wp_error( $dialog_unadopted ) && 'static_site_importer_runtime_binding_claim_conflict' === $dialog_unadopted->get_error_code(), 'card-cart-dialogs-overlap-the-collection-before-adoption' );
+
+$dialog_adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $dialog_lifecycle, $dialog_plan, array() );
+$dialog_carts   = $dialog_adopted['entities']['carts-declaration']['manifest']['carts'] ?? array();
+$assert( 4 === count( $dialog_carts ) && array() === ( $dialog_carts[0]['bindings'] ?? null ) && array() === ( $dialog_carts[1]['bindings'] ?? null ) && array() === ( $dialog_carts[2]['bindings'] ?? null ), 'card-cart-dialogs-are-subsumed-by-the-enclosing-collection', (string) wp_json_encode( array_map( static fn( array $view ): int => count( $view['bindings'] ?? array() ), $dialog_carts ) ) );
+$assert( $dialog_views[3]['bindings'] === ( $dialog_carts[3]['bindings'] ?? null ), 'cart-page-view-outside-the-grid-keeps-its-own-binding' );
+$assert( $dialog_products === ( $dialog_adopted['entities']['products-declaration']['manifest']['products'] ?? null ), 'card-cart-dialogs-leave-the-collection-members-unchanged' );
+$dialog_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $dialog_plan, $dialog_adopted, array() );
+$assert( true === $dialog_preflight, 'card-cart-dialogs-preflight-accepts-the-subsumed-collection', is_wp_error( $dialog_preflight ) ? $dialog_preflight->get_error_message() : '' );
+
+// The shop page resolves to one native grid, the cart page to the provider
+// cart, and the subsumed dialogs to nothing of their own.
+$dialog_reports  = array(
+	'products-declaration' => array(
+		'products' => array(
+			array( 'slug' => 'card-a', 'id' => 601, 'status' => 'created' ),
+			array( 'slug' => 'card-b', 'id' => 602, 'status' => 'created' ),
+			array( 'slug' => 'card-c', 'id' => 603, 'status' => 'created' ),
+		),
+	),
+	'carts-declaration'    => array(
+		'status' => 'completed',
+		'carts'  => array_map( static fn( array $view ): array => array( 'source_path' => $view['source_path'], 'selector' => $view['selector'], 'status' => 'mapped' ), $dialog_views ),
+	),
+);
+$dialog_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $dialog_adopted, $dialog_reports );
+$dialog_roles    = is_array( $dialog_bindings ) ? array_map( static fn( array $binding ): string => $binding['source_path'] . ':' . $binding['role'], $dialog_bindings ) : array();
+$assert( array( 'website/shop.html:commerce_collection', 'website/cart.html:commerce_cart' ) === $dialog_roles, 'card-cart-dialogs-resolve-one-grid-and-the-page-cart', (string) wp_json_encode( $dialog_roles ) );
+$assert( is_array( $dialog_bindings ) && str_contains( (string) ( $dialog_bindings[0]['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[601,602,603]' ), 'card-cart-dialogs-grid-hand-picks-every-card' );
+$assert( is_array( $dialog_bindings ) && str_starts_with( (string) ( $dialog_bindings[1]['replacement_block_markup'] ?? '' ), '<!-- wp:woocommerce/cart -->' ), 'card-cart-dialogs-site-still-gets-the-woocommerce-cart' );
+
+// A cart view that only partly overlaps the grid, or that claims the grid's
+// exact range, is not nested in a member card, so it keeps its claim and
+// preflight still rejects it.
+foreach (
+	array(
+		'partial' => '</div><!-- /wp:group -->' . $dialog_tail,
+		'same'    => $dialog_region,
+	) as $label => $markup
+) {
+	$conflict_lifecycle = $dialog_lifecycle;
+	$conflict_lifecycle['entities']['carts-declaration']['manifest']['carts'] = array( array( 'source_path' => 'website/shop.html', 'selector' => $dialog_grid, 'bindings' => array( $dialog_cart( 'website/shop.html', $markup ) ) ) );
+	$conflict_adopted   = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $conflict_lifecycle, $dialog_plan, array() );
+	$assert( 1 === count( $conflict_adopted['entities']['carts-declaration']['manifest']['carts'][0]['bindings'] ?? array() ), 'card-cart-dialogs-' . $label . '-cart-claim-is-kept' );
+	$conflict_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $dialog_plan, $conflict_adopted, array() );
+	$assert( is_wp_error( $conflict_preflight ) && 'static_site_importer_runtime_binding_claim_conflict' === $conflict_preflight->get_error_code(), 'card-cart-dialogs-preflight-still-rejects-a-' . $label . '-cart-claim' );
+}
+
+// The grid's completed receipt proves each card's cart-view finding, which
+// it replaced whole; a cart-view finding outside the grid stays unresolved.
+list( $dialog_identity, $dialog_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/shop.html', $dialog_grid );
+$dialog_grid_row                       = array_merge(
+	$grid_binding_row,
+	array(
+		'source_path'                      => 'website/shop.html',
+		'selector'                         => $dialog_grid,
+		'role'                             => 'commerce_collection',
+		'declaration_id'                   => 'products-declaration',
+		'fallback_reconciliation_identity' => $dialog_identity,
+		'fallback_hash'                    => $dialog_hash,
+	)
+);
+$dialog_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+$dialog_report->append_diagnostic( array( 'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_product_grid_fallback', 'source_path' => 'website/shop.html', 'selector' => $dialog_grid, 'container_selector' => $dialog_grid ) );
+foreach ( array( $dialog_views[0]['selector'], $dialog_views[1]['selector'], 'main > aside > dialog' ) as $selector ) {
+	$dialog_report->append_diagnostic( array( 'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_cart_view_fallback', 'source_path' => 'website/shop.html', 'selector' => $selector ) );
+}
+$dialog_report->merge_quality( array( 'fallback_count' => 4 ) );
+$dialog_report['materialization_receipt'] = array(
+	'completed' => array(
+		'runtime_declarations' => array( 'entity_bindings' => array( $dialog_grid_row ) ),
+		'materialized_pages'   => array( 'website/shop.html' => array( 'content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ) ) ),
+	),
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $dialog_report );
+$dialog_states = array();
+foreach ( $dialog_report->diagnostics() as $diagnostic ) {
+	$dialog_states[ (string) ( $diagnostic['selector'] ?? '' ) ] = $diagnostic['fallback_resolution']['state'] ?? '';
+}
+$assert( 'resolved_by_provider' === ( $dialog_states[ $dialog_grid ] ?? '' ) && 'resolved_by_provider' === ( $dialog_states[ $dialog_views[0]['selector'] ] ?? '' ) && 'resolved_by_provider' === ( $dialog_states[ $dialog_views[1]['selector'] ] ?? '' ), 'card-cart-dialog-findings-resolve-through-the-grid-receipt', (string) wp_json_encode( $dialog_states ) );
+$assert( 'unresolved' === ( $dialog_states['main > aside > dialog'] ?? '' ) && 1 === ( $dialog_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 4 === count( $dialog_report['quality_resolutions']['resolutions'] ?? array() ), 'cart-view-finding-outside-the-grid-stays-unresolved' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
