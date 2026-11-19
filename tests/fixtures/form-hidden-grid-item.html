@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<style>
+body{margin:0;font-family:sans-serif}
+.layout{display:grid;grid-template-columns:1fr 1fr;gap:65px;padding:40px}
+.info,.panel{background:#eee;min-height:300px;padding:20px}
+.after{background:#333;color:#fff;padding:40px}
+</style>
+</head>
+<body>
+<main>
+<section class="layout">
+<div class="info"><h3>Info</h3><p>Left column.</p></div>
+<div class="panel"><h3>Request</h3><p>Use the external form.</p><a href="https://example.com/form">Open form</a></div>
+<form class="request" style="display:none" aria-hidden="true"><label>Name <input name="name" required></label><label>Email <input type="email" name="email" required></label><button type="submit">Send</button></form>
+</section>
+<section class="after"><h2>After</h2></section>
+</main>
+</body>
+</html>
