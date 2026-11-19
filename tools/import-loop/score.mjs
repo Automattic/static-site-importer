@@ -31,8 +31,11 @@ const triage = read(`${pass}-triage/triage.json`);
 const confirms = fs.existsSync(`${pass}-confirm`) ? fs.readdirSync(`${pass}-confirm`).map((dir) => read(`${pass}-confirm/${dir}/confirm.json`)).filter(Boolean) : [];
 const confirm = confirms.length ? { confirmed: confirms.flatMap((c) => c.confirmed), refuted: confirms.flatMap((c) => c.refuted) } : null;
 
+// Each Homeboy read is bounded so a slow diagnosis costs the scoreboard one
+// field, never the step: a score that outlives its step timeout ends the chain.
+const HOMEBOY_READ_MS = 90_000;
 let run = null;
-try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], { encoding: 'utf8', maxBuffer: 256 << 20 })).data; } catch { /* recorded as null */ }
+try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], { encoding: 'utf8', maxBuffer: 256 << 20, timeout: HOMEBOY_READ_MS })).data; } catch { /* recorded as null */ }
 // How each Cook ended, from Homeboy's settled outcome (`agent-task status`
 // `terminal_outcome`): a published PR the gate did not refuse is the only
 // success; a refused gate (a draft PR included) is gate_failed; no change or a
@@ -40,7 +43,7 @@ try { run = JSON.parse(execFileSync('homeboy', ['runs', 'show', args.instance], 
 // the loop's bug count. A Cook superseded by an active Cook on the same issue
 // is not a failure. Diagnose only explains a failure: the acceptance gate's
 // verdict line, or Homeboy's root cause.
-const homeboy = (...argv) => { try { return JSON.parse(execFileSync('homeboy', argv, { encoding: 'utf8', maxBuffer: 64 << 20 })).data; } catch { return null; } };
+const homeboy = (...argv) => { try { return JSON.parse(execFileSync('homeboy', argv, { encoding: 'utf8', maxBuffer: 64 << 20, timeout: HOMEBOY_READ_MS })).data; } catch { return null; } };
 const FAILURE = { gate_refused: 'gate_failed', no_change: 'gave_up', agent_declined: 'gave_up', infrastructure: 'mechanics' };
 const classify = (outcome) => {
   if (!outcome?.kind) return 'unknown';
