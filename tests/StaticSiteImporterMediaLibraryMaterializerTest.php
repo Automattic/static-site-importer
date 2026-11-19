@@ -56,7 +56,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	 * @param array<string,int[]> $candidates Srcset files keyed by name, each [ width, height, descriptor ].
 	 * @param string[]            $renditions Expected ssi-source-* size keys.
 	 */
-	public function test_width_family_uses_real_original( string $source, array $candidates, string $declared, string $original, array $renditions ): void {
+	public function test_width_family_uses_real_original( string $source, array $candidates, string $declared, string $original, array $renditions, array $intrinsic = array() ): void {
 		$uri    = get_theme_root_uri() . '/' . $this->slug() . '/media/';
 		$srcset = implode(
 			', ',
@@ -66,7 +66,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 				$candidates
 			)
 		);
-		$attrs  = array( 'metadata' => array( 'blocksEngineImageSelection' => array( 'src' => $uri . $source . '.jpg', 'srcset' => $srcset ) ) );
+		$attrs  = array( 'metadata' => array( 'blocksEngineImageSelection' => array( 'src' => $uri . $source . '.jpg', 'srcset' => $srcset ) ) + ( $intrinsic ? array( 'blocksEngineIntrinsicSize' => $intrinsic ) : array() ) ) + ( $intrinsic ? array( 'width' => '100%' ) : array() );
 		$state  = $this->state_with_page( '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img ' . $declared . 'src="' . $uri . $source . '.jpg" srcset="' . $srcset . '" alt=""/></figure><!-- /wp:image -->' );
 		foreach ( array( 'placeholder' => array( 1, 2 ) ) + $candidates as $name => $size ) {
 			$image = imagecreatetruecolor( $size[0], $size[1] );
@@ -106,6 +106,8 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 			'placeholder'                    => array( 'placeholder', $family, '', '510', array( 'ssi-source-210', 'ssi-source-225' ) ),
 			'real family member'             => array( '510', $family, '', '510', array( 'ssi-source-210', 'ssi-source-225' ) ),
 			'placeholder with mixed ratios'  => array( 'placeholder', $mixed, 'width="345" height="194" ', '345', array() ),
+			// A layout width ("100%") leaves the captured intrinsic size as the anchor.
+			'mixed ratios, intrinsic size'   => array( 'placeholder', $mixed, '', '345', array(), array( 'width' => 345, 'height' => 194 ) ),
 		);
 	}
 
