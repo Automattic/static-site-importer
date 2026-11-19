@@ -127,6 +127,64 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		return $files;
 	}
 
+	/**
+	 * Optional runtime files by the runtime feature that uses them, relative to
+	 * the runtime directory.
+	 */
+	public const FEATURE_FILES = array(
+		'forms'              => array( 'includes/provider-form-runtime-v1.php' ),
+		'interactions'       => array( 'includes/internal-link-runtime.php' ),
+		'commerce'           => array( 'includes/product-grid-runtime.php', 'includes/product-listing-runtime.php' ),
+		'external_metrics'   => array( 'includes/external-metric-runtime.php', 'includes/ip-classifier.php', 'editor/external-metric-controls.js' ),
+		'post_source_routes' => array( 'includes/post-source-route-runtime.php' ),
+	);
+
+	/**
+	 * Runtime features a scoped payload declares the site uses: its declared
+	 * `runtime_features` plus the payload-data features it carries.
+	 *
+	 * @param array<string,mixed> $payload Scoped runtime payload.
+	 * @return array<int,string>
+	 */
+	public static function used_features( array $payload ): array {
+		return array_values( array_filter( array_keys( self::FEATURE_FILES ), static fn( string $feature ): bool => Static_Site_Importer_Companion_Plugin::ships_runtime_feature( $payload, $feature ) ) );
+	}
+
+	/**
+	 * Shipped runtime files the site does not use: an optional runtime file
+	 * whose feature the site does not use, or a generated block directory for
+	 * a block the package does not register.
+	 *
+	 * @param array<int,string> $shipped     Shipped files, as `shipped_files()` lists them.
+	 * @param array<int,string> $features    Runtime features the site uses.
+	 * @param array<int,string> $block_names Generated block names the site uses.
+	 * @return array<int,string>
+	 */
+	public static function unused_files( array $shipped, array $features, array $block_names ): array {
+		$prefix = self::DIRECTORY . '/';
+		$owners = array();
+		foreach ( self::FEATURE_FILES as $feature => $files ) {
+			foreach ( $files as $file ) {
+				$owners[ $prefix . $file ] = $feature;
+			}
+		}
+		$blocks = array_flip( array_map( static fn( $name ): string => substr( (string) strrchr( '/' . $name, '/' ), 1 ), $block_names ) );
+		$unused = array();
+		foreach ( $shipped as $file ) {
+			$file = (string) $file;
+			if ( isset( $owners[ $file ] ) ) {
+				if ( ! in_array( $owners[ $file ], $features, true ) ) {
+					$unused[] = $file;
+				}
+				continue;
+			}
+			if ( 1 === preg_match( '~^' . preg_quote( $prefix, '~' ) . 'blocks/([^/]+)/~', $file, $match ) && ! isset( $blocks[ $match[1] ] ) ) {
+				$unused[] = $file;
+			}
+		}
+		return $unused;
+	}
+
 	/** Build the same validated runtime for the theme destination, without a plugin or loader. */
 	public static function theme( array $payload, string $owner_slug = '' ) {
 		$package = Static_Site_Importer_Companion_Plugin::scaffold( $payload, 'theme', $owner_slug );

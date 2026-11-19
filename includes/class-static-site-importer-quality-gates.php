@@ -30,6 +30,9 @@ if ( ! class_exists( 'Static_Site_Importer_Product_Finding_Materializer' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Theme_Hygiene' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-theme-hygiene.php';
+}
 
 /** Computes quality-gate status from normalized import diagnostics. */
 final class Static_Site_Importer_Quality_Gates {
@@ -132,6 +135,8 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( ( $quality['visual_parity_failure_count'] ?? 0 ) > 0 ) {
 			$reasons[] = Static_Site_Importer_Visual_Parity_Oracle::FAILURE_REASON;
 		}
+		// Theme hygiene: gated counters fail above zero; unmeasured (null) ones pass.
+		$reasons = array_merge( $reasons, Static_Site_Importer_Theme_Hygiene::failure_reasons( $quality ) );
 
 		$quality['pass']            = empty( $reasons );
 		$quality['failure_reasons'] = $reasons;
@@ -202,7 +207,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'omitted_page_count'                      => 0,
 			'visual_parity_failure_count'             => 0,
 			'failure_reasons'                         => array(),
-		);
+		) + Static_Site_Importer_Theme_Hygiene::defaults();
 	}
 
 	/**

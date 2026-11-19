@@ -153,7 +153,7 @@ $input    = static fn (): array => array(
 			array( 'path' => 'website/index.html', 'content' => $document( 'Home', '<p>Welcome.</p><a href="about.html">About</a> <a href="pricing.html">Pricing</a>' ) ),
 			array( 'path' => 'website/about.html', 'content' => $document( 'About', '<p>About us.</p><a href="index.html">Home</a>' ) ),
 			array( 'path' => 'website/pricing.html', 'content' => $document( 'Pricing', '<p>Plans.</p><a href="index.html">Home</a>' ) ),
-			array( 'path' => 'website/styles.css', 'content' => 'body{font-family:serif}' ),
+			array( 'path' => 'website/styles.css', 'content' => 'body{font-family:serif}main p{text-indent:1em}' ),
 		),
 	),
 );

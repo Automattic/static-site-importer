@@ -9,6 +9,7 @@ use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
 use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
 
 require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
+require_once __DIR__ . '/class-static-site-importer-theme-hygiene.php';
 
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	/**
@@ -383,7 +384,7 @@ if ( ! function_exists( 'static_site_importer_cli_spawn_compile_worker' ) ) {
 	 */
 	function static_site_importer_cli_spawn_compile_worker( array $base_command, string $import_id, array $page_ids ): ?array {
 		$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
-		$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
+		$command = array_values( array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) ) );
 		$command = apply_filters( 'static_site_importer_cli_compile_worker_command', $command, $import_id, $page_ids );
 		$pipes   = array();
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
@@ -1416,7 +1417,7 @@ if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
 			'dropped_artifact_files'         => 'omitted_file_count',
 			'page_compile_omitted'           => 'omitted_page_count',
 			'visual_parity_mismatch'         => 'visual_parity_failure_count',
-		);
+		) + array_flip( Static_Site_Importer_Theme_Hygiene::GATED );
 		$count_of      = static function ( array $keys ) use ( $containers ): ?int {
 			foreach ( $containers as $container ) {
 				foreach ( $keys as $key ) {
