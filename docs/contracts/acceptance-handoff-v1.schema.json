@@ -2,25 +2,260 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "static-site-importer/acceptance-handoff/v1",
   "type": "object",
-  "required": ["schema", "fixture_id", "input_identity", "compiler_identity", "wordpress_site_plan", "terminal_materialization_receipt", "route_entity_mapping", "visual_evidence", "editor_evidence", "quality_projection", "disposition"],
+  "required": [
+    "schema",
+    "fixture_id",
+    "input_identity",
+    "compiler_identity",
+    "wordpress_site_plan",
+    "terminal_materialization_receipt",
+    "route_entity_mapping",
+    "visual_evidence",
+    "editor_evidence",
+    "quality_projection",
+    "disposition",
+    "authoring_parity_evidence"
+  ],
   "properties": {
-    "schema": { "const": "static-site-importer/acceptance-handoff/v1" },
-    "fixture_id": { "type": "string", "minLength": 1 },
-    "input_identity": { "$ref": "#/$defs/reference" },
-    "compiler_identity": { "$ref": "#/$defs/reference" },
-    "wordpress_site_plan": { "$ref": "#/$defs/reference" },
-    "terminal_materialization_receipt": { "$ref": "#/$defs/reference" },
-    "route_entity_mapping": { "$ref": "#/$defs/reference" },
-    "visual_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
-    "editor_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
-    "quality_projection": { "$ref": "#/$defs/reference" },
-    "provider_submission_requirements": { "$ref": "#/$defs/reference" },
-    "provider_submission_evidence": { "$ref": "#/$defs/reference" },
-    "disposition": { "enum": ["passed", "failed", "not_proven"] },
-    "not_proven": { "type": "array", "items": { "type": "object", "required": ["code"], "properties": { "code": { "enum": ["input_identity_missing", "compiler_identity_missing", "site_plan_missing", "site_plan_invalid", "materialization_receipt_missing", "materialization_failed", "route_entity_mapping_missing", "visual_evidence_missing", "editor_evidence_missing", "quality_projection_missing", "provider_submission_evidence_missing", "provider_submission_evidence_invalid", "artifact_missing", "hash_mismatch"] } } } }
+    "schema": {
+      "const": "static-site-importer/acceptance-handoff/v1"
+    },
+    "fixture_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_identity": {
+      "$ref": "#/$defs/reference"
+    },
+    "compiler_identity": {
+      "$ref": "#/$defs/reference"
+    },
+    "wordpress_site_plan": {
+      "$ref": "#/$defs/reference"
+    },
+    "terminal_materialization_receipt": {
+      "$ref": "#/$defs/reference"
+    },
+    "route_entity_mapping": {
+      "$ref": "#/$defs/reference"
+    },
+    "visual_evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/routeEvidence"
+      }
+    },
+    "editor_evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/routeEvidence"
+      }
+    },
+    "quality_projection": {
+      "$ref": "#/$defs/reference"
+    },
+    "provider_submission_requirements": {
+      "$ref": "#/$defs/reference"
+    },
+    "provider_submission_evidence": {
+      "$ref": "#/$defs/reference"
+    },
+    "disposition": {
+      "enum": [
+        "passed",
+        "failed",
+        "not_proven"
+      ]
+    },
+    "not_proven": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "input_identity_missing",
+              "compiler_identity_missing",
+              "site_plan_missing",
+              "site_plan_invalid",
+              "materialization_receipt_missing",
+              "materialization_failed",
+              "route_entity_mapping_missing",
+              "visual_evidence_missing",
+              "editor_evidence_missing",
+              "quality_projection_missing",
+              "provider_submission_evidence_missing",
+              "provider_submission_evidence_invalid",
+              "artifact_missing",
+              "hash_mismatch",
+              "authoring_parity_evidence_missing",
+              "authoring_parity_failed"
+            ]
+          }
+        }
+      }
+    },
+    "authoring_parity_evidence": {
+      "$ref": "#/$defs/reference",
+      "description": "Hash-bound JSON array of authoringCluster records; every cluster must pass."
+    }
   },
   "$defs": {
-    "reference": { "type": ["object", "null"], "properties": { "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "required": ["path", "sha256"] },
-    "routeEvidence": { "type": "object", "required": ["route", "entity"], "properties": { "route": { "type": "string" }, "entity": { "type": "string" }, "viewport": { "type": "object" }, "evidence": { "$ref": "#/$defs/reference" }, "source": { "$ref": "#/$defs/reference" }, "candidate": { "$ref": "#/$defs/reference" }, "diff": { "$ref": "#/$defs/reference" } } }
+    "reference": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ]
+    },
+    "routeEvidence": {
+      "type": "object",
+      "required": [
+        "route",
+        "entity"
+      ],
+      "properties": {
+        "route": {
+          "type": "string"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "viewport": {
+          "type": "object"
+        },
+        "evidence": {
+          "$ref": "#/$defs/reference"
+        },
+        "source": {
+          "$ref": "#/$defs/reference"
+        },
+        "candidate": {
+          "$ref": "#/$defs/reference"
+        },
+        "diff": {
+          "$ref": "#/$defs/reference"
+        }
+      }
+    },
+    "authoringCluster": {
+      "type": "object",
+      "required": [
+        "cluster",
+        "sibling",
+        "sibling_template",
+        "probe_template",
+        "landmarks",
+        "pass"
+      ],
+      "properties": {
+        "cluster": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sibling": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sibling_template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "probe_template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pass": {
+          "type": "boolean"
+        },
+        "landmarks": {
+          "type": "object",
+          "required": [
+            "imported",
+            "new_post"
+          ],
+          "properties": {
+            "imported": {
+              "$ref": "#/$defs/authoringLandmarks"
+            },
+            "new_post": {
+              "$ref": "#/$defs/authoringLandmarks"
+            }
+          }
+        }
+      }
+    },
+    "authoringLandmarks": {
+      "type": "object",
+      "required": [
+        "title",
+        "date",
+        "author",
+        "terms",
+        "sidebar",
+        "related",
+        "comments",
+        "contentLeft",
+        "contentWidth"
+      ],
+      "properties": {
+        "title": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "date": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "author": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "terms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sidebar": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "related": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentLeft": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "contentWidth": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
   }
 }
