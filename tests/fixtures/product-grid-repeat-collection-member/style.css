@@ -1,0 +1,1 @@
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.card{border:1px solid #ddd;padding:1rem}
