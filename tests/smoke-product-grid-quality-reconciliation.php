@@ -10,7 +10,9 @@
  * record records the grid's selector. A commerce-controls finding resolves only
  * when every control it lists sits inside such a resolved grid, and then the
  * grid's own receipt proves it. Both report resolution rows resolved or
- * unresolved, and the fallback counts stay consistent.
+ * unresolved, and the fallback counts stay consistent. A source cart drawer
+ * with no binding of its own is subsumed by the import's persisted native
+ * cart, and stays unresolved when there is none.
  *
  * Run from the repository root:
  * php tests/smoke-product-grid-quality-reconciliation.php
@@ -364,6 +366,140 @@ $tampered_cart = Static_Site_Importer_Import_Report::from_array(
 );
 Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_cart );
 $assert( 0 === ( $tampered_cart['quality_resolutions']['resolved_by_provider'] ?? -1 ), 'view-quality-rejects-a-tampered-page', (string) wp_json_encode( $tampered_cart['quality_resolutions'] ?? null ) );
+
+// A source cart drawer outside any grid (a product page's bag dialog) has no
+// binding of its own. When the import persisted a native cart (a completed
+// `commerce_cart` receipt whose block landed on its page), the drawer finding
+// is subsumed by that cart and its row names it. With no native cart, or a
+// native cart that was not persisted, it stays unresolved. A checkout view
+// is never subsumed by a cart, and a checkout receipt subsumes no drawer.
+$native_markup     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart alignwide is-loading"></div><!-- /wp:woocommerce/cart -->';
+$native_page       = hash( 'sha256', '<!-- wp:heading --><h1>Cart</h1><!-- /wp:heading -->' . $native_markup );
+$native_record     = $record_method->invoke(
+	null,
+	'carts-declaration',
+	array(
+		'schema'              => 'generic/block-binding/v1',
+		'source_path'         => 'website/cart.html',
+		'search_block_markup' => '<!-- wp:group {"tagName":"section"} --><section class="wp-block-group">Your bag</section><!-- /wp:group -->',
+		'occurrence'          => 1,
+		'role'                => 'commerce_cart',
+	),
+	$native_markup,
+	array(
+		'source_path' => 'website/cart.html',
+		'selector'    => 'main > section.cart',
+	),
+	array( 'provider' => 'woocommerce' )
+);
+$native_receipt    = array_merge(
+	$native_record,
+	array(
+		'status'                    => 'completed',
+		'persisted_fragment_hash'   => hash( 'sha256', $native_markup ),
+		'materialized_content_hash' => $native_page,
+	)
+);
+$drawer_finding    = array(
+	'type'            => 'unsupported_html_fallback',
+	'code'            => 'html_cart_view_fallback',
+	'diagnostic_code' => 'html_cart_view_fallback',
+	'source_path'     => 'website/product/oak-tray.html',
+	'selector'        => 'main > section > aside > div.order > dialog',
+);
+$drawer_report     = static function ( array $diagnostics, array $bindings, string $cart_page_hash ): Static_Site_Importer_Import_Report {
+	$report = Static_Site_Importer_Import_Report::from_array(
+		array(
+			'quality'                 => array( 'fallback_count' => count( $diagnostics ) ),
+			'diagnostics'             => $diagnostics,
+			'materialization_receipt' => array(
+				'completed' => array(
+					'materialized_pages'   => array(
+						'website/cart.html'             => array( 'content_hash' => $cart_page_hash ),
+						'website/product/oak-tray.html' => array( 'content_hash' => hash( 'sha256', 'oak tray page' ) ),
+					),
+					'runtime_declarations' => array( 'entity_bindings' => $bindings ),
+				),
+			),
+		)
+	);
+	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $report );
+	return $report;
+};
+$drawer_rows       = static function ( Static_Site_Importer_Import_Report $report ): array {
+	$rows = array();
+	foreach ( $report->diagnostics() as $diagnostic ) {
+		$rows[ (string) ( $diagnostic['source_path'] ?? '' ) . ' ' . (string) ( $diagnostic['code'] ?? '' ) ] = $diagnostic['fallback_resolution'] ?? array();
+	}
+	return $rows;
+};
+$cart_page_finding = array_merge( $drawer_finding, array(
+	'source_path' => 'website/cart.html',
+	'selector'    => 'main > section.cart',
+) );
+$checkout_drawer   = array_merge( $drawer_finding, array(
+	'code'            => 'html_checkout_view_fallback',
+	'diagnostic_code' => 'html_checkout_view_fallback',
+) );
+
+$subsumed = $drawer_report( array( $cart_page_finding, $drawer_finding, $checkout_drawer ), array( $native_receipt ), $native_page );
+$rows     = $drawer_rows( $subsumed );
+$drawer   = $rows['website/product/oak-tray.html html_cart_view_fallback'] ?? array();
+$assert( 'resolved_by_provider' === ( $rows['website/cart.html html_cart_view_fallback']['state'] ?? '' ) && ! isset( $rows['website/cart.html html_cart_view_fallback']['subsumed_by'] ), 'native-cart-page-view-resolves-through-its-own-receipt', (string) wp_json_encode( $rows ) );
+$assert( 'resolved_by_provider' === ( $drawer['state'] ?? '' ) && '' === ( $drawer['reason'] ?? 'x' ), 'cart-drawer-outside-any-grid-is-subsumed-by-the-native-cart', (string) wp_json_encode( $drawer ) );
+$assert(
+	array(
+		'kind'                            => 'native_cart',
+		'role'                            => 'commerce_cart',
+		'provider'                        => 'woocommerce',
+		'source_path'                     => 'website/cart.html',
+		'selector'                        => 'main > section.cart',
+		'binding_reconciliation_identity' => $native_record['reconciliation_identity'] ?? '',
+	) === ( $drawer['subsumed_by'] ?? null ) && ( $native_receipt['fallback_reconciliation_identity'] ?? '' ) === ( $drawer['receipt']['fallback_reconciliation_identity'] ?? null ),
+	'subsumed-cart-drawer-row-names-the-native-cart',
+	(string) wp_json_encode( $drawer )
+);
+$drawer_resolution = array_values( array_filter( $subsumed['quality_resolutions']['resolutions'] ?? array(), static fn( array $row ): bool => isset( $row['subsumed_by'] ) ) );
+$assert( 1 === count( $drawer_resolution ) && 'website/cart.html' === ( $drawer_resolution[0]['subsumed_by']['source_path'] ?? '' ), 'quality-resolutions-carry-the-subsumed-row', (string) wp_json_encode( $subsumed['quality_resolutions'] ?? null ) );
+$assert( 'unresolved' === ( $rows['website/product/oak-tray.html html_checkout_view_fallback']['state'] ?? '' ) && 2 === ( $subsumed['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 1 === ( $subsumed['quality']['fallback_count'] ?? -1 ), 'checkout-view-is-not-subsumed-by-the-native-cart', (string) wp_json_encode( $subsumed['quality_resolutions'] ?? null ) );
+
+$no_cart = $drawer_report( array( $drawer_finding ), array(), $native_page );
+$assert( 'unresolved' === ( $drawer_rows( $no_cart )['website/product/oak-tray.html html_cart_view_fallback']['state'] ?? '' ) && 'no_provider_entity' === ( $drawer_rows( $no_cart )['website/product/oak-tray.html html_cart_view_fallback']['reason'] ?? '' ) && 1 === ( $no_cart['quality']['fallback_count'] ?? -1 ), 'cart-drawer-without-a-native-cart-stays-a-failure', (string) wp_json_encode( $no_cart['quality_resolutions'] ?? null ) );
+
+$unpersisted = $drawer_report( array( $drawer_finding ), array( $native_receipt ), hash( 'sha256', 'cart page without the cart block' ) );
+$assert( 'unresolved' === ( $drawer_rows( $unpersisted )['website/product/oak-tray.html html_cart_view_fallback']['state'] ?? '' ) && 1 === ( $unpersisted['quality']['fallback_count'] ?? -1 ), 'cart-drawer-stays-a-failure-when-the-native-cart-was-not-persisted', (string) wp_json_encode( $unpersisted['quality_resolutions'] ?? null ) );
+
+$own_record  = $record_method->invoke(
+	null,
+	'carts-declaration',
+	array(
+		'schema'              => 'generic/block-binding/v1',
+		'source_path'         => 'website/product/oak-tray.html',
+		'search_block_markup' => '<!-- wp:group {"tagName":"dialog"} --><dialog class="wp-block-group">Your bag</dialog><!-- /wp:group -->',
+		'occurrence'          => 1,
+		'role'                => 'commerce_cart',
+	),
+	$native_markup,
+	array(
+		'source_path' => 'website/product/oak-tray.html',
+		'selector'    => $drawer_finding['selector'],
+	),
+	array( 'provider' => 'woocommerce' )
+);
+$own_receipt = array_merge(
+	$own_record,
+	array(
+		'status'                    => 'completed',
+		'persisted_fragment_hash'   => hash( 'sha256', $native_markup ),
+		'materialized_content_hash' => hash( 'sha256', 'drawer page without the cart block' ),
+	)
+);
+$own_failed  = $drawer_report( array( $drawer_finding ), array( $native_receipt, $own_receipt ), $native_page );
+$own_row     = $drawer_rows( $own_failed )['website/product/oak-tray.html html_cart_view_fallback'] ?? array();
+$assert( 'unresolved' === ( $own_row['state'] ?? '' ) && 'provider_replacement_not_persisted' === ( $own_row['reason'] ?? '' ) && ! isset( $own_row['subsumed_by'] ), 'cart-view-whose-own-replacement-failed-is-not-subsumed', (string) wp_json_encode( $own_row ) );
+
+$checkout_only = $drawer_report( array( $drawer_finding ), array( array_merge( $native_receipt, array( 'role' => 'commerce_checkout' ) ) ), $native_page );
+$assert( 'unresolved' === ( $drawer_rows( $checkout_only )['website/product/oak-tray.html html_cart_view_fallback']['state'] ?? '' ), 'checkout-receipt-does-not-subsume-a-cart-drawer', (string) wp_json_encode( $checkout_only['quality_resolutions'] ?? null ) );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
