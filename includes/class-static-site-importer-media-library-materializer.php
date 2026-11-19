@@ -1231,6 +1231,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$offset     = $opener['end'];
 		}
 		$rewritten .= substr( $content, $offset );
+		if ( null === $error ) {
+			$rewritten = self::bind_cover_background_classes( $rewritten );
+		}
 		if ( null !== $error || ( ! str_contains( $rewritten, '<img' ) && ! str_contains( $rewritten, 'data-' ) ) ) {
 			return $rewritten;
 		}
@@ -1282,6 +1285,43 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$bound_html .= $tail['html'];
 
 		return null === $error ? $bound_html : $rewritten;
+	}
+
+	/**
+	 * A parallax or repeated core/cover paints its image as a background
+	 * element with no img, and save() names the attachment on that element
+	 * (`wp-image-{id}`). Keep it in step with the bound id.
+	 */
+	private static function bind_cover_background_classes( string $content ): string {
+		$result = '';
+		$offset = 0;
+		foreach ( self::block_openers( $content ) as $opener ) {
+			if ( $opener['self'] || ! in_array( $opener['name'], array( 'cover', 'core/cover' ), true ) ) {
+				continue;
+			}
+			$attrs = json_decode( $opener['json'], true );
+			$id    = is_array( $attrs ) ? (int) ( $attrs['id'] ?? 0 ) : 0;
+			if ( $id <= 0 || ( empty( $attrs['hasParallax'] ) && empty( $attrs['isRepeated'] ) ) ) {
+				continue;
+			}
+			// The background element precedes the cover's inner blocks.
+			$end  = strpos( $content, '<!--', $opener['end'] );
+			$html = substr( $content, $opener['end'], false === $end ? null : $end - $opener['end'] );
+			$tags = new WP_HTML_Tag_Processor( $html );
+			if ( ! $tags->next_tag( array( 'class_name' => 'wp-block-cover__image-background' ) ) ) {
+				continue;
+			}
+			foreach ( $tags->class_list() as $class ) {
+				if ( preg_match( '/^wp-image-\d+$/', $class ) ) {
+					$tags->remove_class( $class );
+				}
+			}
+			$tags->add_class( 'wp-image-' . $id );
+			$result .= substr( $content, $offset, $opener['end'] - $offset ) . $tags->get_updated_html();
+			$offset  = $opener['end'] + strlen( $html );
+		}
+
+		return $result . substr( $content, $offset );
 	}
 
 	/** Size slug for a media-text owner whose opener has no mediaId yet, else null. */

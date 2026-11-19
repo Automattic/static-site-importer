@@ -389,6 +389,19 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( 'Studio photo', get_post_meta( $ids[0], '_wp_attachment_image_alt', true ) );
 	}
 
+	public function test_parallax_cover_background_names_the_bound_attachment(): void {
+		$url   = get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png';
+		$state = $this->state_with_page(
+			'<!-- wp:cover ' . serialize_block_attributes( array( 'url' => $url, 'hasParallax' => true ) ) . ' --><div class="wp-block-cover has-parallax"><div class="wp-block-cover__image-background has-parallax" style="background-position:50% 50%;background-image:url(' . $url . ')"></div><div class="wp-block-cover__inner-container"><!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph --></div></div><!-- /wp:cover -->'
+		);
+
+		Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$cover = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) )[0];
+		$this->assertGreaterThan( 0, (int) ( $cover['attrs']['id'] ?? 0 ) );
+		$this->assertStringContainsString( 'class="wp-block-cover__image-background has-parallax wp-image-' . $cover['attrs']['id'] . '"', $cover['innerHTML'], 'core/cover save() names the attachment on the parallax background' );
+	}
+
 	/**
 	 * Canonical media-text has no mediaUrl/mediaId; core sources the url from the inner img.
 	 */
