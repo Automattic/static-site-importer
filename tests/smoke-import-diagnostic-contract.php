@@ -318,7 +318,7 @@ $partial_quality_counters = array(
 );
 $assert( 2 === ( $partial_quality['fallback_count'] ?? 0 ), 'quality-finalization-normalizes-partial-compiler-reports' );
 $assert( $partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 1 === ( $partial_quality['block_count'] ?? 0 ), 'quality-finalization-provides-the-complete-normalized-counter-schema' );
-$assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality-finalization-turns-compiler-fallback-warning-into-strict-failure' );
+$assert( false === ( $partial_quality['pass'] ?? true ) && false === ( $partial_quality['fail_import'] ?? true ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality-finalization-reports-compiler-fallback-without-rejection' );
 
 $importer_only_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(
@@ -820,10 +820,10 @@ foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 
 		'diagnostics' => array( $choice_submission ),
 	) );
 	$choice_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $choice_report, $choice_args );
-	$assert( false === $choice_quality['pass'] && true === $choice_quality['fail_import'], 'choice-form-requires-remediation-even-with-permissive-quality-options' );
+	$assert( false === $choice_quality['pass'] && false === $choice_quality['fail_import'], 'choice-form-reports-remediation-without-rejection' );
 	$assert( 1 === $choice_quality['choice_submission_form_count'] && 0 === $choice_quality['accepted_preserved_runtime_island_count'] && 1 === $choice_quality['unsupported_fallback_count'], 'choice-form-stays-counted-and-outside-accepted-runtime-total' );
 	$assert( in_array( 'form_submission_setup_required', $choice_quality['failure_reasons'], true ), 'choice-form-names-submission-setup-failure' );
-	$assert( 'failed' === $choice_report['compact_summary']['status'] && 'failed' === $choice_report['import_validation_result']['status'], 'choice-form-cannot-be-reported-as-completed' );
+	$assert( 'completed' === $choice_report['compact_summary']['status'] && 'reported' === $choice_report['import_validation_result']['status'], 'choice-form-completes-with-reported-findings' );
 	$choice_diagnostic = $choice_report->diagnostics()[0];
 	$assert( 'map_form_runtime_or_preserve_handler' === ( $choice_diagnostic['actionability'] ?? '' ), 'choice-form-uses-existing-runtime-remediation' );
 	$assert( str_contains( $choice_diagnostic['message'] ?? '', 'submission handler' ), 'choice-form-explains-required-submission-setup' );
@@ -836,7 +836,7 @@ $unsafe_plan = $unsafe_runtime_report['quality'];
 $unsafe_plan['fallbacks'][0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
 $unsafe_runtime_report['quality'] = $unsafe_plan;
 $unsafe_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
+$assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && false === ( $unsafe_runtime_quality['fail_import'] ?? true ), 'unsafe-runtime-iframe-remains-a-quality-finding' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
 $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
@@ -844,7 +844,7 @@ $incomplete_plan = $incomplete_runtime_report['quality'];
 unset( $incomplete_plan['fallbacks'][0]['materialization_path'] );
 $incomplete_runtime_report['quality'] = $incomplete_plan;
 $incomplete_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
+$assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && false === ( $incomplete_runtime_quality['fail_import'] ?? true ), 'missing-runtime-materialization-contract-remains-a-quality-finding' );
 
 $declined_form_fallback = array(
 	'code'                  => 'html_form_fallback',
@@ -893,7 +893,7 @@ $declined_form_rows    = array_values(
 		static fn( array $diagnostic ): bool => 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) || 'provider_entity_declined' === ( $diagnostic['code'] ?? '' )
 	)
 );
-$assert( false === ( $declined_form_quality['pass'] ?? true ) && true === ( $declined_form_quality['fail_import'] ?? false ), 'declined-form-without-provider-receipt-fails-quality-admission' );
+$assert( false === ( $declined_form_quality['pass'] ?? true ) && false === ( $declined_form_quality['fail_import'] ?? true ), 'declined-form-without-provider-receipt-is-reported' );
 $assert( 0 === ( $declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'declined-form-without-provider-receipt-remains-unsupported' );
 $assert( 'reported' === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ) && 1 === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['count'] ?? 0 ), 'declined-form-without-provider-receipt-remains-reported-as-fallback' );
 $assert( 2 === count( $declined_form_rows ) && 'acceptable_preservation' !== ( $declined_form_rows[0]['acceptability'] ?? '' ), 'declined-form-fallback-is-not-reclassified-as-acceptable-preservation' );
@@ -950,7 +950,7 @@ foreach ( $unresolved_cases as $label => list( $extra_diagnostics, $bindings, $p
 	$admitted     = null !== $plan_row;
 	$assert( 1 === count( $rows ) && 'unresolved' === ( $rows[0]['state'] ?? '' ) && $expected_reason === ( $rows[0]['reason'] ?? '' ), 'unresolved-form-reason-' . $label, wp_json_encode( $rows ) );
 	$assert( array_intersect_key( $rows[0]['evidence'] ?? array(), $expected_evidence ) === $expected_evidence, 'unresolved-form-evidence-' . $label, wp_json_encode( $rows[0]['evidence'] ?? null ) );
-	$assert( ( $admitted ? 0 : 1 ) === $case_quality['unsupported_fallback_count'] && ( $admitted ? 1 : 0 ) === $case_quality['accepted_preserved_runtime_island_count'] && ! $admitted === $case_quality['fail_import'], 'unresolved-form-gate-unchanged-' . $label, wp_json_encode( $case_quality ) );
+	$assert( ( $admitted ? 0 : 1 ) === $case_quality['unsupported_fallback_count'] && ( $admitted ? 1 : 0 ) === $case_quality['accepted_preserved_runtime_island_count'] && false === $case_quality['fail_import'], 'unresolved-form-gate-unchanged-' . $label, wp_json_encode( $case_quality ) );
 	$assert( $admitted === ( 'acceptable_preservation' === ( $finding['acceptability'] ?? '' ) ), 'unresolved-form-acceptability-agrees-with-gate-' . $label, wp_json_encode( $finding['fallback_resolution'] ?? null ) );
 }
 
@@ -1001,7 +1001,7 @@ $rating_form_report   = Static_Site_Importer_Import_Report::from_array(
 	)
 );
 $rating_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $rating_form_quality['pass'] ?? true ) && true === ( $rating_form_quality['fail_import'] ?? false ) && 1 === ( $rating_form_quality['unsupported_fallback_count'] ?? 0 ), 'actual-rating-button-form-decline-remains-unresolved' );
+$assert( false === ( $rating_form_quality['pass'] ?? true ) && false === ( $rating_form_quality['fail_import'] ?? true ) && 1 === ( $rating_form_quality['unsupported_fallback_count'] ?? 0 ), 'actual-rating-button-form-decline-remains-unresolved' );
 
 $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
 	array(
@@ -1019,7 +1019,7 @@ $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
 	)
 );
 $undeclined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $undeclined_form_quality['pass'] ?? true ) && true === ( $undeclined_form_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $undeclined_form_quality['failure_reasons'] ?? array(), true ), 'form-fallback-without-provider-decline-remains-fail-closed' );
+$assert( false === ( $undeclined_form_quality['pass'] ?? true ) && false === ( $undeclined_form_quality['fail_import'] ?? true ) && in_array( 'unsupported_html_fallback', $undeclined_form_quality['failure_reasons'] ?? array(), true ), 'form-fallback-without-provider-decline-is-reported' );
 $assert( 0 === ( $undeclined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $undeclined_form_quality['unsupported_fallback_count'] ?? 0 ), 'form-fallback-without-provider-decline-is-unsupported' );
 
 $unsafe_declined_form_report = Static_Site_Importer_Import_Report::from_array(
@@ -1038,7 +1038,7 @@ $unsafe_declined_form_report = Static_Site_Importer_Import_Report::from_array(
 	)
 );
 $unsafe_declined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $unsafe_declined_form_quality['pass'] ?? true ) && true === ( $unsafe_declined_form_quality['fail_import'] ?? false ), 'unsafe-declined-form-island-remains-fail-closed' );
+$assert( false === ( $unsafe_declined_form_quality['pass'] ?? true ) && false === ( $unsafe_declined_form_quality['fail_import'] ?? true ), 'unsafe-declined-form-island-is-reported' );
 $assert( 0 === ( $unsafe_declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-declined-form-island-is-unsupported' );
 
 $unsupported_html_report = Static_Site_Importer_Import_Report::from_array(
@@ -1056,7 +1056,7 @@ $unsupported_html_report = Static_Site_Importer_Import_Report::from_array(
 	)
 );
 $unsupported_html_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
-$assert( false === ( $unsupported_html_quality['pass'] ?? true ) && true === ( $unsupported_html_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $unsupported_html_quality['failure_reasons'] ?? array(), true ), 'genuine-unsupported-fallback-still-fails-quality-admission' );
+$assert( false === ( $unsupported_html_quality['pass'] ?? true ) && false === ( $unsupported_html_quality['fail_import'] ?? true ) && in_array( 'unsupported_html_fallback', $unsupported_html_quality['failure_reasons'] ?? array(), true ), 'genuine-unsupported-fallback-remains-a-finding' );
 
 /*
  * Issue #1547: the transformer's artifact normalizer drops files at declared
@@ -1109,11 +1109,11 @@ $assert( 'svg_materialization_failure' === ( $drop_diagnostics[2]['type'] ?? '' 
 
 $assert( 2 === ( $drop_quality['omitted_file_count'] ?? -1 ), 'quality-counts-omitted-artifact-files' );
 $assert( false === ( $drop_quality['pass'] ?? true ) && in_array( 'dropped_artifact_files', $drop_quality['failure_reasons'] ?? array(), true ), 'dropped-artifact-files-fail-quality' );
-$assert( true === ( $drop_quality['fail_import'] ?? false ), 'dropped-artifact-files-fail-import-under-fail-on-quality' );
+$assert( false === ( $drop_quality['fail_import'] ?? true ), 'dropped-artifact-files-do-not-reject-import' );
 $assert( 2 === count( $drop_quality['diagnostic_refs']['omitted_file_count'] ?? array() ), 'quality-refs-link-omitted-file-diagnostics' );
 
 $drop_validation = $compiler_drop_report['import_validation_result'] ?? array();
-$assert( 'failed' === ( $drop_validation['status'] ?? '' ), 'validation-result-marks-drop-import-failed' );
+$assert( 'reported' === ( $drop_validation['status'] ?? '' ), 'validation-result-reports-dropped-files' );
 $assert( 2 === ( $drop_validation['counts']['omitted_artifact_files'] ?? 0 ), 'validation-result-counts-omitted-artifact-files' );
 $assert( 'reported' === ( $drop_validation['quality_gates']['omitted_artifact_files']['status'] ?? '' ) && 2 === count( $drop_validation['quality_gates']['omitted_artifact_files']['diagnostic_refs'] ?? array() ), 'validation-result-gates-omitted-artifact-files' );
 $drop_report_packets = $compiler_drop_report['finding_packets']['packets'] ?? array();

@@ -1237,7 +1237,6 @@ if ( ! function_exists( 'static_site_importer_cli_import_options' ) ) {
 			'overwrite'                    => isset( $assoc_args['overwrite'] ),
 			'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
 			'remove_default_content'       => ! isset( $assoc_args['keep-default-content'] ),
-			'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
 			'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
 			'allow_omitted_pages'          => isset( $assoc_args['allow-omitted-pages'] ),
 			'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
@@ -1353,101 +1352,12 @@ if ( ! function_exists( 'static_site_importer_cli_import_receipt' ) ) {
 			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_nonterminal_receipt', 'A continuation is not a terminal import receipt.' );
 		}
 		$success = ! empty( $result['success'] ) && empty( $result['continuation'] );
-		// The receipt is the one quality verdict: an import whose quality gate
-		// set `fail_import` is failed here even though materialization ran.
-		$quality_failure = $success ? static_site_importer_cli_quality_failure_message( $result ) : null;
-		if ( null !== $quality_failure ) {
-			$success           = false;
-			$result['success'] = false;
-			$result['error']   = array(
-				'code'    => 'static_site_importer_quality_failed',
-				'message' => $quality_failure,
-			);
-		}
 		return array(
 			'schema'   => 'static-site-importer/import-cli-receipt/v1',
 			'status'   => $success ? 'completed' : 'failed',
 			'steps'    => $steps,
 			'response' => $result,
 		);
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
-	/**
-	 * Summarize the quality gate that failed an otherwise successful import.
-	 *
-	 * Reads the finalized quality projections the import response carries
-	 * (compact summary, validation result, quality) and returns null unless one
-	 * of them sets `fail_import`.
-	 *
-	 * @param array<string,mixed> $result Terminal import response.
-	 */
-	function static_site_importer_cli_quality_failure_message( array $result ): ?string {
-		$containers = array();
-		foreach ( array( $result, is_array( $result['result'] ?? null ) ? $result['result'] : array() ) as $level ) {
-			foreach ( array( 'import_report_summary', 'import_validation_result', 'quality' ) as $key ) {
-				if ( is_array( $level[ $key ] ?? null ) ) {
-					$containers[] = $level[ $key ];
-				}
-			}
-		}
-		$failed = array_filter( $containers, static fn( array $container ): bool => true === ( $container['fail_import'] ?? null ) );
-		if ( empty( $failed ) ) {
-			return null;
-		}
-		$reason_counts = array(
-			'form_submission_setup_required' => 'choice_submission_form_count',
-			'unsupported_html_fallback'      => 'unsupported_fallback_count',
-			'content_loss_abort'             => 'content_loss_count',
-			'empty_conversion'               => 'empty_conversion_count',
-			'core_html_block'                => 'core_html_block_count',
-			'raw_html_companion_block'       => 'raw_html_companion_block_count',
-			'freeform_block'                 => 'freeform_block_count',
-			'invalid_block'                  => 'invalid_block_count',
-			'unsafe_inline_svg'              => 'unsafe_svg_count',
-			'image_missing_source'           => 'image_missing_source_count',
-			'svg_materialization_failure'    => 'svg_materialization_failure_count',
-			'svg_sprite_reference_failure'   => 'svg_sprite_reference_failure_count',
-			'woocommerce_missing'            => 'commerce_dependency_failures',
-			'companion_plugin_missing'       => 'companion_plugin_dependency_failures',
-			'runtime_dependency_parity'      => 'runtime_dependency_parity_issue_count',
-			'semantic_parity_failure'        => 'semantic_parity_failure_count',
-			'unsafe_layout_constraint'       => 'unsafe_layout_constraint_count',
-			'dropped_artifact_files'         => 'omitted_file_count',
-			'page_compile_omitted'           => 'omitted_page_count',
-			'visual_parity_mismatch'         => 'visual_parity_failure_count',
-		) + array_flip( Static_Site_Importer_Theme_Hygiene::GATED );
-		$count_of      = static function ( array $keys ) use ( $containers ): ?int {
-			foreach ( $containers as $container ) {
-				foreach ( $keys as $key ) {
-					$value = $container[ $key ] ?? ( is_array( $container['counts'] ?? null ) ? ( $container['counts'][ $key ] ?? null ) : null );
-					if ( is_numeric( $value ) ) {
-						return (int) $value;
-					}
-				}
-			}
-			return null;
-		};
-
-		$reasons = array();
-		foreach ( $failed as $container ) {
-			foreach ( is_array( $container['failure_reasons'] ?? null ) ? $container['failure_reasons'] : array() as $reason ) {
-				if ( is_string( $reason ) && '' !== $reason ) {
-					$reasons[ $reason ] = true;
-				}
-			}
-		}
-		$parts = array();
-		foreach ( array_keys( $reasons ) as $reason ) {
-			$count   = isset( $reason_counts[ $reason ] ) ? $count_of( array( $reason_counts[ $reason ] ) ) : null;
-			$parts[] = null !== $count && $count > 0 ? sprintf( '%d %s failure%s', $count, $reason, 1 === $count ? '' : 's' ) : $reason;
-		}
-		if ( empty( $parts ) ) {
-			$fallbacks = $count_of( array( 'fallback_blocks', 'unsupported_fallback_count', 'fallback_count' ) );
-			$parts[]   = sprintf( '%d fallback_blocks failure%s', (int) $fallbacks, 1 === (int) $fallbacks ? '' : 's' );
-		}
-		return 'The import failed its quality gate: ' . implode( ', ', $parts ) . '.';
 	}
 }
 
@@ -2340,7 +2250,6 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 				'name'                                 => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 				'activate'                             => ! isset( $assoc_args['no-activate'] ),
 				'overwrite'                            => ! isset( $assoc_args['no-overwrite'] ),
-				'fail_on_quality'                      => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'allow_omitted_pages'                  => isset( $assoc_args['allow-omitted-pages'] ),
 				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),

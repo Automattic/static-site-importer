@@ -208,7 +208,7 @@ $result = $method->invoke(
 	)
 );
 
-$assert( false === ( $result['success'] ?? true ), 'quality-failure-reflected' );
+$assert( true === ( $result['success'] ?? false ) && 'completed' === $result['status'] && false === $result['summary']['quality_pass'], 'quality-findings-do-not-reject-materialization' );
 $assert( isset( $result['fixture_diagnostics']['diagnostics'] ), 'nested-fixture-diagnostics-present' );
 $assert( 1 === count( $result['diagnostics'] ?? array() ), 'top-level-diagnostics-present' );
 $assert( 'semantic_parity_navigation_missing' === ( $result['diagnostics'][0]['type'] ?? '' ), 'top-level-diagnostic-type-preserved' );

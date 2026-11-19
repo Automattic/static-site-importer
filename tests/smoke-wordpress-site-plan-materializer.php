@@ -2695,7 +2695,7 @@ $other_failure_report = Static_Site_Importer_Import_Report::from_array( $form_qu
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
 $other_failure_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
 $other_failure_validation = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $other_failure_report, $other_failure_quality );
-$assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
+$assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && false === ( $other_failure_quality['fail_import'] ?? true ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'reported' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
 // Exercise the production result composition path with the partial compiler
 // quality envelope that website-artifact imports supply.
 $partial_quality_plan                = $receipt['plan'];
@@ -2753,7 +2753,7 @@ $assert(
 	) === ( $partial_quality['metrics'] ?? null ),
 	'partial website-artifact result composition preserves supplied compiler metrics and reports final materialized block counts'
 );
-$assert( is_array( $partial_quality_result ) && false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality failures remain reported without replacing the materialization result with an error' );
+$assert( is_array( $partial_quality_result ) && false === ( $partial_quality['pass'] ?? true ) && false === ( $partial_quality['fail_import'] ?? true ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality failures remain reported without replacing the materialization result with an error' );
 $tampered_fragment_receipt = $form_binding_receipt;
 $tampered_fragment_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered fragment' );
 $tampered_fragment_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );

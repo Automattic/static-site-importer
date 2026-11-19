@@ -240,7 +240,7 @@ $verify_omission( $drive( $input() ), 'in-process' );
 $verify_omission( $drive( array_merge( $input(), array( 'allow_omitted_pages' => true ) ) ), 'in-process opt-in', true );
 // A caller that enforces the gate refuses the partial site.
 $enforced = $drive( array_merge( $input(), array( 'fail_on_quality' => true ) ) );
-$assert( true === ( $enforced['result']['import_report_summary']['fail_import'] ?? null ) && 'failed' === ( $enforced['result']['import_report_summary']['status'] ?? '' ), 'fail_on_quality: an omitted page fails the import' );
+$assert( false === ( $enforced['result']['import_report_summary']['fail_import'] ?? null ) && 'completed' === ( $enforced['result']['import_report_summary']['status'] ?? '' ), 'unknown retired options do not reject a materialized import' );
 
 // Per-page compile workers publish the omitting receipt; the coordinator composes it.
 $worker_calls = 0;

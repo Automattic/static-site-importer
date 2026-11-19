@@ -172,10 +172,10 @@ $choice_result = array(
 );
 $choice_hooks_before = count( $GLOBALS['ssi_smoke_fired_hooks'] );
 $choice_envelope = static_site_importer_ability_import_success( $choice_result, $input );
-$assert( false === $choice_envelope['success'], 'choice-form-is-not-an-api-success' );
-$assert( 'static_site_importer_quality_failed' === ( $choice_envelope['error']['code'] ?? '' ), 'choice-form-api-explains-quality-failure' );
+$assert( true === $choice_envelope['success'], 'choice-form-is-an-api-success' );
+$assert( ! isset( $choice_envelope['error'] ), 'choice-form-has-no-api-error' );
 $assert( $choice_result === $choice_envelope['result'], 'choice-form-keeps-editable-preview-evidence' );
-$assert( $choice_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'choice-form-does-not-fire-completion-hook' );
+$assert( $choice_hooks_before + 1 === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'choice-form-fires-completion-hook' );
 
 $prepare_hooks_before = count( $GLOBALS['ssi_smoke_fired_hooks'] );
 $prepared = array( 'status' => 'dependencies_prepared', 'runtime_lifecycle_checkpoint' => 'example-checkpoint' );
@@ -190,11 +190,11 @@ $url_terminal['quality'] = array( 'choice_submission_form_count' => 1 );
 $url_terminal['import_validation_result']['diagnostics'] = array( array( 'code' => 'preserved_runtime_island', 'kind' => 'form', 'form_intent' => 'choice_submission', 'source_path' => 'question.html', 'selector' => 'form.question' ) );
 $url_result = array( 'import_report_summary' => array( 'status' => 'completed' ), 'terminal_batch_result' => $url_terminal, 'fixture_diagnostics' => $contract );
 $url_envelope = static_site_importer_ability_import_success( $url_result, $input );
-$assert( false === $url_envelope['success'] && false === $url_envelope['fixture_diagnostics']['success'], 'failed-url-import-and-diagnostic-contract-agree' );
+$assert( true === $url_envelope['success'] && false === $url_envelope['fixture_diagnostics']['success'], 'materialization-success-is-independent-of-failure-diagnostics' );
 $assert( 'failed' === $url_envelope['fixture_diagnostics']['status'], 'url-diagnostics-use-final-materialization-status' );
 $assert( 1 === $url_envelope['fixture_diagnostics']['quality_counts']['choice_submission_form_count'], 'url-diagnostics-keep-submission-setup-count' );
 $assert( ! empty( $url_envelope['fixture_diagnostics']['diagnostics'] ), 'url-diagnostics-keep-form-remediation-evidence' );
-$assert( $prepare_hooks_before === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'failed-url-import-does-not-announce-completion' );
+$assert( $prepare_hooks_before + 1 === count( $GLOBALS['ssi_smoke_fired_hooks'] ), 'materialized-url-import-announces-completion' );
 
 $failed_validation_result = array(
 	'theme_slug'               => 'failed-validation-site',

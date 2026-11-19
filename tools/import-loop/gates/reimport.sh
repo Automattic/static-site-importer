@@ -48,7 +48,7 @@ jq -n --arg name "$name" --arg source "$capture" '{
   client_script_policy: "isolated_preview", client_script_isolated: true,
   client_script_provenance: {ref: "import-loop-reimport"},
   source_metadata: {source: "studio-create-from", source_path: $source},
-  fail_on_quality: true, require_proven_dynamic_client_assets: true,
+  require_proven_dynamic_client_assets: true,
   seed_entities: true, materialize_dependencies: true,
   source: {type: "files", ref: "request-bundle:source"}}' > "$site/.studio-import/request.json"
 # A quality-gate refusal still materializes the site, as Studio keeps its
