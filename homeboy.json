@@ -246,6 +246,7 @@
           "tests/smoke-ability-registration-idempotent.php",
           "tests/smoke-theme-file-permissions.php",
           "tests/smoke-admin-bar-top-chrome.php",
+          "tests/smoke-footer-overlay-order.php",
           "tests/smoke-payload-reference-errors.php",
           "tests/smoke-artifact-run-primitives.php",
           "tests/smoke-block-namespace.php",
