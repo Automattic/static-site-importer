@@ -71,20 +71,25 @@ try {
 		$callbacks = $GLOBALS['ssi_companion_registered_filters'][ $hook ] ?? array();
 		$check( 1 === count( $callbacks ) && SSI_POST_ROUTES_Post_Source_Route_Runtime::class === $callbacks[0][0][0], 'Generated companion must own ' . $hook );
 	}
-	$routes = array( 101 => '/communities/a', 102 => '/communities/a-duplicate', 103 => '/news/c.html' );
+	$routes = array( 101 => '/communities/a', 102 => '/communities/a-duplicate', 103 => '/news/c.html', 104 => '/post/caf%C3%A9-notes' );
 	$GLOBALS['ssi_companion_options']['static_site_importer_post_routes'] = $routes;
 	$rules = route_filter( 'rewrite_rules_array', array( '^unrelated/?$' => 'index.php?p=999' ) );
 	foreach ( $routes as $id => $route ) {
 		$url = home_url( str_ends_with( $route, '.html' ) ? $route : $route . '/' );
 		$check( $url === get_permalink( $id ), 'Permalink must use source route' );
-		$target = null;
-		foreach ( $rules as $regex => $query ) {
-			if ( preg_match( '#' . $regex . '#', ltrim( $route, '/' ) ) ) {
-				$target = $query;
-				break;
+		// Mirror WP::parse_request(): PATH_INFO arrives decoded, REQUEST_URI encoded (any hex case); both are tried raw and urldecode()d.
+		$stored = ltrim( $route, '/' );
+		$lower  = preg_replace_callback( '/%[0-9A-F]{2}/', static fn( array $m ): string => strtolower( $m[0] ), $stored );
+		foreach ( array( $stored, $lower, rawurldecode( $stored ) ) as $request ) {
+			$target = null;
+			foreach ( $rules as $regex => $query ) {
+				if ( preg_match( "#^$regex#", $request ) || preg_match( "#^$regex#", urldecode( $request ) ) ) {
+					$target = $query;
+					break;
+				}
 			}
+			$check( 'index.php?p=' . $id === $target, 'Source route must resolve exactly by post ID: ' . $request );
 		}
-		$check( 'index.php?p=' . $id === $target, 'Source route must resolve exactly by post ID' );
 		$GLOBALS['route_queried_id'] = $id;
 		$check( false === route_filter( 'redirect_canonical', $url . '/', $url . '?ref=source' ), 'Source route must not redirect' );
 		$check( 'core-redirect' === route_filter( 'redirect_canonical', 'core-redirect', home_url( '/wrong/' ) ), 'Other canonical redirects must remain intact' );
