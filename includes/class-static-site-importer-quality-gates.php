@@ -33,6 +33,9 @@ if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 
 /** Computes quality-gate status from normalized import diagnostics. */
 final class Static_Site_Importer_Quality_Gates {
+	/** Failure reason for source pages omitted from the compiled plan. */
+	public const OMITTED_PAGE_FAILURE_REASON = 'page_compile_omitted';
+
 	/**
 	 * Finalize quality summary and gate status.
 	 *
@@ -55,6 +58,7 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$quality['unsafe_layout_constraint_count']          = count( array_filter( $report['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE === ( $diagnostic['type'] ?? '' ) ) );
 		$quality['omitted_file_count']                      = self::omitted_file_count( $report['diagnostics'] ?? array() );
+		$quality['omitted_page_count']                      = count( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_page_paths( $report['diagnostics'] ?? array() ) );
 		$quality['visual_parity_failure_count']             = count(
 			array_filter(
 				$report['diagnostics'] ?? array(),
@@ -118,6 +122,12 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 		if ( ( $quality['omitted_file_count'] ?? 0 ) > 0 ) {
 			$reasons[] = 'dropped_artifact_files';
+		}
+		// A source page Blocks Engine never compiled is absent from the import:
+		// its route 404s. That is content loss, so it fails the gate unless the
+		// caller explicitly accepts a partial site (allow_omitted_pages).
+		if ( $quality['omitted_page_count'] > 0 && empty( $args['allow_omitted_pages'] ) ) {
+			$reasons[] = self::OMITTED_PAGE_FAILURE_REASON;
 		}
 		if ( ( $quality['visual_parity_failure_count'] ?? 0 ) > 0 ) {
 			$reasons[] = Static_Site_Importer_Visual_Parity_Oracle::FAILURE_REASON;
@@ -189,6 +199,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'semantic_parity_failure_count'           => 0,
 			'unsafe_layout_constraint_count'          => 0,
 			'omitted_file_count'                      => 0,
+			'omitted_page_count'                      => 0,
 			'visual_parity_failure_count'             => 0,
 			'failure_reasons'                         => array(),
 		);
@@ -1018,6 +1029,16 @@ final class Static_Site_Importer_Quality_Gates {
 				)
 			);
 		}
+
+		// Omitted-page rows are compiler rows identified by code, not type.
+		$refs['omitted_page_count'] = array_values(
+			array_filter(
+				array_map(
+					static fn( array $diagnostic ): string => (string) ( $diagnostic['id'] ?? '' ),
+					Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $diagnostics )
+				)
+			)
+		);
 
 		// Compiler diagnostics have codes, not fallback types. Join references to
 		// the same plan rows used for admission; never admit a diagnostic echo.
