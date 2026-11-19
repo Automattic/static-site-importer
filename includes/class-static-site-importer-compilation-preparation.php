@@ -99,6 +99,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			),
 			$content_index['aliases']
 		);
+		$artifact                            = Static_Site_Importer_Redirects_Manifest::reserve_alias_routes( $artifact, $args['source_route_aliases'] );
 		$script_policy                       = $precompiled ? array(
 			'artifact' => $artifact,
 			'report'   => $args['source_metadata']['collection']['script_policy'] ?? array(),

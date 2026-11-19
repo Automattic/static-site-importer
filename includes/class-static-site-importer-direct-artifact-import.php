@@ -101,6 +101,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$artifact                     = $redirects['artifact'];
 		$args['source_route_aliases'] = Static_Site_Importer_Content_Index::append_aliases( $redirects['aliases'], $content_index['aliases'] );
+		$artifact                     = Static_Site_Importer_Redirects_Manifest::reserve_alias_routes( $artifact, $args['source_route_aliases'] );
 
 		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace, $verified_text );
 		if ( is_wp_error( $retained ) ) {
