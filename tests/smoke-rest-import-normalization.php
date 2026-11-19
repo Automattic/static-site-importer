@@ -33,7 +33,6 @@ $options = array(
 	'stale_page_action'            => 'draft',
 	'activate'                     => true,
 	'overwrite'                    => true,
-	'fail_on_quality'              => true,
 	'allow_missing_woocommerce'    => true,
 	'allow_missing_jetpack'        => true,
 	'materialize_dependencies'     => false,

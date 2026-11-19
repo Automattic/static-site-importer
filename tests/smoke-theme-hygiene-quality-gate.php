@@ -125,6 +125,9 @@ $import = static function ( array $plan, array $resolved, array $package, array 
 	return array( $quality, $summary );
 };
 
+require_once dirname( __DIR__ ) . '/includes/cli.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php';
+
 $cases = array(
 	'clean import passes; a counter its producer did not emit is null' => array(
 		'plan'     => static function ( array $plan ): array {
@@ -195,10 +198,17 @@ foreach ( $cases as $name => $case ) {
 	$assert( $case['reasons'] === $hygiene_reasons, "{$name}: hygiene failure reasons are " . implode( ', ', $case['reasons'] ) . '; got ' . implode( ', ', $hygiene_reasons ) );
 	$assert( $case['pass'] === $quality['pass'] && $case['pass'] === $summary['quality_pass'], "{$name}: quality_pass is " . var_export( $case['pass'], true ) . '; reasons ' . implode( ', ', $quality['failure_reasons'] ) );
 	$assert( ! in_array( 'engine_class_token_share', $quality['failure_reasons'], true ), "{$name}: engine_class_token_share is never a failure reason" );
+	$response = Static_Site_Importer_Canonical_Import_Service::success( array( 'quality' => $quality, 'import_report_summary' => $summary ), array(), false );
+	$receipt  = static_site_importer_cli_import_receipt( $response, 1 );
+	$assert( true === $receipt['response']['success'] && 'completed' === $receipt['status'], "{$name}: materialized import completes successfully" );
+	$assert( $quality === $receipt['response']['result']['quality'], "{$name}: receipt preserves every quality counter and reason" );
+	if ( ! $case['pass'] ) {
+		$assert( 2 === $receipt['response']['result']['quality']['empty_asset_count'] && in_array( 'empty_asset', $receipt['response']['result']['quality']['failure_reasons'], true ), 'end-to-end: nonzero hygiene counter and reason survive successful completion' );
+	}
 }
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, 'FAIL: ' . implode( "\nFAIL: ", $failures ) . "\n" );
 	exit( 1 );
 }
-echo "PASS: theme hygiene counters are reported and gated\n";
+echo "PASS: materialized imports complete with hygiene counters and reasons intact\n";

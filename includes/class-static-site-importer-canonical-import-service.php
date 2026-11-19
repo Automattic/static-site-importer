@@ -797,14 +797,6 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input, bool $notify_completion = true ): array {
-		$requires_form_setup = false;
-		foreach ( array( $result, $result['terminal_batch_result'] ?? array() ) as $level ) {
-			foreach ( array( 'quality', 'import_report_summary', 'import_validation_result' ) as $field ) {
-				if ( in_array( 'form_submission_setup_required', $level[ $field ]['failure_reasons'] ?? array(), true ) ) {
-					$requires_form_setup = true;
-				}
-			}
-		}
 		$contract               = self::success_diagnostics_contract( $result );
 		$figma_transform_report = isset( $input['source_metadata']['figma_transform_report'] ) && is_array( $input['source_metadata']['figma_transform_report'] ) ? $input['source_metadata']['figma_transform_report'] : array();
 		$result                 = self::bound_success_result( $result, empty( $figma_transform_report ) ? array() : array( 'figma_transform_report' => $figma_transform_report ) );
@@ -820,21 +812,15 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
 		$is_terminal                     = empty( $result['continuation'] ) && 'dependencies_prepared' !== ( $result['status'] ?? '' );
-		if ( $notify_completion && $is_terminal && ! $requires_form_setup && function_exists( 'do_action' ) ) {
+		if ( $notify_completion && $is_terminal && function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
 		$response = array(
-			'success'             => ! $requires_form_setup,
+			'success'             => true,
 			'result'              => $result,
 			'diagnostics'         => $bounded_contract['diagnostics'],
 			'fixture_diagnostics' => $bounded_contract,
 		);
-		if ( $requires_form_setup ) {
-			$response['error'] = array(
-				'code'    => 'static_site_importer_quality_failed',
-				'message' => 'These forms need a working submission handler before this import is ready.',
-			);
-		}
 		if ( ! empty( $figma_transform_report ) ) {
 			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $result['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
 		}

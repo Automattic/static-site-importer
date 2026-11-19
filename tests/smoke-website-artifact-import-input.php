@@ -141,7 +141,6 @@ $input  = array(
 	'navigation'                           => true,
 	'disable_smilies'                      => true,
 	'remove_default_content'               => false,
-	'fail_on_quality'                      => true,
 	'allow_missing_woocommerce'            => true,
 	'allow_missing_jetpack'                => true,
 	'allow_omitted_pages'                  => true,

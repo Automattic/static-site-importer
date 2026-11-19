@@ -336,7 +336,7 @@ $fail_quality = Static_Site_Importer_Report_Diagnostics::finalize_report(
 	)
 );
 $assert( false === $fail_quality['pass'], 'oversized-logo-quality-fail' );
-$assert( true === $fail_quality['fail_import'], 'oversized-logo-fail-import-when-strict' );
+$assert( false === $fail_quality['fail_import'], 'oversized-logo-is-report-only' );
 $assert( in_array( 'visual_parity_mismatch', $fail_quality['failure_reasons'] ?? array(), true ), 'oversized-logo-failure-reason' );
 $assert( ( $fail_quality['visual_parity_failure_count'] ?? 0 ) > 0, 'oversized-logo-failure-count' );
 $assert( 'failed' === ( $fail_report['visual_fidelity']['status'] ?? '' ), 'oversized-logo-marks-visual-fidelity-failed' );

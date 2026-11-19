@@ -55,7 +55,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'overwrite'                            => array( 'type' => 'boolean' ),
 		'disable_smilies'                      => array( 'type' => 'boolean' ),
 		'remove_default_content'               => array( 'type' => 'boolean' ),
-		'fail_on_quality'                      => array( 'type' => 'boolean' ),
 		'allow_missing_woocommerce'            => array( 'type' => 'boolean' ),
 		'allow_missing_jetpack'                => array( 'type' => 'boolean' ),
 		'allow_omitted_pages'                  => array(
@@ -116,7 +115,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'navigation'                           => false,
 				'disable_smilies'                      => true,
 				'remove_default_content'               => true,
-				'fail_on_quality'                      => false,
 				'allow_missing_woocommerce'            => false,
 				'allow_missing_jetpack'                => false,
 				'allow_omitted_pages'                  => false,
@@ -152,7 +150,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'destination', 'slug', 'name', 'site_title', 'site_tagline', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy', 'theme_materialization' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
-		foreach ( array( 'navigation', 'activate', 'overwrite', 'disable_smilies', 'remove_default_content', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'allow_omitted_pages', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
+		foreach ( array( 'navigation', 'activate', 'overwrite', 'disable_smilies', 'remove_default_content', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'allow_omitted_pages', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
 			$values[ $field ] = (bool) $values[ $field ];
 		}
 		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'quality_budget', 'client_script_provenance' ) as $field ) {

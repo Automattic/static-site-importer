@@ -485,10 +485,10 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( 'importer_materialization_bug' !== ( $rows['runtime_form_graph_rejected']['loss_class'] ?? '' ), 'form-graph-rejection-is-not-an-importer-bug' );
 // Reported losses never fail the import. Omitted files and omitted pages stay
 // quality reasons (dropped_artifact_files, page_compile_omitted) that a
-// caller's fail_on_quality policy can refuse.
+// quality findings never reject a materialized import.
 $assert( 'completed' === ( $stored['compact_summary']['status'] ?? '' ) && false === $quality['fail_import'] && array( 'dropped_artifact_files', 'page_compile_omitted' ) === $quality['failure_reasons'], 'reported-losses-keep-the-import-passing', wp_json_encode_fallback( $quality['failure_reasons'] ?? array() ) );
 $strict_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array_merge( $args, array( 'fail_on_quality' => true ) ) );
-$assert( true === $strict_quality['fail_import'], 'fail-on-quality-callers-can-still-refuse-omitted-files' );
+$assert( false === $strict_quality['fail_import'], 'omitted-files-remain-report-only' );
 
 // Item 6: every row carries the canonical finding fields; producer fields survive.
 foreach ( $stored['diagnostics'] ?? array() as $row ) {
