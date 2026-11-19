@@ -183,6 +183,10 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 	 * its siblings held memory too, so its shard is retried on its own, one shard
 	 * at a time. Workers skip receipts they already published, so a retry only
 	 * compiles the pages the killed worker did not finish.
+	 *
+	 * Pages a stalled worker left unfinished are then retried once each, serially,
+	 * with a longer no-progress window; only pages that stall again are returned
+	 * as stalled. Any retried page is listed in stall_retried_pages.
 	 */
 	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards, ?int $workers = null, array $bounds = array() ) {
 		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
@@ -206,6 +210,12 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 					$results[ $index ] = $retry['results'][ $index ];
 				}
 			}
+		}
+		$stall_retried_pages = array();
+		if ( ! empty( $stalled_workers ) && ( null === ( $bounds['deadline'] ?? null ) || microtime( true ) < $bounds['deadline'] ) ) {
+			$retry               = static_site_importer_cli_retry_stalled_compile_pages( $import_id, $stalled_workers, $bounds );
+			$stalled_workers     = $retry['stalled_workers'];
+			$stall_retried_pages = $retry['retried_pages'];
 		}
 
 		$failures      = array();
@@ -245,7 +255,67 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
 			);
 		}
-		return empty( $stalled_workers ) ? true : array( 'stalled_workers' => $stalled_workers );
+		if ( empty( $stalled_workers ) && empty( $stall_retried_pages ) ) {
+			return true;
+		}
+		return array(
+			'stalled_workers'     => $stalled_workers,
+			'stall_retried_pages' => $stall_retried_pages,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_compile_worker_no_progress_seconds' ) ) {
+	/** Seconds a compile worker may go without output or a new receipt before it is killed as stalled. */
+	function static_site_importer_cli_compile_worker_no_progress_seconds(): float {
+		// Allow several observed 20–40 second sandbox pages without progress.
+		return max( 0.1, (float) apply_filters( 'static_site_importer_cli_compile_worker_no_progress_seconds', 180.0 ) );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_retry_stalled_compile_pages' ) ) {
+	/**
+	 * Retry each page a stalled worker left unfinished once, one worker at a time.
+	 *
+	 * A worker usually stalls because its siblings starve it of CPU on a loaded
+	 * host, not because its page cannot compile. After the parallel phase the
+	 * page gets the host to itself and a longer no-progress window, so only a
+	 * page that stalls again is omitted. Pages that already published a receipt
+	 * are not retried.
+	 *
+	 * @param string $import_id       Retained run id.
+	 * @param array  $stalled_workers Stalled worker records from the parallel phase.
+	 * @param array  $bounds          Absolute deadline and receipt directory.
+	 * @return array{stalled_workers:array,retried_pages:string[]} Pages still stalled after their retry, flagged retried_after_stall, and every retried page.
+	 */
+	function static_site_importer_cli_retry_stalled_compile_pages( string $import_id, array $stalled_workers, array $bounds ): array {
+		$window   = static_site_importer_cli_compile_worker_no_progress_seconds();
+		$window   = max( 0.1, (float) apply_filters( 'static_site_importer_cli_compile_worker_stall_retry_no_progress_seconds', 3 * $window, $window ) );
+		$stalled  = array();
+		$retried  = array();
+		$receipts = $bounds['receipt_directory'] ?? null;
+		foreach ( $stalled_workers as $worker ) {
+			foreach ( $worker['page_ids'] as $page_id ) {
+				if ( null !== $receipts && is_file( $receipts . '/' . hash( 'sha256', $page_id ) . '.json' ) ) {
+					continue;
+				}
+				WP_CLI::warning( sprintf( 'Compile worker for %s stalled; retrying it on its own with a %.0fs no-progress window.', $page_id, $window ) );
+				$retried[] = $page_id;
+				$run       = static_site_importer_cli_run_compile_workers( $import_id, array( array( $page_id ) ), 1, array_merge( $bounds, array( 'no_progress_seconds' => $window ) ) );
+				$result    = $run['results'][0] ?? null;
+				if ( empty( $run['stalled_workers'] ) && null !== $result && 0 === $result['signal'] && 0 === $result['exitcode'] ) {
+					continue;
+				}
+				// A retry that stalls again, or fails any other way, leaves the page omitted as stalled.
+				$record                        = $run['stalled_workers'][0] ?? array_merge( $worker, array( 'page_ids' => array( $page_id ) ) );
+				$record['retried_after_stall'] = true;
+				$stalled[]                     = $record;
+			}
+		}
+		return array(
+			'stalled_workers' => $stalled,
+			'retried_pages'   => $retried,
+		);
 	}
 }
 
@@ -277,8 +347,8 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 		$results         = array();
 		$spawn_error     = false;
 		$stalled_workers = array();
-		// Allow several observed 20–40 second sandbox pages without progress.
-		$no_progress_seconds = max( 0.1, (float) apply_filters( 'static_site_importer_cli_compile_worker_no_progress_seconds', 180.0 ) );
+		// A stall retry passes its own, longer window in its bounds.
+		$no_progress_seconds = (float) ( $bounds['no_progress_seconds'] ?? static_site_importer_cli_compile_worker_no_progress_seconds() );
 		while ( ! empty( $processes ) || ( ! $spawn_error && ! empty( $queue ) ) ) {
 			while ( ! $spawn_error && ! empty( $queue ) ) {
 				if ( count( $processes ) >= $concurrency ) {

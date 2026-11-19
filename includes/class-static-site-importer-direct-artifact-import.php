@@ -703,6 +703,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 							}
 						}
 						$run['deadline_skipped_pages'] = array_values( array_unique( array_merge( $run['deadline_skipped_pages'] ?? array(), $stalled_ids ) ) );
+
+						$run['work']['stall_retried_pages'] = (int) ( $run['work']['stall_retried_pages'] ?? 0 ) + count( is_array( $fanout ) ? ( $fanout['stall_retried_pages'] ?? array() ) : array() );
 						if ( in_array( $entry_id, $stalled_ids, true ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The entrypoint compile worker stalled.', $run['stalled_pages'] ) );
 						}
@@ -1165,10 +1167,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					'source_path' => $file['path'],
 					'reason_code' => null === $stalled ? 'deadline' : 'compile_worker_stalled',
 					'message'     => null === $stalled ? 'Page skipped because the import compile deadline was exhausted.' : sprintf(
-						'Compile worker stalled: pages=%s; elapsed=%.3fs; peak_memory_bytes=%s; stderr: %s',
+						'Compile worker stalled: pages=%s; elapsed=%.3fs; peak_memory_bytes=%s; retried_after_stall=%s; stderr: %s',
 						implode( ', ', $stalled['page_ids'] ),
 						$stalled['elapsed_seconds'],
 						null === $stalled['peak_memory_bytes'] ? 'unavailable' : (string) $stalled['peak_memory_bytes'],
+						empty( $stalled['retried_after_stall'] ) ? 'no' : 'yes',
 						$stalled['stderr']
 					),
 				);
@@ -1489,6 +1492,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'compile_batches'                   => (int) ( $run['work']['compile_batches'] ?? 0 ),
 				'compile_policy'                    => $run['work']['compile_policy'] ?? null,
 				'pages_compiled'                    => (int) ( $run['work']['pages_compiled'] ?? 0 ),
+				'stall_retried_pages'               => (int) ( $run['work']['stall_retried_pages'] ?? 0 ),
 				'page_compile_counts'               => $counts,
 				'compositions'                      => (int) ( $run['work']['compositions'] ?? 0 ),
 				'materialization_claims'            => (int) ( $run['work']['materialization_claims'] ?? 0 ),

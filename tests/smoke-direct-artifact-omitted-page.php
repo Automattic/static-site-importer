@@ -6,8 +6,9 @@
  * representability limit and records a `page_compile_omitted` warning in the
  * WordPress site plan. The import must keep the remaining pages and carry the
  * omission as a finding in the stored report and compact summary, on both the
- * in-process and the per-page worker compile paths. An omitted entrypoint
- * stays fail-closed.
+ * in-process and the per-page worker compile paths. A page whose worker
+ * stalls is retried once on its own before it is omitted. An omitted
+ * entrypoint stays fail-closed.
  *
  * Run from the repository root:
  * php tests/smoke-direct-artifact-omitted-page.php
@@ -280,6 +281,39 @@ $assert( microtime( true ) - $started < 15, 'stalled: finalizes before the impor
 $assert( ! empty( $stalled['response']['success'] ) && 2 === count( $stalled['response']['result']['pages'] ?? array() ), 'stalled: keeps two of three pages' );
 $evidence = wp_json_encode( $stalled );
 $assert( str_contains( $evidence, 'compile_worker_stalled' ) && str_contains( $evidence, 'pricing.html' ) && str_contains( $evidence, 'stuck pricing fixture' ), 'stalled: receipt names the page and includes stderr' );
+$assert( str_contains( $evidence, 'retried_after_stall=yes' ) && 1 === ( $stalled['response']['artifact_run']['work']['stall_retried_pages'] ?? null ), 'stalled: the page is retried once on its own before it is omitted' );
+
+// A page that stalls only under parallel load compiles on its serial retry.
+$attempts      = 0;
+$stall_once    = static function ( array $command, string $import_id, array $page_ids ) use ( &$attempts ): array {
+	if ( in_array( 'website/pricing.html', $page_ids, true ) && 1 === ++$attempts ) {
+		return array( PHP_BINARY, '-r', 'sleep(60);' );
+	}
+	$published = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+	if ( is_wp_error( $published ) ) {
+		throw new RuntimeException( $published->get_error_message() );
+	}
+	return array( PHP_BINARY, '-r', 'exit(0);' );
+};
+$retry_windows = array();
+$retry_window  = static function ( float $window, float $base ) use ( &$retry_windows ): float {
+	$retry_windows[] = array( $window, $base );
+	return $window;
+};
+add_filter( 'static_site_importer_cli_compile_worker_command', $stall_once );
+add_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+add_filter( 'static_site_importer_cli_compile_worker_stall_retry_no_progress_seconds', $retry_window );
+try {
+	$recovered = static_site_importer_cli_run_import_host( $request, 'static_site_importer_cli_import' );
+} finally {
+	remove_filter( 'static_site_importer_cli_compile_worker_command', $stall_once );
+	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
+	remove_filter( 'static_site_importer_cli_compile_worker_stall_retry_no_progress_seconds', $retry_window );
+}
+$assert( ! empty( $recovered['response']['success'] ) && 3 === count( $recovered['response']['result']['pages'] ?? array() ), 'stall retry: the once-stalled page is compiled, not omitted' );
+$assert( 2 === $attempts && ! str_contains( wp_json_encode( $recovered ), 'compile_worker_stalled' ), 'stall retry: the page runs twice and leaves no stalled omission' );
+$assert( 1 === ( $recovered['response']['artifact_run']['work']['stall_retried_pages'] ?? null ), 'stall retry: the evidence counts the retried page' );
+$assert( array( array( 0.9, 0.3 ) ) === array_map( static fn ( array $pair ): array => array( round( $pair[0], 3 ), round( $pair[1], 3 ) ), $retry_windows ), 'stall retry: the retry window defaults to three times the configured window' );
 
 // A stalled multi-page shard retains receipts published before the stall.
 $use_policy( array(
@@ -302,7 +336,9 @@ try {
 	remove_filter( 'static_site_importer_cli_compile_worker_command', $partial_command );
 	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
 }
-$assert( ! empty( $partial['success'] ) && 2 === count( $partial['result']['pages'] ?? array() ), 'partial shard: already published receipts survive worker termination' );
+// The published page survives the kill; only the unpublished page is retried, and it compiles alone.
+$assert( ! empty( $partial['success'] ) && 3 === count( $partial['result']['pages'] ?? array() ), 'partial shard: already published receipts survive worker termination' );
+$assert( 1 === ( $partial['artifact_run']['work']['stall_retried_pages'] ?? null ), 'partial shard: only the unpublished page is retried' );
 
 // An entrypoint that cannot be represented fails the import before any persistence.
 $imports_before = count( $GLOBALS['ssi_omitted_imports'] );
