@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { authoringParityPasses } from '../lib/authoring-parity.mjs';
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -108,6 +109,7 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   const id = String(fixture.fixture_id || 'unknown');
   assert(fixture.status === 'passed' && fixture.success === true, `${id}: fixture did not pass.`);
   assert(decision?.acceptance_status === 'solved_candidate', `${id}: acceptance status is not solved_candidate.`);
+  assert(authoringParityPasses(fixture.authoring_parity_evidence), `${id}: authoring parity evidence is missing or failed.`);
   const quality = fixture.quality_metrics || {};
   assert(quality.pass === true, `${id}: quality gate did not pass.`);
   for (const key of ['fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count']) {

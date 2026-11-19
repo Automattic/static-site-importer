@@ -7,7 +7,7 @@
 //
 // The site is a disposable import: its first administrator gets a fresh
 // password for the session. `wpCli` runs WP-CLI against `site` by path.
-import { execFileSync } from 'node:child_process';
+import { wordpressRunner } from './wordpress.mjs';
 import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 import { listViewEvidence } from './list-view.mjs';
@@ -25,8 +25,7 @@ const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/headin
 const SAVED_IMAGE_PROBES = 5;
 
 export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) {
-  const [command, ...prefix] = wpCli.split(/\s+/);
-  const wp = (...argv) => execFileSync(command, [...prefix, `--path=${site}`, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  const wp = wordpressRunner(site, wpCli);
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
   wp('user', 'update', user, `--user_pass=${pass}`, '--skip-email');

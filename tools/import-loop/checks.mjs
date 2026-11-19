@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { editorPages } from './editor.mjs';
+import { authoringParity } from './authoring-parity.mjs';
 import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
 import { compareImports, excess, parityFailureClass, UNCHECKED } from './progress.mjs';
@@ -176,7 +177,14 @@ export async function checkImport(args) {
   } catch (error) { report({ stage: 'editability', check: 'editor_unreachable', owner_repo: 'static-site-importer', subject: 'block_editor', evidence: error.message }); }
 
   const list = [...findings.values()].sort((a, b) => a.signature.localeCompare(b.signature));
-  const result = { schema: 'import-loop/findings/v1', url: args.url, site: args.site, wp_url: args['wp-url'], routes, widths: WIDTHS, import_report: reportFile, verdict: list.some((f) => f.severity === 'blocker') ? 'findings' : 'accepted', findings: list, visual, parity_command: ['npx', ...command] };
+  let authoring = [];
+  try {
+    authoring = await authoringParity(args.site, args['wp-cli']);
+    if (!authoring.length) throw new Error('No imported layout clusters');
+    for (const row of authoring.filter(row => !row.pass)) report({ stage: 'editability', check: 'authoring_parity', owner_repo: 'blocks-engine', subject: row.cluster, evidence: row });
+  } catch (error) { report({ stage: 'editability', check: 'authoring_parity_unverified', owner_repo: 'static-site-importer', subject: 'authoring_parity', evidence: error.message }); }
+
+  const result = { authoring_parity_evidence: authoring, schema: 'import-loop/findings/v1', url: args.url, site: args.site, wp_url: args['wp-url'], routes, widths: WIDTHS, import_report: reportFile, verdict: list.some((f) => f.severity === 'blocker') ? 'findings' : 'accepted', findings: list, visual, parity_command: ['npx', ...command] };
   const previous = args.before ? JSON.parse(fs.readFileSync(args.before, 'utf8')) : { findings: [], visual: [] };
   result.progress = compareImports(previous, result).blockers;
   const findingsPath = path.join(args.out, 'findings.json');

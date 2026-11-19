@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
  * Internal dependencies
  */
 import { promoteSolvedFixture } from './promote-solved-fixture.mjs';
+import { produceAcceptanceHandoff } from '../lib/fixture-matrix/acceptance-handoff.mjs';
+import { completeInput } from './fixtures/acceptance-handoff-input.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -80,7 +82,10 @@ test('promotes a solved_candidate fixture via git mv', () => {
     { fixture_id: 'simple-site', acceptance_status: 'solved_candidate' },
   ]);
 
-  const result = promoteSolvedFixture({ fixtureId: 'simple-site', registry: registryPath, blocksEngine });
+  assert.throws(() => promoteSolvedFixture({ fixtureId: 'simple-site', registry: registryPath, blocksEngine }), /passed acceptance handoff/);
+  const input = completeInput(path.dirname(registryPath), { fixtureId: 'simple-site' });
+  produceAcceptanceHandoff(input);
+  const result = promoteSolvedFixture({ fixtureId: 'simple-site', registry: registryPath, blocksEngine, acceptanceHandoff: path.join(input.outputDirectory, 'acceptance-handoff.json') });
 
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.fixture_id, 'simple-site');
