@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
+
 /**
  * Compiles readable form field presentation into bounded, scoped overlay CSS.
  *
@@ -333,7 +337,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 		if ( null === $node ) {
 			return;
 		}
-		self::compile_form_item_rule( $pass, $node['layout'] );
+		$base_hidden = null !== self::form_hidden_fact( $node['layout'] );
+		self::compile_form_item_rule( $pass, $node['layout'], null, $base_hidden );
 		foreach ( $graph['variants'] ?? array() as $variant ) {
 			if ( 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
 				continue;
@@ -344,8 +349,25 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			} elseif ( ! self::safe_condition( $condition ) || 'state' === ( $condition['kind'] ?? null ) ) {
 				continue;
 			}
-			self::compile_form_item_rule( $pass, $variant['layout_patch'], $condition );
+			self::compile_form_item_rule( $pass, $variant['layout_patch'], $condition, $base_hidden );
 		}
+	}
+
+	/**
+	 * The producer `hidden` fact a form's resolved layout carries, in the form
+	 * fallback contract's vocabulary: a source form that resolves to
+	 * `display:none` generates no box at all.
+	 *
+	 * @param array<string,mixed> $layout Source form layout facts.
+	 * @return array{property:string,value:string}|null
+	 */
+	private static function form_hidden_fact( array $layout ): ?array {
+		return Static_Site_Importer_Form_Fallback_Contract::context_hidden(
+			array(
+				'property' => 'display',
+				'value'    => $layout['display'] ?? null,
+			)
+		);
 	}
 
 	/**
@@ -356,10 +378,22 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	 * @param array<string,mixed>|null $condition Variant condition.
 	 * @phpstan-param Surface_Pass $pass
 	 */
-	private static function compile_form_item_rule( array &$pass, array $layout, ?array $condition = null ): void {
+	private static function compile_form_item_rule( array &$pass, array $layout, ?array $condition = null, bool $base_hidden = false ): void {
 		$declared     = $pass['declared'];
 		$map          = self::form_item_fact_map();
 		$declarations = array();
+		// The source form generates no box, so the outermost provider wrapper
+		// standing in its slot must generate none either; a 0-high wrapper still
+		// takes a grid row or flex slot and the parent's gap. Only the rendered
+		// front end hides: the editor keeps the form visible and editable. A
+		// condition that shows a base-hidden form restores the wrapper's box.
+		if ( $declared['front_end_form_dom'] && isset( $layout['display'] ) ) {
+			if ( null !== self::form_hidden_fact( $layout ) ) {
+				$declarations[] = 'display:none';
+			} elseif ( $base_hidden && null !== $condition ) {
+				$declarations[] = 'display:block';
+			}
+		}
 		foreach ( array_intersect_key( $layout, $map ) as $fact => $value ) {
 			// Length margins would arrive twice, once here and once through the
 			// box's own copy of the source stylesheet; only the free-space kind
