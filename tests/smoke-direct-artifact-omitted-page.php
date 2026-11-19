@@ -264,28 +264,46 @@ $sleep_command = static function ( array $command, string $import_id, array $pag
 	}
 	return array( PHP_BINARY, '-r', 'exit(0);' );
 };
-$short_window = static fn (): float => 0.3;
 add_filter( 'static_site_importer_cli_compile_worker_command', $sleep_command );
-add_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
 $started = microtime( true );
 $request = $input();
-$request['import_deadline_seconds'] = 15;
+$request['import_deadline_seconds'] = 4;
 try {
 	$stalled = static_site_importer_cli_run_import_host( $request, 'static_site_importer_cli_import' );
 } finally {
 	remove_filter( 'static_site_importer_cli_compile_worker_command', $sleep_command );
-	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
 }
-$assert( microtime( true ) - $started < 15, 'stalled: finalizes before the import deadline' );
+$assert( microtime( true ) - $started < 15, 'stalled: the run deadline stops a worker that never exits' );
 $assert( ! empty( $stalled['response']['success'] ) && 2 === count( $stalled['response']['result']['pages'] ?? array() ), 'stalled: keeps two of three pages' );
 $evidence = wp_json_encode( $stalled );
 $assert( str_contains( $evidence, 'compile_worker_stalled' ) && str_contains( $evidence, 'pricing.html' ) && str_contains( $evidence, 'stuck pricing fixture' ), 'stalled: receipt names the page and includes stderr' );
+
+// A healthy page compiles silently for as long as it needs within the deadline.
+$slow_command = static function ( array $command, string $import_id, array $page_ids ): array {
+	$published = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+	if ( is_wp_error( $published ) || ! in_array( 'website/pricing.html', $page_ids, true ) ) {
+		return array( PHP_BINARY, '-r', 'exit(0);' );
+	}
+	// The child publishes the compiled receipt only after a silent compile.
+	$receipt = glob( $GLOBALS['test_root'] . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-*/receipts/' . hash( 'sha256', 'website/pricing.html' ) . '.json' )[0];
+	rename( $receipt, $receipt . '.compiling' );
+	return array( PHP_BINARY, '-r', 'sleep(3); rename(' . var_export( $receipt . '.compiling', true ) . ', ' . var_export( $receipt, true ) . ');' );
+};
+add_filter( 'static_site_importer_cli_compile_worker_command', $slow_command );
+try {
+	$slow = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
+} finally {
+	remove_filter( 'static_site_importer_cli_compile_worker_command', $slow_command );
+}
+$assert( ! empty( $slow['response']['success'] ) && 3 === count( $slow['response']['result']['pages'] ?? array() ) && ! str_contains( (string) wp_json_encode( $slow ), 'compile_worker_stalled' ), 'slow: a silent worker that finishes keeps its page' );
 
 // A stalled multi-page shard retains receipts published before the stall.
 $use_policy( array(
 	'compile_shard_pages' => 2,
 	'compile_fanout_pages' => 4,
 	'compile_fanout' => 'static_site_importer_cli_compile_artifact_pages_fanout',
+	'compile_workers' => 2,
+	'import_deadline_seconds' => 4,
 ) );
 $partial_command = static function ( array $command, string $import_id, array $page_ids ): array {
 	$published = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, array_slice( $page_ids, 0, 1 ) );
@@ -295,12 +313,10 @@ $partial_command = static function ( array $command, string $import_id, array $p
 	return array( PHP_BINARY, '-r', 1 < count( $page_ids ) ? 'fwrite(STDERR, "partial shard stalled"); sleep(60);' : 'exit(0);' );
 };
 add_filter( 'static_site_importer_cli_compile_worker_command', $partial_command );
-add_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
 try {
 	$partial = $drive( $input() );
 } finally {
 	remove_filter( 'static_site_importer_cli_compile_worker_command', $partial_command );
-	remove_filter( 'static_site_importer_cli_compile_worker_no_progress_seconds', $short_window );
 }
 $assert( ! empty( $partial['success'] ) && 2 === count( $partial['result']['pages'] ?? array() ), 'partial shard: already published receipts survive worker termination' );
 

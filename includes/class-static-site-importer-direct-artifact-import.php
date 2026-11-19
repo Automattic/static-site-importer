@@ -683,8 +683,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						$shards,
 						$policy['compile_workers'],
 						array(
-							'deadline'          => null === $policy['import_deadline_seconds'] ? null : (float) $run['started_at'] + $policy['import_deadline_seconds'],
-							'receipt_directory' => $workspace->directory() . '/receipts',
+							'deadline' => null === $policy['import_deadline_seconds'] ? null : (float) $run['started_at'] + $policy['import_deadline_seconds'],
 						)
 					) : null;
 					if ( is_wp_error( $fanout ) ) {

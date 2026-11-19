@@ -174,7 +174,8 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 	 *
 	 * Success is true, or an array of stalled_workers whose unpublished pages
 	 * must be omitted after adopting receipts. Bounds carry the absolute run
-	 * deadline and receipt directory; shard sizing and dispatch stay unchanged.
+	 * deadline, the only limit on a running worker; shard sizing and dispatch
+	 * stay unchanged.
 	 *
 	 * At most $workers shards run at once, dispatched in the given order as
 	 * workers free up; null runs every shard at once.
@@ -259,7 +260,7 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 	 * @param string                 $import_id   Retained run id.
 	 * @param array<int|string,array> $shards      Page id shards keyed by worker index, in dispatch order.
 	 * @param int|null               $concurrency Maximum concurrent workers; null runs every shard at once.
-	 * @param array                  $bounds      Absolute deadline and receipt directory for progress observation.
+	 * @param array                  $bounds      Absolute run deadline that stops running workers.
 	 * @return array{spawn_error:bool,results:array<int|string,array{signal:int,exitcode:int,error:string,output:string}>,stalled_workers:array}
 	 */
 	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards, ?int $concurrency = null, array $bounds = array() ): array {
@@ -277,8 +278,6 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 		$results         = array();
 		$spawn_error     = false;
 		$stalled_workers = array();
-		// Allow several observed 20–40 second sandbox pages without progress.
-		$no_progress_seconds = max( 0.1, (float) apply_filters( 'static_site_importer_cli_compile_worker_no_progress_seconds', 180.0 ) );
 		while ( ! empty( $processes ) || ( ! $spawn_error && ! empty( $queue ) ) ) {
 			while ( ! $spawn_error && ! empty( $queue ) ) {
 				if ( count( $processes ) >= $concurrency ) {
@@ -301,11 +300,9 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 					$spawn_error = true;
 					break;
 				}
-				$spawned['page_ids']         = $page_ids;
-				$spawned['started_at']       = microtime( true );
-				$spawned['last_progress_at'] = $spawned['started_at'];
-				$spawned['receipts']         = array();
-				$processes[ $index ]         = $spawned;
+				$spawned['page_ids']   = $page_ids;
+				$spawned['started_at'] = microtime( true );
+				$processes[ $index ]   = $spawned;
 			}
 			foreach ( $processes as $index => &$worker ) {
 				$stdout           = (string) stream_get_contents( $worker['pipes'][1] );
@@ -313,15 +310,6 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 				$worker['output'] = substr( $worker['output'] . $stdout, -16000 );
 				$worker['error']  = substr( $worker['error'] . $stderr, -16000 );
 				$now              = microtime( true );
-				if ( '' !== $stdout || '' !== $stderr ) {
-					$worker['last_progress_at'] = $now;
-				}
-				foreach ( $worker['page_ids'] as $page_id ) {
-					if ( ! isset( $worker['receipts'][ $page_id ] ) && isset( $bounds['receipt_directory'] ) && is_file( $bounds['receipt_directory'] . '/' . hash( 'sha256', $page_id ) . '.json' ) ) {
-						$worker['receipts'][ $page_id ] = true;
-						$worker['last_progress_at']     = $now;
-					}
-				}
 				// Only the first status read after exit carries the real exit code
 				// and signal, so this one read is the worker's outcome.
 				$status = proc_get_status( $worker['process'] );
@@ -335,8 +323,10 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 					}
 				}
 				if ( $status['running'] ) {
-					$expired = null !== ( $bounds['deadline'] ?? null ) && $now >= $bounds['deadline'];
-					if ( ! $expired && $now - $worker['last_progress_at'] < $no_progress_seconds ) {
+					// A worker is silent while it compiles a page, and a healthy page
+					// can take minutes on slow runtimes, so only the run deadline
+					// stops a running worker.
+					if ( null === ( $bounds['deadline'] ?? null ) || $now < $bounds['deadline'] ) {
 						continue;
 					}
 					$stalled_workers[] = array(
