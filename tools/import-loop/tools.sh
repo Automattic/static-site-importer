@@ -22,6 +22,9 @@ if [ ! -d "$pinned" ]; then
   tmp="$pinned.tmp.$$"
   trap '[ -d "$tmp" ] && git -C "$repo" worktree remove --force "$tmp"' EXIT
   git -C "$repo" worktree add -q --detach "$tmp" "$commit"
+  # A commit can track its own node_modules entry (a stray symlink once landed
+  # on main); the shared dependencies below replace it.
+  rm -rf "$tmp/node_modules"
   # Shared per lockfile. The directory must be named node_modules: Node
   # resolves a package's own imports from its real path's node_modules.
   deps="$runs/loops/deps-$(git -C "$repo" rev-parse "$commit:package-lock.json")"
