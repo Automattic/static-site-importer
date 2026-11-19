@@ -443,11 +443,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $compiler ) ) {
 				return self::fail( $workspace, $run, 'compiler', $compiler );
 			}
-			$prepare_shared = array( $compiler, 'prepareShared' );
-			$prepare_pages  = array( $compiler, 'preparePages' );
-			$compile_pages  = array( $compiler, 'compilePreparedPages' );
-			$compose        = array( $compiler, 'compose' );
-			$payload_reader = self::payload_reader( $workspace );
+			$prepare_shared  = array( $compiler, 'prepareShared' );
+			$prepare_pages   = array( $compiler, 'preparePages' );
+			$compile_pages   = array( $compiler, 'compilePreparedPages' );
+			$compose         = array( $compiler, 'compose' );
+			$payload_reader  = self::payload_reader( $workspace );
 			$chrome_journals = self::chrome_journals( $workspace );
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
