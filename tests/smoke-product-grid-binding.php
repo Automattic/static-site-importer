@@ -611,6 +611,35 @@ $mixed_shop = array_values( array_filter( is_array( $mixed_bindings ) ? $mixed_b
 $assert( 1 === count( $mixed_shop ) && str_contains( (string) ( $mixed_shop[0]['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[501,502,503]' ), 'mixed-grid-collection-hand-picks-every-card-including-the-nested-one' );
 $assert( 1 === count( $mixed_shop ) && $mixed_grid === ( $mixed_shop[0]['selector'] ?? '' ) && Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/shop.html', $mixed_grid )[0] === ( $mixed_shop[0]['fallback_reconciliation_identity'] ?? '' ), 'mixed-grid-collection-receipt-joins-its-anchorless-grid-finding' );
 
+// The same link-only product also sits in a mixed grid on a later page, at
+// another container. The product is declared once, with the selectors of its
+// first sighting, so the later grid's container never appears among them. The
+// later grid's own cards declare the shared anchor its member binds on, which
+// is what joins it. A second grid on that page whose container selector only
+// coincides with the first page's grid, and whose cards declare another
+// anchor, does not claim the member. Reduced from a storefront whose home and
+// shop grids all failed with `no_provider_entity`; neutral source pages are in
+// tests/fixtures/product-grid-repeat-collection-member/.
+$repeat_grid     = 'main > section:nth-of-type(2) > div.grid';
+$repeat_region   = '<!-- wp:group {"className":"grid"} --><div class="wp-block-group grid"><!-- wp:group {"tagName":"article"} --><article class="wp-block-group"><!-- wp:paragraph --><p>Card A</p><!-- /wp:paragraph --></article><!-- /wp:group -->' . $mixed_controls . '</div><!-- /wp:group -->';
+$repeat_other    = '<!-- wp:group {"className":"grid other"} --><div class="wp-block-group grid other"><!-- wp:paragraph --><p>Another grid</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
+$repeat_binding  = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/living.html', 'search_block_markup' => $repeat_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+$repeat_card     = static fn( array $binding ): array => array( 'name' => 'Card', 'binding' => array_diff_key( $binding, array( 'source_path' => true ) ) );
+$repeat_plan     = $mixed_plan;
+$repeat_plan['pages'][] = array( 'source_path' => 'website/living.html', 'resolved_block_markup' => $repeat_region . $repeat_other, 'skip_materialization' => false );
+$repeat_adopted  = $mixed_adopted;
+$repeat_adopted['entities']['products-declaration']['manifest']['products'][0]['bindings'][] = $repeat_binding;
+$repeat_fallback = array( 'diagnostic_code' => 'html_product_grid_fallback', 'source' => 'website/living.html', 'selector' => $repeat_grid, 'container_selector' => $repeat_grid, 'products' => array( $repeat_card( $repeat_binding ), array( 'name' => 'Card D' ) ) );
+$repeat_decoy    = array( 'diagnostic_code' => 'html_product_grid_fallback', 'source' => 'website/living.html', 'selector' => $mixed_grid, 'container_selector' => $mixed_grid, 'products' => array( $repeat_card( array_merge( $repeat_binding, array( 'search_block_markup' => $repeat_other ) ) ) ) );
+$repeat_bound    = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $repeat_adopted, $mixed_reports, array_merge( $mixed_fallbacks, array( $repeat_fallback, $repeat_decoy ) ), $repeat_plan );
+$repeat_joined   = $repeat_bound['entities']['products-declaration']['manifest']['products'][0]['bindings'][1]['product_grid_fallback']['container_selector'] ?? '';
+$assert( $repeat_grid === $repeat_joined, 'repeat-collection-member-joins-the-later-pages-grid-by-its-card-anchor', $repeat_joined );
+$repeat_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $repeat_bound, $mixed_reports );
+$repeat_living   = array_values( array_filter( is_array( $repeat_bindings ) ? $repeat_bindings : array(), static fn( array $binding ): bool => 'website/living.html' === $binding['source_path'] ) );
+$assert( 1 === count( $repeat_living ) && $repeat_grid === ( $repeat_living[0]['selector'] ?? '' ) && Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/living.html', $repeat_grid )[0] === ( $repeat_living[0]['fallback_reconciliation_identity'] ?? '' ), 'repeat-collection-member-receipt-joins-the-later-pages-grid-finding', (string) wp_json_encode( array_column( $repeat_living, 'selector' ) ) );
+$repeat_shop = array_values( array_filter( is_array( $repeat_bindings ) ? $repeat_bindings : array(), static fn( array $binding ): bool => 'website/shop.html' === $binding['source_path'] ) );
+$assert( 1 === count( $repeat_shop ) && $mixed_grid === ( $repeat_shop[0]['selector'] ?? '' ), 'repeat-collection-member-first-pages-grid-still-joins-by-container' );
+
 // --- 11. A grid whose cards each carry their own cart dialog -------------
 //
 // Each card's "Add to bag" opens a per-card cart dialog, which the producer
