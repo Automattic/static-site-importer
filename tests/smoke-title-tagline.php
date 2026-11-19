@@ -222,6 +222,42 @@ $assert( 'Acme Widgets Company' === implode( ' ' . $separator . ' ', $parts ), '
 $GLOBALS['title_front_page'] = false;
 $parts = $filter( array( 'title' => 'About', 'site' => $brand ) );
 $assert( 'About | Acme' === implode( ' ' . $separator . ' ', $parts ), 'inner title uses route separator without home override' );
+// A homepage that states its tagline in markup (no head tagline, JSON-LD or
+// description) supplies blogdescription, and the report names that evidence.
+$home = static fn( string $body ): array => array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		array( 'path' => 'index.html', 'content' => '<html><head><title>example.test</title></head><body><main class="home">' . $body . '</main></body></html>' ),
+		array( 'path' => '2024/01/02/note.html', 'content' => '<html><head><title>A note — example.test</title></head><body><article><h1>A note</h1><p class="tagline">Not the site tagline</p></article></body></html>' ),
+		array( 'path' => '2024/02/03/other.html', 'content' => '<html><head><title>Another note — example.test</title></head><body><article><h1>Another note</h1></article></body></html>' ),
+	),
+);
+$markup_cases = array(
+	'tagline markup'        => array( '<h1>Sample Author</h1><p class="tagline">Small notes on   building things</p>', 'Small notes on building things', 'entrypoint_tagline_markup' ),
+	'theme site-description' => array( '<header><p class="site-title">Sample</p><p class="site-description">Notes &amp; sketches</p></header>', 'Notes & sketches', 'entrypoint_tagline_markup' ),
+	'article tagline'       => array( '<h1>Sample Author</h1><article><p class="tagline">A post subtitle</p></article>', '', null ),
+	'ambiguous taglines'    => array( '<p class="tagline">One claim</p><p class="slogan">Another claim</p>', '', null ),
+	'class substring'       => array( '<p class="taglines-list">Not a tagline</p>', '', null ),
+	'json-ld slogan wins'   => array( '<script type="application/ld+json">{"@type":"WebSite","slogan":"Declared slogan"}</script><p class="tagline">Markup tagline</p>', 'Declared slogan', 'json_ld_slogan' ),
+);
+foreach ( $markup_cases as $label => list( $body, $expected, $source ) ) {
+	$artifact = $home( $body );
+	$brand    = Static_Site_Importer_Site_Identity::site_title_from_website_artifact( $artifact );
+	$assert( 'example.test' === $brand, "$label: the shared document title is the site title" );
+	$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $artifact, null, '', $brand );
+	$assert( $expected === $evidence['tagline'] && $source === $evidence['tagline_source'], "$label: tagline evidence" );
+	$GLOBALS['title_options'] = array();
+	$state  = array(
+		'args'      => array( 'activate' => true, 'native_site_identity_evidence' => $evidence ),
+		'theme_dir' => '/theme',
+		'resolved'  => array( 'writes' => array() ),
+	);
+	$report = Static_Site_Importer_Media_Library_Materializer::materialize_identity( $state );
+	$assert( $expected === get_option( 'blogdescription', '' ), "$label: blogdescription" );
+	$assert( ( '' === $expected ? null : $source ) === ( $report['blogdescription']['source'] ?? null ), "$label: report names the tagline evidence" );
+}
+$evidence = Static_Site_Importer_Site_Identity::evidence_from_website_artifact( $home( '<p class="tagline">Markup tagline</p>' ), null, 'Caller tagline', 'example.test' );
+$assert( 'Caller tagline' === $evidence['tagline'] && 'explicit_input' === $evidence['tagline_source'], 'explicit tagline wins over markup' );
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

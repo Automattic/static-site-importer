@@ -344,21 +344,28 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$report[ $option ] = $entry;
 		}
-		// Explicit input wins; evidence prefers JSON-LD over the entrypoint title.
+		// Explicit input wins; evidence prefers JSON-LD, then the entrypoint
+		// title, then the entrypoint's tagline markup.
 		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? '' ) );
+		$source  = '' !== $tagline ? 'explicit_input' : '';
 		if ( '' === $tagline ) {
 			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
+			$source  = '' !== $tagline ? (string) ( $evidence['tagline_source'] ?? 'source_evidence' ) : '';
 		}
 		if ( '' === $tagline ) {
 			$front_identity = Static_Site_Importer_Site_Plan_Persistence::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
 			foreach ( $state['resolved']['pages'] ?? array() as $page ) {
 				if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
 					$tagline = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
+					$source  = '' !== $tagline ? 'front_page_description' : '';
 					break;
 				}
 			}
 		}
-		$report['blogdescription'] = array( 'status' => '' === $tagline ? 'absent' : 'preserved_owner_value' );
+		$report['blogdescription'] = '' === $tagline ? array( 'status' => 'absent' ) : array(
+			'status' => 'preserved_owner_value',
+			'source' => $source,
+		);
 		if ( '' !== $tagline && '' === trim( (string) get_option( 'blogdescription', '' ) ) ) {
 			Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'blogdescription' );
 			if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'blogdescription', sanitize_text_field( $tagline ) ) ) {

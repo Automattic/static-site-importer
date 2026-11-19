@@ -41,6 +41,9 @@ class Static_Site_Importer_Site_Identity {
 	/** Separators shared by site-name and tagline derivation, with whitespace on both sides. */
 	private const TITLE_SEPARATORS = array( '-', '–', '—', '|', '·', '•', ':' );
 
+	/** Class names a source uses to state its own tagline in markup (static generators, WordPress themes). */
+	private const TAGLINE_CLASSES = array( 'tagline', 'site-tagline', 'site-description', 'site-slogan', 'slogan' );
+
 	/**
 	 * Resolve a canonical site identity from an import context.
 	 *
@@ -339,11 +342,12 @@ class Static_Site_Importer_Site_Identity {
 			break;
 		}
 		$evidence = array(
-			'tagline'  => trim( $site_tagline ),
-			'logo'     => null,
-			'icon'     => null,
-			'manifest' => null,
-			'status'   => 'entrypoint_missing',
+			'tagline'        => trim( $site_tagline ),
+			'tagline_source' => '' !== trim( $site_tagline ) ? 'explicit_input' : null,
+			'logo'           => null,
+			'icon'           => null,
+			'manifest'       => null,
+			'status'         => 'entrypoint_missing',
 		);
 		if ( '' === $html ) {
 			return $evidence;
@@ -374,15 +378,21 @@ class Static_Site_Importer_Site_Identity {
 					$evidence['logo_status'] = 'unsupported_evidence';
 				}
 			}
-			if ( '' === $evidence['tagline'] && is_string( $node['slogan'] ?? null ) ) {
-				$evidence['tagline'] = trim( $node['slogan'] );
+			if ( '' === $evidence['tagline'] && is_string( $node['slogan'] ?? null ) && '' !== trim( $node['slogan'] ) ) {
+				$evidence['tagline']        = trim( $node['slogan'] );
+				$evidence['tagline_source'] = 'json_ld_slogan';
 			}
 		}
 		$site_title                                = '' !== trim( $site_title ) ? $site_title : self::site_title_from_website_artifact( $artifact, $payload_reader );
 		$front                                     = self::title_branding( $evidence['front_page_title'], $site_title );
 		$evidence['front_page_title_has_branding'] = ! empty( $front );
 		if ( '' === $evidence['tagline'] && $front ) {
-			$evidence['tagline'] = $front['tagline'];
+			$evidence['tagline']        = $front['tagline'];
+			$evidence['tagline_source'] = 'front_page_title';
+		}
+		if ( '' === $evidence['tagline'] ) {
+			$evidence['tagline']        = self::tagline_from_markup( $html );
+			$evidence['tagline_source'] = '' !== $evidence['tagline'] ? 'entrypoint_tagline_markup' : null;
 		}
 		// Vote on presentation independently of the home title. Never use inner
 		// page labels as the site's tagline.
@@ -512,6 +522,32 @@ PHP;
 				? $bootstrap
 				: $bootstrap . "\n{$marker}\n{$filters}\n"
 		);
+	}
+
+	/**
+	 * The one tagline the entrypoint states in markup classed as a tagline
+	 * (`<p class="tagline">`, a theme's `site-description`). Articles are
+	 * content, not site identity, and two different statements are ambiguous.
+	 */
+	private static function tagline_from_markup( string $html ): string {
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $document->loadHTML( '<?xml encoding="UTF-8">' . $html, LIBXML_NONET );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return '';
+		}
+		$classes = implode( ' or ', array_map( static fn( string $class ): string => "contains(concat(' ', normalize-space(@class), ' '), ' {$class} ')", self::TAGLINE_CLASSES ) );
+		$nodes   = ( new DOMXPath( $document ) )->query( "//body//*[({$classes}) and not(ancestor-or-self::article)]" );
+		$texts   = array();
+		foreach ( false === $nodes ? array() : $nodes as $node ) {
+			$text = trim( (string) preg_replace( '/\s+/u', ' ', $node->textContent ) );
+			if ( '' !== $text && mb_strlen( $text ) <= 200 ) {
+				$texts[ $text ] = true;
+			}
+		}
+		return 1 === count( $texts ) ? (string) array_key_first( $texts ) : '';
 	}
 
 	/** Parse source declarations, including quoted and unquoted HTML attributes. */
