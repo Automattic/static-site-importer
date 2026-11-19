@@ -1716,7 +1716,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$reference               = $occupant ? wp_make_link_relative( get_permalink( $occupant ) ) : $page['route']['path'];
 				$routes[ $route ]        = $reference;
 				$routes[ $source_route ] = $reference;
-				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
+				$routes[ self::normalized_route_path( '/' . $source_path ) ]                = $reference;
 				$routes[ self::normalized_route_path( $page['original_route'] ?? $route ) ] = $reference;
 				continue;
 			}
@@ -1727,7 +1727,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					$routes[ self::normalized_route_path( $page['original_route'] ) ] = $reference;
 				}
 				// Links name the source file (`about.html`) or its public route (`/about`).
-				$routes[ $source_route ] = $reference;
+				$routes[ $source_route ]                                     = $reference;
 				$routes[ self::normalized_route_path( '/' . $source_path ) ] = $reference;
 				foreach ( $state['source_route_aliases'][ $source_path ] ?? array() as $alias ) {
 					$routes[ self::normalized_route_path( '/' . ltrim( $alias, '/' ) ) ] = $reference;
