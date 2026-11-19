@@ -4,6 +4,7 @@
  * External dependencies
  */
 import { spawnSync } from 'node:child_process';
+import { consumeAcceptanceHandoff } from '../lib/fixture-matrix/acceptance-handoff.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +39,12 @@ export function promoteSolvedFixture(options) {
 
   if (decision.acceptance_status !== 'solved_candidate') {
     throw new Error(`Fixture "${options.fixtureId}" has acceptance_status "${decision.acceptance_status}"; promotion requires "solved_candidate".`);
+  }
+
+  const handoffPath = path.resolve(options.acceptanceHandoff || path.join(path.dirname(options.registry), options.fixtureId, 'acceptance-handoff', 'acceptance-handoff.json'));
+  const handoff = readJson(handoffPath);
+  if (handoff?.fixture_id !== options.fixtureId || consumeAcceptanceHandoff(path.dirname(handoffPath), handoff).disposition !== 'passed') {
+    throw new Error('Promotion requires a passed acceptance handoff, including visual, editor, and authoring-parity evidence.');
   }
 
   const blocksEngine = path.resolve(options.blocksEngine);
@@ -135,6 +142,7 @@ Options:
   --fixture-id <id>       Fixture ID matching a registry fixture_decisions row.
   --registry <path>       Path to a gutenberg-incompatibility-registry.json from a matrix run.
   --blocks-engine <path>  Blocks Engine checkout path.
+  --acceptance-handoff <path>  Passed handoff (defaults to the matrix fixture handoff).
   --help, -h              Show this help.
 `);
 }
