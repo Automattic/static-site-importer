@@ -13,6 +13,7 @@ import { chromium } from 'playwright';
 import { listViewEvidence } from './list-view.mjs';
 import { themeChecks } from './theme.mjs';
 import { imageSubject } from './image-subject.mjs';
+import { sampleCanvas, canvasParityMismatches, canvasParityEvidence, templatePartsRendered } from './canvas-parity.mjs';
 
 // Text the user can edit: Gutenberg marks template and template-part blocks
 // shown around the post as inert, and a rich-text block is itself the
@@ -86,13 +87,19 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
       const canvas = page.locator('iframe[name="editor-canvas"]');
       const frame = await canvas.count() ? page.frameLocator('iframe[name="editor-canvas"]') : page;
       await check('editor_canvas_parity', async () => {
+        // Editor-ready precedes the template parts around the post: wait for
+        // each to have its blocks and drop its loading spinner, so the canvas
+        // is sampled as an editor sees it. A part that never loads is sampled
+        // as it stands and reports its own mismatch.
+        await page.waitForFunction(templatePartsRendered, null, { timeout: 30_000 }).catch(() => {});
+        await frame.locator('[data-type="core/template-part"] .components-spinner').first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
         const front = await browser.newPage({ viewport: { width: 1440, height: 900 } });
         try {
           await front.goto(url);
-          const sample = (root) => [...root.querySelectorAll('h1,h2,p,figure img')].filter((e) => e.getBoundingClientRect().width > 0).slice(0, 40).map((e) => ({ text: e.textContent.trim(), tag: e.tagName, color: getComputedStyle(e).color, font: getComputedStyle(e).fontFamily }));
-          const a = await frame.locator('.editor-styles-wrapper, .is-root-container').first().evaluate(sample);
-          const b = await front.locator('main, .wp-site-blocks').first().evaluate(sample);
-          if (!a.length || a.some((e) => !b.some((f) => e.tag === f.tag && e.text === f.text && e.color === f.color && e.font === f.font))) throw new Error(JSON.stringify({ editor: a, frontend: b }));
+          const a = await frame.locator('.editor-styles-wrapper, .is-root-container').first().evaluate(sampleCanvas);
+          const b = await front.locator('main, .wp-site-blocks').first().evaluate(sampleCanvas);
+          const missing = canvasParityMismatches(a, b);
+          if (missing.length) throw new Error(canvasParityEvidence(a, b, missing));
         } finally { await front.close(); }
       });
       await check('editor_real_controls', async () => {

@@ -15,6 +15,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 
 require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
+require_once __DIR__ . '/class-static-site-importer-footer-overlay-order.php';
 require_once __DIR__ . '/class-static-site-importer-route-occupant.php';
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
@@ -264,6 +265,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$resolved = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
 			$resolved = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
 			$resolved = self::with_admin_bar_top_chrome( $resolved );
+			// Before entity bindings: they pair each template's serializations block by block.
+			$resolved = Static_Site_Importer_Footer_Overlay_Order::apply( $resolved );
 
 			$consent_css = Static_Site_Importer_Consent_Banner::stylesheet( $args['consent_banner'] ?? array() );
 			if ( '' !== $consent_css ) {
