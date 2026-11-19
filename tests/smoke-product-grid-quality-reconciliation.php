@@ -12,7 +12,9 @@
  * grid's own receipt proves it. Both report resolution rows resolved or
  * unresolved, and the fallback counts stay consistent. A source cart drawer
  * with no binding of its own is subsumed by the import's persisted native
- * cart, and stays unresolved when there is none.
+ * cart, and stays unresolved when there is none. The drawer's `<dialog>`
+ * unsupported-element finding at the same source node resolves on that same
+ * proof, and only then.
  *
  * Run from the repository root:
  * php tests/smoke-product-grid-quality-reconciliation.php
@@ -500,6 +502,45 @@ $assert( 'unresolved' === ( $own_row['state'] ?? '' ) && 'provider_replacement_n
 
 $checkout_only = $drawer_report( array( $drawer_finding ), array( array_merge( $native_receipt, array( 'role' => 'commerce_checkout' ) ) ), $native_page );
 $assert( 'unresolved' === ( $drawer_rows( $checkout_only )['website/product/oak-tray.html html_cart_view_fallback']['state'] ?? '' ), 'checkout-receipt-does-not-subsume-a-cart-drawer', (string) wp_json_encode( $checkout_only['quality_resolutions'] ?? null ) );
+
+// Blocks Engine also reports the drawer's `<dialog>` as an unsupported
+// element at the same source node as the cart-view finding. When the native
+// cart subsumes the drawer, that element finding resolves on the same proof
+// and names the same cart. With no native cart it stays a failure, and an
+// unsupported element anywhere else on the page is never resolved by it.
+$dialog_finding = array(
+	'type'        => 'unsupported_element',
+	'code'        => 'html_unsupported_element',
+	'reason_code' => 'html_unsupported_element',
+	'source_path' => 'website/product/oak-tray.html',
+	'selector'    => $drawer_finding['selector'],
+	'tag'         => 'dialog',
+);
+$other_element  = array_merge( $dialog_finding, array( 'selector' => 'main > section > aside > div.order > dialog > video' ) );
+
+$with_dialog = $drawer_report( array( $drawer_finding, $dialog_finding, $other_element ), array( $native_receipt ), $native_page );
+$dialog_rows = array();
+foreach ( $with_dialog->diagnostics() as $diagnostic ) {
+	if ( 'html_unsupported_element' === ( $diagnostic['code'] ?? '' ) ) {
+		$dialog_rows[ (string) $diagnostic['selector'] ] = $diagnostic['fallback_resolution'] ?? array();
+	}
+}
+$dialog_row = $dialog_rows[ $drawer_finding['selector'] ] ?? array();
+$assert( 'resolved_by_provider' === ( $dialog_row['state'] ?? '' ) && ( $drawer['subsumed_by'] ?? null ) === ( $dialog_row['subsumed_by'] ?? false ) && ( $native_receipt['fallback_reconciliation_identity'] ?? '' ) === ( $dialog_row['receipt']['fallback_reconciliation_identity'] ?? null ) && 'html_cart_view_fallback' === ( $dialog_row['resolved_with']['code'] ?? '' ), 'subsumed-drawer-dialog-element-resolves-on-the-native-cart', (string) wp_json_encode( $dialog_row ) );
+$assert( array() === ( $dialog_rows['main > section > aside > div.order > dialog > video'] ?? null ), 'unsupported-element-elsewhere-is-not-resolved-by-the-drawer', (string) wp_json_encode( $dialog_rows ) );
+$assert( 2 === ( $with_dialog['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 1 === ( $with_dialog['quality']['fallback_count'] ?? -1 ) && 1 === count( array_filter( $with_dialog['quality_resolutions']['resolutions'] ?? array(), static fn( array $row ): bool => isset( $row['resolved_with'] ) && isset( $row['subsumed_by'] ) ) ), 'subsumed-drawer-dialog-element-leaves-the-fallback-count', (string) wp_json_encode( $with_dialog['quality_resolutions'] ?? null ) );
+
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $with_dialog );
+$assert( 2 === ( $with_dialog['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 1 === ( $with_dialog['quality']['fallback_count'] ?? -1 ), 'subsumed-drawer-dialog-element-reconciles-idempotently', (string) wp_json_encode( $with_dialog['quality_resolutions'] ?? null ) );
+
+$dialog_no_cart = $drawer_report( array( $drawer_finding, $dialog_finding ), array(), $native_page );
+$dialog_no_row  = array();
+foreach ( $dialog_no_cart->diagnostics() as $diagnostic ) {
+	if ( 'html_unsupported_element' === ( $diagnostic['code'] ?? '' ) ) {
+		$dialog_no_row = $diagnostic;
+	}
+}
+$assert( ! isset( $dialog_no_row['fallback_resolution'] ) && 0 === ( $dialog_no_cart['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 2 === ( $dialog_no_cart['quality']['fallback_count'] ?? -1 ), 'drawer-dialog-element-without-a-native-cart-stays-a-failure', (string) wp_json_encode( $dialog_no_cart['quality_resolutions'] ?? null ) );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
