@@ -1182,10 +1182,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		foreach ( $fallbacks as $fallback ) {
 			if ( is_array( $fallback ) && 'html_product_grid_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
+				// A grid whose cards cannot share one item template carries no
+				// grid anchor of its own. Its collection members join it by the
+				// grid container the producer declared each one in, on its page.
+				$container = array() === self::fallback_anchor_hashes( $fallback ) ? (string) ( $fallback['container_selector'] ?? $fallback['selector'] ?? '' ) : '';
+				$page      = self::product_page_key( (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) );
 				foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
 					foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
+						$member = '' !== $container && in_array( $container, is_array( $product['source_selectors'] ?? null ) ? $product['source_selectors'] : array(), true );
 						foreach ( $product['bindings'] ?? array() as $binding_index => $binding ) {
-							if ( 'commerce_collection' === ( $binding['role'] ?? '' ) && in_array( $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ), self::fallback_anchor_hashes( $fallback ), true ) && self::binding_matches_fallback( $binding, $fallback ) ) {
+							if ( 'commerce_collection' !== ( $binding['role'] ?? '' ) ) {
+								continue;
+							}
+							$joins = $member
+								? self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) === $page
+								: in_array( $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ), self::fallback_anchor_hashes( $fallback ), true ) && self::binding_matches_fallback( $binding, $fallback );
+							if ( $joins ) {
 								$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_grid_fallback'] = $fallback;
 							}
 						}
@@ -2260,10 +2272,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 		}
-		if ( empty( $adopted ) ) {
-			return $lifecycle;
-		}
-		foreach ( $lifecycle['entities'] as $id => $prepared ) {
+		foreach ( empty( $adopted ) ? array() : $lifecycle['entities'] as $id => $prepared ) {
 			$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 			if ( ! is_array( $prepared['manifest'][ $collection ] ?? null ) ) {
 				continue;
@@ -2288,6 +2297,59 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 				$lifecycle['entities'][ $id ]['manifest'][ $collection ][ $index ]['bindings'] = $kept;
+			}
+		}
+		return self::with_collection_member_controls( $lifecycle, $range, $within );
+	}
+
+	/**
+	 * A product grid whose cards mix purchase controls with link-only cards
+	 * declares a shared `commerce_collection` anchor for the link-only cards
+	 * and a `commerce_controls` anchor for each card's own controls. The
+	 * collection replaces its whole region with one native product block that
+	 * renders every member card with its own controls, so a product whose
+	 * controls lie inside that region joins the collection instead of claiming
+	 * a range the collection already replaces. Controls outside every
+	 * collection region keep their own binding.
+	 *
+	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
+	 * @param callable            $range     Binding to its [source, start, end) page range.
+	 * @param callable            $within    Whether one range lies inside another.
+	 * @return array<string,mixed>
+	 */
+	private static function with_collection_member_controls( array $lifecycle, callable $range, callable $within ): array {
+		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+			if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) || ! is_array( $prepared['manifest']['products'] ?? null ) ) {
+				continue;
+			}
+			// Members are grouped per declaration (see block_bindings()).
+			$regions = array();
+			foreach ( $prepared['manifest']['products'] as $product ) {
+				foreach ( is_array( $product ) && is_array( $product['bindings'] ?? null ) ? $product['bindings'] : array() as $binding ) {
+					$claim = is_array( $binding ) && 'commerce_collection' === ( $binding['role'] ?? '' ) ? $range( $binding ) : null;
+					if ( null !== $claim ) {
+						$regions[] = array( $claim, $binding );
+					}
+				}
+			}
+			foreach ( array() === $regions ? array() : $prepared['manifest']['products'] as $index => $product ) {
+				if ( ! is_array( $product ) || ! is_array( $product['bindings'] ?? null ) ) {
+					continue;
+				}
+				$bindings = array();
+				foreach ( $product['bindings'] as $binding ) {
+					$claim = is_array( $binding ) && 'commerce_controls' === ( $binding['role'] ?? '' ) ? $range( $binding ) : null;
+					foreach ( null === $claim ? array() : $regions as $region ) {
+						if ( $claim !== $region[0] && $within( $claim, $region[0] ) ) {
+							$binding = in_array( $region[1], $product['bindings'], true ) || in_array( $region[1], $bindings, true ) ? null : $region[1];
+							break;
+						}
+					}
+					if ( null !== $binding ) {
+						$bindings[] = $binding;
+					}
+				}
+				$lifecycle['entities'][ $id ]['manifest']['products'][ $index ]['bindings'] = $bindings;
 			}
 		}
 		return $lifecycle;

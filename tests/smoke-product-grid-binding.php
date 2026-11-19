@@ -532,6 +532,85 @@ $assert( is_array( $home_grid_result ) && str_contains( (string) ( $home_grid_re
 $assert( is_array( $catalog_grid_result ) && str_contains( (string) ( $catalog_grid_result['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[402,403]' ), 'shared-product-appears-in-the-catalog-grid-replacement' );
 $assert( is_array( $home_grid_result ) && 'commerce_collection' === ( $home_grid_result['role'] ?? '' ) && is_array( $catalog_grid_result ) && 'commerce_collection' === ( $catalog_grid_result['role'] ?? '' ), 'shared-product-both-grid-replacements-keep-the-commerce-collection-role' );
 
+// --- 10. A mixed grid: one card's own controls nested in the collection ---
+//
+// A grid whose cards mix link-only cards with a card that has its own
+// add-to-cart control: the producer anchors the link-only cards on one shared
+// `commerce_collection` region and the other card on its own
+// `commerce_controls` block, which lies inside that region. The collection's
+// native block renders every member card with its own cart button, so the
+// nested card joins the collection instead of claiming a range inside it.
+// Its controls on another page, outside every collection, stay its own.
+
+$mixed_controls    = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add to cart</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+$mixed_region      = '<!-- wp:group {"className":"grid"} --><div class="wp-block-group grid"><!-- wp:group {"tagName":"article"} --><article class="wp-block-group"><!-- wp:paragraph --><p>Card A</p><!-- /wp:paragraph --></article><!-- /wp:group --><!-- wp:group {"tagName":"article"} --><article class="wp-block-group"><!-- wp:paragraph --><p>Card B</p><!-- /wp:paragraph --></article><!-- /wp:group --><!-- wp:group {"tagName":"article"} --><article class="wp-block-group"><!-- wp:paragraph --><p>Card C</p><!-- /wp:paragraph -->' . $mixed_controls . '</article><!-- /wp:group --></div><!-- /wp:group -->';
+$mixed_tail        = '<!-- wp:paragraph --><p>After the grid</p><!-- /wp:paragraph -->';
+$mixed_grid        = 'main > section > div.grid';
+$mixed_plan        = array(
+	'pages' => array(
+		array( 'source_path' => 'website/shop.html', 'resolved_block_markup' => '<!-- wp:heading --><h1>Shop</h1><!-- /wp:heading -->' . $mixed_region . $mixed_tail, 'skip_materialization' => false ),
+		array( 'source_path' => 'website/office.html', 'resolved_block_markup' => $mixed_controls, 'skip_materialization' => false ),
+	),
+);
+$mixed_collection  = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/shop.html', 'search_block_markup' => $mixed_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+$mixed_nested      = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/shop.html', 'search_block_markup' => $mixed_controls, 'occurrence' => 1, 'role' => 'commerce_controls' );
+$mixed_elsewhere   = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/office.html', 'search_block_markup' => $mixed_controls, 'occurrence' => 1, 'role' => 'commerce_controls' );
+$mixed_products    = array(
+	array( 'name' => 'Card A', 'slug' => 'card-a', 'regular_price' => '10.00', 'source_selectors' => array( $mixed_grid . ' > article:nth-of-type(1)', $mixed_grid ), 'bindings' => array( $mixed_collection ) ),
+	array( 'name' => 'Card B', 'slug' => 'card-b', 'regular_price' => '20.00', 'source_selectors' => array( $mixed_grid . ' > article:nth-of-type(2)', $mixed_grid ), 'bindings' => array( $mixed_collection ) ),
+	array( 'name' => 'Card C', 'slug' => 'card-c', 'regular_price' => '30.00', 'source_selectors' => array( $mixed_grid . ' > article:nth-of-type(3)', $mixed_grid ), 'bindings' => array( $mixed_nested, $mixed_elsewhere ) ),
+);
+$mixed_lifecycle   = array(
+	'entities' => array(
+		'products-declaration' => array(
+			'adapter'  => $adapter,
+			'manifest' => array( 'products' => $mixed_products ),
+		),
+	),
+);
+$mixed_unadopted   = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $mixed_plan, $mixed_lifecycle, array() );
+$assert( is_wp_error( $mixed_unadopted ) && 'static_site_importer_runtime_binding_claim_conflict' === $mixed_unadopted->get_error_code(), 'mixed-grid-nested-controls-overlap-the-collection-before-adoption' );
+
+$mixed_adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $mixed_lifecycle, $mixed_plan, array() );
+$card_c        = $mixed_adopted['entities']['products-declaration']['manifest']['products'][2]['bindings'] ?? array();
+$assert( array( $mixed_collection, $mixed_elsewhere ) === $card_c, 'mixed-grid-nested-card-controls-join-the-enclosing-collection', (string) wp_json_encode( array_column( $card_c, 'role' ) ) );
+$assert( array( $mixed_collection ) === ( $mixed_adopted['entities']['products-declaration']['manifest']['products'][0]['bindings'] ?? array() ), 'mixed-grid-collection-members-keep-their-shared-anchor' );
+$mixed_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $mixed_plan, $mixed_adopted, array() );
+$assert( true === $mixed_preflight, 'mixed-grid-preflight-accepts-the-adopted-collection', is_wp_error( $mixed_preflight ) ? $mixed_preflight->get_error_message() : '' );
+
+// A controls anchor that only partly overlaps the collection is not a member
+// card's controls, so it keeps its own claim and still conflicts.
+$mixed_partial            = array_merge( $mixed_nested, array( 'search_block_markup' => '</div><!-- /wp:group -->' . $mixed_tail ) );
+$mixed_partial_lifecycle  = $mixed_lifecycle;
+$mixed_partial_lifecycle['entities']['products-declaration']['manifest']['products'][2]['bindings'] = array( $mixed_partial );
+$mixed_partial_adopted    = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $mixed_partial_lifecycle, $mixed_plan, array() );
+$assert( array( $mixed_partial ) === ( $mixed_partial_adopted['entities']['products-declaration']['manifest']['products'][2]['bindings'] ?? array() ), 'mixed-grid-partly-overlapping-controls-keep-their-own-claim' );
+$mixed_partial_preflight  = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $mixed_plan, $mixed_partial_adopted, array() );
+$assert( is_wp_error( $mixed_partial_preflight ) && 'static_site_importer_runtime_binding_claim_conflict' === $mixed_partial_preflight->get_error_code(), 'mixed-grid-preflight-still-rejects-a-partial-overlap' );
+
+// The grid's cards share no item template, so its finding carries no grid
+// anchor; the collection joins it through the container every member was
+// declared in, and resolves to one native grid holding all three products.
+$mixed_fallbacks = array(
+	array( 'diagnostic_code' => 'html_product_grid_fallback', 'source' => 'website/shop.html', 'selector' => $mixed_grid, 'container_selector' => $mixed_grid ),
+	array( 'diagnostic_code' => 'html_product_grid_fallback', 'source' => 'website/shop.html', 'selector' => 'main > aside > div.grid', 'container_selector' => 'main > aside > div.grid' ),
+);
+$mixed_reports   = array(
+	'products-declaration' => array(
+		'products' => array(
+			array( 'slug' => 'card-a', 'id' => 501, 'status' => 'created' ),
+			array( 'slug' => 'card-b', 'id' => 502, 'status' => 'created' ),
+			array( 'slug' => 'card-c', 'id' => 503, 'status' => 'created' ),
+		),
+	),
+);
+$mixed_bound     = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $mixed_adopted, $mixed_reports, $mixed_fallbacks, $mixed_plan );
+$mixed_bindings  = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $mixed_bound, $mixed_reports );
+$assert( is_array( $mixed_bindings ) && 2 === count( $mixed_bindings ), 'mixed-grid-resolves-one-grid-and-the-off-grid-controls' );
+$mixed_shop = array_values( array_filter( is_array( $mixed_bindings ) ? $mixed_bindings : array(), static fn( array $binding ): bool => 'website/shop.html' === $binding['source_path'] ) );
+$assert( 1 === count( $mixed_shop ) && str_contains( (string) ( $mixed_shop[0]['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[501,502,503]' ), 'mixed-grid-collection-hand-picks-every-card-including-the-nested-one' );
+$assert( 1 === count( $mixed_shop ) && $mixed_grid === ( $mixed_shop[0]['selector'] ?? '' ) && Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/shop.html', $mixed_grid )[0] === ( $mixed_shop[0]['fallback_reconciliation_identity'] ?? '' ), 'mixed-grid-collection-receipt-joins-its-anchorless-grid-finding' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
