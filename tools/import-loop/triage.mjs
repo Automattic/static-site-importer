@@ -301,7 +301,7 @@ for (const finding of blockers) {
 // Homeboy ships to the runner and names by environment variable, so the gate
 // carries no machine-local path.
 //   IMPORT_LOOP_GATE     this gate script
-//   IMPORT_LOOP_TOOLS    tools/ plus the Playwright packages its scripts import
+//   IMPORT_LOOP_TOOLS    tools/ and lib/ plus the Playwright packages its scripts import
 //   IMPORT_LOOP_CAPTURE  the captured source site
 //   IMPORT_LOOP_PAGES    the inlined route pages acceptance cells check
 //   IMPORT_LOOP_SSI_ZIP  the Static Site Importer release zip
@@ -311,7 +311,9 @@ const gateTools = path.join(args.work, 'gate-tools');
 function stageGateTools() {
   execFileSync('bash', [path.join(here, 'gates', 'bare-wp.sh'), BARE_WP], { stdio: ['ignore', 'ignore', 'inherit'] });
   fs.rmSync(gateTools, { recursive: true, force: true });
-  fs.cpSync(path.join(here, '..'), path.join(gateTools, 'tools'), { recursive: true, dereference: true, filter: (source) => path.basename(source) !== 'node_modules' });
+  // The tools import shared modules from lib/ (../../lib), so the snapshot
+  // keeps the repository layout for both (tests/import-loop-gate-tools.test.mjs).
+  for (const dir of ['tools', 'lib']) fs.cpSync(path.join(here, '..', '..', dir), path.join(gateTools, dir), { recursive: true, dereference: true, filter: (source) => path.basename(source) !== 'node_modules' });
   for (const pkg of ['playwright', 'playwright-core']) {
     fs.cpSync(fs.realpathSync(path.join(here, '..', '..', 'node_modules', pkg)), path.join(gateTools, 'node_modules', pkg), { recursive: true, dereference: true });
   }
