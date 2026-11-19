@@ -668,6 +668,32 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
+	 * The import's native cart: the first completed shop-provider cart
+	 * (`commerce_cart`) receipt whose replacement block is persisted where its
+	 * binding wrote it, ordered by source page and selector. Empty when the
+	 * import materialized no native cart.
+	 *
+	 * @param array<int,mixed>     $receipts      Quality resolution receipts.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
+	 * @return array<string,mixed>
+	 */
+	private static function native_cart_receipt( array $receipts, Static_Site_Importer_Import_Report $report, array $shared_hashes ): array {
+		$carts = array();
+		foreach ( $receipts as $receipt ) {
+			if ( ! is_array( $receipt ) || 'commerce_cart' !== ( $receipt['role'] ?? null ) || ! empty( $receipt['absorbed_by_surface'] ) ) {
+				continue;
+			}
+			$identity    = (string) ( $receipt['fallback_reconciliation_identity'] ?? '' );
+			$source_path = (string) ( $receipt['source_path'] ?? '' );
+			if ( '' !== $identity && self::receipt_resolves_product_grid( $receipt, $identity, $source_path, $report, $shared_hashes ) ) {
+				$carts[ $source_path . "\n" . (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
+			}
+		}
+		ksort( $carts );
+		return array() === $carts ? array() : reset( $carts );
+	}
+
+	/**
 	 * Reconcile source form fallbacks against hash-bound provider receipts.
 	 *
 	 * The source finding remains in diagnostics for auditability. Only the final
@@ -914,6 +940,7 @@ final class Static_Site_Importer_Quality_Gates {
 				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
 			}
 		}
+		$native_cart = self::native_cart_receipt( $receipts, $report, $shared_hashes );
 		foreach ( $region_findings as $index => list( $diagnostic, $identity, $fallback_hash, $source_path, $receipt, $resolved_by_provider ) ) {
 			// A cart or checkout view inside a product card is replaced with the
 			// whole region of a resolved grid around it (the registry drops its
@@ -926,6 +953,26 @@ final class Static_Site_Importer_Quality_Gates {
 					$resolved_by_provider = true;
 				}
 			}
+			// Any other source cart view with no receipt of its own (a bag drawer
+			// or cart dialog) imitates the shopping cart client-side. Once the
+			// import persisted a native cart, that cart is the one the markup
+			// stood in for, so the finding is subsumed by it and its row names
+			// it. With no native cart it stays unresolved; a cart view whose own
+			// replacement was not persisted keeps that reason. Checkout views
+			// are not subsumed by a cart.
+			$subsumed_by = array();
+			if ( ! $resolved_by_provider && array() === $receipt && array() !== $native_cart && 'cart-view' === self::commerce_view_fallback_region( $diagnostic ) ) {
+				$receipt              = $native_cart;
+				$resolved_by_provider = true;
+				$subsumed_by          = array(
+					'kind'                            => 'native_cart',
+					'role'                            => 'commerce_cart',
+					'provider'                        => (string) ( $native_cart['provider'] ?? '' ),
+					'source_path'                     => (string) ( $native_cart['source_path'] ?? '' ),
+					'selector'                        => (string) ( $native_cart['selector'] ?? '' ),
+					'binding_reconciliation_identity' => (string) ( $native_cart['binding_reconciliation_identity'] ?? '' ),
+				);
+			}
 
 			$reason = $resolved_by_provider ? '' : ( array() === $receipt ? 'no_provider_entity' : 'provider_replacement_not_persisted' );
 
@@ -937,17 +984,23 @@ final class Static_Site_Importer_Quality_Gates {
 				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
-			$report->replace_diagnostic( $index, $diagnostic );
-			if ( $resolved_by_provider ) {
-				++$resolved;
-			}
-			$resolutions[] = array(
+
+			$resolution = array(
 				'fallback_reconciliation_identity' => $identity,
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
 				'reason'                           => $reason,
 				'receipt'                          => $receipt,
 			);
+			if ( array() !== $subsumed_by ) {
+				$diagnostic['fallback_resolution']['subsumed_by'] = $subsumed_by;
+				$resolution['subsumed_by']                        = $subsumed_by;
+			}
+			$report->replace_diagnostic( $index, $diagnostic );
+			if ( $resolved_by_provider ) {
+				++$resolved;
+			}
+			$resolutions[] = $resolution;
 		}
 
 		// Commerce add-to-cart/quantity controls a provider-replaced grid
