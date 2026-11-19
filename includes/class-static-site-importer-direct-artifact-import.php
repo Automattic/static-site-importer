@@ -578,7 +578,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						if ( is_wp_error( $ref ) ) {
 							return self::fail( $workspace, $run, 'prepare_pages', $ref, array( $page_id ) );
 						}
-						$run['refs']['pages'][ $page_id ]       = $ref;
+						$run['refs']['pages'][ $page_id ] = $ref;
 						// Payload size orders fanout dispatch; it is never part of a checkpoint identity.
 						$run['page_bytes'][ $page_id ]          = (int) ( $page_plan['summary']['bytes'] ?? 0 );
 						$run['work']['page_plans_prepared']     = count( $run['refs']['pages'] );
@@ -676,16 +676,36 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
 					// Shards are in dispatch order; the fanout runs at most compile_workers at once
 					// and starts the next shard as soon as a worker frees up.
-					$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards, $policy['compile_workers'] ) : null;
+					$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func(
+						$policy['compile_fanout'],
+						$run['import_id'],
+						$shards,
+						$policy['compile_workers'],
+						array(
+							'deadline'          => null === $policy['import_deadline_seconds'] ? null : (float) $run['started_at'] + $policy['import_deadline_seconds'],
+							'receipt_directory' => $workspace->directory() . '/receipts',
+						)
+					) : null;
 					if ( is_wp_error( $fanout ) ) {
 						return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
 					}
-					if ( true === $fanout ) {
+					if ( true === $fanout || is_array( $fanout ) ) {
 						$adopted = self::adopt_receipts( $workspace, $run, $shared );
 						if ( is_wp_error( $adopted ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
 						}
-						if ( count( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== count( $batch_ids ) ) {
+						$stalled_ids = array();
+						foreach ( is_array( $fanout ) ? ( $fanout['stalled_workers'] ?? array() ) : array() as $stalled ) {
+							foreach ( array_diff( $stalled['page_ids'], array_keys( $adopted ) ) as $page_id ) {
+								$stalled_ids[]                    = $page_id;
+								$run['stalled_pages'][ $page_id ] = $stalled;
+							}
+						}
+						$run['deadline_skipped_pages'] = array_values( array_unique( array_merge( $run['deadline_skipped_pages'] ?? array(), $stalled_ids ) ) );
+						if ( in_array( $entry_id, $stalled_ids, true ) ) {
+							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The entrypoint compile worker stalled.', $run['stalled_pages'] ) );
+						}
+						if ( count( array_intersect( array_merge( array_keys( $adopted ), $stalled_ids ), $batch_ids ) ) !== count( $batch_ids ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Compile workers did not publish the exact requested receipt shards.' ), $batch_ids );
 						}
 						$run['refs']['receipts'] = $adopted;
@@ -759,7 +779,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					++$batches;
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
-				$remaining                = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
+				$remaining                = count( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ), $run['deadline_skipped_pages'] ?? array() ) );
 				$compile_deadline_reached = null !== $policy['import_deadline_seconds'] && isset( $run['started_at'] )
 					&& self::deadline_reached( (float) $run['started_at'] + $policy['import_deadline_seconds'], $clock );
 				if ( 0 < $remaining && ! $compile_deadline_reached && empty( $run['deadline_finalized'] ) ) {
@@ -1136,14 +1156,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	/** @return array<string,mixed>|WP_Error */
 	/** Represent unstarted work using the compiler's existing omitted-page receipt contract. */
-	private static function deadline_receipt( array $plan, array $shared ): array {
+	private static function deadline_receipt( array $plan, array $shared, ?array $stalled = null ): array {
 		$omitted = array();
 		foreach ( $plan['artifact']['files'] as $file ) {
 			if ( 'html' === ( $file['kind'] ?? '' ) ) {
 				$omitted[] = array(
 					'source_path' => $file['path'],
-					'reason_code' => 'deadline',
-					'message'     => 'Page skipped because the import compile deadline was exhausted.',
+					'reason_code' => null === $stalled ? 'deadline' : 'compile_worker_stalled',
+					'message'     => null === $stalled ? 'Page skipped because the import compile deadline was exhausted.' : sprintf(
+						'Compile worker stalled: pages=%s; elapsed=%.3fs; peak_memory_bytes=%s; stderr: %s',
+						implode( ', ', $stalled['page_ids'] ),
+						$stalled['elapsed_seconds'],
+						null === $stalled['peak_memory_bytes'] ? 'unavailable' : (string) $stalled['peak_memory_bytes'],
+						$stalled['stderr']
+					),
 				);
 			}
 		}
@@ -1269,7 +1295,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		foreach ( $run['page_ids'] as $page_id ) {
 			$page = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
 			if ( ! is_wp_error( $page ) && in_array( $page_id, $run['deadline_skipped_pages'] ?? array(), true ) ) {
-				$receipts[ $page_id ] = self::deadline_receipt( $page['plan'], $shared );
+				$receipts[ $page_id ] = self::deadline_receipt( $page['plan'], $shared, $run['stalled_pages'][ $page_id ] ?? null );
 				continue;
 			}
 			$row = self::read_checkpoint( $workspace, $run, $refs[ $page_id ], 'receipt' );
