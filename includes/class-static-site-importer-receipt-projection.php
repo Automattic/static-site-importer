@@ -17,6 +17,9 @@ if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Route_Head_Metadata' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-route-head-metadata.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Theme_Hygiene' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-theme-hygiene.php';
+}
 
 class Static_Site_Importer_Receipt_Projection {
 	/** Project compiler gap rows into stable materialization diagnostics. */
@@ -122,6 +125,8 @@ class Static_Site_Importer_Receipt_Projection {
 			}
 		}
 		$quality = is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array();
+		// Theme hygiene counters, measured after materialization.
+		$quality = array_merge( $quality, Static_Site_Importer_Theme_Hygiene::measure( $receipt ) );
 		if ( isset( $args['captured_interaction_state_count'] ) && is_numeric( $args['captured_interaction_state_count'] ) ) {
 			$quality['interaction_candidate_count'] = max(
 				(int) ( $quality['interaction_candidate_count'] ?? 0 ),

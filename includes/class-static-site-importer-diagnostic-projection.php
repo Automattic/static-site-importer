@@ -27,6 +27,9 @@ if ( ! class_exists( 'Static_Site_Importer_Block_Theme_Scorecard' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-visual-parity-oracle.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Theme_Hygiene' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-theme-hygiene.php';
+}
 
 /** Builds public diagnostic projections without mutating provider state. */
 final class Static_Site_Importer_Diagnostic_Projection {
@@ -1494,6 +1497,10 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'error_summaries'                         => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
 			'diagnostics'                             => self::compact_import_report_diagnostics( $diagnostics ),
 		);
+		// Theme hygiene counters; null means the producer did not measure it.
+		foreach ( array_keys( Static_Site_Importer_Theme_Hygiene::defaults() ) as $counter ) {
+			$summary[ $counter ] = $quality[ $counter ] ?? null;
+		}
 		if ( '' !== $design_system_summary ) {
 			$summary['design_system_summary'] = $design_system_summary;
 		}

@@ -168,7 +168,7 @@ function ssi_source_findings_import( array $extra_files ): array {
 		),
 		array(
 			'path'    => 'website/styles.css',
-			'content' => 'body{font-family:serif}',
+			'content' => 'body{font-family:serif}main p{text-indent:1em}',
 		),
 	);
 	foreach ( $extra_files as $path => $bytes ) {

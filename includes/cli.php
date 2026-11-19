@@ -9,6 +9,7 @@ use Automattic\BlocksEngine\PhpTransformer\Support\HtmlTagScanner;
 use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
 
 require_once __DIR__ . '/class-static-site-importer-deferred-media-stage.php';
+require_once __DIR__ . '/class-static-site-importer-theme-hygiene.php';
 
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	/**
@@ -142,18 +143,18 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 			return $policy;
 		}
 		if ( function_exists( 'proc_open' ) && ! empty( $_SERVER['argv'][0] ) ) {
-			$cgroup                         = static_site_importer_cli_cgroup_available_bytes();
-			$meminfo                        = static_site_importer_cli_meminfo_available_bytes();
-			$available                      = null === $cgroup ? $meminfo : ( null === $meminfo ? $cgroup : min( $cgroup, $meminfo ) );
-			$limit                          = ini_parse_quantity( (string) ini_get( 'memory_limit' ) );
-			$budget                         = 0 < $limit ? $limit : 768 * 1024 * 1024;
-			$reserve                        = memory_get_usage( true ) + 64 * 1024 * 1024;
-			$policy['compile_memory']       = array(
+			$cgroup                    = static_site_importer_cli_cgroup_available_bytes();
+			$meminfo                   = static_site_importer_cli_meminfo_available_bytes();
+			$available                 = null === $cgroup ? $meminfo : ( null === $meminfo ? $cgroup : min( $cgroup, $meminfo ) );
+			$limit                     = ini_parse_quantity( (string) ini_get( 'memory_limit' ) );
+			$budget                    = 0 < $limit ? $limit : 768 * 1024 * 1024;
+			$reserve                   = memory_get_usage( true ) + 64 * 1024 * 1024;
+			$policy['compile_memory']  = array(
 				'available_bytes' => $available,
 				'budget_bytes'    => $budget,
 				'reserve_bytes'   => $reserve,
 			);
-			$policy['compile_workers']      = static_site_importer_cli_compile_worker_count( $available, $budget, $reserve );
+			$policy['compile_workers'] = static_site_importer_cli_compile_worker_count( $available, $budget, $reserve );
 			// One page per shard: the fanout keeps compile_workers shards running and
 			// starts the next (largest remaining) page whenever a worker finishes, so
 			// the largest page never queues small pages behind it on one worker.
@@ -331,7 +332,7 @@ if ( ! function_exists( 'static_site_importer_cli_spawn_compile_worker' ) ) {
 	 */
 	function static_site_importer_cli_spawn_compile_worker( array $base_command, string $import_id, array $page_ids ): ?array {
 		$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
-		$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
+		$command = array_values( array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) ) );
 		$pipes   = array();
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
 		$process = proc_open(
@@ -1361,7 +1362,7 @@ if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
 			'unsafe_layout_constraint'       => 'unsafe_layout_constraint_count',
 			'dropped_artifact_files'         => 'omitted_file_count',
 			'visual_parity_mismatch'         => 'visual_parity_failure_count',
-		);
+		) + array_flip( Static_Site_Importer_Theme_Hygiene::GATED );
 		$count_of      = static function ( array $keys ) use ( $containers ): ?int {
 			foreach ( $containers as $container ) {
 				foreach ( $keys as $key ) {
