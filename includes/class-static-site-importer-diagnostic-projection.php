@@ -2250,7 +2250,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		$row['metrics']       = self::diagnostic_metrics( $row );
 		$row['owning_layer']  = self::diagnostic_owning_layer( $row );
 		$row['loss_class']    = self::first_scalar( $row, array( 'loss_class' ) );
-		$row['acceptability'] = Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $row['loss_class'] );
+		$row['acceptability'] = Static_Site_Importer_Diagnostic_Loss_Classes::finding_acceptability( $row['loss_class'], $row );
 
 		return $row;
 	}
