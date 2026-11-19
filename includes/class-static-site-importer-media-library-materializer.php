@@ -462,7 +462,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
-		$declared      = self::declared_size( $tags->get_attribute( 'width' ) ?? $attrs['width'] ?? null, $tags->get_attribute( 'height' ) ?? $attrs['height'] ?? null );
+		$declared      = self::declared_size( $tags->get_attribute( 'width' ) ?? $attrs['width'] ?? null, $tags->get_attribute( 'height' ) ?? $attrs['height'] ?? null ) ?? self::intrinsic_size( $attrs );
 		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored ? $selection['srcset'] : (string) $tags->get_attribute( 'srcset' ), $declared );
 		if ( null !== $error ) {
 			return $block_match[0];
@@ -816,7 +816,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					if ( is_array( $selection ) && is_string( $selection['src'] ?? null ) ) {
 						$protected[ $selection['src'] ] = true;
 						if ( is_string( $selection['srcset'] ?? null ) && isset( $by_url[ $selection['src'] ] ) ) {
-							$images[] = $selection + array_intersect_key( $attributes, array_flip( array( 'width', 'height' ) ) );
+							$images[] = $selection + array( 'declared' => self::declared_size( $attributes['width'] ?? null, $attributes['height'] ?? null ) ?? self::intrinsic_size( $attributes ) );
 						}
 					}
 					array_walk_recursive(
@@ -859,7 +859,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$families[ $by_url[ $image['src'] ]['target_path'] ][] = array(
 					'srcset'   => $image['srcset'],
 					'tokens'   => $tokens,
-					'declared' => self::declared_size( $image['width'] ?? null, $image['height'] ?? null ),
+					'declared' => $image['declared'] ?? self::declared_size( $image['width'] ?? null, $image['height'] ?? null ),
 				);
 			}
 		}
@@ -1709,6 +1709,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	private static function record_verifies( string $file, array $record ): bool {
 		require_once __DIR__ . '/class-static-site-importer-image-assets.php';
 		return Static_Site_Importer_Image_Assets::verify( $file, $record );
+	}
+
+	/**
+	 * Captured pixel size of an image block whose width/height are layout
+	 * values such as "100%".
+	 *
+	 * @param array<mixed> $attributes Block attributes.
+	 * @return array{0:int,1:int}|null
+	 */
+	private static function intrinsic_size( array $attributes ): ?array {
+		$size = $attributes['metadata']['blocksEngineIntrinsicSize'] ?? null;
+		return is_array( $size ) ? self::declared_size( $size['width'] ?? null, $size['height'] ?? null ) : null;
 	}
 
 	/**
