@@ -67,8 +67,16 @@ PHP
 # The block editor fires dozens of parallel requests; one worker serializes them.
 # The server leads its own process group, so its owner stops it with its
 # workers (`kill -- -<pid>`). Retention stops it once the pass is scored; the
-# deadline bounds a server whose owner died before that.
-PHP_CLI_SERVER_WORKERS=8 setsid timeout -k 30 "${IMPORT_LOOP_SERVER_TTL:-24h}" php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" > "$site/.server.log" 2>&1 < /dev/null &
-echo $! > "$site/.server.pid"
-for _ in $(seq 50); do curl -fs -o /dev/null "$url/" && break; sleep 0.2; done
+# deadline bounds a server whose owner died before that. A runner restart
+# stops it too, so later steps run <site>/.serve.sh to serve the site again at
+# the same URL; while the site answers, the script does nothing.
+cat > "$site/.serve.sh" <<SERVE
+#!/usr/bin/env bash
+curl -fs -m 30 -o /dev/null "$url/" && exit 0
+PHP_CLI_SERVER_WORKERS=8 setsid timeout -k 30 "\${IMPORT_LOOP_SERVER_TTL:-24h}" php -S "127.0.0.1:$port" -t "$site" "$site/.router.php" >> "$site/.server.log" 2>&1 < /dev/null &
+echo \$! > "$site/.server.pid"
+for _ in \$(seq 50); do curl -fs -o /dev/null "$url/" && exit 0; sleep 0.2; done
+echo "site_unreachable: $url did not answer after serving $site" >&2; exit 1
+SERVE
+bash "$site/.serve.sh" > /dev/null 2>&1 || true
 echo "$url"

@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { args, gh, COOK_NOTE } from './lib.mjs';
-import { excess } from './progress.mjs';
+import { excess, UNCHECKED } from './progress.mjs';
 import { retain, sweep } from './retain.mjs';
 
 process.on('uncaughtException', (error) => { console.error(`[score] skipped: ${error.message}`); process.exit(0); });
@@ -23,8 +23,12 @@ const occurrences = (f) => f.occurrences.reduce((n, o) => n + (o.evidence?.count
 const blockers = (findings) => findings && Object.fromEntries(findings.findings.filter((f) => f.severity === 'blocker').map((f) => [f.signature, occurrences(f)]));
 
 const board = path.join(args.runs, `${args.slug}-scoreboard.jsonl`);
-const previous = fs.existsSync(board) ? fs.readFileSync(board, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).at(-1) : null;
-const now = blockers(read(`${pass}-eval/findings.json`));
+const previous = fs.existsSync(board) ? fs.readFileSync(board, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).findLast((l) => l.blockers) ?? null : null;
+// A pass whose evaluate could not measure everything (evaluate.mjs fails the
+// step) has no counts: its partial findings would read as blockers fixed.
+const evaluated = read(`${pass}-eval/findings.json`);
+const incomplete = evaluated ? [...new Set(evaluated.findings.filter((f) => UNCHECKED.has(f.check)).map((f) => f.check))] : [];
+const now = incomplete.length ? null : blockers(evaluated);
 const triage = read(`${pass}-triage/triage.json`);
 // One confirm per Cook and one for the issues no Cook worked: each wrote its
 // verdicts and merges under the pass's confirm directory.
@@ -89,6 +93,7 @@ const line = {
   blocker_count: now ? Object.keys(now).length : null,
   occurrences: now ? Object.values(now).reduce((a, b) => a + b, 0) : null,
   blockers: now,
+  ...(incomplete.length ? { incomplete } : {}),
   // Against the previous pass on this board: what this pass's import fixed.
   removed: now && previous?.blockers ? Object.keys(previous.blockers).filter((s) => !(s in now)) : null,
   cooks,

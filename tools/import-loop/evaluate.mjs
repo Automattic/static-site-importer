@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { args } from './lib.mjs';
 import { checkImport } from './checks.mjs';
 import { UNCHECKED } from './progress.mjs';
@@ -13,6 +14,9 @@ if (!args.before && args.out) {
     if (fs.existsSync(prior)) args.before = prior;
   }
 }
+// The import's server does not outlive a runner restart: serve the site again
+// at the same URL before measuring it (a no-op while it answers).
+if (args.site && fs.existsSync(path.join(args.site, '.serve.sh'))) execFileSync('bash', [path.join(args.site, '.serve.sh')], { stdio: 'inherit', timeout: 120_000 });
 const { output } = await checkImport(args);
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));
 // An incomplete measurement must not reach triage: blockers a check could not
