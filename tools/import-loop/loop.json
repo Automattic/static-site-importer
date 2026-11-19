@@ -320,7 +320,8 @@
       ],
       "always": true,
       "capacity": "none",
-      "timeout": "10m",
+      "timeout": "30m",
+      "retry": { "max": 2, "on": ["failed", "timed_out"], "backoff": "1m" },
       "exec": {
         "program": "node",
         "cwd": "{{steps.tools.output/dir}}",
