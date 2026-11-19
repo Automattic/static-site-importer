@@ -538,10 +538,13 @@ PHP;
 		if ( ! $loaded ) {
 			return '';
 		}
-		$classes = implode( ' or ', array_map( static fn( string $class ): string => "contains(concat(' ', normalize-space(@class), ' '), ' {$class} ')", self::TAGLINE_CLASSES ) );
+		$classes = implode( ' or ', array_map( static fn( string $token ): string => "contains(concat(' ', normalize-space(@class), ' '), ' {$token} ')", self::TAGLINE_CLASSES ) );
 		$nodes   = ( new DOMXPath( $document ) )->query( "//body//*[({$classes}) and not(ancestor-or-self::article)]" );
 		$texts   = array();
 		foreach ( false === $nodes ? array() : $nodes as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
 			$text = trim( (string) preg_replace( '/\s+/u', ' ', $node->textContent ) );
 			if ( '' !== $text && mb_strlen( $text ) <= 200 ) {
 				$texts[ $text ] = true;
