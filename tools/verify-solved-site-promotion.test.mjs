@@ -5,22 +5,26 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { verifySolvedSitePromotion } from './verify-solved-site-promotion.mjs';
-import { collectAuthoringParityEvidence } from '../lib/fixture-matrix/collectors/authoring-parity.mjs';
+import { collectFixtureMatrixRunResults } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { sha256 } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
 
-test('collected browser authoring evidence survives fixture merge and gates promotion', () => {
+test('wp-cli cleanup authoring evidence survives fixture merge and gates promotion', () => {
   const input = fixture();
   try {
     for (const pass of [false, true]) {
       const evidence = structuredClone(authoringParityEvidence);
       evidence[0].pass = pass;
       if (!pass) evidence[0].landmarks.new_post.title += 1;
-      const summary = { assertions: { results: [{ kind: 'evaluate', actual: { authoring_parity_evidence: evidence }, passed: false }] } };
-      const file = path.join(input.root, 'action-summary.json');
-      fs.writeFileSync(file, JSON.stringify(summary));
-      input.matrix.fixtures[0] = { ...input.matrix.fixtures[0], authoring_parity_evidence: collectAuthoringParityEvidence([
-        { command: 'wordpress.browser-actions', files: { summary: { path: file } } },
-      ], input.root) };
+      const collected = collectFixtureMatrixRunResults({
+        matrix: { id: 'authoring-matrix', fixtures: [{ id: 'solved' }] },
+        outputDirectory: input.root,
+        codeboxOutput: { schema: 'wp-codebox/recipe-run/v1', executions: [{
+          command: 'wordpress.wp-cli', recipePhase: 'steps', recipeStepIndex: 2, exitCode: 0,
+          metadata: { fixture_id: 'solved', phase: 'authoring-parity-cleanup' },
+          stdout: JSON.stringify({ fixture_id: 'solved', authoring_parity_evidence: evidence }),
+        }] },
+      });
+      input.matrix.fixtures[0] = { ...input.matrix.fixtures[0], authoring_parity_evidence: collected.fixtures[0].authoring_parity_evidence };
       fs.writeFileSync(input.paths.matrix, JSON.stringify(input.matrix));
       assert.deepEqual(input.matrix.fixtures[0].authoring_parity_evidence, evidence);
       if (pass) {

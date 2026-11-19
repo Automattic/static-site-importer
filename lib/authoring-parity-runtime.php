@@ -131,6 +131,16 @@ try {
 				);
 			}
 			break;
+		case 'record':
+			if ( ! isset( $input['evidence'] ) || ! is_array( $input['evidence'] ) ) {
+				throw new Exception( 'Authoring parity evidence must be an array' );
+			}
+			update_option( 'ssi_authoring_evidence_SSI_AUTHORING_TOKEN', $input['evidence'], false );
+			if ( get_option( 'ssi_authoring_evidence_SSI_AUTHORING_TOKEN', null ) !== $input['evidence'] ) {
+				throw new Exception( 'Cannot record authoring parity evidence' );
+			}
+			$result = true;
+			break;
 		case 'clean':
 			if ( ! function_exists( 'ssi_authoring_cleanup' ) ) {
 				throw new Exception( 'Probe observer is unavailable' );
