@@ -84,6 +84,9 @@ export async function checkImport(args) {
   const routes = captureRoutes(captureRoot).filter((route) => !scope || scope.some((s) => s.cells.some((c) => c.route == null || c.route === route)));
   if (!routes.length) throw new Error('capture_has_no_routes');
   const findings = new Map();
+  // Wall time per stage, so a slow evaluation names its stage.
+  const timings = {};
+  let mark = Date.now();
   const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null }) => {
     const signature = createHash('sha1').update(JSON.stringify([stage, check, owner_repo, subject])).digest('hex').slice(0, 12);
     if (scope && !UNCHECKED.has(check) && !scope.some((s) => s.signature === signature)) return;
@@ -117,6 +120,7 @@ export async function checkImport(args) {
       IMPORT_LOOP_COMPARE_SCOPE: scopeFile,
     };
   }
+  timings.setup = Date.now() - mark; mark = Date.now();
   const run = spawnSync('npx', compareCommand, { env: compareEnv, encoding: 'utf8', maxBuffer: 64 << 20, timeout: 30 * 60_000 });
   fs.writeFileSync(path.join(args.out, 'compare.log'), `${run.stdout || ''}\n${run.stderr || ''}`);
   let parity;
@@ -147,6 +151,7 @@ export async function checkImport(args) {
     for (const partial of parityCellReports(cell)) report({ stage: 'materialization', check: 'visual_parity', ...partial, route, width });
   }
 
+  timings.visual_parity = Date.now() - mark; mark = Date.now();
   const reportFile = findReport(path.join(args.site, 'wp-content', 'static-site-importer'));
   if (!reportFile) report({ stage: 'import', check: 'import_report_missing', owner_repo: 'static-site-importer', subject: 'import-report.json', evidence: args.site });
   else {
@@ -159,6 +164,7 @@ export async function checkImport(args) {
     for (const d of imported.diagnostics || []) if (d.type === 'raw_html_companion_block') report({ stage: 'editability', check: 'raw_html_companion_block_count', owner_repo: 'blocks-engine', subject: slugStem(String(d.context?.block_name || '').split('/').pop() || 'unknown'), evidence: { document: d.source_path, selector: d.selector } });
   }
 
+  timings.import_report = Date.now() - mark; mark = Date.now();
   const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
   try {
     const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells));
@@ -176,15 +182,18 @@ export async function checkImport(args) {
     }
   } catch (error) { report({ stage: 'editability', check: 'editor_unreachable', owner_repo: 'static-site-importer', subject: 'block_editor', evidence: error.message }); }
 
-  const list = [...findings.values()].sort((a, b) => a.signature.localeCompare(b.signature));
+  timings.editor = Date.now() - mark; mark = Date.now();
   let authoring = [];
   try {
     authoring = await authoringParity(args.site, args['wp-cli']);
     if (!authoring.length) throw new Error('No imported layout clusters');
     for (const row of authoring.filter(row => !row.pass)) report({ stage: 'editability', check: 'authoring_parity', owner_repo: 'blocks-engine', subject: row.cluster, evidence: row });
   } catch (error) { report({ stage: 'editability', check: 'authoring_parity_unverified', owner_repo: 'static-site-importer', subject: 'authoring_parity', evidence: error.message }); }
+  timings.authoring_parity = Date.now() - mark; mark = Date.now();
 
-  const result = { authoring_parity_evidence: authoring, schema: 'import-loop/findings/v1', url: args.url, site: args.site, wp_url: args['wp-url'], routes, widths: WIDTHS, import_report: reportFile, verdict: list.some((f) => f.severity === 'blocker') ? 'findings' : 'accepted', findings: list, visual, parity_command: ['npx', ...command] };
+  const list = [...findings.values()].sort((a, b) => a.signature.localeCompare(b.signature));
+
+  const result = { timings_ms: timings, authoring_parity_evidence: authoring, schema: 'import-loop/findings/v1', url: args.url, site: args.site, wp_url: args['wp-url'], routes, widths: WIDTHS, import_report: reportFile, verdict: list.some((f) => f.severity === 'blocker') ? 'findings' : 'accepted', findings: list, visual, parity_command: ['npx', ...command] };
   const previous = args.before ? JSON.parse(fs.readFileSync(args.before, 'utf8')) : { findings: [], visual: [] };
   result.progress = compareImports(previous, result).blockers;
   const findingsPath = path.join(args.out, 'findings.json');
