@@ -92,12 +92,14 @@ export function verifySolvedSitePromotion(input) {
       editor_interaction: 'passed',
       visual: 'passed',
       native_blocks: 'passed',
+      authoring_parity: 'passed',
       artifacts: 'passed',
     },
     evidence: {
       run_url: options.runUrl,
       artifact_manifest_url: options.artifactUrl,
       artifacts,
+      authoring_parity: matrix.fixtures.map(fixture => ({ fixture_id: fixture.fixture_id, authoring_parity_evidence: fixture.authoring_parity_evidence })),
     },
   };
   fs.writeFileSync(options.manifestOutput, `${JSON.stringify({ schema: 'static-site-importer/solved-site-artifact-manifest/v1', artifacts }, null, 2)}\n`);

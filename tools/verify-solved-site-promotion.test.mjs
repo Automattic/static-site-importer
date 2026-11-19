@@ -5,7 +5,32 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { verifySolvedSitePromotion } from './verify-solved-site-promotion.mjs';
+import { collectAuthoringParityEvidence } from '../lib/fixture-matrix/collectors/authoring-parity.mjs';
 import { sha256 } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
+
+test('collected browser authoring evidence survives fixture merge and gates promotion', () => {
+  const input = fixture();
+  try {
+    for (const pass of [false, true]) {
+      const evidence = structuredClone(authoringParityEvidence);
+      evidence[0].pass = pass;
+      if (!pass) evidence[0].landmarks.new_post.title += 1;
+      const summary = { assertions: { results: [{ kind: 'evaluate', actual: { authoring_parity_evidence: evidence }, passed: false }] } };
+      const file = path.join(input.root, 'action-summary.json');
+      fs.writeFileSync(file, JSON.stringify(summary));
+      input.matrix.fixtures[0] = { ...input.matrix.fixtures[0], authoring_parity_evidence: collectAuthoringParityEvidence([
+        { command: 'wordpress.browser-actions', files: { summary: { path: file } } },
+      ], input.root) };
+      fs.writeFileSync(input.paths.matrix, JSON.stringify(input.matrix));
+      assert.deepEqual(input.matrix.fixtures[0].authoring_parity_evidence, evidence);
+      if (pass) {
+        const receipt = verifySolvedSitePromotion(input.options);
+        assert.equal(receipt.status, 'accepted');
+        assert.deepEqual(receipt.evidence.authoring_parity[0].authoring_parity_evidence, evidence);
+      } else assert.throws(() => verifySolvedSitePromotion(input.options), /authoring parity evidence is missing or failed/);
+    }
+  } finally { fs.rmSync(input.root, { recursive: true, force: true }); }
+});
 
 const SSI_SHA = '1'.repeat(40);
 const BE_SHA = '2'.repeat(40);

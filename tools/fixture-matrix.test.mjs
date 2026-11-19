@@ -1289,8 +1289,12 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.equal(plainSteps.length, 5);
-  assert.ok(plainSteps.every((step) => step.command === 'wordpress.wp-cli'));
+  assert.equal(plainSteps.length, 8);
+  assert.equal(plainSteps.filter((step) => step.command === 'wordpress.browser-actions').length, 1);
+  const paritySteps = plainSteps.filter((step) => step.metadata.phase.startsWith('authoring-parity'));
+  assert.deepEqual(paritySteps.map((step) => step.metadata.phase), ['authoring-parity-stage', 'authoring-parity', 'authoring-parity-cleanup']);
+  assert.equal(paritySteps[1].allowFailure, true);
+  assert.ok(JSON.parse(paritySteps[1].args.find(arg => arg.startsWith('steps-json=')).slice(11)).some(step => step.kind === 'evaluate'));
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
@@ -8908,6 +8912,21 @@ test('visual-explanation.json is merged into collected visual parity artifacts g
   assert.equal(finding.visual_property_diagnostics[0].property, 'background-color');
   assert.equal(result.fixtures[0].visual_parity_artifacts.visual_explanation.selector_diagnostics[0].selector, 'a.cta');
   assert.equal(result.fixtures[0].visual_parity_artifacts.visual_explanation.property_diagnostics[0].property, 'background-color');
+});
+
+test('authoring browser assertion evidence is carried into the fixture matrix result', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-authoring-matrix-'));
+  try {
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'authoring-matrix' });
+    const evidence = [{ cluster: 'page × page', pass: false }];
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput: {
+      executions: [{ command: 'wordpress.browser-actions', metadata: { fixture_id: matrix.fixtures[0].id }, recipePhase: 'steps', recipeStepIndex: 1 }],
+      browserEvidence: [{ command: 'wordpress.browser-actions', phase: 'steps', index: 1, summary: { assertions: { results: [
+        { kind: 'evaluate', actual: { authoring_parity_evidence: evidence }, passed: false },
+      ] } } }],
+    } });
+    assert.deepEqual(result.fixtures[0].authoring_parity_evidence, evidence);
+  } finally { rmSync(outputDirectory, { recursive: true, force: true }); }
 });
 
 test('WP Codebox recipe browserEvidence visual refs are preserved with fixture identity', () => {
