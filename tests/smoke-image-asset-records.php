@@ -78,6 +78,26 @@ $assert( 'media_library' === $asset['destination'], 'Recorded inline images must
 $resolved = ( new Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => 'https://destination.example/themes/fixture', 'attachment_resolutions' => array( $asset['token'] => array( 'id' => 73, 'url' => 'https://destination.example/uploads/garden-photo.png' ) ) ) );
 $markup = $resolved['pages'][0]['resolved_block_markup'];
 $assert( str_contains( $markup, '"id":73' ) && str_contains( $markup, 'wp-image-73' ), 'Compiler output must be an attachment-bound native image.' );
+$assert( ! str_contains( $markup, 'srcset' ) && ! str_contains( $markup, 'sizes=' ), 'Generated markup must not carry the captured same-resource srcset.' );
+// A box-tree sidecar binds capture evidence to the exact document bytes, so
+// image intake must leave a bound document untouched for Blocks Engine.
+$box_tree_document = str_replace( array( '<main>', '<h1>', '<a href' ), array( '<main data-blocks-engine-node-id="n1">', '<h1 data-blocks-engine-node-id="n2">', '<a data-blocks-engine-node-id="n3" href' ), $artifact['files'][0]['content'] );
+$box_tree_node     = static fn( array $children ): array => array( 'children' => $children, 'viewports' => array( 'desktop' => array( 'border_box' => array( 'x' => 0, 'y' => 0, 'width' => 20, 'height' => 20 ), 'used_styles' => array_fill_keys( Automattic\BlocksEngine\PhpTransformer\Contract\BoxTree::PROPERTIES, 'normal' ) ) ) );
+$box_tree          = array( 'schema' => Automattic\BlocksEngine\PhpTransformer\Contract\BoxTree::SCHEMA, 'source_path' => 'website/index.html', 'source_hash' => hash( 'sha256', $box_tree_document ), 'viewports' => array( 'desktop' => array( 'width' => 1280, 'height' => 800 ) ), 'nodes' => array( 'n1' => $box_tree_node( array( 'n2', 'n3' ) ), 'n2' => $box_tree_node( array() ), 'n3' => $box_tree_node( array() ) ) );
+$box_tree_sidecar  = array( 'path' => 'website/box-tree/index.json', 'content' => json_encode( $box_tree ) );
+$bound             = $artifact;
+$bound['files'][0]['content'] = $box_tree_document;
+$bound['files'][] = $box_tree_sidecar;
+$bound_extracted  = Static_Site_Importer_Image_Assets::extract( $bound );
+$bound_files      = is_array( $bound_extracted ) ? array_column( $bound_extracted['artifact']['files'], null, 'path' ) : array();
+$assert( $box_tree_document === ( $bound_files['website/index.html']['content'] ?? null ), 'A box-tree bound document must keep its captured bytes.' );
+$assert( $box_tree['source_hash'] === hash( 'sha256', $bound_files['website/index.html']['content'] ) && $box_tree_sidecar === ( $bound_files['website/box-tree/index.json'] ?? null ), 'The document must still hash to its untouched box-tree source_hash.' );
+$assert( $record === ( $bound_extracted['records']['website/photo.png'] ?? null ), 'A bound document must still bind its image record.' );
+$bound_compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $bound_extracted['artifact'] )->toArray();
+$assert( ! str_contains( json_encode( $bound_compiled['diagnostics'] ?? array() ), 'box_tree_' ), 'Blocks Engine must accept the bound box-tree evidence.' );
+$stale = $bound;
+$stale['files'][ count( $stale['files'] ) - 1 ]['content'] = json_encode( array_merge( $box_tree, array( 'source_hash' => str_repeat( '0', 64 ) ) ) );
+$assert( ! str_contains( Static_Site_Importer_Image_Assets::extract( $stale )['artifact']['files'][0]['content'], 'srcset' ), 'An unbound document still yields responsive sizes to WordPress.' );
 foreach ( array( null, array_merge( $record['original'], array( 'sha256' => str_repeat( '0', 64 ) ) ) ) as $invalid ) {
 	$bad = $artifact;
 	$bad['files'][2]['content'] = json_encode( array( 'version' => 1, 'images' => array( array_merge( $record, array( 'original' => $invalid ) ) ) ) );

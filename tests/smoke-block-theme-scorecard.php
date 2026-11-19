@@ -73,6 +73,25 @@ try {
 		) )['checks']['shared_shell'];
 		scorecard_assert( $shell === $import_shell, $name . ': import forwards retention evidence' );
 	}
+	// Plan evidence exempts only the listed templates and shell areas.
+	$dir = $root . '/shell exclusions'; mkdir( $dir . '/templates', 0777, true ); mkdir( $dir . '/parts' );
+	file_put_contents( $dir . '/templates/index.html', $template );
+	file_put_contents( $dir . '/parts/header.html', $header ); file_put_contents( $dir . '/parts/footer.html', $footer );
+	foreach ( array( 'page-excluded', 'page-stray' ) as $slug ) { file_put_contents( $dir . '/templates/' . $slug . '.html', '<!-- wp:post-content /-->' ); }
+	foreach ( array( array( 'header', 'footer' ), array( 'header' ), array() ) as $excluded_areas ) {
+		$exclusions = array_fill_keys( $excluded_areas, array( 'page-excluded' ) );
+		$shell = Static_Site_Importer_Block_Theme_Scorecard::from_import( array(
+			'materialization_receipt' => array( 'theme' => array( 'dir' => $dir ), 'scorecard_context' => array( 'shell_exclusions' => $exclusions ) ),
+		) )['checks']['shared_shell'];
+		$expected_missing = 2 === count( $excluded_areas ) ? array( 'page-stray' ) : array( 'page-excluded', 'page-stray' );
+		scorecard_assert( $expected_missing === $shell['measured']['templates_missing_shell'], 'Import honors only area-specific shell exclusions' );
+		scorecard_assert( 'fail' === $shell['status'], 'Unexcluded shell-less template still fails' );
+	}
+	unlink( $dir . '/templates/page-stray.html' );
+	$shell = Static_Site_Importer_Block_Theme_Scorecard::from_import( array(
+		'materialization_receipt' => array( 'theme' => array( 'dir' => $dir ), 'scorecard_context' => array( 'shell_exclusions' => array( 'header' => array( 'page-excluded' ), 'footer' => array( 'page-excluded' ) ) ) ),
+	) )['checks']['shared_shell'];
+	scorecard_assert( 'pass' === $shell['status'], 'Excluded shell-less template passes' );
 	$good = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', $routes, $context );
 	foreach ( $good['checks'] as $name => $check ) { scorecard_assert( 'pass' === $check['status'], 'Good theme: ' . $name ); }
 	scorecard_assert( 1 === $good['checks']['navigation']['measured']['navigation_blocks_with_ref'], 'Navigation in part measured once' );
