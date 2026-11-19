@@ -1248,6 +1248,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_options' ) ) {
 			'remove_default_content'       => ! isset( $assoc_args['keep-default-content'] ),
 			'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
 			'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
+			'allow_omitted_pages'          => isset( $assoc_args['allow-omitted-pages'] ),
 			'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
 			'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
@@ -1423,6 +1424,7 @@ if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
 			'semantic_parity_failure'        => 'semantic_parity_failure_count',
 			'unsafe_layout_constraint'       => 'unsafe_layout_constraint_count',
 			'dropped_artifact_files'         => 'omitted_file_count',
+			'page_compile_omitted'           => 'omitted_page_count',
 			'visual_parity_mismatch'         => 'visual_parity_failure_count',
 		);
 		$count_of      = static function ( array $keys ) use ( $containers ): ?int {
@@ -2349,6 +2351,7 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 				'overwrite'                            => ! isset( $assoc_args['no-overwrite'] ),
 				'fail_on_quality'                      => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'allow_omitted_pages'                  => isset( $assoc_args['allow-omitted-pages'] ),
 				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
 			$input = static_site_importer_cli_apply_client_script_args( $input, $assoc_args );

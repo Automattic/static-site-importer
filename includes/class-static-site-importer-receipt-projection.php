@@ -128,6 +128,7 @@ class Static_Site_Importer_Receipt_Projection {
 				max( 0, (int) $args['captured_interaction_state_count'] )
 			);
 		}
+		$omitted_paths = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_page_paths( $diagnostics, array_column( $plan['pages'], 'source_path' ) );
 		require_once __DIR__ . '/class-static-site-importer-woo-storefront-readiness.php';
 		$storefront                = Static_Site_Importer_Woo_Storefront_Readiness::project( $lifecycle, $entities, $receipt );
 		$report                    = Static_Site_Importer_Import_Report::from_array(
@@ -181,8 +182,12 @@ class Static_Site_Importer_Receipt_Projection {
 				),
 				'source_documents'                 => array(
 					'source'                       => 'blocks_engine',
-					'total_count'                  => count( $plan['pages'] ),
+					// Omitted pages are source documents too: count what the
+					// artifact held, not only what Blocks Engine compiled.
+					'total_count'                  => count( $plan['pages'] ) + count( $omitted_paths ),
 					'blocks_engine_document_count' => count( $plan['pages'] ),
+					'omitted_document_count'       => count( $omitted_paths ),
+					'omitted_documents'            => $omitted_paths,
 					'blocks_engine_documents'      => array_map(
 						static fn( array $page ): array => array(
 							'source_path' => $page['source_path'],
@@ -192,7 +197,7 @@ class Static_Site_Importer_Receipt_Projection {
 						$plan['pages']
 					),
 					'counts_by_format'             => array(
-						'html'     => count( $plan['pages'] ),
+						'html'     => count( $plan['pages'] ) + count( $omitted_paths ),
 						'markdown' => 0,
 						'mdx'      => 0,
 					),

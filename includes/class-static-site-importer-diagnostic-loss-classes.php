@@ -559,6 +559,29 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	}
 
 	/**
+	 * Distinct source paths of pages omitted from a compiled site plan.
+	 *
+	 * An omitted page is still a source document: it existed in the artifact
+	 * and is absent from the import. Paths the plan still compiled are
+	 * excluded so a page is never counted twice.
+	 *
+	 * @param array<int,mixed>  $diagnostics    Plan diagnostic rows.
+	 * @param array<int,string> $compiled_paths Source paths present in the plan.
+	 * @return array<int,string>
+	 */
+	public static function omitted_page_paths( array $diagnostics, array $compiled_paths = array() ): array {
+		$paths = array();
+		foreach ( self::omitted_pages( $diagnostics ) as $diagnostic ) {
+			$path = (string) ( $diagnostic['source_path'] ?? $diagnostic['location'] ?? '' );
+			if ( '' !== $path && ! in_array( $path, $compiled_paths, true ) ) {
+				$paths[ $path ] = true;
+			}
+		}
+
+		return array_keys( $paths );
+	}
+
+	/**
 	 * The reported-loss registry entry for a degrade code.
 	 *
 	 * @param array<string,mixed> $diagnostic Diagnostic row.

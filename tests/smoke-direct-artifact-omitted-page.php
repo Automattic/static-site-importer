@@ -6,8 +6,10 @@
  * representability limit and records a `page_compile_omitted` warning in the
  * WordPress site plan. The import must keep the remaining pages and carry the
  * omission as a finding in the stored report and compact summary, on both the
- * in-process and the per-page worker compile paths. An omitted entrypoint
- * stays fail-closed.
+ * in-process and the per-page worker compile paths. The omitted page is still
+ * a source document and absent content, so the quality gate fails with
+ * `page_compile_omitted` unless the caller sets `allow_omitted_pages`. An
+ * omitted entrypoint stays fail-closed.
  *
  * Run from the repository root:
  * php tests/smoke-direct-artifact-omitted-page.php
@@ -189,7 +191,7 @@ $use_policy = static function ( array $overrides ): void {
 		static fn ( array $policy ): array => array_merge( $policy, $overrides ),
 	);
 };
-$verify_omission = static function ( array $result, string $label ) use ( $assert ): void {
+$verify_omission = static function ( array $result, string $label, bool $allow_omitted_pages = false ) use ( $assert ): void {
 	$import  = end( $GLOBALS['ssi_omitted_imports'] );
 	$plan    = is_array( $import ) ? $import['plan'] : array();
 	$stored  = is_array( $import ) ? json_decode( (string) file_get_contents( $import['report_path'] ), true ) : array();
@@ -207,9 +209,20 @@ $verify_omission = static function ( array $result, string $label ) use ( $asser
 	$assert( 'page' === ( $finding['unit'] ?? '' ) && 'blocks-engine' === ( $finding['owning_layer'] ?? '' ) && 'warning' === ( $finding['severity'] ?? '' ), "$label: the stored finding is a blocks-engine page-unit warning" );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $finding['loss_class'] ?? '' ), "$label: the stored finding carries the page_compile_omitted loss class" );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS === ( $finding['acceptability'] ?? '' ) && 'website/pricing.html' === ( $finding['location'] ?? '' ), "$label: the stored finding is an accepted, reported loss at its page" );
-	$assert( 2 === ( $stored['source_documents']['total_count'] ?? 0 ), "$label: the stored report counts two source documents" );
+	// The omitted page is still a source document: three in the artifact, two compiled.
+	$assert( 3 === ( $stored['source_documents']['total_count'] ?? 0 ) && 2 === ( $stored['source_documents']['blocks_engine_document_count'] ?? 0 ), "$label: the stored report counts three source documents, two compiled" );
+	$assert( array( 'website/pricing.html' ) === ( $stored['source_documents']['omitted_documents'] ?? null ) && 3 === ( $summary['source_document_count'] ?? 0 ), "$label: the stored report names the omitted source document" );
 
-	$assert( 'completed' === ( $summary['status'] ?? '' ) && true === ( $summary['quality_pass'] ?? false ) && false === ( $summary['fail_import'] ?? true ), "$label: the compact summary reports a passing completed import" );
+	// An absent page is content loss: the gate fails unless the caller opts in to a partial site.
+	$validation = $stored['import_validation_result'] ?? array();
+	$assert( 1 === ( $stored['quality']['omitted_page_count'] ?? 0 ) && 1 === ( $validation['counts']['omitted_pages'] ?? 0 ) && 3 === ( $validation['counts']['source_documents'] ?? 0 ), "$label: quality and validation counts carry the omitted page" );
+	$assert( 'reported' === ( $validation['quality_gates']['omitted_pages']['status'] ?? '' ) && 1 === count( $validation['quality_gates']['omitted_pages']['diagnostic_refs'] ?? array() ), "$label: the omitted_pages gate reports the omission with its diagnostic ref" );
+	if ( $allow_omitted_pages ) {
+		$assert( 'completed' === ( $summary['status'] ?? '' ) && true === ( $summary['quality_pass'] ?? false ) && false === ( $summary['fail_import'] ?? true ) && array() === ( $summary['failure_reasons'] ?? null ), "$label: allow_omitted_pages keeps a partial import passing" );
+	} else {
+		$assert( 'completed' === ( $summary['status'] ?? '' ) && false === ( $summary['quality_pass'] ?? true ) && false === ( $summary['fail_import'] ?? true ), "$label: the compact summary reports a completed import that fails the quality gate" );
+		$assert( array( 'page_compile_omitted' ) === ( $summary['failure_reasons'] ?? null ) && array( 'page_compile_omitted' ) === ( $validation['failure_reasons'] ?? null ), "$label: the gate fails with page_compile_omitted" );
+	}
 	$assert( 1 === ( $summary['loss_class_summary'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), "$label: the compact summary counts the omission by loss class" );
 	$assert( 1 === ( $summary['omitted_page_count'] ?? 0 ) && 1 === ( $summary['loss_counts'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), "$label: the compact summary counts the omitted page and the loss" );
 	$compact = array_values( array_filter( $summary['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $row['loss_class'] ?? '' ) ) );
@@ -223,6 +236,11 @@ $verify_omission = static function ( array $result, string $label ) use ( $asser
 $throw_on( 'website/pricing.html' );
 $use_policy( array( 'compile_in_process_pages' => 1 ) );
 $verify_omission( $drive( $input() ), 'in-process' );
+// A caller that explicitly accepts a partial site keeps the old passing verdict.
+$verify_omission( $drive( array_merge( $input(), array( 'allow_omitted_pages' => true ) ) ), 'in-process opt-in', true );
+// A caller that enforces the gate refuses the partial site.
+$enforced = $drive( array_merge( $input(), array( 'fail_on_quality' => true ) ) );
+$assert( true === ( $enforced['result']['import_report_summary']['fail_import'] ?? null ) && 'failed' === ( $enforced['result']['import_report_summary']['status'] ?? '' ), 'fail_on_quality: an omitted page fails the import' );
 
 // Per-page compile workers publish the omitting receipt; the coordinator composes it.
 $worker_calls = 0;
@@ -280,6 +298,8 @@ $assert( microtime( true ) - $started < 15, 'stalled: finalizes before the impor
 $assert( ! empty( $stalled['response']['success'] ) && 2 === count( $stalled['response']['result']['pages'] ?? array() ), 'stalled: keeps two of three pages' );
 $evidence = wp_json_encode( $stalled );
 $assert( str_contains( $evidence, 'compile_worker_stalled' ) && str_contains( $evidence, 'pricing.html' ) && str_contains( $evidence, 'stuck pricing fixture' ), 'stalled: receipt names the page and includes stderr' );
+$stalled_summary = $stalled['response']['result']['import_report_summary'] ?? array();
+$assert( false === ( $stalled_summary['quality_pass'] ?? true ) && in_array( 'page_compile_omitted', $stalled_summary['failure_reasons'] ?? array(), true ) && 3 === ( $stalled_summary['source_document_count'] ?? 0 ), 'stalled: a page the stalled worker never compiled fails the gate and stays a source document' );
 
 // A stalled multi-page shard retains receipts published before the stall.
 $use_policy( array(

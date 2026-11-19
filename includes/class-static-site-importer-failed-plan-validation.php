@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-import-report.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
+}
 
 final class Static_Site_Importer_Failed_Plan_Validation {
 
@@ -116,13 +119,16 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 
 	/** @return array<string,mixed> */
 	private static function source_documents( array $plan ): array {
-		$pages = isset( $plan['pages'] ) && is_array( $plan['pages'] ) ? $plan['pages'] : array();
+		$pages   = isset( $plan['pages'] ) && is_array( $plan['pages'] ) ? $plan['pages'] : array();
+		$omitted = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_page_paths( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), array_column( $pages, 'source_path' ) );
 		return array(
 			'source'                       => 'blocks_engine',
-			'total_count'                  => count( $pages ),
+			'total_count'                  => count( $pages ) + count( $omitted ),
 			'blocks_engine_document_count' => count( $pages ),
+			'omitted_document_count'       => count( $omitted ),
+			'omitted_documents'            => $omitted,
 			'counts_by_format'             => array(
-				'html'     => count( $pages ),
+				'html'     => count( $pages ) + count( $omitted ),
 				'markdown' => 0,
 				'mdx'      => 0,
 			),

@@ -55,6 +55,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			$counts[ $name ] = count( $targets );
 		}
 		$counts['omitted_artifact_files'] = (int) ( $quality['omitted_file_count'] ?? 0 );
+		$counts['omitted_pages']          = (int) ( $quality['omitted_page_count'] ?? 0 );
 		$counts['visual_parity_failures'] = (int) ( $quality['visual_parity_failure_count'] ?? 0 );
 		return $counts;
 	}
@@ -234,6 +235,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'semantic_parity'                    => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
 				'unsafe_layout_constraints'          => self::validation_gate( 'unsafe_layout_constraints', (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ), $quality ),
 				'omitted_artifact_files'             => self::validation_gate( 'omitted_artifact_files', (int) ( $quality['omitted_file_count'] ?? 0 ), $quality ),
+				'omitted_pages'                      => self::validation_gate( 'omitted_pages', (int) ( $quality['omitted_page_count'] ?? 0 ), $quality ),
 				'visual_parity'                      => array(
 					'status'          => (string) ( $report['visual_fidelity']['status'] ?? 'requires_runtime_visual_parity_check' ),
 					'owner'           => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'codebox_runtime' ),
@@ -1489,7 +1491,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'loss_class_summary'                      => Static_Site_Importer_Diagnostic_Loss_Classes::counts( $diagnostics ),
 			'loss_count'                              => array_sum( Static_Site_Importer_Diagnostic_Loss_Classes::loss_counts( $diagnostics ) ),
 			'loss_counts'                             => Static_Site_Importer_Diagnostic_Loss_Classes::loss_counts( $diagnostics ),
-			'omitted_page_count'                      => count( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $diagnostics ) ),
+			'omitted_page_count'                      => count( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_page_paths( $diagnostics ) ),
 			'warning_summaries'                       => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'warning' ),
 			'error_summaries'                         => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
 			'diagnostics'                             => self::compact_import_report_diagnostics( $diagnostics ),
@@ -1573,6 +1575,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity'                    => 'semantic_parity_failure_count',
 			'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
 			'omitted_artifact_files'             => 'omitted_file_count',
+			'omitted_pages'                      => 'omitted_page_count',
 			'visual_parity'                      => 'visual_parity_failure_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
