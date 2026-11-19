@@ -204,7 +204,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			$diagnostic['loss_class']       = $loss_class;
 			$diagnostic['diagnostic_class'] = $diagnostic['loss_class'];
 			$diagnostic['repair_class']     = $diagnostic['repair_mode'];
-			$diagnostic['acceptability']    = Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $diagnostic['loss_class'] );
+			$diagnostic['acceptability']    = Static_Site_Importer_Diagnostic_Loss_Classes::finding_acceptability( $diagnostic['loss_class'], $row );
 			$source_diagnostic              = self::source_diagnostic_identity( $row, $diagnostic );
 			if ( ! empty( $source_diagnostic ) ) {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;

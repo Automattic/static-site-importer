@@ -658,7 +658,10 @@ final class Static_Site_Importer_Quality_Gates {
 	 * quality count excludes a form after a completed receipt proves that exact
 	 * source fallback was replaced by the provider's persisted block markup.
 	 * A provider decline does not resolve a form fallback. The fallback remains
-	 * unresolved until a completed receipt proves provider replacement.
+	 * unresolved until a completed receipt proves provider replacement. Every
+	 * unresolved row names a machine-readable `reason`, and a form finding's
+	 * `fallback_resolution.gate_admission` records the gate verdict its report
+	 * acceptability follows.
 	 *
 	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
@@ -763,9 +766,11 @@ final class Static_Site_Importer_Quality_Gates {
 			}
 			$receipts_by_source_hash[ $source_hash_key ] = $receipt;
 		}
-		$resolved    = 0;
-		$resolutions = array();
-		$diagnostics = $report->diagnostics();
+		$resolved        = 0;
+		$resolutions     = array();
+		$diagnostics     = $report->diagnostics();
+		$decline_index   = self::form_decline_index( $diagnostics );
+		$accepted_places = self::accepted_fallback_placements( is_array( $quality['fallbacks'] ?? null ) ? $quality['fallbacks'] : array() );
 		foreach ( $diagnostics as $index => $diagnostic ) {
 			$choice_submission = is_array( $diagnostic ) && 'choice_submission' === ( $diagnostic['form_intent'] ?? '' ) && 'form' === ( $diagnostic['kind'] ?? '' ) && 'preserved_runtime_island' === ( $diagnostic['code'] ?? '' );
 			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && ( $choice_submission || in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) ) {
@@ -831,26 +836,39 @@ final class Static_Site_Importer_Quality_Gates {
 			if ( ! $resolved_by_provider && Static_Site_Importer_Form_Fallback_Contract::is_add_to_cart_fallback( $diagnostic ) && in_array( $binding_reason, array( 'ambiguous_page_product', 'anchor_not_in_page' ), true ) ) {
 				$reason = $binding_reason;
 			}
+			$placement = $source_path . "\n" . (string) ( $diagnostic['selector'] ?? '' );
+			$evidence  = array();
+			if ( ! $resolved_by_provider && '' === $reason ) {
+				list( $reason, $evidence ) = self::unresolved_form_reason( $placement, $receipt, $unrouted_unknown, $decline_index );
+			}
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
 			$diagnostic['fallback_resolution']              = array(
-				'source_state' => 'detected',
-				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
-				'reason'       => $reason,
-				'receipt'      => $receipt,
+				'source_state'   => 'detected',
+				'state'          => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'         => $reason,
+				'receipt'        => $receipt,
+				// The gate verdict for this finding; report acceptability follows it.
+				'gate_admission' => $resolved_by_provider ? 'resolved_by_provider' : ( isset( $accepted_places[ $placement ] ) ? 'accepted_preserved_runtime_island' : 'unsupported' ),
 			);
-			$diagnostics[ $index ]                          = $diagnostic;
-			if ( $resolved_by_provider ) {
-				++$resolved;
-			}
-			$resolutions[] = array(
+
+			$resolution = array(
 				'fallback_reconciliation_identity' => $identity,
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
 				'reason'                           => $reason,
 				'receipt'                          => $receipt,
 			);
+			if ( array() !== $evidence ) {
+				$diagnostic['fallback_resolution']['evidence'] = $evidence;
+				$resolution['evidence']                        = $evidence;
+			}
+			$diagnostics[ $index ] = $diagnostic;
+			if ( $resolved_by_provider ) {
+				++$resolved;
+			}
+			$resolutions[] = $resolution;
 		}
 
 		$report->set_diagnostics( $diagnostics );
@@ -878,11 +896,14 @@ final class Static_Site_Importer_Quality_Gates {
 				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
 			}
 
+			$reason = $resolved_by_provider ? '' : ( array() === $receipt ? 'no_provider_entity' : 'provider_replacement_not_persisted' );
+
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
 			$diagnostic['fallback_resolution']              = array(
 				'source_state' => 'detected',
 				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'       => $reason,
 				'receipt'      => $receipt,
 			);
 			$report->replace_diagnostic( $index, $diagnostic );
@@ -893,6 +914,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'fallback_reconciliation_identity' => $identity,
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'                           => $reason,
 				'receipt'                          => $receipt,
 			);
 		}
@@ -930,12 +952,14 @@ final class Static_Site_Importer_Quality_Gates {
 			$resolved_by_provider = array() !== $receipt;
 			$identity             = $resolved_by_provider ? (string) ( $receipt['fallback_reconciliation_identity'] ?? '' ) : '';
 			$fallback_hash        = $resolved_by_provider ? (string) ( $receipt['fallback_hash'] ?? '' ) : '';
+			$reason               = $resolved_by_provider ? '' : 'controls_outside_resolved_product_grid';
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
 			$diagnostic['fallback_resolution']              = array(
 				'source_state' => 'detected',
 				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'       => $reason,
 				'receipt'      => $resolved_by_provider ? $receipt : array(),
 			);
 			$report->replace_diagnostic( $index, $diagnostic );
@@ -946,6 +970,7 @@ final class Static_Site_Importer_Quality_Gates {
 				'fallback_reconciliation_identity' => $identity,
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'reason'                           => $reason,
 				'receipt'                          => $resolved_by_provider ? $receipt : array(),
 			);
 		}
@@ -959,6 +984,109 @@ final class Static_Site_Importer_Quality_Gates {
 			'resolutions'               => $resolutions,
 		);
 		$report['fallback_reconciliation'] = $report['quality_resolutions'];
+	}
+
+	/**
+	 * Index producer and provider form declines by source placement.
+	 *
+	 * @param array<int,mixed> $diagnostics Report diagnostics.
+	 * @return array<string,array<string,array<string,mixed>>> Decline rows keyed by `source_path\nselector`, then by family.
+	 */
+	private static function form_decline_index( array $diagnostics ): array {
+		$index = array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$codes  = array( $diagnostic['code'] ?? '', $diagnostic['diagnostic_code'] ?? '', $diagnostic['reason_code'] ?? '' );
+			$family = '';
+			if ( in_array( 'runtime_form_declaration_declined', $codes, true ) ) {
+				$family = 'producer';
+			} elseif ( 'provider_entity_declined' === ( $diagnostic['code'] ?? '' ) && in_array( $diagnostic['entity_type'] ?? 'form', array( '', 'form' ), true ) ) {
+				$family = 'provider';
+			}
+			$key = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) ) . "\n" . (string) ( $diagnostic['selector'] ?? '' );
+			if ( '' !== $family && ! isset( $index[ $key ][ $family ] ) ) {
+				$index[ $key ][ $family ] = $diagnostic;
+			}
+		}
+		return $index;
+	}
+
+	/**
+	 * Placements of plan fallback rows the gate admits as preserved runtime islands.
+	 *
+	 * @param array<int,mixed> $fallbacks Site plan quality fallback rows.
+	 * @return array<string,true> Keyed by `source_path\nselector`.
+	 */
+	private static function accepted_fallback_placements( array $fallbacks ): array {
+		$placements = array();
+		foreach ( $fallbacks as $fallback ) {
+			if ( is_array( $fallback ) && self::is_accepted_preserved_runtime_island( $fallback ) ) {
+				$placements[ Static_Site_Importer_Diagnostic_Projection::first_scalar( $fallback, array( 'source_path', 'source' ) ) . "\n" . (string) ( $fallback['selector'] ?? '' ) ] = true;
+			}
+		}
+		return $placements;
+	}
+
+	/**
+	 * Name why a form fallback stayed unresolved, with the evidence it rests on.
+	 *
+	 * A producer decline wins: the form never became an entity, so no provider
+	 * saw it. Otherwise a receipt that failed persistence checks, a provider
+	 * decline, or the absence of any provider entity explains the finding.
+	 *
+	 * @param string                                         $placement        `source_path\nselector` of the finding.
+	 * @param array<string,mixed>                            $receipt          Candidate receipt that did not resolve it.
+	 * @param bool                                           $unrouted_unknown Whether the finding has no provider route.
+	 * @param array<string,array<string,array<string,mixed>>> $decline_index    Declines by placement.
+	 * @return array{0:string,1:array<string,mixed>}
+	 */
+	private static function unresolved_form_reason( string $placement, array $receipt, bool $unrouted_unknown, array $decline_index ): array {
+		$producer = $decline_index[ $placement ]['producer'] ?? array();
+		if ( array() !== $producer ) {
+			return array(
+				'producer_declined_declaration',
+				array_filter(
+					array(
+						'diagnostic_code' => 'runtime_form_declaration_declined',
+						'failed_check'    => (string) ( $producer['failed_check'] ?? $producer['context']['failed_check'] ?? '' ),
+						'diagnostic_id'   => (string) ( $producer['id'] ?? '' ),
+					),
+					static fn( string $value ): bool => '' !== $value
+				),
+			);
+		}
+		if ( array() !== $receipt ) {
+			return array( 'provider_replacement_not_persisted', array() );
+		}
+		$provider = $decline_index[ $placement ]['provider'] ?? array();
+		if ( array() !== $provider ) {
+			$provider_reason = (string) ( $provider['reason_code'] ?? '' );
+			$evidence        = array_filter(
+				array(
+					'provider'             => (string) ( $provider['provider'] ?? '' ),
+					'provider_reason_code' => $provider_reason,
+					'diagnostic_id'        => (string) ( $provider['id'] ?? '' ),
+				),
+				static fn( string $value ): bool => '' !== $value
+			);
+			if ( 'provider_unavailable' === $provider_reason ) {
+				return array( 'provider_unavailable', $evidence );
+			}
+			$losses = array();
+			foreach ( is_array( $provider['form_receipt_unaccepted_losses'] ?? null ) ? $provider['form_receipt_unaccepted_losses'] : array() as $loss ) {
+				if ( is_array( $loss ) && is_string( $loss['reason_code'] ?? null ) && '' !== $loss['reason_code'] ) {
+					$losses[ $loss['reason_code'] ] = true;
+				}
+			}
+			if ( array() !== $losses ) {
+				$evidence['loss_reason_codes'] = array_keys( $losses );
+			}
+			return array( 'provider_declined', $evidence );
+		}
+
+		return array( $unrouted_unknown ? 'no_provider_route' : 'no_provider_entity', array() );
 	}
 
 	/** @param array<string,mixed> $fallback */

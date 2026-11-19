@@ -900,6 +900,60 @@ $assert( 2 === count( $declined_form_rows ) && 'acceptable_preservation' !== ( $
 $assert( 'preserved_runtime_island' === ( $declined_form_rows[1]['loss_class'] ?? '' ), 'provider-decline-diagnostic-retains-decline-classification' );
 $assert( 1 === ( Static_Site_Importer_Diagnostic_Loss_Classes::counts( $declined_form_report->diagnostics() )['unsupported_loss'] ?? -1 ), 'declined-form-fallback-remains-unsupported-loss' );
 
+// Every unresolved form fallback names why, and its acceptability agrees with the gate.
+$unresolved_form_identity = hash( 'sha256', 'unresolved-form' );
+$unresolved_form          = array_merge(
+	$declined_form_fallback,
+	array(
+		'loss_class'               => 'preserved_runtime_island',
+		'form_intent'              => 'contact',
+		'source_fallback_identity' => $unresolved_form_identity,
+	)
+);
+$form_placement           = array(
+	'source_path' => 'website/index.html',
+	'selector'    => 'form.contact',
+);
+$accepted_island_row      = $form_placement + array(
+	'id'                    => 'accepted-form-island',
+	'type'                  => 'unsupported_html_fallback',
+	'loss_class'            => 'preserved_runtime_island',
+	'acceptability'         => 'acceptable_preservation',
+	'preservation_strategy' => 'fallback_metadata_with_readable_blocks',
+	'runtime_requirement'   => 'server_or_client_form_handler',
+	'materialization_path'  => 'preserved_runtime_island',
+	'reason_code'           => 'html_form_fallback',
+	'source_html_preview'   => $declined_form_html,
+);
+$unresolved_cases         = array(
+	'producer-decline'   => array( array( $form_placement + array( 'code' => 'runtime_form_declaration_declined', 'reason_code' => 'runtime_form_declaration_declined', 'failed_check' => 'control_topology_truncated' ) ), array(), null, 'producer_declined_declaration', array( 'failed_check' => 'control_topology_truncated' ) ),
+	'provider-decline'   => array( array( array_merge( $provider_form_decline, array( 'form_receipt_unaccepted_losses' => array( array( 'reason_code' => 'provider_wrapper_layout_unrepresentable' ) ) ) ) ), array(), null, 'provider_declined', array( 'provider_reason_code' => 'form_receipt_loss_unaccepted', 'loss_reason_codes' => array( 'provider_wrapper_layout_unrepresentable' ) ) ),
+	'provider-unavail'   => array( array( array_merge( $provider_form_decline, array( 'reason_code' => 'provider_unavailable' ) ) ), array(), null, 'provider_unavailable', array( 'provider' => 'jetpack' ) ),
+	'no-entity'          => array( array(), array(), null, 'no_provider_entity', array() ),
+	'not-persisted'      => array( array(), array( array( 'status' => 'completed', 'role' => 'form', 'provider' => 'jetpack', 'selector' => 'form.contact', 'source_path' => 'website/index.html', 'fallback_reconciliation_identity' => $unresolved_form_identity ) ), null, 'provider_replacement_not_persisted', array() ),
+	'gate-admitted'      => array( array(), array(), $accepted_island_row, 'no_provider_entity', array() ),
+);
+foreach ( $unresolved_cases as $label => list( $extra_diagnostics, $bindings, $plan_row, $expected_reason, $expected_evidence ) ) {
+	$case_report  = Static_Site_Importer_Import_Report::from_array(
+		array(
+			'quality'                 => array(
+				'fallback_count' => 1,
+				'fallbacks'      => array( $plan_row ?? array( 'source' => 'website/index.html', 'selector' => 'form.contact', 'type' => 'html', 'html' => $declined_form_html ) ),
+			),
+			'diagnostics'             => array_merge( array( $unresolved_form ), $extra_diagnostics ),
+			'materialization_receipt' => array( 'completed' => array( 'runtime_declarations' => array( 'entity_bindings' => $bindings ) ) ),
+		)
+	);
+	$case_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $case_report, array( 'fail_on_quality' => true ) );
+	$rows         = $case_report['fallback_reconciliation']['resolutions'] ?? array();
+	$finding      = array_values( array_filter( $case_report->diagnostics(), static fn( array $row ): bool => 'html_form_fallback' === ( $row['code'] ?? '' ) ) )[0] ?? array();
+	$admitted     = null !== $plan_row;
+	$assert( 1 === count( $rows ) && 'unresolved' === ( $rows[0]['state'] ?? '' ) && $expected_reason === ( $rows[0]['reason'] ?? '' ), 'unresolved-form-reason-' . $label, wp_json_encode( $rows ) );
+	$assert( array_intersect_key( $rows[0]['evidence'] ?? array(), $expected_evidence ) === $expected_evidence, 'unresolved-form-evidence-' . $label, wp_json_encode( $rows[0]['evidence'] ?? null ) );
+	$assert( ( $admitted ? 0 : 1 ) === $case_quality['unsupported_fallback_count'] && ( $admitted ? 1 : 0 ) === $case_quality['accepted_preserved_runtime_island_count'] && ! $admitted === $case_quality['fail_import'], 'unresolved-form-gate-unchanged-' . $label, wp_json_encode( $case_quality ) );
+	$assert( $admitted === ( 'acceptable_preservation' === ( $finding['acceptability'] ?? '' ) ), 'unresolved-form-acceptability-agrees-with-gate-' . $label, wp_json_encode( $finding['fallback_resolution'] ?? null ) );
+}
+
 $rating_form_html     = '<form class="feedback"><label>Rating</label><div class="flex gap-1 mt-1"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button></div><textarea required></textarea><button type="submit">Submit Feedback</button></form>';
 $rating_form_report   = Static_Site_Importer_Import_Report::from_array(
 	array(

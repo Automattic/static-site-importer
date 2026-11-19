@@ -854,6 +854,29 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	}
 
 	/**
+	 * Acceptability of one finding, agreeing with the quality gate's verdict.
+	 *
+	 * A fallback the gate counts as unsupported is not acceptable, whatever its
+	 * loss class; one the gate admits as a preserved runtime island is.
+	 *
+	 * @param string              $loss_class Loss class of the finding.
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return string
+	 */
+	public static function finding_acceptability( string $loss_class, array $diagnostic ): string {
+		$acceptability = self::acceptability( $loss_class );
+		$admission     = is_array( $diagnostic['fallback_resolution'] ?? null ) ? ( $diagnostic['fallback_resolution']['gate_admission'] ?? '' ) : '';
+		if ( 'unsupported' === $admission && in_array( $acceptability, array( self::ACCEPTABLE_CONVERSION, self::ACCEPTABLE_PRESERVATION ), true ) ) {
+			return self::UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT;
+		}
+		if ( 'accepted_preserved_runtime_island' === $admission ) {
+			return self::ACCEPTABLE_PRESERVATION;
+		}
+
+		return $acceptability;
+	}
+
+	/**
 	 * Stable class names.
 	 *
 	 * @return array<int,string>

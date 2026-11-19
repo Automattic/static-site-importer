@@ -8,7 +8,7 @@ import { coreHtmlFindings } from '../import-loop/core-html.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 
-test('import continues only for a preserved quality-failed preview', () => {
+test('import continues only when the capture client kept a capture', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'preview-import-'));
   try {
     const engine = path.join(dir, 'engine');
@@ -17,6 +17,7 @@ test('import continues only for a preserved quality-failed preview', () => {
     fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/bash
 case "$1 $2" in
   'auth token') echo example-token ;;
+  'api repos/Automattic/data-liberation-agent/releases?per_page=10') echo https://example.org/data-liberation.tgz ;;
   'api repos/Automattic/static-site-importer/releases?per_page=10') echo v-example ;;
   'release download') touch "\${@: -1}" ;;
   *) exit 1 ;;
@@ -40,16 +41,14 @@ if [[ "$1" == */gates/reimport.sh ]]; then
 fi
 exec /bin/bash "$@"
 `, { mode: 0o755 });
-    fs.writeFileSync(path.join(dir, 'studio'), `#!/bin/bash
-if [[ "$1 $2" == 'site list' ]]; then echo '[]'; exit 0; fi
-if [[ "$1" == create ]]; then
-  if [[ "$CREATE_CAPTURE" == yes ]]; then
-    mkdir -p "$3-source/example.org"
-    echo '{}' > "$3-source/example.org/capture-receipt.json"
-  fi
-  echo "$FAILURE"
-  exit 1
+    // The capture client may exit non-zero; only a kept capture lets the pass continue.
+    fs.writeFileSync(path.join(dir, 'npx'), `#!/bin/bash
+[[ "$3" == data-liberation && "$5" == --output ]] || exit 1
+if [[ "$CREATE_CAPTURE" == yes ]]; then
+  mkdir -p "$6/example.org"
+  echo '{}' > "$6/example.org/capture-receipt.json"
 fi
+echo static_site_importer_quality_failed
 exit 1
 `, { mode: 0o755 });
     const site = path.join(dir, 'loop-p2');
@@ -69,7 +68,7 @@ exit 1
       } catch { return false; }
     };
     const output = path.join(dir, 'output.json');
-    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), ENGINE_ROOT: engine, CREATE_CAPTURE: 'yes', FAILURE: 'static_site_importer_quality_failed' };
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBOY_STEP_OUTPUT: output, START_LOG: path.join(dir, 'starts'), ENGINE_ROOT: engine, CREATE_CAPTURE: 'yes' };
     let attempt = 0;
     const run = () => {
       const capture = path.join(dir, `capture-${attempt++}`);
@@ -86,9 +85,6 @@ exit 1
     assert.equal(alive(servers['other-p1']), true);
     process.kill(servers['other-p1']);
     env.CREATE_CAPTURE = 'no';
-    assert.notEqual(run().status, 0);
-    env.CREATE_CAPTURE = 'yes';
-    env.FAILURE = 'unrelated failure';
     assert.notEqual(run().status, 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

@@ -173,6 +173,7 @@ foreach ( array( 'unique', 'declared', 'ambiguous', 'unseeded', 'missing_anchor'
 		'unseeded' => 'no_seeded_product_for_page',
 		'missing_anchor' => 'anchor_not_in_page',
 		'not_persisted' => 'provider_replacement_not_persisted',
+		'other_controls', 'wrong_page', 'wrong_selector' => 'controls_outside_resolved_product_grid',
 		default => '',
 	};
 	check( $reason === ( $resolution['reason'] ?? '' ), $scenario . ': existing reason contract' );
