@@ -91,6 +91,7 @@ const line = {
   iteration: Number(args.iteration),
   minutes: started ? Math.round((Date.now() - started) / 60000) : null,
   blocker_count: now ? Object.keys(now).length : null,
+  solved: now ? Object.keys(now).length === 0 : null,
   occurrences: now ? Object.values(now).reduce((a, b) => a + b, 0) : null,
   blockers: now,
   ...(incomplete.length ? { incomplete } : {}),
@@ -123,7 +124,7 @@ fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
   '',
   `${triage?.url ?? ''} · ${line.at} · tools ${line.tools.slice(0, 12)} · ${line.minutes ?? '?'} min this pass · merged ${merged.length ? merged.join(' ') : 'none'}`,
   '',
-  line.blocker_count === 0 ? 'Solved: no blockers remain.' : '| Blocker | Tracked at | Last Cook |\n|---|---|---|\n' + rows.join('\n'),
+  line.blocker_count === 0 ? 'Solved: no blockers remain.' : triage?.continue === false && triage.excepted?.length ? `Unsolved, stopped: every remaining blocker is excepted (${triage.excepted.map((e) => e.issue_url).join(' ')}). Not a solved site; it needs guidance on those issues.\n\n| Blocker | Tracked at | Last Cook |\n|---|---|---|\n${rows.join('\n')}` : '| Blocker | Tracked at | Last Cook |\n|---|---|---|\n' + rows.join('\n'),
   '',
 ].join('\n'));
 const delta = previous?.occurrences != null && line.occurrences != null ? ` (${line.occurrences - previous.occurrences >= 0 ? '+' : ''}${line.occurrences - previous.occurrences})` : '';
