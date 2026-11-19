@@ -1156,6 +1156,15 @@
                     "diagnostic_code": "route_capture_failed"
                 }
             ],
+            "non_public_theme_file_count": null,
+            "literal_preset_color_count": 0,
+            "empty_asset_count": 0,
+            "unreferenced_engine_class_count": 0,
+            "unnamed_preset_count": 0,
+            "duplicate_preset_name_count": 0,
+            "unused_runtime_file_count": null,
+            "bootstrap_unit_without_feature_count": 0,
+            "engine_class_token_share": 0.4706,
             "block_theme_scorecard": {
                 "gating": false,
                 "status": "not_measured",

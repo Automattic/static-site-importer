@@ -94,12 +94,13 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_theme_runtime_preflight_failed' ), (string) ( $error['message'] ?? 'Theme runtime destination preflight failed.' ), $rejection );
 			}
 			$companion = array(
-				'status'          => 'theme_owned',
-				'owner'           => 'theme',
-				'owner_slug'      => $package['owner_slug'],
-				'block_names'     => $package['block_names'],
-				'runtime_scripts' => $package['runtime_scripts'],
-				'shipped_files'   => Static_Site_Importer_Generated_Runtime_Package::shipped_files( $package ),
+				'status'           => 'theme_owned',
+				'owner'            => 'theme',
+				'owner_slug'       => $package['owner_slug'],
+				'block_names'      => $package['block_names'],
+				'runtime_scripts'  => $package['runtime_scripts'],
+				'shipped_files'    => Static_Site_Importer_Generated_Runtime_Package::shipped_files( $package ),
+				'runtime_features' => Static_Site_Importer_Generated_Runtime_Package::used_features( $runtime_payload ),
 			);
 		} else {
 			require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';

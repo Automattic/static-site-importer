@@ -264,6 +264,7 @@
           "tests/smoke-companion-plugin.php",
           "tests/smoke-post-source-routes.php",
           "tests/smoke-runtime-package-usage.php",
+          "tests/smoke-theme-hygiene-quality-gate.php",
           "tests/smoke-companion-text-shadow-real-kses.php",
           "tests/smoke-compiler-file-limits.php",
           "tests/smoke-contact-layout-transformer.php",
