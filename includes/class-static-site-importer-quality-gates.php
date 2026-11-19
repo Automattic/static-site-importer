@@ -894,6 +894,7 @@ final class Static_Site_Importer_Quality_Gates {
 		// selector-scoped identity is the whole match. Every finding — resolved
 		// or unresolved — reports a resolution row, exactly like forms.
 		$resolved_grid_receipts = array();
+		$region_findings        = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
 			if ( ! is_array( $diagnostic ) || ! ( self::is_product_grid_fallback_diagnostic( $diagnostic ) || '' !== self::commerce_view_fallback_region( $diagnostic ) ) ) {
 				continue;
@@ -903,8 +904,22 @@ final class Static_Site_Importer_Quality_Gates {
 			$candidate_receipt                = '' === $identity ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
 			$receipt                          = is_array( $candidate_receipt ) ? $candidate_receipt : array();
 			$resolved_by_provider             = '' !== $identity && self::receipt_resolves_product_grid( $receipt, $identity, $source_path, $report, $shared_hashes );
+			$region_findings[ $index ]        = array( $diagnostic, $identity, $fallback_hash, $source_path, $receipt, $resolved_by_provider );
 			if ( $resolved_by_provider ) {
 				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
+			}
+		}
+		foreach ( $region_findings as $index => list( $diagnostic, $identity, $fallback_hash, $source_path, $receipt, $resolved_by_provider ) ) {
+			// A cart or checkout view inside a product card is replaced with the
+			// whole region of a resolved grid around it (the registry drops its
+			// own binding, see with_collection_subsumed_bindings()), so that
+			// grid's receipt proves it.
+			$view_selector = $resolved_by_provider || self::is_product_grid_fallback_diagnostic( $diagnostic ) ? '' : Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'container_selector' ) );
+			foreach ( '' === $view_selector ? array() : ( $resolved_grid_receipts[ $source_path ] ?? array() ) as $grid_selector => $grid_receipt ) {
+				if ( ! $resolved_by_provider && '' !== $grid_selector && str_starts_with( $view_selector, $grid_selector . ' > ' ) && ! in_array( $grid_receipt['role'] ?? '', array( 'commerce_cart', 'commerce_checkout' ), true ) ) {
+					$receipt              = $grid_receipt;
+					$resolved_by_provider = true;
+				}
 			}
 
 			$reason = $resolved_by_provider ? '' : ( array() === $receipt ? 'no_provider_entity' : 'provider_replacement_not_persisted' );

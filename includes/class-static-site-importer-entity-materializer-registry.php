@@ -2299,57 +2299,96 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$lifecycle['entities'][ $id ]['manifest'][ $collection ][ $index ]['bindings'] = $kept;
 			}
 		}
-		return self::with_collection_member_controls( $lifecycle, $range, $within );
+		return self::with_collection_subsumed_bindings( $lifecycle, $range, $within );
 	}
 
 	/**
-	 * A product grid whose cards mix purchase controls with link-only cards
-	 * declares a shared `commerce_collection` anchor for the link-only cards
-	 * and a `commerce_controls` anchor for each card's own controls. The
-	 * collection replaces its whole region with one native product block that
-	 * renders every member card with its own controls, so a product whose
-	 * controls lie inside that region joins the collection instead of claiming
-	 * a range the collection already replaces. Controls outside every
-	 * collection region keep their own binding.
+	 * A bound `commerce_collection` region becomes one native product block
+	 * that renders every member card whole, so it subsumes every other
+	 * provider binding that lies strictly inside it on the same page: a card's
+	 * own controls, a card's nested cart or quick-add view, or a smaller
+	 * collection. A product of the collection's own declaration joins the
+	 * collection (members are grouped per declaration, see block_bindings()),
+	 * so its card still renders with its own cart button. Any other binding,
+	 * from any declaration, is dropped because the region replacement already
+	 * removes the markup it anchored on. Only outermost regions own; a binding
+	 * outside every region, one that only partly overlaps a region, and one
+	 * that claims a region's exact range keep their claims, so preflight still
+	 * rejects real conflicts.
 	 *
 	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
 	 * @param callable            $range     Binding to its [source, start, end) page range.
 	 * @param callable            $within    Whether one range lies inside another.
 	 * @return array<string,mixed>
 	 */
-	private static function with_collection_member_controls( array $lifecycle, callable $range, callable $within ): array {
+	private static function with_collection_subsumed_bindings( array $lifecycle, callable $range, callable $within ): array {
+		$regions = array();
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			if ( 'products' !== ( $prepared['adapter']['entity_collection'] ?? '' ) || ! is_array( $prepared['manifest']['products'] ?? null ) ) {
 				continue;
 			}
-			// Members are grouped per declaration (see block_bindings()).
-			$regions = array();
 			foreach ( $prepared['manifest']['products'] as $product ) {
 				foreach ( is_array( $product ) && is_array( $product['bindings'] ?? null ) ? $product['bindings'] : array() as $binding ) {
 					$claim = is_array( $binding ) && 'commerce_collection' === ( $binding['role'] ?? '' ) ? $range( $binding ) : null;
 					if ( null !== $claim ) {
-						$regions[] = array( $claim, $binding );
+						$regions[] = array( $claim, $binding, (string) $id );
 					}
 				}
 			}
-			foreach ( array() === $regions ? array() : $prepared['manifest']['products'] as $index => $product ) {
-				if ( ! is_array( $product ) || ! is_array( $product['bindings'] ?? null ) ) {
-					continue;
-				}
-				$bindings = array();
-				foreach ( $product['bindings'] as $binding ) {
-					$claim = is_array( $binding ) && 'commerce_controls' === ( $binding['role'] ?? '' ) ? $range( $binding ) : null;
-					foreach ( null === $claim ? array() : $regions as $region ) {
-						if ( $claim !== $region[0] && $within( $claim, $region[0] ) ) {
-							$binding = in_array( $region[1], $product['bindings'], true ) || in_array( $region[1], $bindings, true ) ? null : $region[1];
-							break;
+		}
+		$strictly = static fn( array $inner, array $outer ): bool => $inner !== $outer && $within( $inner, $outer );
+		$owners   = array_values(
+			array_filter(
+				$regions,
+				static function ( array $region ) use ( $regions, $strictly ): bool {
+					foreach ( $regions as $outer ) {
+						if ( $strictly( $region[0], $outer[0] ) ) {
+							return false;
 						}
 					}
-					if ( null !== $binding ) {
-						$bindings[] = $binding;
+					return true;
+				}
+			)
+		);
+		foreach ( array() === $owners ? array() : $lifecycle['entities'] as $id => $prepared ) {
+			$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
+			if ( ! is_array( $prepared['manifest'][ $collection ] ?? null ) ) {
+				continue;
+			}
+			foreach ( $prepared['manifest'][ $collection ] as $index => $entity ) {
+				if ( ! is_array( $entity ) || ! is_array( $entity['bindings'] ?? null ) ) {
+					continue;
+				}
+				$joins   = 'products' === $collection;
+				$members = array();
+				foreach ( $joins ? $entity['bindings'] : array() as $binding ) {
+					$claim = is_array( $binding ) && 'commerce_collection' === ( $binding['role'] ?? '' ) ? $range( $binding ) : null;
+					if ( null !== $claim ) {
+						$members[ implode( "\n", $claim ) ] = true;
 					}
 				}
-				$lifecycle['entities'][ $id ]['manifest']['products'][ $index ]['bindings'] = $bindings;
+				$bindings = array();
+				foreach ( $entity['bindings'] as $binding ) {
+					$claim = is_array( $binding ) ? $range( $binding ) : null;
+					$owner = null;
+					foreach ( null === $claim ? array() : $owners as $candidate ) {
+						if ( $strictly( $claim, $candidate[0] ) && ( null === $owner || ( (string) $id === $candidate[2] && (string) $id !== $owner[2] ) ) ) {
+							$owner = $candidate;
+						}
+					}
+					if ( null === $owner ) {
+						$bindings[] = $binding;
+						continue;
+					}
+					// A member card's own binding becomes its membership in the
+					// enclosing collection, in its place and once per collection.
+					$key = implode( "\n", $owner[0] );
+					if ( $joins && (string) $id === $owner[2] && ! isset( $members[ $key ] ) ) {
+						$members[ $key ] = true;
+						$bindings[]      = $owner[1];
+					}
+				}
+				$lifecycle['entities'][ $id ]['manifest'][ $collection ][ $index ]['bindings'] = $bindings;
 			}
 		}
 		return $lifecycle;
