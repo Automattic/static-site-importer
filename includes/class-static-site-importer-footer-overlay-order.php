@@ -122,7 +122,12 @@ final class Static_Site_Importer_Footer_Overlay_Order {
 				'length' => strlen( $token['token'] ),
 			);
 			$parent    = $index->parent( $reference );
-			$siblings  = null === $parent ? $index->topLevel() : $index->children( $parent );
+			$siblings  = null === $parent ? $index->topLevel() : $index->children(
+				array(
+					'offset' => $parent['offset'],
+					'length' => $parent['length'],
+				)
+			);
 			$overlays  = array();
 			foreach ( $siblings as $sibling ) {
 				if ( $sibling['offset'] > $offset && isset( $openers[ $sibling['offset'] ] ) && self::is_fixed_block( $openers[ $sibling['offset'] ]['attributes'], $fixed ) ) {
@@ -159,7 +164,11 @@ final class Static_Site_Importer_Footer_Overlay_Order {
 		if ( ! is_array( $decoded ) || ! is_string( $decoded['className'] ?? null ) ) {
 			return false;
 		}
-		foreach ( preg_split( '/\s+/', trim( $decoded['className'] ) ) as $class ) {
+		$classes = preg_split( '/\s+/', trim( $decoded['className'] ) );
+		if ( false === $classes ) {
+			return false;
+		}
+		foreach ( $classes as $class ) {
 			if ( isset( $fixed[ $class ] ) ) {
 				return true;
 			}
@@ -199,7 +208,7 @@ final class Static_Site_Importer_Footer_Overlay_Order {
 				foreach ( explode( ',', $rule['prelude'] ) as $selector ) {
 					$selector = trim( $selector );
 					preg_match_all( '/\.((?:[A-Za-z_-]|\\\\.)(?:[\w-]|\\\\.)*)/', $selector, $classes );
-					$single = array() !== $classes[1] && 1 === count( array_unique( $classes[1] ) ) && $selector === str_repeat( '.' . $classes[1][0], count( $classes[1] ) );
+					$single = array() !== $classes[1] && 1 === count( array_unique( $classes[1] ) ) && str_repeat( '.' . $classes[1][0], count( $classes[1] ) ) === $selector;
 					if ( $is_fixed && $single && ! $rule['conditional'] && self::anchored( $declarations ) ) {
 						$fixed[ $classes[1][0] ] = true;
 					} elseif ( ! $is_fixed ) {
@@ -221,6 +230,9 @@ final class Static_Site_Importer_Footer_Overlay_Order {
 		foreach ( $declarations as $property => $value ) {
 			if ( 'inset' === $property ) {
 				$parts = preg_split( '/\s+/', trim( $value ) );
+				if ( false === $parts ) {
+					return false;
+				}
 				$parts = array( $parts[0], $parts[1] ?? $parts[0], $parts[2] ?? $parts[0], $parts[3] ?? $parts[1] ?? $parts[0] );
 				$edges = array_combine( array_keys( $edges ), $parts );
 			} elseif ( isset( $edges[ $property ] ) ) {
