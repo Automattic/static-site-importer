@@ -6,9 +6,8 @@ import { resolve, join } from 'node:path';
 import { createServer } from 'node:net';
 import { provisionWordPress } from '../lib/disposable-wordpress.mjs';
 
-// Unattachable or unretained social images cost one metadata field, not the
-// import; a source-origin reference that never resolved is still a fault.
-test('optional social image losses are reported; unresolved source-origin references fail', async () => {
+// Unattachable or unretained social images cost one metadata field, not the import.
+test('optional social image losses are reported, including unresolved source-origin references', async () => {
   const workDir = await mkdtemp(join(tmpdir(), 'ssi-social-'));
   const port = await new Promise(resolvePort => {
     const socket = createServer();
@@ -57,8 +56,13 @@ echo wp_json_encode(array('thumbnail' => $page ? (int) get_post_thumbnail_id($pa
     assert.equal(socialSvg.lost[0].source_path, 'website/index.html');
     assert.equal(socialSvg.lost[0].key, 'og:image');
     assert.match(socialSvg.lost[0].url, /\/media\/social\.svg$/);
-    const sourceOrigin = await run('social-source', 'https://studio.example/media/missing.jpg');
-    assert.equal(sourceOrigin.error, 'route_social_image_unresolved', JSON.stringify(sourceOrigin));
+    // Neither artifact bytes nor intake findings declare this same-origin image.
+    const missingUrl = 'https://studio.example/media/missing.jpg';
+    const sourceOrigin = await run('social-source', missingUrl);
+    assert.equal(sourceOrigin.status, 'completed', JSON.stringify(sourceOrigin));
+    assert.equal(sourceOrigin.error, null, JSON.stringify(sourceOrigin));
+    assert.equal(sourceOrigin.thumbnail, 0, 'an unresolved source image imports without a thumbnail');
+    assert.deepEqual(sourceOrigin.lost, [{ reason_code: 'route_social_image_not_retained', source_path: 'website/index.html', key: 'og:image', url: missingUrl }]);
     const omittedUrl = 'https://studio.example/default-og-image.png';
     const declaredLoss = await run('social-declared-loss', omittedUrl, [{
       path: 'website/source-findings.json',
