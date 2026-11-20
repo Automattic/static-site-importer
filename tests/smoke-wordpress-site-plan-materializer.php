@@ -945,6 +945,33 @@ $anonymous_author            = (int) ( $GLOBALS['ssi_plan_posts'][ $anonymous_id
 $assert( 'completed' === ( $anonymous_receipt['status'] ?? '' ) && $anonymous_author > 0 && false !== get_userdata( $anonymous_author ), 'import without a current user still stores a resolvable author rather than 0' );
 $GLOBALS['ssi_plan_user_id'] = 1;
 
+// A route whose declared source body renders nothing (content withheld behind
+// a login overlay the capture removed) arrives with empty content and Blocks
+// Engine's empty_source_body proof. It materializes as an empty page; the same
+// empty content without the proof still fails closed.
+$empty_body_shell = static fn( string $main ): string => '<html><body><header><nav><a href="index.html">Home</a> <a href="members.html">Members</a></nav></header><main>' . $main . '</main><footer><p>Footer</p></footer></body></html>';
+$empty_body_plan  = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'   => $empty_body_shell( '<h1>Home</h1>' ),
+			'about.html'   => $empty_body_shell( '<h1>About</h1>' ),
+			'members.html' => '<html><body class="blocked"><svg style="display:none"><defs></defs></svg><div id="root"></div></body></html>',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$empty_body_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $empty_body_plan, array( 'slug' => 'empty-source-body-plan' ) );
+$empty_body_page_id = (int) ( ( $empty_body_receipt['completed']['pages'] ?? array() )['members.html'] ?? 0 );
+$assert( 'completed' === ( $empty_body_receipt['status'] ?? '' ) && $empty_body_page_id > 0 && '' === (string) ( $GLOBALS['ssi_plan_posts'][ $empty_body_page_id ]['post_content'] ?? 'missing' ), 'a page with a proven empty source body materializes as an empty page' );
+$unproven_empty_plan = $empty_body_plan;
+foreach ( $unproven_empty_plan['pages'] as &$unproven_empty_page ) {
+	unset( $unproven_empty_page['empty_source_body'] );
+}
+unset( $unproven_empty_page );
+$unproven_empty_plan['plan_identity'] = WordPressSitePlan::planIdentity( $unproven_empty_plan );
+$unproven_empty_receipt               = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $unproven_empty_plan, array( 'slug' => 'unproven-empty-body-plan' ) );
+$assert( 'completed' !== ( $unproven_empty_receipt['status'] ?? '' ), 'empty page content without the empty-source-body proof still fails closed' );
+
 $unicode_title_plan = $plan;
 $unicode_title_plan['pages'][0]['document_metadata']['title'] = 'Services – Southern Multi Product ltd';
 $unicode_title_plan['plan_identity']                          = WordPressSitePlan::planIdentity( $unicode_title_plan );

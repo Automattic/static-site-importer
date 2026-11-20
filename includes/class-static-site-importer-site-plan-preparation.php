@@ -659,7 +659,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		self::mark_native_archive_routes( $state );
 		self::plan_synthetic_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
-			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
+			// Blocks Engine proves a source body that renders nothing with
+			// empty_source_body; that page keeps its empty content.
+			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || ( '' === trim( $page['resolved_block_markup'] ) && true !== ( $page['empty_source_body'] ?? null ) ) ) ) {
 				// ssi-error-class: representability:page
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
