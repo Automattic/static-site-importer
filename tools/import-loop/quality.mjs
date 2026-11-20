@@ -13,7 +13,7 @@
 // styles, is 1.5-36 KB across Twenty Twenty-Three to Twenty Twenty-Five, Frost,
 // Spiel, Raft, Spectra One, Ollie, Blockbase and Bricksy, and 85 KB for
 // Extendable: a developer expresses the design in theme.json and blocks.
-export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, literal_share: 0.1, theme_css_kb: 90 };
+export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, literal_share: 0.1, theme_css_kb: 90, unowned_style_share: 0.1 };
 
 // The stylesheets a rendered page loads, as `{ href, id, bytes }`: a theme
 // stylesheet file or a non-core inline <style> counts toward the theme's CSS.

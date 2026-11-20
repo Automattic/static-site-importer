@@ -23,6 +23,8 @@ const EDITABLE_TEXT = ':is([data-type="core/paragraph"], [data-type="core/headin
 // Each Replace probe saves the post and loads the frontend, so the probes are
 // bounded: a page with dozens of images must not dominate the whole run.
 const SAVED_IMAGE_PROBES = 5;
+// Blocks of each probed type (heading, paragraph, button, group) whose style controls are set.
+const BLOCK_CONTROL_PROBES = 3;
 
 export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) {
   const wp = wordpressRunner(site, wpCli);
@@ -179,6 +181,60 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
             }
           }
         }
+        // A block's own style controls must style it: set text color, font
+        // size and top padding on a few headings, paragraphs, buttons and
+        // groups through the editor, save, and require the front end to show
+        // all three on that block, with its visible text in that color. Import
+        // CSS that outranks block settings (a class rule on the block or on a
+        // span inside it) fails here, so the design is not editable even when
+        // the editor opens. Text inside a block with its own color setting
+        // keeps that setting. Each block that fails counts once.
+        await check('editor_block_controls', async () => {
+          const picked = await page.evaluate(({ per }) => {
+            const { select, dispatch } = window.wp.data;
+            // The block editor's own tree: in template mode the post's blocks
+            // sit under core/post-content, beside the template's inert blocks.
+            const be = select('core/block-editor');
+            const ids = be.getClientIdsWithDescendants();
+            const content = ids.find((id) => be.getBlockName(id) === 'core/post-content');
+            const all = ids.filter((id) => !content || be.getBlockParents(id).includes(content)).map((id) => be.getBlock(id));
+            const chosen = ['core/heading', 'core/paragraph', 'core/button', 'core/group'].flatMap((name) => all.filter((b) => b.name === name).slice(0, per));
+            return chosen.map((b, i) => {
+              const color = `#0b1c${(16 + i).toString(16)}`;
+              const style = b.attributes.style || {};
+              // As the inspector does: a custom value replaces the block's preset.
+              dispatch('core/block-editor').updateBlockAttributes(b.clientId, { textColor: undefined, fontSize: undefined, style: { ...style, color: { ...style.color, text: color }, typography: { ...style.typography, fontSize: '37px' }, spacing: { ...style.spacing, padding: { ...style.spacing?.padding, top: '23px' } } } });
+              return { name: b.name, className: b.attributes.className || '', color, rgb: `rgb(11, 28, ${16 + i})` };
+            });
+          }, { per: BLOCK_CONTROL_PROBES });
+          if (!picked.length) return;
+          await page.evaluate(async () => { await window.wp.data.dispatch('core/editor').savePost(); });
+          const front = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+          try {
+            await front.goto(url);
+            const failing = await front.evaluate((picked) => picked.map((p) => {
+              const rgb = (c) => { const m = c.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/); return m ? `rgb(${m.slice(1, 4).map((v) => Math.round(v * 255)).join(', ')})` : c.replace(/rgba\((\d+), (\d+), (\d+), 1\)/, 'rgb($1, $2, $3)'); };
+              const el = [...document.querySelectorAll('[style]')].find((n) => n.getAttribute('style').toLowerCase().includes(p.color));
+              if (!el) return { ...p, missing: ['rendered'] };
+              const cs = getComputedStyle(el);
+              const missing = [];
+              if (rgb(cs.color) !== p.rgb) missing.push(`color ${cs.color}`);
+              if (cs.fontSize !== '37px') missing.push(`font-size ${cs.fontSize}`);
+              if (cs.paddingTop !== '23px') missing.push(`padding-top ${cs.paddingTop}`);
+              const owned = (n) => /\bhas-[\w-]*color\b/.test(n.className || '') || /(^|;)\s*color\s*:/i.test(n.getAttribute('style') || '');
+              const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+              for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+                const host = t.parentElement;
+                if (!t.textContent.trim() || !host.getClientRects().length) continue;
+                let own = false;
+                for (let n = host; n && n !== el; n = n.parentElement) if (owned(n)) { own = true; break; }
+                if (!own && rgb(getComputedStyle(host).color) !== p.rgb) { missing.push(`text color ${getComputedStyle(host).color} on <${host.tagName.toLowerCase()} class="${host.className}">`); break; }
+              }
+              return missing.length ? { ...p, missing } : null;
+            }).filter(Boolean), picked);
+            if (failing.length) throw Object.assign(new Error(`${failing.length} of ${picked.length} blocks ignore their own style controls`), { evidence: { count: failing.length, probed: picked.length, failing: failing.map(({ name, className, missing }) => ({ name, className, missing })) } });
+          } finally { await front.close(); }
+        });
       } finally {
         const file = `${site}/.import-loop-restore-${ID}.html`;
         const { writeFileSync, unlinkSync } = await import('node:fs');
