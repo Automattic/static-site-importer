@@ -1945,7 +1945,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return $matches[0];
 			}
 			$is_local = (bool) preg_match( '~^[#?]~', $value );
-			$encode   = static function ( string $reference ) use ( $is_json ): string {
+			$encode   = static function ( string $reference ) use ( $is_json, $matches ): string {
+				if ( str_ends_with( $matches[1], '&quot;' ) ) {
+					// JSON inside an HTML attribute: keep its entity encoding.
+					return htmlspecialchars( $reference, ENT_NOQUOTES, 'UTF-8' );
+				}
 				if ( ! $is_json ) {
 					return $reference;
 				}
@@ -2009,6 +2013,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)(.*?)(\\\\u005c\\\\u0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)(.*?)(\\\\&quot;)/i',
 			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
 			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
 		) as $pattern ) {

@@ -142,7 +142,7 @@ $assert( str_contains( $stored, '/entity/88/' ), 'Cart stores the Woo page perma
 $assert( str_contains( $stored, '?s=field%20kit&post_type=product' ), 'Search is a local product search.' );
 $assert( null === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/products/not-field-kit', array( '/products/field-kit' => '/?p=42' ) ), 'Other handles do not match.' );
 // Data URL attributes can also contain flags; only URL-shaped values are links.
-foreach ( array( '"', "'", '\\"', '\\u0022', '\\u005cu0022' ) as $quote ) {
+foreach ( array( '"', "'", '\\"', '\\u0022', '\\u005cu0022', '\\u005c\\u0022', '\\&quot;' ) as $quote ) {
 	$fixture = '<product-info data-update-url="true" data-url="/products/x"><a href="/products/x">x</a></product-info>';
 	$fixture = str_replace( '"', $quote, $fixture );
 	$unresolved = array();
@@ -165,6 +165,22 @@ $relative   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_referenc
 $nested     = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '{"html":"\\u005cu003ca href=\\u005cu0022https://source.example/products/field-kit\\u005cu0022\\u005cu003e"}', array(), $unresolved, 'https://source.example/', array( '/products/field-kit' => '/?p=42' ) );
 $assert( str_contains( $nested, 'href=\\u005cu0022/?p=42\\u005cu0022' ), 'HTML escaped twice inside block attributes is rewritten.' );
 $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative routes preserve query and fragment.' );
+// A captured dialog keeps its opened panel as JSON in a data attribute, both in
+// the block comment and in the saved button markup.
+$panel_state = (string) json_encode( array( 'html' => '<div role="dialog"><a href="/index.html">Home</a><a href="/second/index.html?ref=menu&amp;copy=1#top">Second</a></div>' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+$panel_block = '<!-- wp:example/menu-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $panel_state ) ) ) ) . ' -->'
+	. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/menu-button -->';
+$unresolved  = array();
+$panel_block = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $panel_block, array( '/' => '/', '/second' => '/second-page/' ), $unresolved, 'https://source.example/', array(), '/index.html' );
+preg_match( '/^<!-- wp:example\/menu-button (\{.*?\}) -->/', $panel_block, $panel_comment );
+preg_match( '/data-blocks-engine-capture-dialog-panel-state="([^"]*)"/', $panel_block, $panel_markup );
+foreach ( array(
+	'block comment' => json_decode( (string) ( json_decode( $panel_comment[1] ?? '', true )['sourceAttributes'][0]['value'] ?? '' ), true ),
+	'saved markup'  => json_decode( html_entity_decode( $panel_markup[1] ?? '', ENT_QUOTES, 'UTF-8' ), true ),
+) as $panel_copy => $panel ) {
+	$assert( '<div role="dialog"><a href="/">Home</a><a href="/second-page/?ref=menu&amp;copy=1#top">Second</a></div>' === ( $panel['html'] ?? null ), 'Captured dialog panel links resolve to permalinks in the ' . $panel_copy . '.' );
+}
+$assert( array() === $unresolved, 'Captured dialog panel links leave nothing unresolved.' );
 $unresolved = array();
 foreach ( array(
 	'/oman\\u002d\\u002d-unterwegs/index.html' => '/oman---unterwegs',
