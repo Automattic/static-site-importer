@@ -265,7 +265,12 @@ export function collateralAtHead(item, pr, at) {
   return collaterals.get(key);
 }
 const collaterals = new Map();
-const collateralResult = (run) => ({ exit: run.status ?? 2, report: [run.stdout || '', run.stderr || ''] });
+// accept.mjs exits 1 only after printing its verdict ({"pass":false,…}). A
+// crash also exits 1 (node's uncaught error, a missing module), and measured
+// nothing: without the verdict line it is a failed comparison (2), which leaves
+// the head unconfirmed instead of refuting it and charging the issue a rework.
+const verdictLine = (stdout = '') => stdout.trim().split('\n').reverse().some((line) => { try { return JSON.parse(line)?.pass === false; } catch { return false; } });
+export const collateralResult = (run) => ({ exit: run.status === 1 && !verdictLine(run.stdout) ? 2 : run.status ?? 2, report: [run.stdout || '', run.stderr || ''] });
 // The candidate's whole import against the pass's evaluation (gates/accept.mjs).
 // A client candidate is compared on its own capture with its own package.
 function compareRun(item, head, { reimport, base_findings, candidate, url }) {
