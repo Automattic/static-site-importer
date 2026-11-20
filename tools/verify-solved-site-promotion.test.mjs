@@ -1,4 +1,3 @@
-import { authoringParityEvidence } from './fixtures/authoring-parity-evidence.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,7 +21,6 @@ function fixture() {
       fixture_id: 'solved', status: 'passed', success: true,
       quality_metrics: { pass: true, fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 },
       block_composition: { block_total: 4, native_block_count: 4, core_html_block_count: 0 },
-      authoring_parity_evidence: authoringParityEvidence,
       editor_validation: { schema: 'wp-codebox/editor-validate-blocks/v1', validation_method: 'wp.blocks.validateBlock', validation_provider: 'wordpress-block-editor', content_source: 'edited-post-content', block_types_registered: 42, result_count: 4, results_complete: true, total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
       editor_canvas: { status: 'captured', screenshot: path.join(root, 'editor.png') },
       editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v3', provider_schema: 'wp-codebox/editor-presentation/v1', canvas_document_type: 'iframe', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true, idle_canvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboarding_modal_count: 0 }, matched_rendering: { schema: 'wp-codebox/editor-presentation-match/v1', status: 'passed', equivalent_canvas_widths: true, major_geometry_drift: false, unreadable_content: false, hidden_content: false, unresolved_asset_count: 0, frontend_screenshot: path.join(root, 'source.png'), editor_screenshot: path.join(root, 'editor.png'), diff_screenshot: path.join(root, 'diff.png') } },
