@@ -92,8 +92,12 @@ export const routeDocument = (website, route = '/') => {
 // a Cook's note names its instance in its key. Every other site keeps cooking
 // the finding against its own evidence. Design rounds count per site the same
 // way: several sites reaching the cap at once each open their own round, and
-// one site's rounds neither use up nor reset another's. Failed Cooks count from
-// every site, since each is evidence against the finding.
+// one site's rounds neither use up nor reset another's. Until a site opens its
+// first design round, failed Cooks count from every site, since each is
+// evidence against the finding. From then on failures another site's evidence
+// produced (reworks naming another site, notes from another site's design
+// instance) no longer count: a round is spent on this site's own outcomes, not
+// on other sites' refutations landing meanwhile.
 //
 // A design round can also decide the defect is not in the owning repository:
 // `Decision: reroute <repo>`. That holds for its site only too. Triage files
@@ -126,16 +130,16 @@ export const cookHistory = (comments, site) => {
   const scopes = [];
   for (const { body = '' } of comments) {
     if (body.startsWith(COOK_NOTE)) {
-      failed++;
       const key = body.slice(COOK_NOTE.length).split(' ')[0];
       const scope = scopes.find((s) => s.instance && key.startsWith(`${s.instance}-`));
+      if (!designs || !scope || scope.site === site) failed++;
       if (designs && scope?.site === site) {
         if (/Decision:\W*accept/i.test(body)) accepted = true;
         const repo = body.match(/Decision:\W*reroute\W+(?:to\W+)?([\w./-]+)/i)?.[1].split('/').pop();
         if (repo) rerouted = { repo, note: body };
       }
     }
-    else if (body.startsWith(REWORK_NOTE)) failed++;
+    else if (body.startsWith(REWORK_NOTE)) { const from = body.match(/ on (\S+) refuted /)?.[1]; if (!designs || !from || from === site) failed++; }
     else if (body.startsWith(DESIGN_NOTICE)) {
       const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1];
       if (!scope) continue;

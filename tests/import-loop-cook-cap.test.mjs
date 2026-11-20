@@ -12,7 +12,8 @@ test('Cook history counts failures and design rounds since guidance', () => {
   // A design round on another site's capture accepts nothing here.
   const elsewhere = { body: `${DESIGN_NOTICE}\n${designScope({ site: 'https://b.test/', instance: 'wf-b' })}\nDesign round 1 of 2.` };
   // A refuted PR's rework reports on the PR; triage's issue note is what counts it.
-  const rework = { body: `${REWORK_NOTE}\nPass 3 refuted #6023 at head 82aa72eb.` };
+  const rework = { body: `${REWORK_NOTE}\nPass 3 on https://a.test/ refuted #6023 at head \`82aa72eb\`.` };
+  const reworkElsewhere = { body: `${REWORK_NOTE}\nPass 3 on https://b.test/ refuted #6024 at head \`91bb83fc\`.` };
   for (const [comments, history] of [
     [[], { failed: 0, designs: 0, accepted: false }],
     [[note, note, guidance, note], { failed: 1, designs: 0, accepted: false }],
@@ -26,6 +27,9 @@ test('Cook history counts failures and design rounds since guidance', () => {
     // A reroute holds for its site, and the loop's own notice re-arms nothing.
     [[note, note, design, reroute, { body: `${REROUTE_NOTICE}\nRerouted.` }], { failed: 1, designs: 1, accepted: false, rerouted: { repo: 'capture-repo', note: reroute.body } }],
     [[note, note, elsewhere, reroute], { failed: 3, designs: 0, accepted: false }],
+    // Inside a site's design round, other sites' refutations do not spend it.
+    [[rework, rework, design, reworkElsewhere, elsewhere, { body: `${COOK_NOTE}wf-b-cook-i1-n0-a1 -->\nstopped` }, reworkElsewhere], { failed: 0, designs: 1, accepted: false }],
+    [[reworkElsewhere, reworkElsewhere, design, rework, reworkElsewhere], { failed: 1, designs: 1, accepted: false }],
     // Two sites opening rounds together use up neither's rounds.
     [[note, note, design, elsewhere, elsewhere, note], { failed: 1, designs: 1, accepted: false }],
   ]) assert.deepEqual(cookHistory(comments, 'https://a.test/'), history);
