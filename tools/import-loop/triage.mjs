@@ -547,6 +547,47 @@ for (const item of cookOrder) {
   }
 }
 
+// The loop owns the pull requests its Cooks open. A Cook that fails its gate
+// publishes a draft so the next attempt continues on that branch; when no
+// attempt comes (the site's chain stopped, the finding was excepted or fixed
+// another way) the draft would stay open forever. Each pass closes:
+// - a superseded draft: another open pull request for the same tracked issue
+//   is the one this pass works (the first linked), and
+// - an abandoned draft: a loop Cook branch (fix/issue-N-…) for a loop issue
+//   (its body carries a loop signature) that no Cook touched for
+//   --abandon-hours (default 24) and that this pass does not track. An active
+//   chain reworks its drafts every pass, so only orphans age out.
+// Ready pull requests stay open: they passed their gate and wait on CI,
+// conflicts, or confirm. The issue keeps the attempt history; the branch stays.
+const ABANDON_HOURS = Number(args['abandon-hours'] || 24);
+const closeDraft = (url, why) => {
+  if (args['dry-run']) return log(`would close ${url}: ${why}`);
+  gh('pr', 'close', url, '--comment', `Closing this import-loop Cook draft: ${why}. The issue keeps every attempt; the branch stays, and a later pass can reopen or supersede it.\n\n${disclosure}`);
+  log(`closed ${url}: ${why}`);
+};
+const closed_drafts = [];
+const working = new Set([...openPrs.values()].filter(Boolean).map((pr) => pr.url));
+for (const item of tracked) {
+  for (const pr of linkedPullRequests(item.issue_url).slice(1).filter((pr) => pr.isDraft && !working.has(pr.url))) {
+    closeDraft(pr.url, `${openPrs.get(item)?.url || 'another pull request'} is the open fix this pass works for ${item.issue_url}`);
+    closed_drafts.push(pr.url);
+  }
+}
+const trackedIssues = new Set(tracked.map((item) => item.issue_url));
+for (const repo of Object.values(repos)) {
+  if (!repo.github) continue;
+  const drafts = JSON.parse(gh('pr', 'list', '-R', repo.github, '--state', 'open', '--draft', '--json', 'url,headRefName,updatedAt', '-L', '200'));
+  for (const pr of drafts) {
+    const number = pr.headRefName.match(/^fix\/issue-(\d+)-/)?.[1];
+    const issue = number && `https://github.com/${repo.github}/issues/${number}`;
+    if (!issue || trackedIssues.has(issue) || working.has(pr.url) || closed_drafts.includes(pr.url)) continue;
+    if (Date.now() - Date.parse(pr.updatedAt) < ABANDON_HOURS * 3600e3) continue;
+    if (!JSON.parse(gh('issue', 'view', issue, '--json', 'body')).body?.includes('Loop signature: `')) continue;
+    closeDraft(pr.url, `no Cook has worked it for ${ABANDON_HOURS}h and this pass does not track ${issue}`);
+    closed_drafts.push(pr.url);
+  }
+}
+
 // An excepted finding's refuted pull request has nothing left to land: close
 // it, unless it is still the open fix for a finding the loop keeps cooking.
 for (const item of tracked.filter((t) => t.excepted && t.refuted)) {
@@ -573,6 +614,7 @@ const output = {
   tracked_count: tracked.length,
   cook_items,
   cook_count: cook_items.length,
+  closed_drafts,
   deferred,
   excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
   design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
