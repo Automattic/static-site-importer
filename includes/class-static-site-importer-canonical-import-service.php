@@ -780,19 +780,96 @@ class Static_Site_Importer_Canonical_Import_Service {
 	}
 
 	/** Reference equal form evidence fields without conflating reporting metadata. */
+	/**
+	 * Replace subtrees equal to a shared fallback field with its reference.
+	 *
+	 * Equal JSON implies equal keys and equal encoded length, so a subtree is
+	 * encoded and hashed only when both match some field. Its length is
+	 * measured with an early exit past the longest field of that key shape;
+	 * encoding every subtree at every depth is quadratic in nesting.
+	 *
+	 * @param array<string,array{lengths:array<int,true>,max:int,refs:array<string,array<string,string>>}> $fields Fields by key shape.
+	 */
 	private static function reference_shared_fallback_fields( array &$value, array $fields ): void {
 		foreach ( $value as &$item ) {
 			if ( ! is_array( $item ) || isset( $item['artifact'] ) ) {
 				continue;
 			}
-			$hash = hash( 'sha256', (string) wp_json_encode( $item ) );
-			if ( isset( $fields[ $hash ] ) ) {
-				$item = $fields[ $hash ];
+			$hash  = null;
+			$shape = self::fallback_field_shape( $item );
+			if ( isset( $fields[ $shape ] ) ) {
+				$length = self::bounded_json_length( $item, $fields[ $shape ]['max'] );
+				if ( false === $length || ( null !== $length && isset( $fields[ $shape ]['lengths'][ $length ] ) ) ) {
+					$hash = hash( 'sha256', (string) wp_json_encode( $item ) );
+				}
+			}
+			if ( null !== $hash && isset( $fields[ $shape ]['refs'][ $hash ] ) ) {
+				$item = $fields[ $shape ]['refs'][ $hash ];
 			} else {
 				self::reference_shared_fallback_fields( $item, $fields );
 			}
 		}
 		unset( $item );
+	}
+
+	/** Index a shared fallback field by the key shape and length its equals share. */
+	private static function index_shared_fallback_field( array &$fields, array $field, array $reference ): void {
+		$json  = (string) wp_json_encode( $field );
+		$shape = self::fallback_field_shape( $field );
+		$fields[ $shape ]['lengths'][ strlen( $json ) ]      = true;
+		$fields[ $shape ]['max']                             = max( $fields[ $shape ]['max'] ?? 0, strlen( $json ) );
+		$fields[ $shape ]['refs'][ hash( 'sha256', $json ) ] = $reference;
+	}
+
+	/** The key sequence that any array JSON-equal to this one shares. */
+	private static function fallback_field_shape( array $value ): string {
+		return (string) wp_json_encode( array_keys( $value ) );
+	}
+
+	/**
+	 * Encoded JSON length of a value, or null once it exceeds the limit.
+	 *
+	 * Returns false when a scalar cannot be measured on its own, so callers
+	 * fall back to encoding the whole value.
+	 *
+	 * @param mixed $value Value to measure.
+	 * @return int|false|null
+	 */
+	private static function bounded_json_length( $value, int $limit ) {
+		if ( ! is_array( $value ) ) {
+			// Invalid UTF-8 is re-encoded by wp_json_encode(); measure it there.
+			if ( is_object( $value ) || ( is_string( $value ) && ! mb_check_encoding( $value, 'UTF-8' ) ) ) {
+				return false;
+			}
+			if ( is_string( $value ) && strlen( $value ) + 2 > $limit ) {
+				return null;
+			}
+			$json = json_encode( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Measures the exact bytes wp_json_encode() emits for valid scalars.
+			if ( false === $json ) {
+				return false;
+			}
+			return strlen( $json ) > $limit ? null : strlen( $json );
+		}
+		$is_list = array_is_list( $value );
+		$length  = 2 + max( 0, count( $value ) - 1 );
+		foreach ( $value as $key => $child ) {
+			if ( ! $is_list ) {
+				$key_json = json_encode( (string) $key ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- See above.
+				if ( false === $key_json ) {
+					return false;
+				}
+				$length += strlen( $key_json ) + 1;
+			}
+			if ( $length > $limit ) {
+				return null;
+			}
+			$child_length = self::bounded_json_length( $child, $limit - $length );
+			if ( null === $child_length || false === $child_length ) {
+				return $child_length;
+			}
+			$length += $child_length;
+		}
+		return $length > $limit ? null : $length;
 	}
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
@@ -922,9 +999,13 @@ class Static_Site_Importer_Canonical_Import_Service {
 		foreach ( $canonical_fallbacks as $index => $fallback ) {
 			foreach ( $fallback as $key => $field ) {
 				if ( is_array( $field ) && array() !== $field ) {
-					$fallback_fields[ hash( 'sha256', (string) wp_json_encode( $field ) ) ] = array(
-						'artifact' => empty( $checkpoint_plan ) ? 'import_report' : 'wordpress_site_plan',
-						'path'     => '/quality/fallbacks/' . $index . '/' . str_replace( array( '~', '/' ), array( '~0', '~1' ), (string) $key ),
+					self::index_shared_fallback_field(
+						$fallback_fields,
+						$field,
+						array(
+							'artifact' => empty( $checkpoint_plan ) ? 'import_report' : 'wordpress_site_plan',
+							'path'     => '/quality/fallbacks/' . $index . '/' . str_replace( array( '~', '/' ), array( '~0', '~1' ), (string) $key ),
+						)
 					);
 				}
 			}
