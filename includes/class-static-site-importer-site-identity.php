@@ -510,6 +510,8 @@ PHP;
 
 PHP;
 			}
+			// A route whose source title is the brand alone names the site once.
+			$filters .= "\tif ( isset( \$parts['title'], \$parts['site'] ) && \$parts['title'] === \$parts['site'] ) {\n\t\tunset( \$parts['site'] );\n\t}\n";
 			$filters .= "\treturn \$parts;\n} );\n";
 		}
 		if ( '' === $filters ) {
