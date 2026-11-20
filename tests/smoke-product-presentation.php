@@ -255,6 +255,48 @@ foreach ( $frame_cases as $label => $entity ) {
 		throw new RuntimeException( $label . ': open frame grammar.' );
 	}
 }
+// SSI #3211: row structure plus numeric semantics, not button labels or names.
+$stepper_cases = array(
+	'number with default buttons' => array( array( 'type' => 'number' ), '', '', 'submit', true ),
+	'tel digits pattern'          => array( array( 'type' => 'tel', 'pattern' => '[0-9]*' ), 'submit', 'submit', 'submit', true ),
+	'text digits pattern'         => array( array( 'type' => 'text', 'pattern' => '\\d+' ), '', '', 'submit', true ),
+	'anchored digits pattern'     => array( array( 'type' => 'text', 'pattern' => '^[0-9]+$' ), '', '', 'submit', true ),
+	'tel numeric mode'            => array( array( 'type' => 'tel', 'inputmode' => 'numeric' ), '', '', 'submit', true ),
+	'text numeric mode'           => array( array( 'type' => 'text', 'inputmode' => 'numeric' ), '', '', 'submit', true ),
+	'implicit text and submit'    => array( array( 'inputmode' => 'numeric' ), '', '', '', true ),
+	'plain text'                  => array( array( 'type' => 'text' ), '', '', 'submit', false ),
+	'plain tel'                   => array( array( 'type' => 'tel' ), '', '', 'submit', false ),
+	'non-digit pattern'           => array( array( 'type' => 'text', 'pattern' => '.*' ), '', '', 'submit', false ),
+	'non-numeric input type'      => array( array( 'type' => 'email', 'inputmode' => 'numeric' ), '', '', 'submit', false ),
+	'left flank only submit'      => array( array( 'type' => 'number' ), 'submit', 'button', null, false ),
+	'right flank only submit'     => array( array( 'type' => 'number' ), 'button', 'submit', null, false ),
+	'default flank only submit'   => array( array( 'type' => 'number' ), '', 'button', null, false ),
+	'non-submit outside row'      => array( array( 'type' => 'number' ), '', '', 'button', false ),
+	'explicit buttons unchanged'  => array( array( 'type' => 'number' ), 'button', 'button', null, true ),
+);
+foreach ( $stepper_cases as $label => list( $quantity, $before_type, $after_type, $submit_type, $expected ) ) {
+	$entity = $frame_cases['quantity stepper'];
+	$entity['controls'][1]['type'] = $before_type;
+	$entity['controls'][2] = array_merge( array( 'tag' => 'input' ), $quantity );
+	$entity['controls'][3]['type'] = $after_type;
+	if ( null === $submit_type ) {
+		unset( $entity['controls'][4] );
+	} else {
+		$entity['controls'][4]['type'] = $submit_type;
+	}
+	// An absent type must behave like the captured empty default type.
+	foreach ( array( 1, 3, 4 ) as $index ) {
+		if ( '' === ( $entity['controls'][ $index ]['type'] ?? null ) ) {
+			unset( $entity['controls'][ $index ]['type'] );
+		}
+	}
+	$stepper = Static_Site_Importer_Product_Presentation::quantity_stepper( $entity );
+	$overlay = Static_Site_Importer_Product_Presentation::capture( $entity );
+	$stepper_markup = Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( $entity, array( 'id' => 42 ) );
+	if ( (bool) $stepper !== $expected || isset( $overlay['rules']['quantity-frame'] ) !== $expected || str_contains( $stepper_markup, '"quantitySelectorStyle":"stepper"' ) !== $expected ) {
+		throw new RuntimeException( $label . ': quantity stepper recognition or native binding changed.' );
+	}
+}
 $unknown_width = $fixture;
 unset( $unknown_width['presentation_graph']['controls'][1]['control']['styles']['width'], $unknown_width['presentation_graph']['controls'][0]['control']['styles']['width'] );
 if ( ! str_contains( Static_Site_Importer_Product_Presentation::capture( $unknown_width )['css'], 'grid-template-columns:auto minmax(0,1fr)' ) ) {

@@ -130,7 +130,28 @@ final class Static_Site_Importer_Product_Presentation {
 				continue;
 			}
 			list( $before, $quantity, $after ) = array_map( static fn( $index ) => $controls[ $index ] ?? array(), $indices );
-			if ( 'input' === ( $quantity['tag'] ?? '' ) && 'number' === ( $quantity['type'] ?? '' ) && 'button' === ( $before['tag'] ?? '' ) && 'button' === ( $after['tag'] ?? '' ) && 'submit' !== ( $before['type'] ?? '' ) && 'submit' !== ( $after['type'] ?? '' ) ) {
+
+			$type    = $quantity['type'] ?? 'text';
+			$pattern = trim( (string) ( $quantity['pattern'] ?? '' ), '^$' );
+			$numeric = 'number' === $type || ( in_array( $type, array( 'tel', 'text' ), true ) && ( 'numeric' === ( $quantity['inputmode'] ?? '' ) || in_array( $pattern, array( '[0-9]*', '[0-9]+', '\\d*', '\\d+' ), true ) ) );
+			if ( 'input' !== ( $quantity['tag'] ?? '' ) || ! $numeric || 'button' !== ( $before['tag'] ?? '' ) || 'button' !== ( $after['tag'] ?? '' ) ) {
+				continue;
+			}
+			// Default-type buttons submit too. Do not consume the form's only
+			// purchase action as a stepper flank, even if the row looks numeric.
+			$separate_submit = false;
+			foreach ( $controls as $index => $control ) {
+				if ( in_array( $index, $indices, true ) ) {
+					continue;
+				}
+				$tag          = $control['tag'] ?? '';
+				$control_type = $control['type'] ?? '';
+				if ( ( 'button' === $tag && in_array( $control_type, array( '', 'submit' ), true ) ) || ( 'input' === $tag && in_array( $control_type, array( 'submit', 'image' ), true ) ) ) {
+					$separate_submit = true;
+					break;
+				}
+			}
+			if ( $separate_submit || ( 'button' === ( $before['type'] ?? '' ) && 'button' === ( $after['type'] ?? '' ) ) ) {
 				return $row;
 			}
 		}
