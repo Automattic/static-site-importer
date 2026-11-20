@@ -416,10 +416,18 @@ const cook_items = [];
 // Failed Cooks on one issue, since its last guidance, before the loop stops cooking it.
 const COOK_CAP = Number(args['cook-cap'] || 2);
 const DESIGN_ROUNDS = Number(args['design-rounds'] || 2);
+// Cooks per pass. Every Cook runs a whole-site acceptance gate, and the next
+// pass waits for the slowest: base44 tracked 38 at once, which kept the Lab at
+// load 100+ and stretched one pass past five hours. The findings with the most
+// failing cells cook first; the rest wait for a pass that is minutes, not
+// hours, away, and are re-measured against whatever merged meanwhile.
+const MAX_COOKS = Number(args['max-cooks'] || 8);
+const cookOrder = [...tracked].sort((a, b) => b.cells.length - a.cells.length);
+const deferred = [];
 const headAt = (item) => ({ clone: clones[item.repo], candidate: repos[item.repo]?.candidate, base: bases[item.repo], transformer: path.join(trunkTransformer, 'php-transformer'), work: args.work, reimport, site: result.site, url: result.url, routes: result.routes, trunk, base_findings: path.resolve(args.findings) });
 const openPrs = new Map(tracked.map((item) => [item, linkedPullRequests(item.issue_url)[0]]));
 await checkHeads(tracked.filter((item) => openPrs.get(item) && repos[item.repo]?.candidate && item.cells.length).map((item) => ({ item, pr: openPrs.get(item), at: headAt(item) })));
-for (const item of tracked) {
+for (const item of cookOrder) {
   const repo = repos[item.repo];
   const pr = openPrs.get(item);
   item.open_pr = pr?.url || null;
@@ -456,7 +464,9 @@ for (const item of tracked) {
     log(`design round ${item.design} for ${item.issue_url}: ${history.failed} failed Cooks since guidance`);
   }
   // One issue can hold several signatures (one root cause, several subjects): cook it once.
-  if ((!pr || item.refuted) && repo && !item.excepted && !cook_items.some((cook) => cook.issue_url === item.issue_url)) {
+  const cookable = (!pr || item.refuted) && repo && !item.excepted && !cook_items.some((cook) => cook.issue_url === item.issue_url);
+  if (cookable && cook_items.length >= MAX_COOKS) { item.deferred = true; delete item.design; deferred.push(item.issue_url); }
+  else if (cookable) {
     const prompt = path.join(args.work, `${item.signature}.prompt.md`);
     const gate = acceptanceGate(item, repo);
     fs.writeFileSync(prompt, [
@@ -563,6 +573,7 @@ const output = {
   tracked_count: tracked.length,
   cook_items,
   cook_count: cook_items.length,
+  deferred,
   excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
   design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
   rerouted: tracked.filter((item) => item.rerouted_from).map(({ issue_url, rerouted_from }) => ({ issue_url, from: rerouted_from })),
@@ -579,4 +590,4 @@ fs.writeFileSync(triagePath, JSON.stringify(output, null, 2));
 // next pass.
 const { tracked: _tracked, untracked: _untracked, ...routed } = output;
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify({ ...routed, triage_path: triagePath }));
-log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} design=${output.design.length} excepted=${output.excepted.length}`);
+log(`blockers=${blockers.length} tracked=${tracked.length} untracked=${untracked.length} cook=${cook_items.length} deferred=${deferred.length} design=${output.design.length} excepted=${output.excepted.length}`);
