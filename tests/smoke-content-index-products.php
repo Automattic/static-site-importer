@@ -20,7 +20,7 @@ $catalog = array(
 	array( 'name' => 'Photo', 'slug' => 'photo', 'regular_price' => '30.00', 'image' => 'media/photo.png', 'images' => array( array( 'src' => 'media/photo.png', 'alt' => 'Catalog photo' ) ) ),
 );
 $artifact = array( 'entrypoint' => 'index.html', 'files' => array(
-	array( 'path' => 'index.html', 'content' => '<main><h1>Store</h1><img src="media/photo.png" alt="Catalog photo"></main>' ),
+	array( 'path' => 'index.html', 'content' => '<main><h1>Store</h1></main>' ),
 	array( 'path' => 'products/captured/index.html', 'content' => '<main><h1>Captured</h1><script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Captured","offers":{"@type":"Offer","price":"12.00","priceCurrency":"USD"}}</script></main>' ),
 	array( 'path' => 'media/photo.png', 'content' => base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=' ), 'mime_type' => 'image/png' ),
 	array( 'path' => 'content-index.json', 'content' => json_encode( array( 'schema' => 'capture/content-index/v1', 'products' => $catalog ) ) ),
