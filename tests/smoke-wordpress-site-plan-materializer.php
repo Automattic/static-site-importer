@@ -845,6 +845,39 @@ foreach ( $assigned_templates as $assigned_source => $assigned_slug ) {
 		&& $assigned_slug === ( $GLOBALS['ssi_plan_posts'][ $assigned_post_id ]['meta_input']['_wp_page_template'] ?? null );
 }
 $assert( $assigned_templates_persisted, 'plan pages assigned a shipped custom template keep their _wp_page_template assignment through materialization' );
+
+// Re-import a post whose old custom template has been retired. Keep
+// another shipped assignment in the same plan to exercise both update paths.
+$template_reset_plan = $taxonomy_plan;
+$template_reset_ids  = array();
+foreach ( $template_reset_plan['pages'] as &$template_reset_page ) {
+	if ( ! isset( $template_reset_page['metadata']['post_meta']['_wp_page_template'] ) ) {
+		continue;
+	}
+	$template_reset_id = (int) $taxonomy_pages[ $template_reset_page['source_path'] ];
+	$template_reset_ids[ $template_reset_id ]                           = $template_reset_page['source_path'];
+	$GLOBALS['ssi_plan_meta'][ $template_reset_id ]['_wp_page_template'] = array( 'single-post-article-x' );
+	unset( $template_reset_page['metadata']['post_meta']['_wp_page_template'] );
+	// One post is enough; leave the other shipped assignments intact.
+	break;
+}
+unset( $template_reset_page );
+$template_reset_plan['plan_identity'] = WordPressSitePlan::planIdentity( $template_reset_plan );
+$template_reset_receipt               = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $template_reset_plan, array( 'slug' => 'taxonomy-archive-contract', 'overwrite' => true, 'defer_materialization_commit' => true ) );
+$assert( 'completed' === ( $template_reset_receipt['status'] ?? '' ) && array() !== $template_reset_ids, 'Re-import with a retired article template completes: ' . wp_json_encode( $template_reset_receipt['errors'] ?? $template_reset_receipt ) );
+foreach ( $template_reset_ids as $template_reset_id => $template_reset_source ) {
+	$assert( $template_reset_id === ( $template_reset_receipt['completed']['pages'][ $template_reset_source ] ?? 0 ) && 'default' === ( $GLOBALS['ssi_plan_posts'][ $template_reset_id ]['meta_input']['_wp_page_template'] ?? null ) && 'default' === ( $GLOBALS['ssi_plan_posts'][ $template_reset_id ]['page_template'] ?? null ), 'Re-import updates the existing post with an explicit default template instead of its stale assignment.' );
+}
+foreach ( $assigned_templates as $assigned_source => $assigned_slug ) {
+	$assigned_post_id = (int) ( $template_reset_receipt['completed']['pages'][ $assigned_source ] ?? 0 );
+	if ( ! isset( $template_reset_ids[ $assigned_post_id ] ) ) {
+		$assert( $assigned_slug === ( $GLOBALS['ssi_plan_posts'][ $assigned_post_id ]['meta_input']['_wp_page_template'] ?? null ), 'Re-import retains an explicitly assigned shipped template.' );
+	}
+}
+$template_reset_rollback = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $template_reset_receipt, 'template_reset_smoke' );
+foreach ( $template_reset_ids as $template_reset_id => $template_reset_source ) {
+	$assert( array( 'single-post-article-x' ) === get_post_meta( $template_reset_id, '_wp_page_template', false ), 'Rollback restores the previous template assignment.' );
+}
 $owner_term = wp_insert_term( 'Owner selected', 'category', array( 'slug' => 'owner-selected' ) );
 wp_set_object_terms( $taxonomy_second, array( $personal_term, $work_term, (int) $owner_term['term_id'] ), 'category', false );
 $recategorized_plan = ( new ArtifactCompiler() )->compile( $taxonomy_source_for( true ) )->toArray()['source_reports']['wordpress_site_plan'];
