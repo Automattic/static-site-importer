@@ -237,6 +237,7 @@
           "tests/smoke-form-label-equals-description.php",
           "tests/smoke-form-visible-copy.php",
           "tests/smoke-form-sibling-caption.php",
+          "tests/smoke-form-decorated-control-frame.php",
           "tests/smoke-form-button-parent.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/smoke-form-linked-placeholder-colors.php",

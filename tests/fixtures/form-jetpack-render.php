@@ -298,7 +298,7 @@ function ssi_role_box_render_block( array $block ): string {
 		return $open . $inner . $close;
 	}
 	// Static core blocks render their saved markup.
-	if ( in_array( $block['name'], array( 'core/heading', 'core/paragraph' ), true ) ) {
+	if ( in_array( $block['name'], array( 'core/heading', 'core/paragraph', 'core/image' ), true ) ) {
 		return trim( (string) $block['innerHTML'] );
 	}
 	fwrite( STDERR, 'unmodelled block ' . $block['name'] . "\n" );
@@ -334,7 +334,7 @@ function ssi_role_box_render_form( array $form ): string {
 		. "\t\t<input type='hidden' name='contact-form-id' value='1' />\n"
 		. "</form>\n</div>";
 	// Contact_Form::parse(): jetpack_contact_form_html, the runtime's container
-	// scope stamp, in the runtime's registered priority order.
-	return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_scope( $html );
+	// scope stamp and control frames, in the runtime's registered priority order.
+	return Static_Site_Importer_Provider_Form_Runtime_V1::project_control_frames( Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_scope( $html ) );
 }
 
