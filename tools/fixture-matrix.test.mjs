@@ -8926,8 +8926,9 @@ test('authoring cleanup stdout evidence is carried into the fixture matrix resul
     const evidence = authoringParityEvidence;
     const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput: {
       schema: 'wp-codebox/recipe-run/v1',
-      executions: [{ command: 'wordpress.wp-cli', metadata: { fixture_id: matrix.fixtures[0].id, phase: 'authoring-parity-cleanup' }, recipePhase: 'steps', recipeStepIndex: 2, exitCode: 0,
-        stdout: JSON.stringify({ fixture_id: matrix.fixtures[0].id, authoring_parity_evidence: evidence }) }],
+      // Runtime output can surface the same cleanup stdout twice; it is one evidence list.
+      executions: [2, 2].map((recipeStepIndex) => ({ command: 'wordpress.wp-cli', metadata: { fixture_id: matrix.fixtures[0].id, phase: 'authoring-parity-cleanup' }, recipePhase: 'steps', recipeStepIndex, exitCode: 0,
+        stdout: JSON.stringify({ fixture_id: matrix.fixtures[0].id, authoring_parity_evidence: evidence }) })),
     } });
     assert.deepEqual(result.fixtures[0].authoring_parity_evidence, evidence);
     assert.equal(authoringParityPasses(result.fixtures[0].authoring_parity_evidence), true);
