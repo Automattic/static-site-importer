@@ -146,6 +146,26 @@ namespace {
 				. '<div><button type="submit" class="btn">Send</button></div></form>',
 			'<div class="column">',
 		),
+		// Fields whose control sits in a relative frame with an absolutely
+		// placed leading icon, the caption outside that frame (#3203): the
+		// frame stays around the control alone, below the caption gap. Only
+		// the front end is held to the source here: the runtime moves the
+		// frame in Jetpack's render, and the editor canvas still shows the
+		// field inside the frame.
+		'decorated_control_frame' => array(
+			'*,::before,::after{box-sizing:border-box}.grid{display:grid;grid-template-columns:1fr;gap:16px}@media(min-width:640px){.grid{grid-template-columns:1fr 1fr}}'
+				. '.field{display:flex;flex-direction:column;gap:8px}.field label{font-size:14px}.wrap{position:relative;display:flex;align-items:center}'
+				. '.lead{position:absolute;left:14px;width:16px;height:16px;pointer-events:none}.wrap input{width:100%;padding:13px 16px 13px 40px;border:1px solid #ccc;background:#fff}'
+				. '.full{grid-column:1 / -1}.full textarea{width:100%;padding:12px}',
+			'<form><div class="grid">'
+				. '<div class="field"><label for="n">Name</label><div class="wrap"><img class="lead" alt="" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22/%3E%3C/svg%3E"><input id="n" name="n"></div></div>'
+				. '<div class="field"><label for="e">Email</label><div class="wrap"><img class="lead" alt="" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22/%3E%3C/svg%3E"><input id="e" name="e" type="email"></div></div>'
+				. '<div class="field"><label for="p">Phone</label><div class="wrap"><img class="lead" alt="" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%228%22/%3E%3C/svg%3E"><input id="p" name="p" type="tel"></div></div>'
+				. '<div class="field full"><label for="m">Message</label><textarea id="m" name="m" rows="3"></textarea></div>'
+				. '</div><button type="submit">Send</button></form>',
+			'',
+			false,
+		),
 		// A form narrower than its parent keeps that width through its own box
 		// facts (width with auto margins), with or without the provider
 		// wrappers between it and the parent.
@@ -184,6 +204,7 @@ namespace {
 			'blocks'     => $blocks,
 			'frontHtml'  => ssi_role_box_render_form( $blocks[0] ),
 			'outerWrap'  => $wrap,
+			'editorParity' => (bool) ( $cases[ $name ][3] ?? true ),
 			'css'        => $writes['/theme/style.css'],
 			'editorCss'  => $writes['/theme/assets/css/editor-style.css'],
 		);
