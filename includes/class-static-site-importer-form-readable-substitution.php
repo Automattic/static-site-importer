@@ -377,7 +377,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			}
 			$entry = null;
 			foreach ( $graph['controls'] ?? array() as $position => $row ) {
-				if ( $index === ( $row['index'] ?? null ) ) {
+				if ( ( $row['index'] ?? null ) === $index ) {
 					$entry = $position;
 					break;
 				}
@@ -389,6 +389,7 @@ class Static_Site_Importer_Form_Readable_Substitution {
 			$role               = $graph['controls'][ $entry ]['control'] ?? array();
 			$role['styles']     = array_merge( is_array( $role['styles'] ?? null ) ? $role['styles'] : array(), $styles );
 			$role['provenance'] = is_array( $role['provenance'] ?? null ) ? $role['provenance'] : array();
+
 			$graph['controls'][ $entry ]['control'] = $role;
 		}
 		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
