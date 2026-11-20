@@ -222,6 +222,8 @@ $assert( 'Acme Widgets Company' === implode( ' ' . $separator . ' ', $parts ), '
 $GLOBALS['title_front_page'] = false;
 $parts = $filter( array( 'title' => 'About', 'site' => $brand ) );
 $assert( 'About | Acme' === implode( ' ' . $separator . ' ', $parts ), 'inner title uses route separator without home override' );
+$parts = $filter( array( 'title' => $brand, 'site' => $brand ) );
+$assert( 'Acme' === implode( ' ' . $separator . ' ', $parts ), 'a route titled by the brand alone names the site once' );
 // A homepage that states its tagline in markup (no head tagline, JSON-LD or
 // description) supplies blogdescription, and the report names that evidence.
 $home = static fn( string $body ): array => array(
