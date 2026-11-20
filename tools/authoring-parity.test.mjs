@@ -6,7 +6,7 @@ import { ARCHIVE_ITEM_LANDMARKS, authoringParityRuntime, collectAuthoringParity,
 test('shared browser probe measures authored pages and cleans up on success and navigation failure', async () => {
   const browser = await chromium.launch();
   try {
-    for (const mode of ['pass', 'different', 'missing-template', 'record-failure']) {
+    for (const mode of ['pass', 'related-count', 'different', 'missing-template', 'record-failure']) {
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       let cleanupCount = 0;
       let recorded;
@@ -33,7 +33,9 @@ test('shared browser probe measures authored pages and cleans up on success and 
         const title = probe ? 'Authoring parity probe' : 'Imported';
         const template = probe && mode === 'missing-template' ? '' : '<meta name="ssi-authoring-template" content="page">';
         const sidebar = probe && mode === 'different' ? '<aside>Unexpected sidebar</aside>' : '';
-        return route.fulfill({ contentType: 'text/html', body: `<!doctype html>${template}<main><h1>${title}</h1><div class="entry-content">Body</div>${sidebar}</main>` });
+        // A related query lists however many entries it finds; each card's date is one landmark.
+        const related = mode === 'related-count' ? `<div class="wp-block-query">${'<p><time>Nov 1, 2023</time></p>'.repeat(probe ? 5 : 1)}</div>` : '';
+        return route.fulfill({ contentType: 'text/html', body: `<!doctype html>${template}<main><h1>${title}</h1><time>Nov 2, 2023</time><div class="entry-content">Body</div>${sidebar}${related}</main>` });
       });
       try {
         await page.goto('http://parity.test/endpoint');
@@ -43,8 +45,8 @@ test('shared browser probe measures authored pages and cleans up on success and 
           await assert.rejects(page.evaluate(authoringParityExpression('http://parity.test/endpoint')), /endpoint failed: 500/);
         } else {
           assert.equal(await page.evaluate(authoringParityExpression('http://parity.test/endpoint')), undefined);
-          assert.equal(authoringParityPasses(recorded), mode === 'pass');
-          assert.equal(recorded[0].pass, mode === 'pass');
+          assert.equal(authoringParityPasses(recorded), mode !== 'different');
+          assert.equal(recorded[0].pass, mode !== 'different');
         }
         assert.equal(recordCount, mode === 'missing-template' ? 0 : 1);
         assert.equal(cleanupCount, 2);
