@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cookHistory, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
+import { spawnSync } from 'node:child_process';
+import { collateralResult, cookHistory, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
 
 test('Cook history counts failures and design rounds since guidance', () => {
   const note = { body: `${COOK_NOTE}wf-x -->\n### Cook stopped without a pull request` };
@@ -49,4 +50,13 @@ test('A site tracks a finding on its own rerouted issue, else the shared one', (
     [[theirs], null],
     [[hit('elsewhere', 'open')], null],
   ]) assert.deepEqual(ownIssue(hits, 'abc', 'https://a.test/', ['engine', 'capture']), picked);
+});
+
+test('Only a printed verdict refutes a head; a crashed comparison leaves it unconfirmed', () => {
+  const run = (code) => spawnSync('node', ['--input-type=module', '-e', code], { encoding: 'utf8' });
+  for (const [code, exit] of [
+    ['console.log(JSON.stringify({ pass: false })); process.exitCode = 1;', 1],
+    ["await import('./gate-tools/lib/authoring-parity.mjs');", 2],
+    ['console.log(JSON.stringify({ pass: true }));', 0],
+  ]) assert.equal(collateralResult(run(code)).exit, exit);
 });
