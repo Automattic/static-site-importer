@@ -34,6 +34,10 @@ if ( 'policy-link' === ( $argv[1] ?? '' ) ) {
 	);
 	Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state );
 	echo $state['resolved']['consent_banner_markup'];
+} elseif ( 'link-color' === ( $argv[1] ?? '' ) ) {
+	$fact = $args['consent_banner'];
+	$fact['colors']['link'] = $argv[2];
+	echo Static_Site_Importer_Consent_Banner::markup( $fact );
 } elseif ( 'legacy-markup' === ( $argv[1] ?? '' ) ) {
 	$fact = $args['consent_banner'];
 	foreach ( array( 'border_width', 'border_style', 'border_color' ) as $key ) {
