@@ -269,7 +269,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$title          = '' !== $document_title ? trim( (string) ( $page['title'] ?? '' ) ) : '';
 				$page['title']  = '' !== $title ? $title : 'Home';
 			}
-			if ( 'post' === ( $page['post_type'] ?? '' ) && isset( $authors[ $page['source_path'] ] ) ) {
+			if ( isset( $authors[ $page['source_path'] ] ) ) {
 				$page['materialized_post_author'] = $authors[ $page['source_path'] ];
 			}
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -730,7 +730,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$posts = array();
 		foreach ( $state['ordered_pages'] as $page ) {
-			if ( 'post' === ( $page['post_type'] ?? '' ) && empty( $page['skip_materialization'] ) ) {
+			// A byline proves its author on pages as well as posts.
+			if ( in_array( $page['post_type'] ?? '', array( 'post', 'page' ), true ) && empty( $page['skip_materialization'] ) ) {
 				$posts[ $page['source_path'] ] = true;
 			}
 		}
