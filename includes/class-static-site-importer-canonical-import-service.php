@@ -816,8 +816,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 	private static function index_shared_fallback_field( array &$fields, array $field, array $reference ): void {
 		$json  = (string) wp_json_encode( $field );
 		$shape = self::fallback_field_shape( $field );
-		$fields[ $shape ]['lengths'][ strlen( $json ) ] = true;
-		$fields[ $shape ]['max']                        = max( $fields[ $shape ]['max'] ?? 0, strlen( $json ) );
+		$fields[ $shape ]['lengths'][ strlen( $json ) ]      = true;
+		$fields[ $shape ]['max']                             = max( $fields[ $shape ]['max'] ?? 0, strlen( $json ) );
 		$fields[ $shape ]['refs'][ hash( 'sha256', $json ) ] = $reference;
 	}
 
