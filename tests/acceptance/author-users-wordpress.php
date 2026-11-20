@@ -234,6 +234,7 @@ $about_page   = array_merge(
 		),
 	)
 );
+
 $byline_author = array_merge(
 	array_diff_key( $author, array( 'archive' => true ) ),
 	array(
@@ -244,6 +245,7 @@ $byline_author = array_merge(
 		),
 	)
 );
+
 $plan['pages'][]         = $about_page;
 $plan['author_entities'] = array( $byline_author );
 $byline                  = $persist( $plan );
