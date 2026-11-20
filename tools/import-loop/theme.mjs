@@ -1,6 +1,23 @@
 // Authenticated Playwright checks; REST requests run in the owner's browser
 // with its nonce, not from unauthenticated external report counters.
 import { styleTokens, themeCss, QUALITY } from './quality.mjs';
+// Each area's chrome is template-owned: every template references one of the
+// area's parts, and every part of the area serves some template. A route
+// that presents the site's header or footer its own way (a landing page's
+// call to action) renders its own variant part from its own template, so an
+// area may have several parts. No page carries a header or footer copy.
+export function shellFindings(templates, parts, pages) {
+  const findings = [];
+  const references = (t) => [...t.content.raw.matchAll(/<!-- wp:template-part (\{[^]*?\}) \/?-->/g)].map((m) => { try { return JSON.parse(m[1]).slug; } catch { return null; } });
+  for (const area of ['header', 'footer']) {
+    const shared = parts.filter((p) => p.area === area || p.slug === area).map((p) => p.slug);
+    const missing = templates.filter((t) => !references(t).some((slug) => shared.includes(slug))).map((t) => t.slug);
+    const unreferenced = shared.filter((slug) => !templates.some((t) => references(t).includes(slug)));
+    if (!shared.length || missing.length || unreferenced.length) findings.push(['theme_shared_shell', { area, parts: shared, templates_missing: missing, unreferenced }]);
+    if (pages.some((p) => new RegExp(`<${area}[ >]`, 'i').test(p.content.raw))) findings.push(['theme_page_shell_copy', area]);
+  }
+  return findings;
+}
 export async function themeChecks(page, wpUrl, routes, report) {
   await page.goto(new URL('/wp-admin/site-editor.php', wpUrl).href, { waitUntil: 'load' });
   await page.waitForFunction(() => window.wp?.apiFetch, null, { timeout: 120_000 });
@@ -19,11 +36,7 @@ export async function themeChecks(page, wpUrl, routes, report) {
   const pages = await api('/wp/v2/pages?context=edit&per_page=100');
   const navigation = await api('/wp/v2/navigation?context=edit&per_page=100');
   if (!templates.some((t) => ['page', 'index'].includes(t.slug))) fail('theme_templates', 'No page or fallback index template');
-  for (const area of ['header', 'footer']) {
-    const shared = parts.filter((p) => p.area === area || p.slug === area);
-    if (shared.length !== 1 || templates.some((t) => !t.content.raw.includes(`"slug":"${shared[0]?.slug}"`))) fail('theme_shared_shell', { area, parts: shared.map((p) => p.slug) });
-    if (pages.some((p) => new RegExp(`<${area}[ >]`, 'i').test(p.content.raw))) fail('theme_page_shell_copy', area);
-  }
+  for (const [check, evidence] of shellFindings(templates, parts, pages)) fail(check, evidence);
   const menus = [...templates, ...parts, ...pages].flatMap((p) => [...p.content.raw.matchAll(/<!-- wp:navigation\b([^]*?)-->/g)].map((m) => m[1]));
   if (!menus.length || menus.some((m) => !navigation.some((n) => m.includes(`"ref":${n.id}`)))) fail('theme_saved_navigation', { menus, saved: navigation.map((n) => n.id) });
   const tokens = styleTokens([...templates, ...parts, ...pages].map((p) => p.content.raw).join('\n'));
