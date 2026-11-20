@@ -352,9 +352,45 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		return $descriptor;
 	}
 
-	/** Carry grid item facts on the provider wrapper, not its inner button. */
+	/**
+	 * Carry grid item facts on the provider wrapper, not its inner button.
+	 *
+	 * Carrier classes keep the source rule, but Blocks Engine scopes it to its
+	 * own button shape, which the provider submit does not share. The layout
+	 * graph's base and responsive placement therefore reach the wrapper here.
+	 */
 	public static function with_submit_item_placement( array $form ): array {
 		$graph = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || ! preg_match( '/^control-([0-9]+)$/D', (string) ( $node['id'] ?? '' ), $match ) || ! is_array( $node['layout'] ?? null ) ) {
+				continue;
+			}
+			$index   = (int) $match[1];
+			$control = $form['controls'][ $index ] ?? array();
+			$patch   = array_intersect_key( $node['layout'], array_flip( array( 'column', 'row', 'area' ) ) );
+			if ( 'submit' !== ( $control['type'] ?? '' ) || empty( $control['control_carrier_classes'] ) || empty( $patch ) ) {
+				continue;
+			}
+			$styles = array();
+			foreach ( $patch as $key => $value ) {
+				$styles[ 'grid_' . $key ] = $value;
+			}
+			$entry = null;
+			foreach ( $graph['controls'] ?? array() as $position => $row ) {
+				if ( $index === ( $row['index'] ?? null ) ) {
+					$entry = $position;
+					break;
+				}
+			}
+			if ( null === $entry ) {
+				$graph['controls'][] = array( 'index' => $index );
+				$entry               = array_key_last( $graph['controls'] );
+			}
+			$role               = $graph['controls'][ $entry ]['control'] ?? array();
+			$role['styles']     = array_merge( is_array( $role['styles'] ?? null ) ? $role['styles'] : array(), $styles );
+			$role['provenance'] = is_array( $role['provenance'] ?? null ) ? $role['provenance'] : array();
+			$graph['controls'][ $entry ]['control'] = $role;
+		}
 		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
 			if ( ! preg_match( '/^control-([0-9]+)$/D', $variant['node'], $match ) ) {
 				continue;
