@@ -91,12 +91,16 @@ export function verifySolvedSitePromotion(input) {
       editor_interaction: 'passed',
       visual: 'passed',
       native_blocks: 'passed',
+      // Recorded, not yet required: generated page templates lack an authored
+      // content column (#3192 re-enables the requirement once that ships).
+      authoring_parity: 'recorded',
       artifacts: 'passed',
     },
     evidence: {
       run_url: options.runUrl,
       artifact_manifest_url: options.artifactUrl,
       artifacts,
+      authoring_parity: matrix.fixtures.map(fixture => ({ fixture_id: fixture.fixture_id, authoring_parity_evidence: fixture.authoring_parity_evidence })),
     },
   };
   fs.writeFileSync(options.manifestOutput, `${JSON.stringify({ schema: 'static-site-importer/solved-site-artifact-manifest/v1', artifacts }, null, 2)}\n`);

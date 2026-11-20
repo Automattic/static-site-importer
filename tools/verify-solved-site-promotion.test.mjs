@@ -1,10 +1,39 @@
+import { authoringParityEvidence } from './fixtures/authoring-parity-evidence.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { verifySolvedSitePromotion } from './verify-solved-site-promotion.mjs';
+import { collectFixtureMatrixRunResults } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { sha256 } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
+
+test('wp-cli cleanup authoring evidence survives fixture merge into the promotion receipt', () => {
+  const input = fixture();
+  try {
+    for (const pass of [false, true]) {
+      const evidence = structuredClone(authoringParityEvidence);
+      evidence[0].pass = pass;
+      if (!pass) evidence[0].landmarks.new_post.title += 1;
+      const collected = collectFixtureMatrixRunResults({
+        matrix: { id: 'authoring-matrix', fixtures: [{ id: 'solved' }] },
+        outputDirectory: input.root,
+        codeboxOutput: { schema: 'wp-codebox/recipe-run/v1', executions: [{
+          command: 'wordpress.wp-cli', recipePhase: 'steps', recipeStepIndex: 2, exitCode: 0,
+          metadata: { fixture_id: 'solved', phase: 'authoring-parity-cleanup' },
+          stdout: JSON.stringify({ fixture_id: 'solved', authoring_parity_evidence: evidence }),
+        }] },
+      });
+      input.matrix.fixtures[0] = { ...input.matrix.fixtures[0], authoring_parity_evidence: collected.fixtures[0].authoring_parity_evidence };
+      fs.writeFileSync(input.paths.matrix, JSON.stringify(input.matrix));
+      assert.deepEqual(input.matrix.fixtures[0].authoring_parity_evidence, evidence);
+      const receipt = verifySolvedSitePromotion(input.options);
+      assert.equal(receipt.status, 'accepted');
+      assert.equal(receipt.gates.authoring_parity, 'recorded');
+      assert.deepEqual(receipt.evidence.authoring_parity[0].authoring_parity_evidence, evidence);
+    }
+  } finally { fs.rmSync(input.root, { recursive: true, force: true }); }
+});
 
 const SSI_SHA = '1'.repeat(40);
 const BE_SHA = '2'.repeat(40);

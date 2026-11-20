@@ -2,6 +2,8 @@
  * External dependencies
  */
 import assert from 'node:assert/strict';
+import { authoringParityEvidence } from './fixtures/authoring-parity-evidence.mjs';
+import { authoringParityPasses } from '../lib/authoring-parity.mjs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -1289,8 +1291,15 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.equal(plainSteps.length, 5);
-  assert.ok(plainSteps.every((step) => step.command === 'wordpress.wp-cli'));
+  assert.equal(plainSteps.length, 8);
+  assert.equal(plainSteps.filter((step) => step.command === 'wordpress.browser-actions').length, 1);
+  const paritySteps = plainSteps.filter((step) => step.metadata.phase.startsWith('authoring-parity'));
+  assert.deepEqual(paritySteps.map((step) => step.metadata.phase), ['authoring-parity-stage', 'authoring-parity', 'authoring-parity-cleanup']);
+  assert.equal(paritySteps[1].allowFailure, true);
+  const evaluate = JSON.parse(paritySteps[1].args.find(arg => arg.startsWith('steps-json=')).slice(11)).find(step => step.kind === 'evaluate');
+  assert.ok(evaluate);
+  assert.equal(Object.hasOwn(evaluate, 'assert'), false);
+  assert.match(evaluate.expression, /rpc\('record'/);
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
@@ -8908,6 +8917,22 @@ test('visual-explanation.json is merged into collected visual parity artifacts g
   assert.equal(finding.visual_property_diagnostics[0].property, 'background-color');
   assert.equal(result.fixtures[0].visual_parity_artifacts.visual_explanation.selector_diagnostics[0].selector, 'a.cta');
   assert.equal(result.fixtures[0].visual_parity_artifacts.visual_explanation.property_diagnostics[0].property, 'background-color');
+});
+
+test('authoring cleanup stdout evidence is carried into the fixture matrix result', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-authoring-matrix-'));
+  try {
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'authoring-matrix' });
+    const evidence = authoringParityEvidence;
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput: {
+      schema: 'wp-codebox/recipe-run/v1',
+      // Runtime output can surface the same cleanup stdout twice; it is one evidence list.
+      executions: [2, 2].map((recipeStepIndex) => ({ command: 'wordpress.wp-cli', metadata: { fixture_id: matrix.fixtures[0].id, phase: 'authoring-parity-cleanup' }, recipePhase: 'steps', recipeStepIndex, exitCode: 0,
+        stdout: JSON.stringify({ fixture_id: matrix.fixtures[0].id, authoring_parity_evidence: evidence }) })),
+    } });
+    assert.deepEqual(result.fixtures[0].authoring_parity_evidence, evidence);
+    assert.equal(authoringParityPasses(result.fixtures[0].authoring_parity_evidence), true);
+  } finally { rmSync(outputDirectory, { recursive: true, force: true }); }
 });
 
 test('WP Codebox recipe browserEvidence visual refs are preserved with fixture identity', () => {
