@@ -44,6 +44,15 @@ test('presentation carries neutral geometry and typography without accepting sou
  assert.doesNotMatch(run('hostile'), /display:none|body\{|has-border-color|border-width:|border-style:|border-color:/);
  assert.ok(css.indexOf(' > p{flex:1 1 auto;margin:0px;}') < css.indexOf('@media'));
 });
+test('the policy link keeps its captured colour through block link support', () => {
+ const run = color => execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'link-color', color], { encoding: 'utf8' });
+ const markup = run('rgb(255, 255, 255)');
+ const result = validateMarkup(markup);
+ assert.equal(result.ok, true, JSON.stringify(result.failures));
+ assert.match(markup, /"elements":\{"link":\{"color":\{"text":"#ffffff"\}\}\}/);
+ assert.match(run('rgba(46, 67, 82, 0.5)'), /"text":"#2e435280"/);
+ assert.doesNotMatch(run('red;background:url(x)'), /"elements"/);
+});
 test('an inset card keeps its title, edge, width and stretched control per breakpoint', () => {
  const [markup, css] = execFileSync('php', ['tests/fixtures/consent-banner/markup.php', 'card'], { encoding: 'utf8' }).split('\n---\n');
  const result = validateMarkup(markup);

@@ -147,6 +147,11 @@ class Static_Site_Importer_Consent_Banner {
 		$button_html  = '<div class="wp-block-button"><a class="wp-block-button__link' . self::color_classes( $button ) . ( isset( $button_style['border']['color'] ) ? ' has-border-color' : '' ) . ( isset( $button_style['typography']['fontSize'] ) ? ' has-custom-font-size' : '' ) . ' wp-element-button"' . self::style_attribute( $button, $button_css ) . '>' . esc_html( $fact['accept_label'] ) . '</a></div>';
 		$inner        = '<!-- wp:buttons -->' . "\n" . '<div class="wp-block-buttons"><!-- wp:button ' . wp_json_encode( $button_attrs ) . ' -->' . "\n" . $button_html . "\n" . '<!-- /wp:button --></div>' . "\n" . '<!-- /wp:buttons -->';
 		$attrs        = array( 'style' => array( 'color' => $banner ) );
+		$link_color   = self::hex_color( $colors['link'] ?? null );
+		if ( null !== $link_color ) {
+			// The policy link keeps its captured colour through the block's link support.
+			$attrs['style']['elements']['link']['color']['text'] = $link_color;
+		}
 		$align        = 'wide';
 		$banner_css   = '';
 		$custom_class = '';
@@ -160,7 +165,7 @@ class Static_Site_Importer_Consent_Banner {
 				$banner_css                           = 'padding:' . $presentation['padding'] . ';';
 			}
 		}
-		return '<!-- wp:jetpack/cookie-consent ' . wp_json_encode( $attrs ) . ' -->' . "\n" . '<div class="wp-block-jetpack-cookie-consent align' . $align . self::color_classes( $banner ) . $custom_class . '"' . self::style_attribute( $banner, $banner_css ) . ' role="dialog" aria-modal="true"><p>' . $text . '</p>' . $inner . '<span>365</span></div>' . "\n" . '<!-- /wp:jetpack/cookie-consent -->';
+		return '<!-- wp:jetpack/cookie-consent ' . wp_json_encode( $attrs ) . ' -->' . "\n" . '<div class="wp-block-jetpack-cookie-consent align' . $align . self::color_classes( $banner ) . ( null !== $link_color ? ' has-link-color' : '' ) . $custom_class . '"' . self::style_attribute( $banner, $banner_css ) . ' role="dialog" aria-modal="true"><p>' . $text . '</p>' . $inner . '<span>365</span></div>' . "\n" . '<!-- /wp:jetpack/cookie-consent -->';
 	}
 
 	/** The widest captured layout is the block's editor alignment. */
@@ -190,6 +195,25 @@ class Static_Site_Importer_Consent_Banner {
 			}
 		}
 		return $result;
+	}
+
+	/**
+	 * Elements styles pass through safecss_filter_attr(), which rejects rgb().
+	 * Computed colours become the hex form the editor colour picker stores.
+	 */
+	private static function hex_color( $value ): ?string {
+		if ( ! is_string( $value ) ) {
+			return null;
+		}
+		if ( preg_match( '/^#(?:[a-f0-9]{3,4}|[a-f0-9]{6}|[a-f0-9]{8})$/i', $value ) ) {
+			return strtolower( $value );
+		}
+		if ( ! preg_match( '/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i', $value, $match ) ) {
+			return null;
+		}
+		$hex   = sprintf( '#%02x%02x%02x', min( 255, (int) $match[1] ), min( 255, (int) $match[2] ), min( 255, (int) $match[3] ) );
+		$alpha = isset( $match[4] ) ? (float) $match[4] : 1.0;
+		return $alpha >= 1.0 ? $hex : $hex . sprintf( '%02x', (int) round( $alpha * 255 ) );
 	}
 
 	private static function color_classes( array $colors ): string {
