@@ -214,7 +214,9 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
             await front.goto(url);
             const failing = await front.evaluate((picked) => picked.map((p) => {
               const rgb = (c) => { const m = c.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/); return m ? `rgb(${m.slice(1, 4).map((v) => Math.round(v * 255)).join(', ')})` : c.replace(/rgba\((\d+), (\d+), (\d+), 1\)/, 'rgb($1, $2, $3)'); };
-              const el = [...document.querySelectorAll('[style]')].find((n) => n.getAttribute('style').toLowerCase().includes(p.color));
+              // Find the block by the color it was given, as written or as a
+              // script reserializes it (el.style rewrites hex as rgb()).
+              const el = [...document.querySelectorAll('[style]')].find((n) => { const style = n.getAttribute('style').toLowerCase(); return style.includes(p.color) || style.includes(p.rgb); });
               if (!el) return { ...p, missing: ['rendered'] };
               const cs = getComputedStyle(el);
               const missing = [];
