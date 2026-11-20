@@ -40,7 +40,7 @@
     ]
   },
   "budget": {
-    "max_step_runs": 40,
+    "max_step_runs": 400,
     "deadline": "36h"
   },
   "steps": [

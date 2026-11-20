@@ -358,7 +358,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					continue;
 				}
 				$plan    = $page_state['plan'];
-				$receipt = call_user_func( $compile_page, $shared, array( $plan ), self::payload_reader( $workspace ) );
+				$receipt = call_user_func( $compile_page, $shared, array( $plan ), self::payload_reader( $workspace ), self::chrome_journals( $workspace ) );
 				if ( ! is_array( $receipt ) || array( $page_id ) !== array_keys( $receipt ) ) {
 					return new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled page receipt.' );
 				}
@@ -443,11 +443,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $compiler ) ) {
 				return self::fail( $workspace, $run, 'compiler', $compiler );
 			}
-			$prepare_shared = array( $compiler, 'prepareShared' );
-			$prepare_pages  = array( $compiler, 'preparePages' );
-			$compile_pages  = array( $compiler, 'compilePreparedPages' );
-			$compose        = array( $compiler, 'compose' );
-			$payload_reader = self::payload_reader( $workspace );
+			$prepare_shared  = array( $compiler, 'prepareShared' );
+			$prepare_pages   = array( $compiler, 'preparePages' );
+			$compile_pages   = array( $compiler, 'compilePreparedPages' );
+			$compose         = array( $compiler, 'compose' );
+			$payload_reader  = self::payload_reader( $workspace );
+			$chrome_journals = self::chrome_journals( $workspace );
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
 			}
@@ -730,7 +731,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 							}
 							$plans[ $page_id ] = $page_state['plan'];
 						}
-						$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
+						$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader, $chrome_journals );
 					}
 					if ( null !== $batch && ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) ) {
 						return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
@@ -2024,6 +2025,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 		}
 		return count( $references );
+	}
+
+	/**
+	 * Chrome journals the run's compile workers share, so a header or footer
+	 * repeated across pages converts once. A run's compiler implementation is
+	 * fixed, so its journals stay valid for every worker and resume.
+	 */
+	private static function chrome_journals( Static_Site_Importer_Artifact_Run_Workspace $workspace ): ?object {
+		$directory = $workspace->path( 'chrome-journals/store' );
+		return is_wp_error( $directory ) ? null : new \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\ChromeJournal\DirectoryChromeJournalStore( dirname( $directory ) );
 	}
 
 	private static function payload_reader( Static_Site_Importer_Artifact_Run_Workspace $workspace ): object {
