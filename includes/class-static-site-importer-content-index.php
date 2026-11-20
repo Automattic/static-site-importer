@@ -183,6 +183,40 @@ final class Static_Site_Importer_Content_Index {
 			return $kept;
 		}
 		$artifact['files'] = array_values( $kept );
+		if ( array_key_exists( 'products', $index ) ) {
+			if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+				require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+			}
+			$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+				array(
+					'schema_version' => 1,
+					'products'       => $index['products'],
+				)
+			);
+			foreach ( $validation['errors'] as $error ) {
+				$findings[] = array(
+					'code'        => 'content_index_product_skipped',
+					'type'        => 'static-site-importer',
+					'severity'    => 'warning',
+					'stage'       => 'content_index',
+					'source_path' => self::PATH,
+					'path'        => $error['path'],
+					'reason_code' => 'invalid_product',
+					'message'     => $error['message'],
+				);
+			}
+			if ( array() !== $validation['products'] ) {
+				$artifact['metadata']['runtime_declarations'][] = array(
+					'kind'        => 'entity_collection',
+					'type'        => 'products',
+					'source_path' => self::PATH,
+					'payload'     => array(
+						'schema'   => 'generic/products/v1',
+						'entities' => $validation['products'],
+					),
+				);
+			}
+		}
 
 		return array(
 			'artifact' => $artifact,

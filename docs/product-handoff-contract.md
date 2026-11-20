@@ -16,6 +16,12 @@ Static Site Importer's product handoff uses four machine-readable envelopes. The
 - Codebox owns optional WordPress validation and artifact references.
 - Product callers consume these outputs directly; they should not depend on legacy SSI wrapper history.
 
+## Content-index product catalog
+
+A recognized `<producer>/content-index/v1` `content-index.json` may include an optional `products` list of `generic/products/v1` rows, including prices and variants. SSI validates it with the existing products manifest validator and appends the accepted rows as one `entity_collection` declaration of type `products` in `artifact.metadata.runtime_declarations`, with payload `{schema: "generic/products/v1", entities: [...]}` and source path `content-index.json`. Invalid rows or a malformed products list become quality findings, not import rejection; other accepted rows still materialize. Indexes without `products` are unchanged.
+
+Product `image` and `images[].src` values are artifact-relative image paths, resolved through the existing seeder image path (no new downloader). Catalog products do not require captured HTML pages. Retaining detected page bindings for a catalog product follows once [Blocks Engine #7079](https://github.com/Automattic/blocks-engine/issues/7079) ships.
+
 ## Commerce Findings
 
 When the canonical plan contains a Blocks Engine `html_product_grid_fallback`, SSI materializes only producer-declared product rows (slug and regular_price already present) through the existing WooCommerce simple-product adapter and seeder. SSI does not invent catalog slugs or prices from display text. The finding does not itself provide canonical replacement-block anchors, so SSI does not infer cart-control bindings from selectors; provider bindings require explicit source anchors in the entity declaration.
