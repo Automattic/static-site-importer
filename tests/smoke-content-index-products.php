@@ -39,7 +39,6 @@ $lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_bi
 $assert( is_array( $lifecycle ), 'Catalog lifecycle validates.' );
 // Exercise the production artifact-relative image resolver, not a hand-made image map.
 $resolver = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'resolve_product_image_references' );
-$resolver->setAccessible( true );
 $images = $resolver->invoke( null, $lifecycle, array( 'plan' => $plan, 'resolved' => $resolved ) );
 $result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, array( 'resolved_product_images' => $images ) );
 $assert( null === $result['error'], 'Catalog materializes.' );
