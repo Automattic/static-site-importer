@@ -84,9 +84,22 @@ export async function themeChecks(page, wpUrl, routes, report) {
     const styles = structuredClone(original.styles || {});
     styles.color = { ...styles.color, background: '#132435', text: '#e1d2c3' };
     styles.typography = { ...styles.typography, fontFamily: 'monospace' };
-    styles.elements = { ...styles.elements, link: { color: { text: '#bada55' } }, button: { color: { background: '#bada55', text: '#132435' } } };
+    styles.elements = { ...styles.elements, link: { color: { text: '#bada55' } }, button: { color: { background: '#bada55', text: '#132435' } }, heading: { ...styles.elements?.heading, color: { text: '#f0c419' }, typography: { ...styles.elements?.heading?.typography, fontFamily: 'monospace' } } };
     await api(`/wp/v2/global-styles/${entity.id}`, 'POST', { styles });
     const after = await observe();
+    // Style ownership: after the restyle, each visible text element's color
+    // and font must come from WordPress, either following Global Styles
+    // (text, heading, link and button elements) or set by a block's own
+    // settings (a has-*-color / has-*-font-family class or inline style on it
+    // or a block around it). What is left is styled by imported CSS that
+    // Global Styles cannot reach. The unowned share is measured against a
+    // limit, so a fix that moves part of the design into WordPress shows as
+    // progress.
+    for (const route of routes) {
+      await front.goto(new URL(route, wpUrl).href);
+      const owned = await front.evaluate(styleOwnership);
+      if (owned.total && owned.unowned / owned.total > QUALITY.unowned_style_share) report({ stage: 'theme', check: 'theme_style_ownership', owner_repo: 'blocks-engine', subject: 'theme_style_ownership', route, evidence: { ...owned, measure: { value: Math.round((owned.unowned / owned.total) * 1000) / 1000, limit: QUALITY.unowned_style_share } } });
+    }
     for (let i = 0; i < after.length; i++) {
       if (after[i][0]?.[0] !== 'rgb(19, 36, 53)' || after[i][0]?.[1] !== 'rgb(225, 210, 195)' || !after[i][0]?.[2].includes('monospace') || JSON.stringify(before[i]) === JSON.stringify(after[i])) fail('theme_live_restyle', { route: routes[i], before: before[i], after: after[i] });
     }
@@ -94,4 +107,40 @@ export async function themeChecks(page, wpUrl, routes, report) {
     await api(`/wp/v2/global-styles/${entity.id}`, 'POST', { styles: original.styles, settings: original.settings });
     await frontContext.close();
   }
+}
+
+// Runs in the page after the restyle above. Counts each visible text
+// element's color and font as owned when it shows the restyled value or a
+// block setting explains it, and samples the unowned ones by tag and class so
+// a Cook can find the CSS that holds them.
+export function styleOwnership() {
+  const expected = { text: 'rgb(225, 210, 195)', heading: 'rgb(240, 196, 25)', link: 'rgb(186, 218, 85)', button: 'rgb(19, 36, 53)' };
+  const root = document.querySelector('.wp-site-blocks') || document.body;
+  const set = (n, prop) => {
+    for (let at = n; at && at !== root.parentElement; at = at.parentElement) {
+      const cls = typeof at.className === 'string' ? at.className : '';
+      const style = at.getAttribute?.('style') || '';
+      if (prop === 'color' && (/\bhas-[\w-]*(text|link)-color\b|\bhas-text-color\b/.test(cls) || /(^|;)\s*color\s*:/i.test(style))) return true;
+      if (prop === 'font' && (/\bhas-[\w-]*font-family\b/.test(cls) || /font-family\s*:/i.test(style))) return true;
+    }
+    return false;
+  };
+  const rgb = (c) => { const m = c.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/); return m ? `rgb(${m.slice(1, 4).map((v) => Math.round(v * 255)).join(', ')})` : c.replace(/rgba\((\d+), (\d+), (\d+), 1\)/, 'rgb($1, $2, $3)'); };
+  const kind = (n) => (n.matches('.wp-block-button__link, .wp-element-button') ? 'button' : n.matches('a') ? 'link' : n.matches('h1,h2,h3,h4,h5,h6') ? 'heading' : 'text');
+  const nodes = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,a,blockquote,figcaption,.wp-block-button__link')]
+    .filter((n) => n.getClientRects().length && [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
+    .slice(0, 400);
+  let total = 0, unowned = 0;
+  const byKind = {}, sample = [];
+  for (const n of nodes) {
+    const k = kind(n), cs = getComputedStyle(n);
+    for (const [prop, ok] of [['color', rgb(cs.color) === expected[k]], ['font', /monospace/i.test(cs.fontFamily)]]) {
+      total++;
+      if (ok || set(n, prop)) continue;
+      unowned++;
+      byKind[`${k}.${prop}`] = (byKind[`${k}.${prop}`] || 0) + 1;
+      if (sample.length < 12) sample.push({ tag: n.tagName.toLowerCase(), class: String(n.className).slice(0, 160), prop, value: prop === 'color' ? cs.color : cs.fontFamily.slice(0, 60) });
+    }
+  }
+  return { total, unowned, by_kind: byKind, sample };
 }
