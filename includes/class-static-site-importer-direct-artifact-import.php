@@ -890,6 +890,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $composed_state ) ) {
 				return $composed_state;
 			}
+			// Retained-state validation is prerequisite work; reserve the full
+			// invocation budget for lifecycle preparation/materialization.
+			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 			// Acceptance is decided here, once, before any WordPress mutation. A
 			// non-entrypoint page Blocks Engine omitted is a page-level loss, and a
 			// source file it dropped at a declared limit is a file-level loss: the
