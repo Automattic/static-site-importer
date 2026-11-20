@@ -212,7 +212,6 @@
     "provider_layout_overlay_rejected": { "class": "integrity", "owning_layer": "blocks-engine" },
     "provider_layout_stylesheet_missing": { "class": "representability", "unit": "asset", "owning_layer": "static-site-importer", "tracker": "Automattic/static-site-importer#2054" },
     "provider_layout_stylesheet_read_failed": { "class": "operational", "owning_layer": "static-site-importer" },
-    "route_social_image_unresolved": { "class": "integrity", "owning_layer": "static-site-importer" },
     "route_social_image_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-site-plan-persistence.php#throw new RuntimeException('materialization_rollback_route_seo_restore_failed')": { "class": "operational", "owning_layer": "static-site-importer" },
     "route_seo_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
