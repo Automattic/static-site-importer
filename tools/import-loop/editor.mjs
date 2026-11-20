@@ -42,15 +42,20 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
 
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    // One context: every tab shares the login cookie.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
     page.setDefaultTimeout(10_000);
     await page.goto(new URL('/wp-login.php', wpUrl).href);
     await page.fill('#user_login', user);
     await page.fill('#user_pass', pass);
     await Promise.all([page.waitForNavigation(), page.click('#wp-submit')]);
-    const result = [];
-    for (const { ID, url } of pages) {
-      if (cells && !cells.some((c) => c.route == null || (c.route === new URL(url).pathname && (c.width == null || c.width === 1440)))) continue;
+    // Each page's checks run in their own tab, a few pages at once: an editor
+    // boot dominates and the site serves several requests in parallel
+    // (PHP_CLI_SERVER_WORKERS). Results keep the site's page order.
+    const todo = pages.filter(({ url }) => !cells || cells.some((c) => c.route == null || (c.route === new URL(url).pathname && (c.width == null || c.width === 1440))));
+    const result = new Array(todo.length);
+    const checkPage = async (page, { ID, url }) => {
       await page.goto(new URL(`/wp-admin/post.php?post=${ID}&action=edit`, wpUrl).href, { waitUntil: 'load', timeout: 120_000 });
       // Ready, not non-empty: a page with no content (WooCommerce's Shop page)
       // opens with zero blocks, and that is what an editor gets. The wait
@@ -180,8 +185,15 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
         writeFileSync(file, original);
         try { wp('post', 'update', String(ID), file); } finally { unlinkSync(file); }
       }
-      result.push({ id: ID, route, blocks });
-    }
+      return { id: ID, route, blocks };
+    };
+    let next = 0;
+    const tab = async () => {
+      const own = await context.newPage();
+      own.setDefaultTimeout(10_000);
+      try { while (next < todo.length) { const at = next++; result[at] = await checkPage(own, todo[at]); } } finally { await own.close(); }
+    };
+    await Promise.all(Array.from({ length: Math.min(todo.length, Number(process.env.IMPORT_LOOP_EDITOR_TABS) || 4) }, tab));
     try { await themeChecks(page, wpUrl, result.map((p) => p.route), report); }
     catch (error) { report({ stage: 'theme', check: 'theme_checks_unverified', owner_repo: 'static-site-importer', subject: 'site_editor', evidence: String(error.message || error) }); }
     return result;

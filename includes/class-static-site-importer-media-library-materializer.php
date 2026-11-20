@@ -113,26 +113,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 						}
 						break;
 					}
-					// A third-party image or an asset declared omitted by the producer
-					// has no Media Library owner. Report the optional metadata loss;
-					// unexplained source-origin references remain integrity faults.
-					$declared_omitted = false;
-					foreach ( $state['args']['source_metadata']['intake_findings'] ?? array() as $finding ) {
-						if ( 'asset' === ( $finding['unit'] ?? null ) && 'omitted_unit' === ( $finding['loss_class'] ?? null ) && ( $finding['url'] ?? null ) === $tag['content'] ) {
-							$declared_omitted = true;
-							break;
-						}
-					}
-					if ( $declared_omitted || ( preg_match( '~^(?:https?:)?//~i', $tag['content'] ) && ! Static_Site_Importer_Site_Plan_Persistence::same_source_origin( $tag['content'], Static_Site_Importer_Site_Plan_Persistence::source_origin_url( $state ) ) ) ) {
-						$state['diagnostics'][] = array(
-							'reason_code' => 'route_social_image_not_retained',
-							'source_path' => (string) ( $page['source_path'] ?? '' ),
-							'key'         => $tag['key'],
-							'url'         => $tag['content'],
-						);
-						continue;
-					}
-					return new WP_Error( 'route_social_image_unresolved', 'The authored social image must resolve to an imported Media Library asset.' );
+					// Social metadata is optional regardless of origin or producer
+					// findings. Report the loss without rejecting materialized pages.
+					$state['diagnostics'][] = array(
+						'reason_code' => 'route_social_image_not_retained',
+						'source_path' => $source_path,
+						'key'         => $tag['key'],
+						'url'         => $tag['content'],
+					);
 				}
 			}
 			if ( $social_id > 0 ) {
@@ -344,21 +332,28 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$report[ $option ] = $entry;
 		}
-		// Explicit input wins; evidence prefers JSON-LD over the entrypoint title.
+		// Explicit input wins; evidence prefers JSON-LD, then the entrypoint
+		// title, then the entrypoint's tagline markup.
 		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? '' ) );
+		$source  = '' !== $tagline ? 'explicit_input' : '';
 		if ( '' === $tagline ) {
 			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
+			$source  = '' !== $tagline ? (string) ( $evidence['tagline_source'] ?? 'source_evidence' ) : '';
 		}
 		if ( '' === $tagline ) {
 			$front_identity = Static_Site_Importer_Site_Plan_Persistence::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
 			foreach ( $state['resolved']['pages'] ?? array() as $page ) {
 				if ( '' !== $front_identity && ( $page['reconciliation_identity'] ?? '' ) === $front_identity ) {
 					$tagline = Static_Site_Importer_Route_Head_Metadata::description_from_page( $page );
+					$source  = '' !== $tagline ? 'front_page_description' : '';
 					break;
 				}
 			}
 		}
-		$report['blogdescription'] = array( 'status' => '' === $tagline ? 'absent' : 'preserved_owner_value' );
+		$report['blogdescription'] = '' === $tagline ? array( 'status' => 'absent' ) : array(
+			'status' => 'preserved_owner_value',
+			'source' => $source,
+		);
 		if ( '' !== $tagline && '' === trim( (string) get_option( 'blogdescription', '' ) ) ) {
 			Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'blogdescription' );
 			if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'blogdescription', sanitize_text_field( $tagline ) ) ) {

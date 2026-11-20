@@ -52,7 +52,7 @@ if ( ! $paired_engine && 0 === $quality['choice_submission_form_count'] ) {
 	$assert( str_contains( $blocks, 'wp:html' ), 'legacy-engine-retains-original-form' );
 	$assert( false === $quality['pass'] && $quality['unsupported_fallback_count'] > 0, 'legacy-form-is-not-accepted-as-working' );
 	[ , , $strict_quality ] = $finalize( $fixture, array( 'fail_on_quality' => true ) );
-	$assert( true === $strict_quality['fail_import'], 'legacy-form-fails-strict-quality' );
+	$assert( false === $strict_quality['fail_import'], 'legacy-form-findings-never-reject-import' );
 	foreach ( $failures as $failure ) {
 		fwrite( STDERR, 'FAIL: ' . $failure . "\n" );
 	}
@@ -60,7 +60,7 @@ if ( ! $paired_engine && 0 === $quality['choice_submission_form_count'] ) {
 	exit( empty( $failures ) ? 0 : 1 );
 }
 
-$assert( false === ( $quality['pass'] ?? true ) && true === ( $quality['fail_import'] ?? false ), 'requires-remediation-with-default-options' );
+$assert( false === ( $quality['pass'] ?? true ) && false === ( $quality['fail_import'] ?? true ), 'requires-remediation-with-default-options' );
 $assert( 0 === ( $quality['unsupported_fallback_count'] ?? -1 ) && 0 === ( $quality['accepted_preserved_runtime_island_count'] ?? -1 ), 'choice-form-is-not-accepted-runtime' );
 $assert( ! str_contains( $blocks, 'wp:html' ), 'no-raw-html-block' );
 $assert( 2 === substr_count( $blocks, 'type="radio"' ), 'keeps-real-radios' );
@@ -74,9 +74,9 @@ foreach ( ( new DOMXPath( $dom ) )->query( '//input | //button' ) as $control ) 
 $assert( str_contains( $blocks, 'This form is not accepting responses yet.' ), 'visitor-sees-inactive-form-message' );
 $assert( 1 === ( $quality['choice_submission_form_count'] ?? 0 ), 'quality-counts-form' );
 $assert( 1 === ( $report['import_validation_result']['counts']['choice_submission_forms'] ?? 0 ), 'validation-result-counts-form' );
-$assert( 'failed' === ( $report['import_validation_result']['status'] ?? '' ) && 'failed' === ( $report['compact_summary']['status'] ?? '' ), 'choice-form-cannot-complete-migration' );
+$assert( 'reported' === ( $report['import_validation_result']['status'] ?? '' ) && 'completed' === ( $report['compact_summary']['status'] ?? '' ), 'choice-form-completes-with-findings' );
 [ , , $permissive_quality ] = $finalize( $fixture, array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ) );
-$assert( true === $permissive_quality['fail_import'], 'permissive-options-cannot-accept-missing-submission-handler' );
+$assert( false === $permissive_quality['fail_import'], 'missing-submission-handler-remains-report-only' );
 
 $no_submit = str_replace( '<input type="submit" class="btn" value="Submit">', '', $fixture );
 [ , , $no_submit_quality ] = $finalize( $no_submit );

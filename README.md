@@ -245,13 +245,13 @@ Commerce-bearing imports require WooCommerce. Commerce intent is detected when a
 
 When intent is present and WooCommerce is not active, Static Site Importer first tries to materialize the dependency deterministically by installing and activating WooCommerce from WordPress.org inside the active WordPress runtime. This keeps product support in the WordPress/PHP materializer rather than relying on the generating agent to install plugins by prompt convention.
 
-The dependency materialization result is recorded under `plugin_materialization.plugins.woocommerce` with the plugin slug, plugin file, source, attempted flag, install/activate actions, status, and any error. If WooCommerce is already loaded, the status is `already_available`; if the runtime installs and activates it, the status is `installed_activated`; if installation or activation is unavailable, the status is `failed` and the normal dependency gate still protects the import.
+The dependency materialization result is recorded under `plugin_materialization.plugins.woocommerce` with the plugin slug, plugin file, source, attempted flag, install/activate actions, status, and any error. If WooCommerce is already loaded, the status is `already_available`; if the runtime installs and activates it, the status is `installed_activated`; if installation or activation is unavailable, the status is `failed` and the dependency finding is retained for follow-up.
 
-When WooCommerce remains unavailable after materialization, Static Site Importer hard-fails the import by default. Theme files are still written so the import report and generated artifacts can be inspected. The failure surfaces three ways:
+When WooCommerce remains unavailable after materialization, the import still succeeds. The missing dependency is reported three ways:
 
 - `commerce.dependencies.woocommerce` block on the import report (`required`, `active`, `waived`, `sources`, `product_count`, `missing_apis`).
 - A `woocommerce_missing` error diagnostic in the report `diagnostics[]` list.
-- `quality.failure_reasons[]` contains `woocommerce_missing`, `quality.commerce_dependency_failures` is non-zero, and `quality.fail_import` is set regardless of `--fail-on-quality`.
+- `quality.failure_reasons[]` contains `woocommerce_missing` and `quality.commerce_dependency_failures` is non-zero. The materialized import remains successful; install WooCommerce to enable commerce features.
 
 Pass `--allow-missing-woocommerce` (CLI) or `'allow_missing_woocommerce' => true` (PHP API) to import the theme without seeding products. The waiver records a `woocommerce_waived` warning diagnostic and clears the dependency failure. Pass `--skip-dependency-materialization` (CLI) or `'materialize_dependencies' => false` (PHP API) only for tests or hosts that intentionally forbid plugin installation. Non-commerce imports (no manifest, no inferred context) are unaffected: no `commerce.dependencies` block is recorded and no dependency diagnostics are emitted.
 
@@ -299,7 +299,7 @@ wp static-site-importer import --request=/absolute/path/to/import-request.json
 
 The host prints one `static-site-importer/import-cli-receipt/v1` object. Use `--report=/absolute/path/to/import-report.json` for the operator-owned report destination and `--max-steps=<count>` to cap continuation steps. By default the host continues while every step advances the import and stops after 16 consecutive steps without progress. `--single-step` is the internal fresh-runtime seam; host integrations invoke the command without it. `--url=` is a minimal ergonomic source argument.
 
-The receipt is the single quality verdict. When the import's quality gate sets `fail_import` (for example `fail_on_quality` with failure reasons), the receipt is `status: "failed"` and `response.error` is `{ "code": "static_site_importer_quality_failed", "message": … }`, where the message names each failure reason with its count when available (for example `3 unsupported_html_fallback failures`), or the fallback-block count when no reasons are recorded; the import's evidence stays in `response`. A `completed` receipt never carries `fail_import: true`.
+An import that materialized is accepted: its receipt has `status: "completed"` and `response.success: true`. Quality findings never reject it. `quality.pass`, `failure_reasons`, counters, scorecards, diagnostics and finding packets still report follow-up work. Failed receipts are reserved for genuine import failures, such as compilation or materialization errors.
 
 A `files` request-bundle source may point at a raw Blocks Engine capture directory (its `capture-receipt.json` has the `blocks-engine-capture/capture-receipt/v1` schema). SSI imports the receipt's `websiteRoot` and, when the request has no `source.metadata.reports`, forwards the receipt's `reports` (capture-root-relative sidecar paths) as the declared reports, read from the capture root and validated with the same safe-relative rules; declared reports the capture does not hold are skipped and symlinked ones are refused. An explicit `source.metadata.reports` always wins, and a receipt without `reports` forwards none.
 
@@ -471,7 +471,7 @@ homeboy runs show <instance>
 
 `blocks_engine` is a clone the loop owns: triage resets it to `trunk` before reproducing. `cook_model` chooses the Cook's Pi model (see `homeboy agent-task providers`). `cook_placement` follows `homeboy agent-task cook --placement`.
 
-The loop measures; the importer does not fail an import on these findings. Import quality gates stay report-only unless a caller opts in with `fail_on_quality`, so the loop's blockers are its own acceptance policy, not import failures.
+The loop measures; the importer does not fail an import on these findings. Import quality gates are always report-only, so the loop's blockers are its own acceptance policy, not import failures.
 
 ## Product Handoff Contract
 
@@ -540,7 +540,7 @@ npm run test:validation -- --json
 
 PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
-Submitted choice forms can stay editable while still needing a working way to save answers. Those imports fail with `form_submission_setup_required`, including when `fail_on_quality` is off. Their reports explain the setup needed, and the importer does not send a successful completion signal. Forms without a submit control keep their existing handling.
+Submitted choice forms can stay editable while still needing a working way to save answers. Those imports complete successfully with a `form_submission_setup_required` finding. Their reports explain the setup needed, and the importer sends its successful completion signal. Forms without a submit control keep their existing handling.
 
 The normal tests and automatic engine-upgrade checks run this form test with the installed engine. Older engines must retain the unsupported form fallback. Engines that preserve editable choice forms must disable their controls, show the visitor message, and keep the import marked as needing repair. To require the editable-form checks against a specific engine checkout, run:
 
@@ -614,7 +614,7 @@ Degrade codes SSI and Blocks Engine own are classified by code, before any expli
 | `font_face_unavailable` | `omitted_unit` | `asset` | `static-site-importer` |
 | `omitted_artifact_files`, `omitted_artifact_file` | `omitted_unit` | `file` | `blocks-engine` |
 
-`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine's file-drop codes (`file_limit_exceeded`, `artifact_file_too_large`, `artifact_total_too_large`, and the aggregate `artifact_inputs_rejected`) are re-owned as `omitted_artifact_files` / `omitted_artifact_file`; the rest of the site imports, and `dropped_artifact_files` stays a quality failure reason, so a `fail_on_quality` caller can still refuse the import. A `page_compile_omitted` page (a representability throw, a stalled compile worker, or the import deadline) is absent from the imported site, so it fails the quality gate with failure reason `page_compile_omitted`, counted as `omitted_page_count` and by the `omitted_pages` validation gate; `source_documents.total_count` counts it as a source document and `source_documents.omitted_documents` names it. The rest of the site still imports. A caller that accepts a partial site sets `allow_omitted_pages: true` (CLI `--allow-omitted-pages`): the omission stays a reported loss and does not fail the gate. A `font_face_unavailable` row carries a `resolution` of `dropped` (the theme uses its fallback font) or `remote_import_retained` (the source's Google `@import` is kept); a font digest mismatch fails closed. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
+`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine's file-drop codes (`file_limit_exceeded`, `artifact_file_too_large`, `artifact_total_too_large`, and the aggregate `artifact_inputs_rejected`) are re-owned as `omitted_artifact_files` / `omitted_artifact_file`; the rest of the site imports, and `dropped_artifact_files` stays a quality failure reason without rejecting the materialized import. A `page_compile_omitted` page (a representability throw, a stalled compile worker, or the import deadline) is absent from the imported site, so it fails the quality gate with failure reason `page_compile_omitted`, counted as `omitted_page_count` and by the `omitted_pages` validation gate; `source_documents.total_count` counts it as a source document and `source_documents.omitted_documents` names it. The rest of the site still imports. A caller that accepts a partial site sets `allow_omitted_pages: true` (CLI `--allow-omitted-pages`): the omission stays a reported loss and does not fail the gate. A `font_face_unavailable` row carries a `resolution` of `dropped` (the theme uses its fallback font) or `remote_import_retained` (the source's Google `@import` is kept); a font digest mismatch fails closed. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
 
 #### Source findings
 

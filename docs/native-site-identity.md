@@ -6,9 +6,14 @@ evidence is an explicit `Organization` or `WebSite` JSON-LD `logo` URL and
 web app manifest. Callers may provide `site_tagline`; it takes precedence over
 an explicit JSON-LD slogan. When neither is provided, a source document title
 of `site <separator> tagline` supplies the tagline and the generated theme's
-`document_title_separator`. Otherwise the front page's plan meta description is
-the fallback. Existing nonempty `blogdescription` values are preserved; headings
-are not tagline evidence.
+`document_title_separator`. Otherwise one entrypoint element classed as a
+tagline (`tagline`, `site-tagline`, `site-description`, `site-slogan` or
+`slogan`, outside any `<article>`) supplies it; two different such statements
+supply nothing. Otherwise the front page's plan meta description is the
+fallback. Existing nonempty `blogdescription` values are preserved; headings
+are not tagline evidence. The `blogdescription` receipt names the deciding
+evidence as `source` (`explicit_input`, `json_ld_slogan`, `front_page_title`,
+`entrypoint_tagline_markup` or `front_page_description`).
 
 Front-page post titles use the compiler's segmented plan title, not the raw
 source title used for site identity. When the source document has no title or

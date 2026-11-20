@@ -566,7 +566,7 @@ if ( null !== $original_argv_zero ) {
 $clean = $clean_receipt['response'] ?? array();
 // The fixture import fails its quality gate, so the CLI receipt carries the
 // single failed verdict over the same evidence the ability returned.
-$assert( 'failed' === ( $clean_receipt['status'] ?? '' ) && 'static_site_importer_quality_failed' === ( $clean['error']['code'] ?? '' ) && false === ( $clean['success'] ?? null ), 'a fail_import apply must yield a failed CLI receipt with the quality verdict' );
+$assert( 'completed' === ( $clean_receipt['status'] ?? '' ) && ! isset( $clean['error'] ) && true === ( $clean['success'] ?? null ), 'materialized apply completes without a quality rejection' );
 $canonical = static function ( array $response ): array {
 	unset( $response['import_id'], $response['artifact_run'], $response['success'], $response['error'] );
 	return $response;

@@ -44,7 +44,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			$report['diagnostic_count']      = count( $diagnostics );
 		}
 
-		$quality                    = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array_merge( $args, array( 'fail_on_quality' => true ) ) );
+		$quality                    = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		$quality['pass']            = false;
 		$quality['fail_import']     = true;
 		$quality['failure_reasons'] = self::failure_reasons( $plan, $quality );

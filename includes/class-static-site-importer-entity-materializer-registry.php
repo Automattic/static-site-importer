@@ -1184,9 +1184,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( is_array( $fallback ) && 'html_product_grid_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
 				// A grid whose cards cannot share one item template carries no
 				// grid anchor of its own. Its collection members join it by the
-				// grid container the producer declared each one in, on its page.
-				$container = array() === self::fallback_anchor_hashes( $fallback ) ? (string) ( $fallback['container_selector'] ?? $fallback['selector'] ?? '' ) : '';
-				$page      = self::product_page_key( (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) );
+				// shared anchor its own cards declare on its page. A product is
+				// declared once with the selectors of its first sighting, so a
+				// member first seen in another page's grid joins only this way.
+				// A finding without card anchors falls back to the container
+				// the producer declared each member in.
+				$anchorless   = array() === self::fallback_anchor_hashes( $fallback );
+				$card_anchors = $anchorless ? self::collection_card_anchors( $fallback ) : array();
+				$container    = $anchorless && array() === $card_anchors ? (string) ( $fallback['container_selector'] ?? $fallback['selector'] ?? '' ) : '';
+				$page         = self::product_page_key( (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) );
 				foreach ( $lifecycle['entities'] ?? array() as $declaration_id => $prepared ) {
 					foreach ( $prepared['manifest']['products'] ?? array() as $product_index => $product ) {
 						$member = '' !== $container && in_array( $container, is_array( $product['source_selectors'] ?? null ) ? $product['source_selectors'] : array(), true );
@@ -1194,9 +1200,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 							if ( 'commerce_collection' !== ( $binding['role'] ?? '' ) ) {
 								continue;
 							}
-							$joins = $member
-								? self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) === $page
-								: in_array( $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ), self::fallback_anchor_hashes( $fallback ), true ) && self::binding_matches_fallback( $binding, $fallback );
+							$on_page = self::product_page_key( (string) ( $binding['source_path'] ?? '' ) ) === $page;
+							$joins   = array() !== $card_anchors
+								? $on_page && isset( $card_anchors[ self::collection_anchor_key( $binding ) ] )
+								: ( $member ? $on_page : in_array( $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ), self::fallback_anchor_hashes( $fallback ), true ) && self::binding_matches_fallback( $binding, $fallback ) );
 							if ( $joins ) {
 								$lifecycle['entities'][ $declaration_id ]['manifest']['products'][ $product_index ]['bindings'][ $binding_index ]['product_grid_fallback'] = $fallback;
 							}
@@ -1354,6 +1361,31 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		$anchors = is_array( $fallback['bindings'] ?? null ) ? $fallback['bindings'] : array( $fallback['binding'] ?? array() );
 		return in_array( $binding['projected_anchor']['source_occurrence'] ?? $binding['occurrence'] ?? null, array_column( $anchors, 'occurrence' ), true );
+	}
+
+	/**
+	 * The shared `commerce_collection` anchors an anchorless grid finding's own
+	 * cards declare, keyed by pre-projection anchor hash and occurrence.
+	 *
+	 * @param array<string,mixed> $fallback Producer product-grid fallback.
+	 * @return array<string,true>
+	 */
+	private static function collection_card_anchors( array $fallback ): array {
+		$anchors = array();
+		foreach ( is_array( $fallback['products'] ?? null ) ? $fallback['products'] : array() as $product ) {
+			$binding = is_array( $product ) && is_array( $product['binding'] ?? null ) ? $product['binding'] : array();
+			if ( 'commerce_collection' === ( $binding['role'] ?? '' ) && is_string( $binding['search_block_markup'] ?? null ) && '' !== $binding['search_block_markup'] ) {
+				$anchors[ self::collection_anchor_key( $binding ) ] = true;
+			}
+		}
+		return $anchors;
+	}
+
+	/** One collection anchor's pre-projection identity: its source block hash and occurrence. */
+	private static function collection_anchor_key( array $binding ): string {
+		$hash       = $binding['projected_anchor']['source_block_hash'] ?? hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
+		$occurrence = $binding['projected_anchor']['source_occurrence'] ?? $binding['occurrence'] ?? '';
+		return (string) $hash . "\n" . (string) $occurrence;
 	}
 
 	/**

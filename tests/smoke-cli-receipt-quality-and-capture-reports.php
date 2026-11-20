@@ -70,10 +70,10 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 	}
 };
 
-// --- Part 1: the receipt is the single quality verdict. ---
+// --- Part 1: findings never override successful materialization. ---
 
 // The ability envelope for a materialized import whose quality gate failed
-// (fail_on_quality with failure reasons): success stays true at that layer.
+// Findings stay in the response without changing its success.
 $quality_failed_response = array(
 	'success'     => true,
 	'result'      => array(
@@ -103,12 +103,7 @@ $quality_failed_response = array(
 $failed_receipt = static_site_importer_cli_import_receipt( $quality_failed_response, 1 );
 $message        = (string) ( $failed_receipt['response']['error']['message'] ?? '' );
 $assert( 'static-site-importer/import-cli-receipt/v1' === ( $failed_receipt['schema'] ?? '' ), 'quality-failed-receipt-keeps-schema' );
-$assert( 'failed' === ( $failed_receipt['status'] ?? '' ), 'quality-failed-receipt-is-failed' );
-$assert( false === ( $failed_receipt['response']['success'] ?? null ), 'quality-failed-receipt-response-is-not-successful' );
-$assert( array( 'code', 'message' ) === array_keys( $failed_receipt['response']['error'] ?? array() ), 'quality-failed-receipt-error-is-code-and-message' );
-$assert( 'static_site_importer_quality_failed' === ( $failed_receipt['response']['error']['code'] ?? '' ), 'quality-failed-receipt-error-code' );
-$assert( str_contains( $message, '3 unsupported_html_fallback failures' ), 'quality-failed-message-names-reason-with-count: ' . $message );
-$assert( str_contains( $message, '1 core_html_block failure' ) && ! str_contains( $message, '1 core_html_block failures' ), 'quality-failed-message-names-every-reason-with-singular-count: ' . $message );
+$assert( 'completed' === $failed_receipt['status'] && true === $failed_receipt['response']['success'] && ! isset( $failed_receipt['response']['error'] ), 'findings-do-not-override-materialization' );
 $assert( 'quality-site' === ( $failed_receipt['response']['result']['theme_slug'] ?? '' ), 'quality-failed-receipt-keeps-import-evidence' );
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
@@ -130,8 +125,7 @@ $choice_result = array(
 );
 foreach ( array( array_merge( array( 'success' => true ), $choice_result ), array( 'success' => true, 'result' => $choice_result ) ) as $choice_response ) {
 	$choice_receipt = static_site_importer_cli_import_receipt( $choice_response, 1 );
-	$assert( 'failed' === $choice_receipt['status'] && false === $choice_receipt['response']['success'], 'editable-choice-form-never-produces-completed-cli-receipt' );
-	$assert( str_contains( $choice_receipt['response']['error']['message'] ?? '', '1 form_submission_setup_required failure' ), 'choice-receipt-names-submission-setup-and-count' );
+	$assert( 'completed' === $choice_receipt['status'] && true === $choice_receipt['response']['success'], 'editable-choice-form-completes-with-setup-finding' );
 }
 
 // No failure reasons: the message falls back to the fallback-block count.
@@ -147,8 +141,7 @@ $fallback_only = static_site_importer_cli_import_receipt(
 	),
 	2
 );
-$assert( 'failed' === ( $fallback_only['status'] ?? '' ) && 'static_site_importer_quality_failed' === ( $fallback_only['response']['error']['code'] ?? '' ), 'quality-failed-without-reasons-is-failed' );
-$assert( str_contains( (string) ( $fallback_only['response']['error']['message'] ?? '' ), '3 fallback_blocks failures' ), 'quality-failed-without-reasons-names-fallback-block-count' );
+$assert( 'completed' === $fallback_only['status'] && ! isset( $fallback_only['response']['error'] ), 'fallback-count-does-not-reject-import' );
 
 // A top-level summary (direct artifact responses) is read the same way.
 $top_level = static_site_importer_cli_import_receipt(
@@ -162,7 +155,7 @@ $top_level = static_site_importer_cli_import_receipt(
 	),
 	1
 );
-$assert( 'failed' === ( $top_level['status'] ?? '' ) && str_contains( (string) ( $top_level['response']['error']['message'] ?? '' ), '2 dropped_artifact_files failures' ), 'quality-failed-top-level-summary-is-failed' );
+$assert( 'completed' === $top_level['status'] && ! isset( $top_level['response']['error'] ), 'top-level-findings-do-not-reject-import' );
 
 // A passing import completes and never carries fail_import: true.
 $completed = static_site_importer_cli_import_receipt(

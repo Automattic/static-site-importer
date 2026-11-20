@@ -600,7 +600,7 @@ if ( ! static_site_importer_ability_import_permission_callback( array( 'operatio
 	throw new RuntimeException( 'plan and apply must use distinct capabilities' ); }
 Static_Site_Importer_URL_Import_Runtime::$summary = array( 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ) );
 $choice_url = Static_Site_Importer_Canonical_Import_Service::import_url_operation( array( 'operation' => 'apply' ), array( 'url' => 'https://example.com/' ) );
-$assert_service( false === $choice_url['success'] && 'static_site_importer_quality_failed' === ( $choice_url['error']['code'] ?? '' ), 'URL completion cannot overwrite a missing form handler failure' );
+$assert_service( true === $choice_url['success'] && ! isset( $choice_url['error'] ), 'URL completion succeeds with a missing form handler finding' );
 $choice_plan = $approved;
 $choice_plan['diagnostics'] = array( array(
 	'type'                  => 'unsupported_html_fallback',
@@ -618,11 +618,11 @@ Static_Site_Importer_WordPress_Site_Plan_Materializer::$completed = array( 'page
 foreach ( array( array(), array( 'fail_on_quality' => false, 'max_fallbacks' => 100 ) ) as $options ) {
 	$GLOBALS['ssi_actions'] = array();
 	$choice_apply = static_site_importer_ability_import( $options + array( 'operation' => 'apply', 'plan' => $choice_plan ) );
-	if ( false !== $choice_apply['success'] || 'static_site_importer_quality_failed' !== ( $choice_apply['error']['code'] ?? '' ) || 1 !== ( $choice_apply['result']['quality']['choice_submission_form_count'] ?? null ) || empty( $choice_apply['result']['import_validation_result']['fail_import'] ) || 'failed' !== ( $choice_apply['result']['import_report_summary']['status'] ?? '' ) ) {
-		throw new RuntimeException( 'approved block plans must report unresolved submission setup even with permissive quality options' );
+	if ( true !== $choice_apply['success'] || isset( $choice_apply['error'] ) || 1 !== ( $choice_apply['result']['quality']['choice_submission_form_count'] ?? null ) || ! empty( $choice_apply['result']['import_validation_result']['fail_import'] ) || 'completed' !== ( $choice_apply['result']['import_report_summary']['status'] ?? '' ) ) {
+		throw new RuntimeException( 'approved block plans complete successfully while reporting submission setup' );
 	}
 	if ( $choice_plan !== $choice_apply['plan'] || 42 !== ( $choice_apply['result']['completed']['pages']['question.html'] ?? null ) || in_array( 'static_site_importer_import_completed', $GLOBALS['ssi_actions'], true ) ) {
-		throw new RuntimeException( 'failed readiness must retain the approved plan and imported pages without announcing completion' );
+		throw new RuntimeException( 'approved-plan response retains the plan and imported pages' );
 	}
 }
 $preference_plan = $choice_plan;
@@ -647,7 +647,7 @@ Static_Site_Importer_Theme_Generator::$drift = false;
 Static_Site_Importer_Theme_Generator::$quality = array( 'pass' => false, 'fail_import' => true, 'failure_reasons' => array( 'form_submission_setup_required' ), 'choice_submission_form_count' => 1 );
 $GLOBALS['ssi_actions'] = array();
 $classic_choice_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $classic_plan ) );
-if ( false !== $classic_choice_apply['success'] || 'static_site_importer_quality_failed' !== ( $classic_choice_apply['error']['code'] ?? '' ) || $classic_plan['plan']['plan_identity'] !== $classic_choice_apply['applied_plan_identity'] || in_array( 'static_site_importer_import_completed', $GLOBALS['ssi_actions'], true ) ) {
-	throw new RuntimeException( 'approved classic plans must preserve their identity and require submission setup without announcing completion' );
+if ( true !== $classic_choice_apply['success'] || isset( $classic_choice_apply['error'] ) || $classic_plan['plan']['plan_identity'] !== $classic_choice_apply['applied_plan_identity'] ) {
+	throw new RuntimeException( 'approved classic plans preserve identity and succeed with setup findings' );
 }
 echo "Canonical import ability smoke passed.\n";

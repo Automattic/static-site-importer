@@ -7,7 +7,7 @@
  *
  * - a source file Blocks Engine drops at a declared compiler limit no longer
  *   refuses the site; it is reported as an `omitted_artifact_file(s)` accepted,
- *   reported loss, and `fail_on_quality` callers can still refuse it;
+ *   reported loss without rejecting the materialized import;
  * - a non-entry archive entry over a per-entry limit is skipped unread with a
  *   `static_site_importer_archive_entry_skipped` finding;
  * - the entrypoint over a per-entry limit, and the archive's total-size and
@@ -77,7 +77,7 @@ foreach ( $rows as $row ) {
 $summary = $result['result']['import_report_summary'] ?? array();
 $assert( false === ( $summary['fail_import'] ?? true ) && 1 <= ( $summary['loss_counts']['omitted_unit'] ?? 0 ), 'compiler-drop: the compact summary counts the loss without failing the import' );
 $quality = Static_Site_Importer_Report_Diagnostics::finalize_report( Static_Site_Importer_Import_Report::from_array( $import['report'] ), array( 'fail_on_quality' => true ) );
-$assert( true === $quality['fail_import'] && in_array( 'dropped_artifact_files', $quality['failure_reasons'], true ), 'compiler-drop: a fail_on_quality caller can still refuse omitted files' );
+$assert( false === $quality['fail_import'] && in_array( 'dropped_artifact_files', $quality['failure_reasons'], true ), 'compiler-drop: omitted files never reject a materialized import' );
 
 // 2. REST ZIP per-entry limits: an oversize non-entry entry is skipped unread
 // and reported; the import completes.

@@ -1679,7 +1679,7 @@ $assert( 1 === count( $missing_diag ), 'missing-companion-emits-diagnostic' );
 
 $quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $gate_report, array( 'fail_on_quality' => true ) );
 $assert( in_array( 'companion_plugin_missing', $quality['failure_reasons'] ?? array(), true ), 'gate-sees-companion-plugin-missing' );
-$assert( true === ( $quality['fail_import'] ?? false ), 'gate-fails-import-on-missing-companion' );
+$assert( false === ( $quality['fail_import'] ?? true ), 'missing-companion-is-report-only' );
 
 // Waived missing companion warns but does not fail the gate.
 $waived_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );

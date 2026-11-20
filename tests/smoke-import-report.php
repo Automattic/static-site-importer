@@ -269,7 +269,7 @@ $assert( array( 'website/index.html', 'website/second.html' ) === array_column( 
 $unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'plan_summary' => $unsafe_layout_plan ) ) );
 $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $unsafe_report, array( 'fail_on_quality' => true ) );
 $unsafe_summary = $unsafe_report['compact_summary'];
-$assert( false === $unsafe_quality['pass'] && true === $unsafe_quality['fail_import'] && 1 === $unsafe_quality['unsafe_layout_constraint_count'] && in_array( 'unsafe_layout_constraint', $unsafe_quality['failure_reasons'], true ), 'strict-quality-rejects-unsafe-layout-constraint' );
+$assert( false === $unsafe_quality['pass'] && false === $unsafe_quality['fail_import'] && 1 === $unsafe_quality['unsafe_layout_constraint_count'] && in_array( 'unsafe_layout_constraint', $unsafe_quality['failure_reasons'], true ), 'quality-reports-unsafe-layout-constraint' );
 $assert( true === ( $unsafe_summary['compiler']['available'] ?? false ) && 179 === ( $unsafe_summary['compiler']['block_count'] ?? 0 ) && 1 === ( $unsafe_summary['compiler']['page_count'] ?? 0 ), 'compact-summary-derives-compiler-evidence-from-canonical-plan' );
 $assert( 'unverified' === ( $unsafe_summary['gutenberg_save_validation'] ?? '' ), 'compact-summary-marks-gutenberg-save-validation-unverified' );
 $assert( 'unverified' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['status'] ?? '' ), 'validation-result-keeps-unrun-gutenberg-save-validation-unverified' );
