@@ -118,7 +118,7 @@ final class Static_Site_Importer_Product_Presentation {
 	public static function quantity_stepper( array $entity ): array {
 		$controls = $entity['controls'] ?? array();
 		foreach ( $entity['presentation_graph']['control_rows'] ?? array() as $row ) {
-			if ( 'generic/computed-form-presentation/v3' !== ( $entity['presentation_graph']['schema'] ?? '' ) || ! is_array( $row['styles'] ?? null ) || isset( $row['flow'] ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
+			if ( 'generic/computed-form-presentation/v3' !== ( $entity['presentation_graph']['schema'] ?? '' ) || ! is_array( $row['styles'] ?? null ) || 'stacked' === ( $row['flow'] ?? null ) || str_starts_with( (string) ( $row['styles']['flex_direction'] ?? '' ), 'column' ) ) {
 				continue;
 			}
 			$members = $row['members'] ?? array();

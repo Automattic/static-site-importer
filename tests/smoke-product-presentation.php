@@ -244,6 +244,14 @@ foreach ( $frame_cases as $label => $entity ) {
 		if ( ! Static_Site_Importer_Product_Presentation::quantity_stepper( $without_frame ) || str_contains( Static_Site_Importer_Product_Presentation::capture( $without_frame )['rules']['quantity-frame'], 'border' ) ) {
 			throw new RuntimeException( 'Missing container paint must not be inferred from input paint.' );
 		}
+		// Inline controls share one line like a flex row; stacked controls do not.
+		foreach ( array( 'inline' => true, 'stacked' => false ) as $flow => $is_stepper ) {
+			$flowed = $entity;
+			$flowed['presentation_graph']['control_rows'][0]['flow'] = $flow;
+			if ( (bool) Static_Site_Importer_Product_Presentation::quantity_stepper( $flowed ) !== $is_stepper ) {
+				throw new RuntimeException( $flow . ' control row stepper recognition changed.' );
+			}
+		}
 		unset( $entity['presentation_graph']['control_rows'] );
 		if ( Static_Site_Importer_Product_Presentation::quantity_stepper( $entity ) ) {
 			throw new RuntimeException( 'Buttons without a dedicated row are not stepper evidence.' );
