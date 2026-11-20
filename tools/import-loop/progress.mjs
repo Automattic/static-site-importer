@@ -96,6 +96,15 @@ export function compareImports(before, after, signature, cells) {
   if (ownExcess.before || ownExcess.after) own.excess = ownExcess;
   const unchecked = [...before.findings, ...after.findings].filter((f) => UNCHECKED.has(f.check));
   const measured = (before.visual || []).length > unmeasured.length;
-  const pass = Boolean(signature && change(own.before, own.after, ownExcess.before, ownExcess.after) < 0 && !unchecked.length && !blockers.added.some((f) => f.signature !== signature) && !regressions.length && measured && after.visual?.length);
-  return { pass, own, blockers, new_scope, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };
+  // A fix lands as incremental progress when nothing it touches gets worse.
+  // Another blocker failing in more places is a regression and refutes it. One
+  // that fails in exactly the same places and only runs further past its limit
+  // (theme CSS weight, already over budget, grows by a few rules) is a warning:
+  // the fix lands, the warning is reported on its pull request, and the finding
+  // stays tracked, so the next pass measures and cooks it.
+  const others = blockers.added.filter((f) => f.signature !== signature);
+  const warnings = others.filter((f) => f.before > 0 && f.after === f.before && f.excess);
+  const worse = others.filter((f) => !warnings.includes(f));
+  const pass = Boolean(signature && change(own.before, own.after, ownExcess.before, ownExcess.after) < 0 && !unchecked.length && !worse.length && !regressions.length && measured && after.visual?.length);
+  return { pass, own, blockers, warnings, new_scope, visual_regressions: [...new Set(regressions)], visual_unmeasured: unmeasured };
 }

@@ -30,6 +30,9 @@ import path from 'node:path';
 import { args, cellsAtHead, checkHeads, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
 import { compareImports } from './progress.mjs';
 
+// accept.mjs's verdict line lists warnings: blockers the fix ran past their limit without failing anywhere new.
+const collateralWarnings = (report) => { for (const line of String(report[0] || '').trim().split('\n').reverse()) { try { const v = JSON.parse(line); if (v && 'pass' in v) return v.warnings || []; } catch {} } return []; };
+
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['triage', 'blocks-engine', 'work']) if (!args[required]) throw new Error(`confirm_argument_missing: --${required}`);
 const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
@@ -56,7 +59,7 @@ await checkHeads(scope.flatMap((item) => repos[item.repo]?.candidate && clones[i
   : []));
 for (const item of scope) {
   for (const pr of linked.get(item)) {
-    const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [] };
+    const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [], warnings: [] };
     verdicts.set(pr.url, verdict);
     const candidate = repos[item.repo]?.candidate;
     if (!candidate || !clones[item.repo] || !triage.bases?.[item.repo]) { verdict.reasons.push(`the re-import does not run ${item.repo} code`); continue; }
@@ -71,13 +74,18 @@ for (const item of scope) {
     const collateral = prior?.collateral || collateralAtHead(item, pr, at);
     log(pr.url, item.signature, `collateral=${collateral.exit}`);
     if (collateral.exit === 1) verdict.failing.push({ signature: item.signature, collateral: collateral.report });
+    else if (collateral.exit === 0) verdict.warnings.push(...collateralWarnings(collateral.report));
     else if (collateral.exit) verdict.reasons.push(`collateral comparison failed for ${item.signature}: ${collateral.report.at(-1)}`);
   }
 }
 const entries = [...verdicts];
 const refuted = entries.filter(([, v]) => v.failing.length).map(([pr, v]) => ({ pr, head: v.head, cells: v.failing }));
 const unconfirmed = entries.filter(([, v]) => !v.failing.length && v.reasons.length).map(([pr, v]) => ({ pr, head: v.head, reason: [...new Set(v.reasons)].join("; ") }));
-const confirmed = entries.filter(([, v]) => !v.failing.length && !v.reasons.length).map(([pr, v]) => ({ pr, head: v.head }));
+const confirmed = entries.filter(([, v]) => !v.failing.length && !v.reasons.length).map(([pr, v]) => ({ pr, head: v.head, warnings: [...new Set(v.warnings)] }));
+// A confirmed fix that ran another over-budget blocker further past its limit
+// says so on its pull request before it lands: the warning is recorded, and the
+// blocker stays tracked for the next pass.
+for (const c of confirmed.filter((c) => c.warnings.length)) gh('pr', 'comment', c.pr, '--body', `Import loop confirmed this head \`${c.head.slice(0, 8)}\` as incremental progress on ${triage.url}: its own finding improves with no regression. It lands with these warnings, blockers that fail in the same places and run further past their limit; each stays tracked and the next pass measures it:\n\n${c.warnings.map((w) => `- \`${w}\``).join('\n')}\n\nAI disclosure: posted by the import loop (Franklin, Claude Opus via Pi).`);
 for (const [pr, v] of entries.filter(([, v]) => v.draft && !v.failing.length && !v.reasons.length)) { gh('pr', 'ready', pr); v.draft = false; }
 const merge = entries.filter(([, v]) => !v.failing.length && !v.reasons.length && !v.draft).map(([, v]) => ({ github: v.github, number: v.number, sha: v.head }));
 const merged = [];

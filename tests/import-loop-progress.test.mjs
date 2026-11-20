@@ -46,8 +46,11 @@ test('a threshold blocker passes on less excess at the same count, and fails on 
   for (const [before, after, pass] of [[125, 100, true], [125, 125, false], [125, 130, false]]) {
     assert.equal(compareImports(result(measured('css', before)), result(measured('css', after)), 'css').pass, pass);
   }
-  // Another threshold blocker growing past its limit is a regression.
-  assert.equal(compareImports(result(finding('a', 7), measured('css', 100)), result(finding('a', 5), measured('css', 110)), 'a').pass, false);
+  // Another over-budget blocker running further past its limit in the same
+  // places is a warning: the fix lands as progress. Failing anywhere new refutes.
+  const grown = compareImports(result(finding('a', 7), measured('css', 100)), result(finding('a', 5), measured('css', 110)), 'a');
+  assert.deepEqual([grown.pass, grown.warnings.map((w) => w.signature)], [true, ['css']]);
+  assert.equal(compareImports(result(finding('a', 7)), result(finding('a', 5), measured('css', 110)), 'a').pass, false);
 });
 test('blockers on routes only the candidate measured are new scope; a shared route still regresses', () => {
   const was = { routes: ['/'], findings: [finding('folded', 22)], visual };
