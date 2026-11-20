@@ -61,6 +61,16 @@ namespace {
 				. '<div class="grid gap-2 sm:col-span-2"><label for="m">Message</label><textarea id="m" name="m" class="' . $input . '"></textarea></div>'
 				. '<button class="sm:col-span-2 btn" type="submit">Send</button></form>',
 		),
+		// A two-column field grid whose submit spans the full row through an
+		// unconditional class rule.
+		'grid_full_row_submit' => array(
+			'*,::before,::after{box-sizing:border-box}.fields{display:grid;grid-template-columns:1fr 1fr;gap:18px 16px}'
+				. '.field{display:flex;flex-direction:column;gap:8px}.field input{width:100%;padding:12px}.send{grid-column:1 / -1;padding:16px;border:0;background:#222;color:#fff}',
+			'<form><div class="fields">'
+				. '<div class="field"><label for="n">Name</label><input id="n" name="n"></div>'
+				. '<div class="field"><label for="e">Email</label><input id="e" name="e" type="email"></div>'
+				. '<button class="send" type="submit">Send</button></div></form>',
+		),
 		// Sized phone, select and rows-sized textarea controls.
 		'sized_controls'   => array(
 			$tailwind,
