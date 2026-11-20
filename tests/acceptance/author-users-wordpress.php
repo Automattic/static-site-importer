@@ -211,4 +211,21 @@ unset( $plan['author_entities'], $plan['taxonomy_entities'][0]['parent'] );
 $legacy = $persist( $plan );
 $assert( 'completed' === $legacy['status'] && 1 === (int) get_post_field( 'post_author', $legacy['completed']['pages']['story.html'] ), 'Legacy plan keeps importing user.' );
 Static_Site_Importer_Site_Plan_Persistence::rollback_receipt( $legacy, 'test_legacy' );
+// A source without author archives proves its authors through bylines alone.
+require_once ABSPATH . 'wp-admin/includes/user.php';
+wp_delete_user( $existing_id );
+$byline_author = $author;
+unset( $byline_author['archive'] );
+$byline_author['evidence']   = array(
+	'membership' => true,
+	'name'       => true,
+);
+$plan['author_entities']     = array( $byline_author );
+$byline                      = $persist( $plan );
+$byline_user                 = get_user_by( 'login', 'proven-writer' );
+$assert( 'completed' === $byline['status'] && $byline_user instanceof WP_User && (int) get_post_field( 'post_author', $byline['completed']['pages']['story.html'] ) === (int) $byline_user->ID, 'A byline-proven author owns its posts.' );
+Static_Site_Importer_Site_Plan_Persistence::rollback_receipt( $byline, 'test_byline' );
+$byline_author['archive']    = $author['archive'];
+$plan['author_entities']     = array( $byline_author );
+$assert( 'completed' !== $persist( $plan )['status'], 'An archive needs its archive evidence.' );
 echo "Author users WordPress acceptance passed.\n";

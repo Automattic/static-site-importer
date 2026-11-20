@@ -706,6 +706,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return $reports;
 	}
 
+	/** An author is proven by a captured archive, or by bylines alone when the source has none. */
+	private static function author_evidence_valid( array $entity ) {
+		if ( ! array_key_exists( 'archive', $entity ) ) {
+			return array(
+				'membership' => true,
+				'name'       => true,
+			) === ( $entity['evidence'] ?? null );
+		}
+		return array(
+			'membership' => true,
+			'name'       => true,
+			'archive'    => true,
+		) === ( $entity['evidence'] ?? null ) && ( $entity['archive']['source_route'] ?? '' ) === '/author/' . $entity['slug'];
+	}
+
 	/** Materialize only proven authors; never adopt an unmarked destination user. */
 	private static function materialize_author_entities( array &$state ) {
 		$mapping  = array();
@@ -721,11 +736,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$allow = apply_filters( 'import_allow_create_users', true );
 		foreach ( $entities as $entity ) {
-			if ( ! is_array( $entity ) || 'author' !== ( $entity['kind'] ?? '' ) || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,49}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ( $entity['evidence'] ?? null ) !== array(
-				'membership' => true,
-				'name'       => true,
-				'archive'    => true,
-			) || ( $entity['archive']['source_route'] ?? '' ) !== '/author/' . $entity['slug'] ) {
+			if ( ! is_array( $entity ) || 'author' !== ( $entity['kind'] ?? '' ) || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,49}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ! self::author_evidence_valid( $entity ) ) {
 				return new WP_Error( 'author_entity_contract_invalid' );
 			}
 			$identity = hash( 'sha256', self::source_origin_url( $state ) . "\n" . $entity['slug'] );
