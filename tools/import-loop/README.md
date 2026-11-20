@@ -56,6 +56,10 @@ a newer one is released or its arguments change, the next pass captures the
 site again, and evaluate, triage and every gate compare with the client the
 capture was taken with.
 
+A pass runs one Cook and one confirm per tracked blocker, each with retries, so
+its step budget (`max_step_runs`, 400) only guards against a runaway pass; the
+36-hour deadline bounds a stuck one.
+
 `homeboy runs show <instance>` reports progress. Pass output lands in
 `<runs>/<slug>-p<N>-{eval,triage,confirm}/`.
 
