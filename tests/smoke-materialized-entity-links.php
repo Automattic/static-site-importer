@@ -271,11 +271,16 @@ $markup       = '<button data-blocks-engine-capture-dialog-panel-state="' . html
 $panel_key    = 'data-blocks-engine-capture-dialog-panel-state';
 $shape_case( 'Two spaces after the comment opener', '<!--  wp:example/authored-button ' . $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->' . $markup, array( $panel_key => $panel_after ) );
 $shape_case( 'Value before name', '<!-- wp:example/authored-button ' . $encode_block( array( 'sourceAttributes' => array( array( 'value' => $panel_state, 'name' => $panel_key ) ) ) ) . ' -->' . $markup, array( $panel_key => $panel_after ) );
-// Core's block parser does not read this delimiter, but the block editor does, so
-// neither copy of its snapshot may change.
+// The route patterns alone, as on main: an uncovered block type takes that path whole.
+$route_patterns = static function ( string $content, array $routes ) use ( &$unresolved ): string {
+	$plain = str_replace( 'wp:example/', 'wp:example-plain/', $content );
+	return str_replace( 'wp:example-plain/', 'wp:example/', Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $plain, $routes, $unresolved, 'https://source.example/', array(), '/index.html' ) );
+};
+// Core's block parser does not read this delimiter, but the block editor does, so it
+// keeps the route patterns, as on main.
 $raw_close_block = '<!-- wp:example/authored-button {"label":"a-->b",' . substr( $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ), 1 ) . ' -->' . $markup;
 $unresolved      = array();
-$assert( $raw_close_block === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $raw_close_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A raw comment closer inside attribute JSON leaves both snapshot copies as written.' );
+$assert( $route_patterns( $raw_close_block, $panel_routes ) === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $raw_close_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A raw comment closer inside attribute JSON keeps the route patterns.' );
 $anchor = $shape_case(
 	'An anchor trigger with its own href',
 	'<!-- wp:example/authored-button ' . $encode_block( array( 'url' => '/second/index.html', 'sourceAttributes' => array( array( 'name' => 'href', 'value' => '/second/index.html' ), array( 'name' => 'hreflang', 'value' => '/en/index.html' ), array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->'
@@ -332,11 +337,11 @@ $quoted = new WP_HTML_Tag_Processor( Static_Site_Importer_Site_Plan_Persistence:
 $quoted->next_tag();
 $assert( '/second-page/?label="quote"' === $quoted->get_attribute( 'href' ) && array( 'href' ) === $quoted->get_attribute_names_with_prefix( '' ), 'A quote in a resolved query is escaped in the attribute.' );
 // A comment that only looks like a delimiter changes nothing; a delimiter only the
-// block editor reads holds its own block, not the rest of the document.
+// block editor reads keeps the route patterns without affecting the panels after it.
 $menu_block = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ), '<button ' . $panel_attr( $panel_state ) . '>Menu</button>' );
 $mixed      = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<!-- wp: this is a note -->' . $raw_close_block . $menu_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
-$assert( str_starts_with( $mixed, '<!-- wp: this is a note -->' . $raw_close_block ), 'The block Core cannot parse stays as written.' );
-$assert( $panel_after === ( $panel_copies( substr( $mixed, strlen( '<!-- wp: this is a note -->' . $raw_close_block ) ) )[ $panel_key ]['saved markup'] ?? null ), 'Other panels in the document are still rewritten.' );
+$assert( str_starts_with( $mixed, '<!-- wp: this is a note -->' . $route_patterns( $raw_close_block, $panel_routes ) ), 'The block Core cannot parse keeps the route patterns.' );
+$assert( $panel_after === ( $panel_copies( substr( $mixed, strlen( '<!-- wp: this is a note -->' . $route_patterns( $raw_close_block, $panel_routes ) ) ) )[ $panel_key ]['saved markup'] ?? null ), 'Other panels in the document are still rewritten.' );
 $shape_case( 'A panel after a note comment', '<!-- wp: this is a note -->' . $menu_block, array( $panel_key => $panel_after ) );
 // Rewriting a panel leaves unrelated JSON as written: empty objects, numeric keys, floats.
 $exact_state = '{"html":"<a href=\\"/second/index.html\\">Second</a>","meta":{},"keys":{"0":"a"},"ratio":1.0}';
@@ -384,10 +389,35 @@ foreach ( array(
 	$link_tag->next_tag( 'span' );
 	$assert( '<span data-url="/second-page/">Open</span>' === ( $link_attrs['content'] ?? null ) && '/second-page/' === $link_tag->get_attribute( 'data-url' ), 'An accessible link ' . $link_label . ' rewrites its content and saved span alike.' );
 }
-// A block type whose saved fields are not covered keeps its snapshot as written.
-$other_block = $panel_block( 'other', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ), '<button ' . $panel_attr( $panel_state ) . '>Menu</button>' );
-$assert( $other_block === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $other_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A block type without covered fields keeps its snapshot as written.' );
-// A comment that is not a complete block opener holds nothing after it.
+// A block type whose saved fields are not covered keeps the route patterns, so a
+// visible link in it is rewritten as on main.
+$label_block = $panel_block( 'authored-label', array( 'sourceAttributes' => array( $panel_key => $panel_state ) ), '<label ' . $panel_attr( $panel_state ) . '><a href="/second/index.html">Terms</a></label>' );
+$label_after = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $label_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$assert( $route_patterns( $label_block, $panel_routes ) === $label_after && str_contains( $label_after, '<a href="/second-page/">Terms</a>' ), 'An uncovered block type keeps the route patterns and its visible link is rewritten.' );
+// Nested blocks are independent: an uncovered child does not stop its covered parent
+// or sibling, and the parent does not stop the child.
+$nested_shell = '<!-- wp:example/layout-shell ' . $encode_block( array( 'wrappers' => array( array( 'tagName' => 'div', 'attributes' => array( 'data-href' => '/second/index.html', $existing_key => $existing ) ) ) ) ) . ' -->'
+	. '<div data-href="/second/index.html" ' . $existing_key . '="' . htmlspecialchars( $existing, ENT_QUOTES, 'UTF-8' ) . '">' . $label_block . $menu_block . '</div><!-- /wp:example/layout-shell -->';
+$nested_after = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $nested_shell, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$nested_tag   = new WP_HTML_Tag_Processor( $nested_after );
+$nested_tag->next_tag();
+$assert( '/second-page/' === $nested_tag->get_attribute( 'data-href' ) && $wrapper_after === json_decode( (string) $nested_tag->get_attribute( $existing_key ), true ), 'A covered parent is rewritten around an uncovered child.' );
+$assert( str_contains( $nested_after, $label_after ), 'The uncovered child keeps the route patterns inside a covered parent.' );
+$assert( $panel_after === ( $panel_copies( substr( $nested_after, strpos( $nested_after, '<!-- wp:example/authored-button ' ) ) )[ $panel_key ]['saved markup'] ?? null ), 'A covered sibling is rewritten next to an uncovered child.' );
+// A delimiter only the block editor reads, naming a snapshot in a label, keeps the
+// route patterns and leaves everything after it to be rewritten.
+$editor_link = '<!-- wp:example/accessible-link {"accessibleLabel":"' . $panel_key . ' x-->y","href":"/second/index.html"} --><a href="/second/index.html">Open</a><!-- /wp:example/accessible-link -->';
+$editor_after = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $editor_link . $menu_block . '<a href="/second/index.html">After</a>', $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$assert( str_starts_with( $editor_after, $route_patterns( $editor_link, $panel_routes ) ) && str_ends_with( $editor_after, '<a href="/second-page/">After</a>' ), 'An editor-only delimiter keeps the route patterns and nothing after it is held.' );
+$assert( str_contains( $editor_after, '"href":"/second-page/"} --><a href="/second-page/">Open</a>' ), 'An editor-only delimiter naming a snapshot has its links rewritten, as on main.' );
+// Many editor-only delimiters before a few MB of paragraphs stay linear.
+$editor_only = str_repeat( $raw_close_block, 30000 ) . str_repeat( '<!-- wp:paragraph --><p><a href="/second/index.html">a link</a></p><!-- /wp:paragraph -->', 30000 ) . $menu_block;
+$started     = microtime( true );
+$editor_many = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $editor_only, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$assert( microtime( true ) - $started < 2.0, 'Thirty thousand editor-only blocks before a few MB rewrite in under two seconds.' );
+$assert( 30000 === substr_count( $editor_many, '<a href="/second-page/">a link</a>' ), 'Paragraph links after editor-only blocks are rewritten.' );
+unset( $editor_only, $editor_many );
+// A comment that is not a block opener changes nothing after it.
 $note_after = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<!-- wp:note this is a note -->' . $menu_block . '<a href="/second/index.html">After</a>', $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
 $assert( str_ends_with( $note_after, '<a href="/second-page/">After</a>' ) && $panel_after === ( $panel_copies( substr( $note_after, strlen( '<!-- wp:note this is a note -->' ) ) )[ $panel_key ]['saved markup'] ?? null ), 'Links after a note comment are still rewritten.' );
 $notes = str_repeat( '<!-- wp:note this is a note -->', 100 ) . str_repeat( '<!-- wp:paragraph --><p><a href="/second/index.html">a link</a></p><!-- /wp:paragraph -->', 30000 ) . $menu_block;
@@ -397,9 +427,9 @@ $notes_after   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_refer
 $assert( memory_get_peak_usage() - $memory_before < 64 * 1048576, 'A hundred note comments before a few MB stay within 64 MB of working memory.' );
 $assert( 30000 === substr_count( $notes_after, '<a href="/second-page/">a link</a>' ), 'Every paragraph link after the notes is rewritten.' );
 unset( $notes, $notes_after );
-// A block whose attributes cannot be encoded again keeps both copies as written.
+// A block whose attributes cannot be encoded again keeps the route patterns.
 $overflow = str_replace( '<!-- wp:example/authored-button {', '<!-- wp:example/authored-button {"quantity":1e309,', $menu_block );
-$assert( $overflow === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $overflow, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A block whose attributes cannot be re-encoded keeps both copies as written.' );
+$assert( $route_patterns( $overflow, $panel_routes ) === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $overflow, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A block whose attributes cannot be re-encoded keeps the route patterns.' );
 // Route-pattern links get the same encoding Blocks Engine's safeHref() accepts.
 $assert( '<a href="/new/?q=summer%20sale">S</a>' === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="/second/index.html">S</a>', array( '/second' => '/new/?q=summer sale' ), $unresolved, 'https://source.example/', array(), '/index.html' ), 'A space in a resolved destination is percent-encoded.' );
 // Many snapshots on one block: each is decoded and encoded once.

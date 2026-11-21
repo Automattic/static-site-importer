@@ -2041,17 +2041,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$out = '';
 		$at  = 0;
 		foreach ( self::panel_block_edits( $content, $resolve ) as list( $start, $length, $text ) ) {
-			$end = $start + $length;
-			if ( $end <= $at ) {
-				continue;
-			}
-			if ( $start < $at ) {
-				$out .= substr( $content, $at, $end - $at );
-				$at   = $end;
-				continue;
-			}
 			$out .= $rewrite( substr( $content, $at, $start - $at ) ) . ( $text ?? substr( $content, $start, $length ) );
-			$at   = $end;
+			$at   = $start + $length;
 		}
 
 		return $out . $rewrite( substr( $content, $at ) );
@@ -2059,12 +2050,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/**
 	 * Captured dialog panels keep HTML snapshots as JSON in data attributes, once in
-	 * the block comment and once on the saved tag. A block whose decoded attributes
-	 * hold one is rewritten structurally: its attributes and the tags of its own saved
-	 * markup get the same link rewrite, and the route patterns never see either. The
-	 * block is kept as written when its type's saved fields are not covered, when any
-	 * part fails to encode, or when it overlaps a complete delimiter the block editor
-	 * reads but Core's parser does not.
+	 * the block comment and once on the saved tag. A Blocks Engine block of a covered
+	 * type whose decoded attributes hold one is rewritten structurally: its own
+	 * attributes and the tags of its own saved markup get the same link rewrite, and
+	 * the route patterns never see either. Nested blocks are handled on their own.
+	 * Any block this cannot rewrite fully and atomically keeps the route patterns.
 	 *
 	 * @param string  $content Document markup.
 	 * @param Closure $resolve Link resolver: (decoded value, attribute name) => reference or null.
@@ -2075,15 +2065,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return array();
 		}
 		$blocks    = new WP_Block_Processor( $content );
-		$parsed    = array();
 		$frames    = array();
 		$open      = array();
-		$close_all = static function ( int $depth, int $end ) use ( &$open, &$frames ): void {
+		$close_all = static function ( int $depth ) use ( &$open, &$frames ): void {
 			while ( count( $open ) > $depth ) {
 				$frame = array_pop( $open );
 				if ( null !== $frame ) {
-					$frame['end'] = $end;
-					$frames[]     = $frame;
+					$frames[] = $frame;
 				}
 			}
 		};
@@ -2099,154 +2087,44 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				continue;
 			}
-			$end                    = $span->start + $span->length;
-			$parsed[ $span->start ] = $end;
-			$type                   = $blocks->get_delimiter_type();
+			$type = $blocks->get_delimiter_type();
+			$close_all( WP_Block_Processor::CLOSER === $type ? $depth : $depth - 1 );
 			if ( WP_Block_Processor::CLOSER === $type ) {
-				$close_all( $depth, $end );
 				continue;
 			}
-			$close_all( $depth - 1, $span->start );
 			$frame = self::panel_block_frame( $content, $span->start, $span->length, (string) $blocks->get_block_type(), $resolve );
 			if ( WP_Block_Processor::VOID === $type ) {
-				if ( null !== $frame ) {
-					$frame['end'] = $end;
-					$frames[]     = $frame;
-				}
+				$frames[] = $frame;
 				continue;
 			}
 			$open[] = $frame;
 		}
-		$close_all( 0, strlen( $content ) );
+		$close_all( 0 );
 
-		$held  = self::editor_only_panel_blocks( $content, $parsed );
 		$edits = array();
-		foreach ( $frames as $frame ) {
-			$keep = $frame['hold'];
-			foreach ( $held as $range ) {
-				$keep = $keep || ( $frame['start'] < $range[1] && $range[0] < $frame['end'] );
-			}
-			$spans = array();
-			foreach ( $keep ? array() : $frame['spans'] as list( $start, $length ) ) {
-				$failed  = false;
-				$spans[] = array( $start, $length, self::rewrite_tag_links( substr( $content, $start, $length ), $resolve, $failed ) );
-				$keep    = $keep || $failed;
-			}
-			if ( $keep ) {
-				$held[] = array( $frame['start'], $frame['end'] );
-				continue;
+		foreach ( array_filter( $frames ) as $frame ) {
+			$rewritten = array();
+			foreach ( $frame['spans'] as list( $start, $length ) ) {
+				$html   = substr( $content, $start, $length );
+				$failed = false;
+				// A comment the block editor may read as a delimiter makes the span ambiguous.
+				if ( preg_match( '~<!--\s+/?wp:~', $html ) ) {
+					continue 2;
+				}
+				$rewritten[] = array( $start, $length, self::rewrite_tag_links( $html, $resolve, $failed ) );
+				if ( $failed ) {
+					continue 2;
+				}
 			}
 			if ( null !== $frame['edit'] ) {
 				$edits[] = $frame['edit'];
 			}
 			// Spans stay out of the route patterns even when nothing in them changed.
-			array_push( $edits, ...$spans );
+			array_push( $edits, ...$rewritten );
 		}
-		foreach ( $held as $range ) {
-			$edits[] = array( $range[0], $range[1] - $range[0], null );
-		}
-		usort( $edits, static fn( array $a, array $b ): int => array( $a[0], $b[1] ) <=> array( $b[0], $a[1] ) );
+		usort( $edits, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
 
 		return $edits;
-	}
-
-	/**
-	 * Complete blocks whose opener the block editor reads, and Core's parser does
-	 * not, with a panel snapshot in that opener: void openers, and openers with a
-	 * matching closer. Openers are found from the snapshot names, so unrelated
-	 * comments cost nothing.
-	 *
-	 * @param string         $content Document markup.
-	 * @param array<int,int> $parsed Core delimiter offsets mapped to their ends.
-	 * @return array<int,array{int,int}> Offset ranges: start, end.
-	 */
-	private static function editor_only_panel_blocks( string $content, array $parsed ): array {
-		$openers = array();
-		foreach ( self::PANEL_SNAPSHOTS as $name ) {
-			$at = 0;
-			while ( false !== ( $found = strpos( $content, $name, $at ) ) ) {
-				$at    = $found + 1;
-				$start = strrpos( $content, '<!--', $found - strlen( $content ) );
-				if ( false === $start || isset( $openers[ $start ] ) ) {
-					continue;
-				}
-				if ( isset( $parsed[ $start ] ) ) {
-					$at = max( $at, $parsed[ $start ] );
-					continue;
-				}
-				$opener = self::editor_block_opener( $content, $start );
-				if ( null !== $opener && $opener[0] > $found ) {
-					$openers[ $start ] = $opener;
-					$at                = $opener[0];
-				}
-			}
-		}
-		if ( ! $openers ) {
-			return array();
-		}
-
-		// Match each non-void opener to its closer, counting nested blocks of its type.
-		$held    = array();
-		$pending = array();
-		foreach ( $openers as $start => list( $end, $name, $void ) ) {
-			if ( $void ) {
-				$held[] = array( $start, $end );
-			} else {
-				$pending[ $start ] = array( $name, 1 );
-			}
-		}
-		if ( $pending ) {
-			$blocks = new WP_Block_Processor( $content );
-			while ( $pending && $blocks->next_delimiter() ) {
-				$span = $blocks->get_span();
-				$type = $blocks->get_delimiter_type();
-				if ( null === $span || WP_Block_Processor::VOID === $type ) {
-					continue;
-				}
-				$name = (string) $blocks->get_block_type();
-				foreach ( $pending as $start => list( $wanted, $depth ) ) {
-					if ( $span->start < $start || $name !== $wanted ) {
-						continue;
-					}
-					$depth += WP_Block_Processor::CLOSER === $type ? -1 : 1;
-					if ( 0 === $depth ) {
-						$held[] = array( $start, $span->start + $span->length );
-						unset( $pending[ $start ] );
-					} else {
-						$pending[ $start ] = array( $wanted, $depth );
-					}
-				}
-			}
-		}
-
-		return $held;
-	}
-
-	/**
-	 * The block opener the block editor's parser reads at an offset: its end offset,
-	 * block type and whether it is void, or null when there is none.
-	 *
-	 * @param string $content Document markup.
-	 * @param int    $start Offset of `<!--`.
-	 * @return array{int,string,bool}|null
-	 */
-	private static function editor_block_opener( string $content, int $start ): ?array {
-		if ( ! preg_match( '~\G<!--\s+wp:((?:[a-z][a-z0-9_-]*/)?[a-z][a-z0-9_-]*)\s+~', $content, $head, 0, $start ) ) {
-			return null;
-		}
-		$at   = $start + strlen( $head[0] );
-		$name = WP_Block_Processor::normalize_block_type( $head[1] );
-		if ( '{' !== ( $content[ $at ] ?? '' ) ) {
-			return preg_match( '~\G(/)?-->~', $content, $close, 0, $at ) ? array( $at + strlen( $close[0] ), $name, isset( $close[1] ) && '/' === $close[1] ) : null;
-		}
-		// Attributes end at the first `}` followed by whitespace and the comment closer.
-		while ( false !== ( $brace = strpos( $content, '}', $at ) ) ) {
-			if ( preg_match( '~\G\}\s+(/)?-->~', $content, $close, 0, $brace ) ) {
-				return array( $brace + strlen( $close[0] ), $name, isset( $close[1] ) && '/' === $close[1] );
-			}
-			$at = $brace + 1;
-		}
-		return null;
 	}
 
 	/**
@@ -2258,7 +2136,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param int     $length Delimiter length.
 	 * @param string  $type Block type.
 	 * @param Closure $resolve Link resolver.
-	 * @return array{start:int,end:int,edit:array{int,int,string}|null,spans:array<int,array{int,int}>,hold:bool}|null
+	 * @return array{edit:array{int,int,string}|null,spans:array<int,array{int,int}>}|null
 	 */
 	private static function panel_block_frame( string $content, int $start, int $length, string $type, Closure $resolve ): ?array {
 		$delimiter = substr( $content, $start, $length );
@@ -2277,18 +2155,18 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$found   = false;
 		$failed  = false;
 		$rewrite = self::rewrite_structure_links( $attributes, $resolve, $fields ?? array(), $changed, $found, $failed );
-		if ( ! $found ) {
+		// Only block types whose saved fields are all covered are rewritten, and only whole.
+		if ( ! $found || null === $fields || $failed ) {
 			return null;
 		}
-		$json = $changed && ! $failed ? wp_json_encode( $rewrite, self::PANEL_JSON_FLAGS ) : false;
+		$json = $changed ? wp_json_encode( $rewrite, self::PANEL_JSON_FLAGS ) : false;
+		if ( $changed && ! is_string( $json ) ) {
+			return null;
+		}
 
 		return array(
-			'start' => $start,
-			'end'   => $start + $length,
 			'edit'  => is_string( $json ) ? array( $start + $open, $close - $open + 1, self::block_attribute_json( $json ) ) : null,
 			'spans' => array(),
-			// Only block types whose saved fields are all covered are rewritten.
-			'hold'  => null === $fields || $failed || ( $changed && ! is_string( $json ) ),
 		);
 	}
 
