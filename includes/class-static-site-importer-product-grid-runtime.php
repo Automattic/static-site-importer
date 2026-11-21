@@ -35,7 +35,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Persistent source badge templates for AJAX requests. */
 	public const CART_BADGES_OPTION = 'static_site_importer_cart_badges';
 
-	/** Product meta holding the captured label of a product published without a price. */
+	/** Product meta holding the captured label of a product published without a price (written by the product seeder). */
 	public const PRICE_LABEL_META = '_static_site_importer_price_label';
 
 	/** Class on the product collection whose loop wrappers are flattened. */

@@ -17,6 +17,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/** Post meta key that identifies the manifest source image an attachment materializes, for dedup. */
 	private const SOURCE_IMAGE_META_KEY = '_static_site_importer_source_image';
 
+	/** Captured label of a product published without a price; the product grid runtime prints it. */
+	public const PRICE_LABEL_META = '_static_site_importer_price_label';
+
 	/** WooCommerce's store visibility option ("coming soon" mode). */
 	private const COMING_SOON_OPTION = 'woocommerce_coming_soon';
 
@@ -577,10 +580,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			// An unpriced product shows its captured label ("Price on request")
 			// where WooCommerce would print the price.
 			$price_label = '' === self::price_value( $manifest_product, 'regular_price' ) ? self::string_value( $manifest_product, 'price_label' ) : '';
-			if ( '' !== $price_label ) {
-				$product->update_meta_data( Static_Site_Importer_Product_Grid_Runtime::PRICE_LABEL_META, $price_label );
-			} else {
-				$product->delete_meta_data( Static_Site_Importer_Product_Grid_Runtime::PRICE_LABEL_META );
+			if ( '' !== $price_label || $existing_id ) {
+				// A repriced product clears a label from an earlier import.
+				$product->update_meta_data( self::PRICE_LABEL_META, $price_label );
 			}
 			$product_id = (int) $product->save();
 			if ( $product_id <= 0 ) {
