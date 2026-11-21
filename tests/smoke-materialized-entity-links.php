@@ -167,18 +167,18 @@ $assert( str_contains( $nested, 'href=\\u005cu0022/?p=42\\u005cu0022' ), 'HTML e
 $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative routes preserve query and fragment.' );
 // A captured dialog keeps its opened panel as JSON in a data attribute, both in
 // the block comment and in the saved button markup.
-$panel_state = (string) json_encode( array( 'html' => '<div role="dialog"><a href="/index.html">Home</a><a href="/second/index.html?ref=menu&amp;copy=1#top">Second</a></div>' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+$panel_state = (string) json_encode( array( 'html' => '<div role="dialog"><span>Example: href="</span><a href="/index.html">Home</a><a href="/second/index.html?ref=menu&amp;copy=1#top">Second</a><a href="/about--us/index.html">About</a><a href="/search?q=field&amp;sort=popular">Find</a></div>' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 $panel_block = '<!-- wp:example/menu-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $panel_state ) ) ) ) . ' -->'
 	. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/menu-button -->';
 $unresolved  = array();
-$panel_block = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $panel_block, array( '/' => '/', '/second' => '/second-page/' ), $unresolved, 'https://source.example/', array(), '/index.html' );
+$panel_block = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $panel_block, array( '/' => '/', '/second' => '/second-page/', '/about--us' => '/about-us/' ), $unresolved, 'https://source.example/', array(), '/index.html' );
 preg_match( '/^<!-- wp:example\/menu-button (\{.*?\}) -->/', $panel_block, $panel_comment );
 preg_match( '/data-blocks-engine-capture-dialog-panel-state="([^"]*)"/', $panel_block, $panel_markup );
 foreach ( array(
 	'block comment' => json_decode( (string) ( json_decode( $panel_comment[1] ?? '', true )['sourceAttributes'][0]['value'] ?? '' ), true ),
 	'saved markup'  => json_decode( html_entity_decode( $panel_markup[1] ?? '', ENT_QUOTES, 'UTF-8' ), true ),
 ) as $panel_copy => $panel ) {
-	$assert( '<div role="dialog"><a href="/">Home</a><a href="/second-page/?ref=menu&amp;copy=1#top">Second</a></div>' === ( $panel['html'] ?? null ), 'Captured dialog panel links resolve to permalinks in the ' . $panel_copy . '.' );
+	$assert( '<div role="dialog"><span>Example: href="</span><a href="/">Home</a><a href="/second-page/?ref=menu&amp;copy=1#top">Second</a><a href="/about-us/">About</a><a href="/?s=field&amp;post_type=product">Find</a></div>' === ( $panel['html'] ?? null ), 'Captured dialog panel links resolve to permalinks in the ' . $panel_copy . '.' );
 }
 $assert( array() === $unresolved, 'Captured dialog panel links leave nothing unresolved.' );
 $unresolved = array();

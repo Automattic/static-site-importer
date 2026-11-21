@@ -1935,7 +1935,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
 		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): string {
 			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
-			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
+			// HTML inside a JSON data attribute, outermost layer first: the block comment's
+			// attribute JSON, or the saved markup's entities, around the snapshot's own JSON.
+			$layers = array();
+			if ( str_ends_with( $matches[1], '\\u005c\\u0022' ) ) {
+				$layers = array( 'block_json', 'json' );
+			} elseif ( str_ends_with( $matches[1], '\\&quot;' ) ) {
+				$layers = array( 'entities', 'json' );
+			}
+			$value = $matches[2];
+			foreach ( $layers as $layer ) {
+				$value = 'entities' === $layer ? html_entity_decode( $value, ENT_QUOTES, 'UTF-8' ) : json_decode( '"' . $value . '"' );
+				if ( ! is_string( $value ) ) {
+					return $matches[0];
+				}
+			}
+			if ( ! $layers ) {
+				$value = $is_json ? json_decode( '"' . $value . '"' ) : str_replace( '\\/', '/', (string) $value );
+			}
 			if ( ! is_string( $value ) ) {
 				return $matches[0];
 			}
@@ -1945,17 +1962,26 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return $matches[0];
 			}
 			$is_local = (bool) preg_match( '~^[#?]~', $value );
-			$encode   = static function ( string $reference ) use ( $is_json, $matches ): string {
-				if ( str_ends_with( $matches[1], '&quot;' ) ) {
-					// JSON inside an HTML attribute: keep its entity encoding.
-					return htmlspecialchars( $reference, ENT_NOQUOTES, 'UTF-8' );
-				}
-				if ( ! $is_json ) {
+			$json_string = static function ( string $text ): string {
+				return substr( (string) wp_json_encode( $text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 1, -1 );
+			};
+			// Match serialize_block_attributes(), including comment-delimiter protection.
+			$block_json = static function ( string $text ) use ( $json_string ): string {
+				return str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json_string( $text ) );
+			};
+			$encode = static function ( string $reference ) use ( $is_json, $layers, $json_string, $block_json ): string {
+				if ( $layers ) {
+					$reference = htmlspecialchars( $reference, ENT_QUOTES, 'UTF-8' );
+					foreach ( array_reverse( $layers ) as $layer ) {
+						$reference = match ( $layer ) {
+							'json'       => $json_string( $reference ),
+							'block_json' => $block_json( $reference ),
+							default      => htmlspecialchars( $reference, ENT_QUOTES, 'UTF-8' ),
+						};
+					}
 					return $reference;
 				}
-				// Match serialize_block_attributes(), including comment-delimiter protection.
-				$json = (string) wp_json_encode( $reference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-				return substr( str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json ), 1, -1 );
+				return $is_json ? $block_json( $reference ) : $reference;
 			};
 			if ( '' === $value ) {
 				return $matches[0];
@@ -2013,8 +2039,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)(.*?)(\\\\u005c\\\\u0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)(.*?)(\\\\&quot;)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)((?:(?!\\\\u005c\\\\u0022)\S)*?)(\\\\u005c\\\\u0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)((?:(?!\\\\&quot;)[^\s<>"])*?)(\\\\&quot;)/i',
 			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
 			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
 		) as $pattern ) {
