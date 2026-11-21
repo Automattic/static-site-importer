@@ -1164,7 +1164,7 @@
             "duplicate_preset_name_count": 0,
             "unused_runtime_file_count": null,
             "bootstrap_unit_without_feature_count": 0,
-            "engine_class_token_share": 0.4706,
+            "engine_class_token_share": 0,
             "block_theme_scorecard": {
                 "gating": false,
                 "status": "not_measured",
