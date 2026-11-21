@@ -144,6 +144,9 @@ final class Static_Site_Importer_Compilation_Preparation {
 		// independently re-deriving ssi-<site_slug>.
 		require_once __DIR__ . '/class-static-site-importer-existing-theme-runtime.php';
 		$artifact['block_namespace'] = Static_Site_Importer_Existing_Theme_Runtime::namespace_for( $args, $identity['block_namespace'] );
+		// The theme slug is the class namespace: Blocks Engine publishes every
+		// class it authors as <theme-slug>-<semantic>.
+		$artifact['class_namespace'] = (string) $args['slug'];
 
 		// A URL batch run composes this canonical compiler result before the one
 		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
