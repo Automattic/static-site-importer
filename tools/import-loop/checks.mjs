@@ -51,10 +51,30 @@ export const parityCellReports = (cell) => {
 // receipt lists every captured page, whether the source serves a directory
 // (`website/about/index.html` → `/about/`) or a file (`website/about.html` →
 // `/about.html`).
+const receiptRoute = (file) => '/' + file.replace(/^website\//, '').replace(/(?:^|\/)index\.html$/, (m) => (m.startsWith('/') ? '/' : ''));
 export const captureRoutes = (captureRoot) => {
   const receipt = JSON.parse(fs.readFileSync(path.join(captureRoot, 'capture-receipt.json'), 'utf8'));
-  const routes = (receipt.routes || []).map(({ path: file }) => '/' + file.replace(/^website\//, '').replace(/(?:^|\/)index\.html$/, (m) => (m.startsWith('/') ? '/' : '')));
+  const routes = (receipt.routes || []).map(({ path: file }) => receiptRoute(file));
   return [...new Set(routes)].sort();
+};
+
+// Routes whose source serves phones a different document than desktops
+// (`responsiveVariants`). A route that ships both documents (`variants > 1`)
+// holds two copies of its content, so editing one leaves the other stale: a
+// blocker. A route reconciled into one document that still ships elements or
+// components per viewport is advisory. A route with no mobile document, or one
+// that collapsed equivalent, reports nothing.
+export const sourceDeviceDocuments = (captureRoot) => {
+  const receipt = JSON.parse(fs.readFileSync(path.join(captureRoot, 'capture-receipt.json'), 'utf8'));
+  const found = [];
+  for (const { path: file, responsiveVariants: rv } of receipt.routes || []) {
+    if (!rv || typeof rv !== 'object' || !file) continue;
+    const evidence = { outcome: rv.outcome ?? null, variants: Number(rv.variants) || 1, matchedNodes: Number(rv.matchedNodes) || 0, desktopOnlyElements: Number(rv.desktopOnlyElements) || 0, mobileOnlyElements: Number(rv.mobileOnlyElements) || 0, divergedComponents: Number(rv.divergedComponents) || 0, css: rv.css ?? null };
+    const route = receiptRoute(file);
+    if (evidence.variants > 1) found.push({ route, severity: 'blocker', subject: 'dual_document', evidence });
+    else if (evidence.divergedComponents || evidence.desktopOnlyElements || evidence.mobileOnlyElements) found.push({ route, severity: 'advisory', subject: 'viewport_divergence', evidence });
+  }
+  return found.sort((a, b) => a.route.localeCompare(b.route));
 };
 
 // Routes the capture folded into another page although they render different
@@ -87,15 +107,16 @@ export async function checkImport(args) {
   // Wall time per stage, so a slow evaluation names its stage.
   const timings = {};
   let mark = Date.now();
-  const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null }) => {
+  const report = ({ stage, check, owner_repo, subject, evidence, route = null, width = null, severity = null }) => {
     const signature = createHash('sha1').update(JSON.stringify([stage, check, owner_repo, subject])).digest('hex').slice(0, 12);
     if (scope && !UNCHECKED.has(check) && !scope.some((s) => s.signature === signature)) return;
     if (scope && route != null && !scopedCell(route, width)) return;
-    const finding = findings.get(signature) || { signature, severity: advisory.has(check) ? 'advisory' : 'blocker', stage, check, owner_repo, subject, evidence, occurrences: [] };
+    const finding = findings.get(signature) || { signature, severity: severity || (advisory.has(check) ? 'advisory' : 'blocker'), stage, check, owner_repo, subject, evidence, occurrences: [] };
     finding.occurrences.push({ route, width, evidence });
     findings.set(signature, finding);
   };
   for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: compareClient.owner_repo, subject: 'route_folded', evidence: folded, route: folded.route });
+  for (const { route, severity, subject, evidence } of sourceDeviceDocuments(captureRoot)) report({ stage: 'capture', check: 'source_device_documents', owner_repo: compareClient.owner_repo, subject, evidence, route, severity });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.

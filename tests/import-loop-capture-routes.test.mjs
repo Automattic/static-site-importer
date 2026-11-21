@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { captureRoutes, foldedRoutes } from '../tools/import-loop/checks.mjs';
+import { captureRoutes, foldedRoutes, sourceDeviceDocuments } from '../tools/import-loop/checks.mjs';
 import { routeDocument } from '../tools/import-loop/lib.mjs';
 
 test('routes come from the capture receipt for directory and file sites', () => {
@@ -43,4 +43,26 @@ test('a route folded into a page with different text is reported; aliases and qu
   fs.writeFileSync(path.join(root, 'screenshots', 'manifest.json'), JSON.stringify({ version: 1, entries }));
   fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ duplicateRoutes: ['about', 'alias', 'gallery?c=x'].map((r) => ({ url: site + r, canonicalUrl: site })) }));
   assert.deepEqual(foldedRoutes(root), [{ route: '/about', canonical: '/' }]);
+});
+
+test('source device documents: a dual-document route blocks, a diverged one advises, a single document reports nothing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-devices-'));
+  const rv = (outcome, extra = {}) => ({ variants: 1, outcome, css: 'shared', matchedNodes: 40, desktopOnlyElements: 0, mobileOnlyElements: 0, ...extra });
+  fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ routes: [
+    { path: 'website/index.html', responsiveVariants: rv('collapsed-identity-subset', { divergedComponents: 6, css: 'viewport-scoped' }) },
+    { path: 'website/about/index.html', responsiveVariants: rv('collapsed-identity-subset', { desktopOnlyElements: 1, divergedComponents: 3 }) },
+    { path: 'website/home-alt-bedford/index.html', responsiveVariants: rv('dual-structural', { variants: 2 }) },
+    { path: 'website/blog/index.html', responsiveVariants: rv('collapsed-equivalent') },
+    { path: 'website/contact/index.html' },
+  ] }));
+  const found = sourceDeviceDocuments(root);
+  assert.deepEqual(found.map(({ route, severity, subject }) => [route, severity, subject]), [
+    ['/', 'advisory', 'viewport_divergence'],
+    ['/about/', 'advisory', 'viewport_divergence'],
+    ['/home-alt-bedford/', 'blocker', 'dual_document'],
+  ]);
+  assert.deepEqual(found[2].evidence, { outcome: 'dual-structural', variants: 2, matchedNodes: 40, desktopOnlyElements: 0, mobileOnlyElements: 0, divergedComponents: 0, css: 'shared' });
+
+  fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ routes: [{ path: 'website/index.html' }] }));
+  assert.deepEqual(sourceDeviceDocuments(root), []);
 });
