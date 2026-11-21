@@ -259,6 +259,19 @@ function fileIssue(finding, repo, body, extra = {}) {
   return { status: 'tracked', issue_url: url, number: Number(url.split('/').pop()), filed: true, ...extra };
 }
 
+// A merged fix for the finding's issue (a Cook branch `fix/issue-<n>-…`)
+// that the pass's base for that repository does not contain yet. Only
+// released repositories (the importer and the capture client) can lag: Blocks
+// Engine's base is the trunk the pass re-imported.
+const mergedFixes = new Map();
+function unreleasedFix(issue) {
+  const repo = issue.repository.name;
+  if (repo === 'blocks-engine' || !bases[repo] || !repos[repo]) return null;
+  if (!mergedFixes.has(repo)) mergedFixes.set(repo, JSON.parse(gh('pr', 'list', '-R', repos[repo].github, '--state', 'merged', '--json', 'url,headRefName,mergeCommit', '-L', '100')));
+  const fixes = mergedFixes.get(repo).filter((pr) => pr.headRefName.match(/^fix\/issue-(\d+)-/)?.[1] === String(issue.number) && pr.mergeCommit?.oid);
+  return fixes.find((pr) => ['ahead', 'diverged'].includes(gh('api', `repos/${repos[repo].github}/compare/${bases[repo]}...${pr.mergeCommit.oid}`, '--jq', '.status').trim()))?.url || null;
+}
+
 const tracked = [];
 const untracked = [];
 for (const finding of blockers) {
@@ -268,7 +281,13 @@ for (const finding of blockers) {
   if (issue) finding.owner_repo = issue.repository.name;
   let entry;
   const rerouted = issue?.state === 'open' && cookHistory(commentsOf(issue.url), result.url).rerouted;
-  if (rerouted && repos[rerouted.repo] && rerouted.repo !== issue.repository.name) entry = reroute(finding, issue, rerouted);
+  const awaiting = issue && unreleasedFix(issue);
+  if (awaiting) {
+    // The fix merged but the release this pass measured predates it: the pass
+    // cannot tell whether it holds, so the finding waits for that release.
+    entry = { status: 'untracked', issue_url: issue.url, number: issue.number, filed: false, reason: `awaiting release: ${awaiting} merged after ${issue.repository.name} ${bases[issue.repository.name].slice(0, 8)}, the release this pass measured` };
+  }
+  else if (rerouted && repos[rerouted.repo] && rerouted.repo !== issue.repository.name) entry = reroute(finding, issue, rerouted);
   else if (issue?.state === 'open') entry = { status: 'tracked', issue_url: issue.url, number: issue.number, filed: false };
   else if (issue) {
     // The fix did not hold: the issue is the finding's record, so it reopens
