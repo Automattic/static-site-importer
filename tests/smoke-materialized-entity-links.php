@@ -288,13 +288,14 @@ $anchor = $shape_case(
 );
 $anchor_tag = new WP_HTML_Tag_Processor( $anchor );
 $anchor_tag->next_tag();
-$assert( '/second-page/' === $anchor_tag->get_attribute( 'xlink:href' ) && '/second-page/' === $anchor_tag->get_attribute( 'data-href' ) && '{"url":"/second-page/"}' === $anchor_tag->get_attribute( 'data-config' ), 'Other link attributes on a snapshot-bearing tag keep their route rewrite.' );
+$assert( '/second-page/' === $anchor_tag->get_attribute( 'xlink:href' ) && '/second-page/' === $anchor_tag->get_attribute( 'data-href' ), 'Other link attributes on a snapshot-bearing tag are rewritten.' );
+$assert( '{"url":"/second/index.html"}' === $anchor_tag->get_attribute( 'data-config' ), 'Attributes that are not links stay as written on a snapshot-bearing tag.' );
 $assert( str_contains( $anchor, '"url":"/second-page/"' ), 'A sibling url block attribute keeps its route rewrite.' );
 // A wrapper block keeps the existing-panel snapshot under its attribute name.
 $existing       = (string) json_encode( array( 'resting' => array( 'html' => '<a href="/second/index.html">Second</a>' ) ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 $existing_key   = 'data-blocks-engine-capture-existing-panel';
-$wrapper_block  = '<!-- wp:example/shell ' . $encode_block( array( 'wrappers' => array( array( 'tagName' => 'div', 'attributes' => array( 'href' => '/second/index.html', $existing_key => $existing ) ) ) ) ) . ' -->'
-	. '<div href="/second/index.html" ' . $existing_key . '="' . htmlspecialchars( $existing, ENT_QUOTES, 'UTF-8' ) . '"></div><!-- /wp:example/shell -->';
+$wrapper_block  = '<!-- wp:example/shell ' . $encode_block( array( 'wrappers' => array( array( 'tagName' => 'div', 'attributes' => array( 'href' => '/second/index.html', 'data-href' => '/second/index.html', 'data-url' => '/second/index.html', $existing_key => $existing ) ) ) ) ) . ' -->'
+	. '<div href="/second/index.html" data-href="/second/index.html" data-url="/second/index.html" ' . $existing_key . '="' . htmlspecialchars( $existing, ENT_QUOTES, 'UTF-8' ) . '"></div><!-- /wp:example/shell -->';
 $unresolved     = array();
 $wrapper_block  = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $wrapper_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
 $wrapper_parsed = new WP_Block_Processor( $wrapper_block );
@@ -305,6 +306,59 @@ $wrapper_tag->next_tag();
 $wrapper_after = array( 'resting' => array( 'html' => '<a href="/second-page/">Second</a>' ) );
 $assert( $wrapper_after === json_decode( (string) ( $wrapper_attrs[ $existing_key ] ?? '' ), true ) && $wrapper_after === json_decode( (string) $wrapper_tag->get_attribute( $existing_key ), true ), 'A keyed existing-panel snapshot is rewritten in both copies.' );
 $assert( '/second-page/' === ( $wrapper_attrs['href'] ?? null ) && '/second-page/' === $wrapper_tag->get_attribute( 'href' ), 'A keyed wrapper href keeps its route rewrite in both copies.' );
+foreach ( array( 'data-href', 'data-url' ) as $wrapper_link ) {
+	$assert( '/second-page/' === ( $wrapper_attrs[ $wrapper_link ] ?? null ) && '/second-page/' === $wrapper_tag->get_attribute( $wrapper_link ), 'A keyed wrapper ' . $wrapper_link . ' is rewritten in both copies.' );
+}
+$panel_block = static fn( string $name, array $attributes, string $tag ): string => '<!-- wp:example/' . $name . ' ' . $encode_block( $attributes ) . ' -->' . $tag . '<!-- /wp:example/' . $name . ' -->';
+$panel_attr  = static fn( string $state ): string => $panel_key . '="' . htmlspecialchars( $state, ENT_QUOTES, 'UTF-8' ) . '"';
+// A block without a snapshot keeps the route patterns, so both href copies agree.
+$decoy  = $panel_block( 'button', array( 'sourceAttributes' => array( array( 'name' => 'title', 'value' => 'Example: href=' ), array( 'name' => 'href', 'value' => '/second/index.html' ) ) ), '<a title="Example: href=" href="/second/index.html">Second</a>' );
+$copies = $panel_copies( Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $decoy, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ) );
+$assert( $copies['href']['block comment'] === $copies['href']['saved markup'] && 'Example: href=' === $copies['title']['block comment'], 'A block without a snapshot keeps matching href copies.' );
+// Title and text that read like links survive verbatim on a snapshot-bearing block.
+$labelled = $shape_case(
+	'A title that reads like a search link',
+	$panel_block( 'button', array( 'sourceAttributes' => array( array( 'name' => 'title', 'value' => 'href="/search?other=' ), array( 'name' => $panel_key, 'value' => $panel_state ) ), 'text' => 'Menu "label"' ), '<button title="href=&quot;/search?other=" ' . $panel_attr( $panel_state ) . '>Menu "label"</button>' ),
+	array(
+		'title'    => 'href="/search?other=',
+		$panel_key => $panel_after,
+	)
+);
+$labelled_blocks = new WP_Block_Processor( $labelled );
+$labelled_blocks->next_delimiter();
+$assert( 'Menu "label"' === ( $labelled_blocks->allocate_and_return_parsed_attributes()['text'] ?? null ) && str_contains( $labelled, '>Menu "label"</button>' ), 'Block text survives verbatim.' );
+// A resolved query with a quote stays inside its attribute.
+$quoted = new WP_HTML_Tag_Processor( Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="/second/index.html?label=&quot;quote&quot;">Q</a>', $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ) );
+$quoted->next_tag();
+$assert( '/second-page/?label="quote"' === $quoted->get_attribute( 'href' ) && array( 'href' ) === $quoted->get_attribute_names_with_prefix( '' ), 'A quote in a resolved query is escaped in the attribute.' );
+// A comment that only looks like a delimiter changes nothing; a delimiter only the
+// block editor reads holds its own block, not the rest of the document.
+$menu_block = $panel_block( 'menu', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ), '<button ' . $panel_attr( $panel_state ) . '>Menu</button>' );
+$mixed      = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<!-- wp: this is a note -->' . $raw_close_block . $menu_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$assert( str_starts_with( $mixed, '<!-- wp: this is a note -->' . $raw_close_block ), 'The block Core cannot parse stays as written.' );
+$assert( $panel_after === ( $panel_copies( substr( $mixed, strlen( '<!-- wp: this is a note -->' . $raw_close_block ) ) )[ $panel_key ]['saved markup'] ?? null ), 'Other panels in the document are still rewritten.' );
+$shape_case( 'A panel after a note comment', '<!-- wp: this is a note -->' . $menu_block, array( $panel_key => $panel_after ) );
+// Rewriting a panel leaves unrelated JSON as written: empty objects, numeric keys, floats.
+$exact_state = '{"html":"<a href=\\"/second/index.html\\">Second</a>","meta":{},"keys":{"0":"a"},"ratio":1.0}';
+$exact       = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<!-- wp:example/panel {"meta":{},"keys":{"0":"a"},"ratio":1.0,' . substr( $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $exact_state ) ) ) ), 1 ) . ' --><button ' . $panel_attr( $exact_state ) . '>Menu</button><!-- /wp:example/panel -->', $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$exact_after = str_replace( '/second/index.html', '/second-page/', $exact_state );
+$exact_tag   = new WP_HTML_Tag_Processor( $exact );
+$exact_tag->next_tag( 'button' );
+$assert( str_starts_with( $exact, '<!-- wp:example/panel {"meta":{},"keys":{"0":"a"},"ratio":1.0,' ), 'Block attribute JSON keeps empty objects, numeric keys and floats.' );
+$exact_blocks = new WP_Block_Processor( $exact );
+$exact_blocks->next_delimiter();
+$assert( $exact_after === $exact_tag->get_attribute( $panel_key ) && $exact_after === ( $exact_blocks->allocate_and_return_parsed_attributes()['sourceAttributes'][0]['value'] ?? null ), 'Snapshot JSON keeps empty objects, numeric keys and floats in both copies.' );
+// Destinations a browser would turn into another origin are never written.
+foreach ( array( "/\t/other.example/new", "/\\other.example/new", ' /new', "/new\n" ) as $destination ) {
+	$offsite = $panel_copies( Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $menu_block, array( '/second' => $destination ), $unresolved, 'https://source.example/', array(), '/index.html' ) );
+	$assert( json_decode( $panel_state, true ) === $offsite[ $panel_key ]['block comment'] && json_decode( $panel_state, true ) === $offsite[ $panel_key ]['saved markup'], 'Destination ' . json_encode( $destination ) . ' is not written into a panel.' );
+}
+// Many snapshots on one block: each is decoded and encoded once.
+$many_entries = array_fill( 0, 5000, array( 'name' => $panel_key, 'value' => $panel_state ) );
+$started      = microtime( true );
+$many         = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $panel_block( 'menu', array( 'sourceAttributes' => $many_entries ), '<button>Menu</button>' ), $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$assert( microtime( true ) - $started < 0.5, 'Five thousand snapshots on one block rewrite in under half a second.' );
+$assert( 5000 === substr_count( $many, '/second-page/' ), 'Every snapshot on the block is rewritten.' );
 // Order-of-magnitude guard: one pass over the document, however many blocks precede the panel.
 $paragraphs = str_repeat( '<!-- wp:paragraph --><p>Body text with <a href="/second/index.html">a link</a>.</p><!-- /wp:paragraph -->', 30000 );
 $started    = microtime( true );
