@@ -359,6 +359,7 @@
     { "path": "tests/import-loop-list-view.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-canvas-parity.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-progress.test.mjs", "environment": "node" },
+    { "path": "tests/import-loop-corpus.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-bisect.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-evidence-archive.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-image-subject.test.mjs", "environment": "node" },

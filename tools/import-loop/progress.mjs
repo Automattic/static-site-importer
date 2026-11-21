@@ -51,8 +51,9 @@ export const parityFailureClass = (failure) => {
 // message are not compared: the source side of `text N chars !== source M`
 // varies between captures of the same frozen route, and a fix that halves a
 // mismatch still reads as a different string.
-const classCounts = (failures) => (failures || []).map((f) => parityFailureClass(f).subject).reduce((m, cls) => m.set(cls, (m.get(cls) || 0) + 1), new Map());
-const regressed = (before, after) => [...classCounts(after)].some(([cls, n]) => n > (classCounts(before).get(cls) || 0));
+export const classCounts = (failures) => (failures || []).map((f) => parityFailureClass(f).subject).reduce((m, cls) => m.set(cls, (m.get(cls) || 0) + 1), new Map());
+// One state/profile score got worse: a failure class appeared or grew.
+export const visualScoreRegressed = (before, after) => [...classCounts(after.failures)].some(([cls, n]) => n > (classCounts(before.failures).get(cls) || 0));
 
 // A check that could not run: its findings are missing, not fixed.
 export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
@@ -88,7 +89,7 @@ export function compareImports(before, after, signature, cells) {
     if (!next?.verified || !v.verified) { regressions.push(key); continue; }
     for (const score of v.scores) {
       const n = next.scores.find((s) => s.state === score.state && s.profile === score.profile);
-      if (!n || regressed(score.failures, n.failures)) regressions.push(key);
+      if (!n || visualScoreRegressed(score, n)) regressions.push(key);
     }
   }
   const own = { before: occurrences(a.get(signature), cells), after: occurrences(b.get(signature), cells) };
