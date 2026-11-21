@@ -53,6 +53,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private const PRODUCER_RECONCILIATION_META_KEY = '_blocks_engine_reconciliation_identity';
 	private const PANEL_SNAPSHOTS                  = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
 	private const PANEL_JSON_FLAGS                 = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION;
+	// Blocks Engine block types that carry panels, and their attributes saved as HTML.
+	private const PANEL_BLOCK_HTML_FIELDS = array(
+		'authored-button' => array( 'iconSvg' ),
+		'layout-shell'    => array(),
+		'accessible-link' => array( 'content' ),
+	);
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
@@ -1936,7 +1942,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
 		// The local reference for one decoded link value, or null to leave it as written.
-		$resolve = static function ( string $value, string $attribute ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): ?string {
+		$resolve_route = static function ( string $value, string $attribute ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): ?string {
 			// Unlike href/action, data attributes may be flags or identifiers, not links.
 			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $attribute ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
 				return null;
@@ -1989,6 +1995,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			return null;
 		};
+		// Characters a browser strips or Blocks Engine's safeHref() rejects are percent-encoded.
+		$resolve = static function ( string $value, string $attribute ) use ( $resolve_route ): ?string {
+			$reference = $resolve_route( $value, $attribute );
+			return null === $reference ? null : (string) preg_replace_callback( '/[\x00-\x20\x7f]/', static fn( array $character ): string => rawurlencode( $character[0] ), $reference );
+		};
 		$replace = static function ( array $matches ) use ( $resolve ): string {
 			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
 			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
@@ -2026,7 +2037,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		};
 
 		// Blocks carrying captured panel snapshots are rewritten from their decoded
-		// structure, never by the patterns above.
+		// structure, never by the patterns above. A null edit text keeps its span as written.
 		$out = '';
 		$at  = 0;
 		foreach ( self::panel_block_edits( $content, $resolve ) as list( $start, $length, $text ) ) {
@@ -2039,7 +2050,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$at   = $end;
 				continue;
 			}
-			$out .= $rewrite( substr( $content, $at, $start - $at ) ) . $text;
+			$out .= $rewrite( substr( $content, $at, $start - $at ) ) . ( $text ?? substr( $content, $start, $length ) );
 			$at   = $end;
 		}
 
@@ -2048,15 +2059,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/**
 	 * Captured dialog panels keep HTML snapshots as JSON in data attributes, once in
-	 * the block comment and once on the saved tag. A block whose comment carries one
-	 * is rewritten structurally: its decoded attributes and the tags of its own saved
-	 * markup get the same link rewrite, and the route patterns never see either.
-	 * A delimiter the block editor reads but Core's parser does not keeps its block
-	 * as written, along with any panel block it overlaps.
+	 * the block comment and once on the saved tag. A block whose decoded attributes
+	 * hold one is rewritten structurally: its attributes and the tags of its own saved
+	 * markup get the same link rewrite, and the route patterns never see either. The
+	 * block is kept as written when its type's saved fields are not covered, when any
+	 * part fails to encode, or when it overlaps a complete delimiter the block editor
+	 * reads but Core's parser does not.
 	 *
 	 * @param string  $content Document markup.
 	 * @param Closure $resolve Link resolver: (decoded value, attribute name) => reference or null.
-	 * @return array<int,array{int,int,string}> Replacements sorted by offset: offset, length, text.
+	 * @return array<int,array{int,int,string|null}> Replacements sorted by offset: offset, length, text (null keeps it as written).
 	 */
 	private static function panel_block_edits( string $content, Closure $resolve ): array {
 		if ( ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! self::mentions_panel_snapshot( $content ) ) {
@@ -2064,7 +2076,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$blocks    = new WP_Block_Processor( $content );
 		$parsed    = array();
-		$closers   = array();
 		$frames    = array();
 		$open      = array();
 		$close_all = static function ( int $depth, int $end ) use ( &$open, &$frames ): void {
@@ -2088,18 +2099,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				continue;
 			}
-			$parsed[ $span->start ] = true;
 			$end                    = $span->start + $span->length;
+			$parsed[ $span->start ] = $end;
 			$type                   = $blocks->get_delimiter_type();
 			if ( WP_Block_Processor::CLOSER === $type ) {
-				$closers[] = array( $span->start, $end, (string) $blocks->get_block_type() );
 				$close_all( $depth, $end );
 				continue;
 			}
 			$close_all( $depth - 1, $span->start );
-			$frame = self::panel_block_frame( $content, $span->start, $span->length, $resolve );
+			$frame = self::panel_block_frame( $content, $span->start, $span->length, (string) $blocks->get_block_type(), $resolve );
 			if ( WP_Block_Processor::VOID === $type ) {
-				$close_all( $depth - 1, $end );
 				if ( null !== $frame ) {
 					$frame['end'] = $end;
 					$frames[]     = $frame;
@@ -2110,45 +2119,31 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$close_all( 0, strlen( $content ) );
 
-		// Openers the block editor reads but Core does not: hold their whole block.
-		$held = array();
-		preg_match_all( '~<!--\s+wp:((?:[a-z][a-z0-9_-]*/)?[a-z][a-z0-9_-]*)\s~', $content, $heads, PREG_OFFSET_CAPTURE | PREG_SET_ORDER );
-		foreach ( $heads as $head ) {
-			$start = $head[0][1];
-			if ( isset( $parsed[ $start ] ) ) {
-				continue;
-			}
-			$name = WP_Block_Processor::normalize_block_type( $head[1][0] );
-			$end  = strlen( $content );
-			foreach ( $closers as $closer ) {
-				if ( $closer[0] > $start && $closer[2] === $name ) {
-					$end = $closer[1];
-					break;
-				}
-			}
-			if ( self::mentions_panel_snapshot( substr( $content, $start, $end - $start ) ) ) {
-				$held[] = array( $start, $end );
-			}
-		}
-
+		$held  = self::editor_only_panel_blocks( $content, $parsed );
 		$edits = array();
 		foreach ( $frames as $frame ) {
+			$keep = $frame['hold'];
 			foreach ( $held as $range ) {
-				if ( $frame['start'] < $range[1] && $range[0] < $frame['end'] ) {
-					$edits[] = array( $frame['start'], $frame['end'] - $frame['start'], substr( $content, $frame['start'], $frame['end'] - $frame['start'] ) );
-					continue 2;
-				}
+				$keep = $keep || ( $frame['start'] < $range[1] && $range[0] < $frame['end'] );
+			}
+			$spans = array();
+			foreach ( $keep ? array() : $frame['spans'] as list( $start, $length ) ) {
+				$failed  = false;
+				$spans[] = array( $start, $length, self::rewrite_tag_links( substr( $content, $start, $length ), $resolve, $failed ) );
+				$keep    = $keep || $failed;
+			}
+			if ( $keep ) {
+				$held[] = array( $frame['start'], $frame['end'] );
+				continue;
 			}
 			if ( null !== $frame['edit'] ) {
 				$edits[] = $frame['edit'];
 			}
-			foreach ( $frame['spans'] as list( $start, $length ) ) {
-				$html    = substr( $content, $start, $length );
-				$edits[] = array( $start, $length, self::rewrite_tag_links( $html, $resolve ) ?? $html );
-			}
+			// Spans stay out of the route patterns even when nothing in them changed.
+			array_push( $edits, ...$spans );
 		}
 		foreach ( $held as $range ) {
-			$edits[] = array( $range[0], $range[1] - $range[0], substr( $content, $range[0], $range[1] - $range[0] ) );
+			$edits[] = array( $range[0], $range[1] - $range[0], null );
 		}
 		usort( $edits, static fn( array $a, array $b ): int => array( $a[0], $b[1] ) <=> array( $b[0], $a[1] ) );
 
@@ -2156,16 +2151,116 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * A block opener whose attributes carry a panel snapshot, with its rewritten
-	 * attribute JSON when any link changed.
+	 * Complete blocks whose opener the block editor reads, and Core's parser does
+	 * not, with a panel snapshot in that opener: void openers, and openers with a
+	 * matching closer. Openers are found from the snapshot names, so unrelated
+	 * comments cost nothing.
+	 *
+	 * @param string         $content Document markup.
+	 * @param array<int,int> $parsed Core delimiter offsets mapped to their ends.
+	 * @return array<int,array{int,int}> Offset ranges: start, end.
+	 */
+	private static function editor_only_panel_blocks( string $content, array $parsed ): array {
+		$openers = array();
+		foreach ( self::PANEL_SNAPSHOTS as $name ) {
+			$at = 0;
+			while ( false !== ( $found = strpos( $content, $name, $at ) ) ) {
+				$at    = $found + 1;
+				$start = strrpos( $content, '<!--', $found - strlen( $content ) );
+				if ( false === $start || isset( $openers[ $start ] ) ) {
+					continue;
+				}
+				if ( isset( $parsed[ $start ] ) ) {
+					$at = max( $at, $parsed[ $start ] );
+					continue;
+				}
+				$opener = self::editor_block_opener( $content, $start );
+				if ( null !== $opener && $opener[0] > $found ) {
+					$openers[ $start ] = $opener;
+					$at                = $opener[0];
+				}
+			}
+		}
+		if ( ! $openers ) {
+			return array();
+		}
+
+		// Match each non-void opener to its closer, counting nested blocks of its type.
+		$held    = array();
+		$pending = array();
+		foreach ( $openers as $start => list( $end, $name, $void ) ) {
+			if ( $void ) {
+				$held[] = array( $start, $end );
+			} else {
+				$pending[ $start ] = array( $name, 1 );
+			}
+		}
+		if ( $pending ) {
+			$blocks = new WP_Block_Processor( $content );
+			while ( $pending && $blocks->next_delimiter() ) {
+				$span = $blocks->get_span();
+				$type = $blocks->get_delimiter_type();
+				if ( null === $span || WP_Block_Processor::VOID === $type ) {
+					continue;
+				}
+				$name = (string) $blocks->get_block_type();
+				foreach ( $pending as $start => list( $wanted, $depth ) ) {
+					if ( $span->start < $start || $name !== $wanted ) {
+						continue;
+					}
+					$depth += WP_Block_Processor::CLOSER === $type ? -1 : 1;
+					if ( 0 === $depth ) {
+						$held[] = array( $start, $span->start + $span->length );
+						unset( $pending[ $start ] );
+					} else {
+						$pending[ $start ] = array( $wanted, $depth );
+					}
+				}
+			}
+		}
+
+		return $held;
+	}
+
+	/**
+	 * The block opener the block editor's parser reads at an offset: its end offset,
+	 * block type and whether it is void, or null when there is none.
+	 *
+	 * @param string $content Document markup.
+	 * @param int    $start Offset of `<!--`.
+	 * @return array{int,string,bool}|null
+	 */
+	private static function editor_block_opener( string $content, int $start ): ?array {
+		if ( ! preg_match( '~\G<!--\s+wp:((?:[a-z][a-z0-9_-]*/)?[a-z][a-z0-9_-]*)\s+~', $content, $head, 0, $start ) ) {
+			return null;
+		}
+		$at   = $start + strlen( $head[0] );
+		$name = WP_Block_Processor::normalize_block_type( $head[1] );
+		if ( '{' !== ( $content[ $at ] ?? '' ) ) {
+			return preg_match( '~\G(/)?-->~', $content, $close, 0, $at ) ? array( $at + strlen( $close[0] ), $name, isset( $close[1] ) && '/' === $close[1] ) : null;
+		}
+		// Attributes end at the first `}` followed by whitespace and the comment closer.
+		while ( false !== ( $brace = strpos( $content, '}', $at ) ) ) {
+			if ( preg_match( '~\G\}\s+(/)?-->~', $content, $close, 0, $brace ) ) {
+				return array( $brace + strlen( $close[0] ), $name, isset( $close[1] ) && '/' === $close[1] );
+			}
+			$at = $brace + 1;
+		}
+		return null;
+	}
+
+	/**
+	 * A block opener whose decoded attributes hold a panel snapshot, with its
+	 * rewritten attribute JSON when any link changed.
 	 *
 	 * @param string  $content Document markup.
 	 * @param int     $start Delimiter offset.
 	 * @param int     $length Delimiter length.
+	 * @param string  $type Block type.
 	 * @param Closure $resolve Link resolver.
-	 * @return array{start:int,end:int,edit:array{int,int,string}|null,spans:array<int,array{int,int}>}|null
+	 * @return array{start:int,end:int,edit:array{int,int,string}|null,spans:array<int,array{int,int}>,hold:bool}|null
 	 */
-	private static function panel_block_frame( string $content, int $start, int $length, Closure $resolve ): ?array {
+	private static function panel_block_frame( string $content, int $start, int $length, string $type, Closure $resolve ): ?array {
 		$delimiter = substr( $content, $start, $length );
 		$open      = strpos( $delimiter, '{' );
 		$close     = strrpos( $delimiter, '}' );
@@ -2176,15 +2271,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! $attributes instanceof stdClass ) {
 			return null;
 		}
-		$changed    = false;
-		$attributes = self::rewrite_structure_links( $attributes, $resolve, $changed );
-		$json       = $changed ? wp_json_encode( $attributes, self::PANEL_JSON_FLAGS ) : false;
+		$local   = substr( $type, (int) strrpos( $type, '/' ) + 1 );
+		$fields  = self::PANEL_BLOCK_HTML_FIELDS[ $local ] ?? null;
+		$changed = false;
+		$found   = false;
+		$failed  = false;
+		$rewrite = self::rewrite_structure_links( $attributes, $resolve, $fields ?? array(), $changed, $found, $failed );
+		if ( ! $found ) {
+			return null;
+		}
+		$json = $changed && ! $failed ? wp_json_encode( $rewrite, self::PANEL_JSON_FLAGS ) : false;
 
 		return array(
 			'start' => $start,
 			'end'   => $start + $length,
 			'edit'  => is_string( $json ) ? array( $start + $open, $close - $open + 1, self::block_attribute_json( $json ) ) : null,
 			'spans' => array(),
+			// Only block types whose saved fields are all covered are rewritten.
+			'hold'  => null === $fields || $failed || ( $changed && ! is_string( $json ) ),
 		);
 	}
 
@@ -2205,18 +2309,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	/**
 	 * Rewrite the link-bearing values of decoded block attributes or snapshot JSON:
 	 * name/value attribute entries and keyed attributes by their attribute name, `url`
-	 * keys, HTML under `html` and `iconSvg`, and nested panel snapshots. Every other
-	 * value is left as decoded.
+	 * keys, HTML under `html` and the block's own HTML fields, and nested panel
+	 * snapshots. Every other value is left as decoded.
 	 *
-	 * @param mixed   $node Decoded JSON value.
-	 * @param Closure $resolve Link resolver.
-	 * @param bool    $changed Set when a value changes.
+	 * @param mixed    $node Decoded JSON value.
+	 * @param Closure  $resolve Link resolver.
+	 * @param string[] $fields Keys whose values are saved as HTML, besides `html`.
+	 * @param bool     $changed Set when a value changes.
+	 * @param bool     $found Set when a panel snapshot value is present.
+	 * @param bool     $failed Set when a rewritten value cannot be written.
 	 * @return mixed
 	 */
-	private static function rewrite_structure_links( $node, Closure $resolve, bool &$changed ) {
+	private static function rewrite_structure_links( $node, Closure $resolve, array $fields, bool &$changed, bool &$found, bool &$failed ) {
 		if ( is_array( $node ) ) {
 			foreach ( $node as $index => $item ) {
-				$node[ $index ] = self::rewrite_structure_links( $item, $resolve, $changed );
+				$node[ $index ] = self::rewrite_structure_links( $item, $resolve, $fields, $changed, $found, $failed );
 			}
 			return $node;
 		}
@@ -2224,7 +2331,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return $node;
 		}
 		if ( is_string( $node->name ?? null ) && is_string( $node->value ?? null ) ) {
-			$value = self::rewrite_attribute_value( $node->name, $node->value, $resolve );
+			$value = self::rewrite_attribute_value( $node->name, $node->value, $resolve, $found, $failed );
 			if ( null !== $value ) {
 				$node->value = $value;
 				$changed     = true;
@@ -2233,17 +2340,17 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( get_object_vars( $node ) as $key => $value ) {
 			$key = (string) $key;
 			if ( is_string( $value ) ) {
-				if ( 'html' === $key || 'iconSvg' === $key ) {
-					$value = self::rewrite_tag_links( $value, $resolve );
+				if ( 'html' === $key || in_array( $key, $fields, true ) ) {
+					$value = self::rewrite_tag_links( $value, $resolve, $failed );
 				} else {
-					$value = self::rewrite_attribute_value( 0 === strcasecmp( $key, 'url' ) ? 'href' : $key, $value, $resolve );
+					$value = self::rewrite_attribute_value( 0 === strcasecmp( $key, 'url' ) ? 'href' : $key, $value, $resolve, $found, $failed );
 				}
 				if ( null !== $value ) {
 					$node->$key = $value;
 					$changed    = true;
 				}
 			} elseif ( is_array( $value ) || $value instanceof stdClass ) {
-				$node->$key = self::rewrite_structure_links( $value, $resolve, $changed );
+				$node->$key = self::rewrite_structure_links( $value, $resolve, $fields, $changed, $found, $failed );
 			}
 		}
 		return $node;
@@ -2255,16 +2362,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param string  $name Attribute name.
 	 * @param string  $value Decoded attribute value.
 	 * @param Closure $resolve Link resolver.
+	 * @param bool    $found Set when the attribute is a panel snapshot.
+	 * @param bool    $failed Set when a rewritten snapshot cannot be encoded.
 	 */
-	private static function rewrite_attribute_value( string $name, string $value, Closure $resolve ): ?string {
+	private static function rewrite_attribute_value( string $name, string $value, Closure $resolve, bool &$found, bool &$failed ): ?string {
 		if ( in_array( strtolower( $name ), self::PANEL_SNAPSHOTS, true ) ) {
+			$found    = true;
 			$snapshot = json_decode( $value );
 			if ( ! is_array( $snapshot ) && ! $snapshot instanceof stdClass ) {
 				return null;
 			}
 			$changed  = false;
-			$snapshot = self::rewrite_structure_links( $snapshot, $resolve, $changed );
+			$nested   = false;
+			$snapshot = self::rewrite_structure_links( $snapshot, $resolve, array(), $changed, $nested, $failed );
 			$json     = $changed ? wp_json_encode( $snapshot, self::PANEL_JSON_FLAGS ) : false;
+			$failed   = $failed || ( $changed && ! is_string( $json ) );
 			return is_string( $json ) ? $json : null;
 		}
 		if ( ! self::is_link_attribute( $name ) ) {
@@ -2344,9 +2456,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 *
 	 * @param string  $html HTML fragment.
 	 * @param Closure $resolve Link resolver.
+	 * @param bool    $failed Set when a rewritten value cannot be written.
 	 * @return string|null Updated HTML, or null when nothing changed.
 	 */
-	private static function rewrite_tag_links( string $html, Closure $resolve ): ?string {
+	private static function rewrite_tag_links( string $html, Closure $resolve, bool &$failed ): ?string {
 		if ( ! str_contains( $html, '<' ) ) {
 			return null;
 		}
@@ -2365,10 +2478,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		while ( $tags->next_tag() ) {
 			foreach ( $tags->get_attribute_names_with_prefix( '' ) ?? array() as $name ) {
 				$value = $tags->get_attribute( $name );
-				$value = is_string( $value ) ? self::rewrite_attribute_value( $name, $value, $resolve ) : null;
-				if ( null !== $value && $tags->replace_value( $name, self::escape_attribute( $value ) ) ) {
-					$changed = true;
+				$found = false;
+				$value = is_string( $value ) ? self::rewrite_attribute_value( $name, $value, $resolve, $found, $failed ) : null;
+				if ( null === $value ) {
+					continue;
 				}
+				if ( ! $tags->replace_value( $name, self::escape_attribute( $value ) ) ) {
+					$failed = true;
+					continue;
+				}
+				$changed = true;
 			}
 		}
 
