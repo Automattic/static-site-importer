@@ -73,14 +73,35 @@ const explain = (runId, outcome, issue) => {
   }
   return data?.root_cause?.message ?? outcome?.error_code ?? outcome?.kind ?? null;
 };
+// Where a Cook's time went: its whole wall time, how many attempts it took
+// (each failed gate costs one), and the final attempt's phases. A pass is
+// mostly Cook, so this is the line that says whether a slow pass waited for
+// the runner, for the agent, or for a retry.
+// Top-level attempt phases; the rest are their sub-phases.
+const COOK_PHASES = ['schedule', 'stage.dependency_hydration', 'provider', 'gate', 'gate.replay', 'terminal.decision', 'promote', 'publish.aggregate'];
+const ms = (a, b) => (a && b ? Math.max(0, Date.parse(b) - Date.parse(a)) : null);
+const timing = (outer) => {
+  const final = outer?.cook?.run_id ? homeboy('runs', 'show', outer.cook.run_id)?.payload?.run : null;
+  const phases = Object.fromEntries((final?.resources?.phases || []).filter((p) => COOK_PHASES.includes(p.phase)).map((p) => [p.phase, Math.round(p.wall_ms / 6000) / 10]));
+  return {
+    minutes: Math.round((ms(outer?.started_at, outer?.finished_at) ?? 0) / 6000) / 10 || null,
+    attempts: Number(outer?.cook?.run_id?.match(/-attempt-(\d+)-/)?.[1]) || null,
+    final_attempt_minutes: Math.round((ms(final?.started_at, final?.finished_at) ?? 0) / 6000) / 10 || null,
+    phases,
+  };
+};
 const cooks = (run?.steps?.cook?.items || []).map((item, n) => {
   const cook = { issue: triage?.cook_items?.[n]?.issue_url ?? null, signature: triage?.cook_items?.[n]?.signature ?? null, outcome: item.outcome ?? item.phase };
   if (!item.run_id) return cook;
   const terminal = homeboy('agent-task', 'status', item.run_id)?.terminal_outcome ?? null;
+  const outer = homeboy('runs', 'show', item.run_id)?.payload?.run ?? null;
   const failure = classify(terminal);
-  const settled = { ...cook, run: item.run_id, terminal: terminal?.kind ?? null, ...(terminal?.pr ? { pr: terminal.pr } : {}) };
+  const settled = { ...cook, run: item.run_id, terminal: terminal?.kind ?? null, ...(terminal?.pr ? { pr: terminal.pr } : {}), timing: timing(outer) };
   if (!failure) return settled;
-  return { ...settled, failure, cause: String(explain(item.run_id, terminal, cook.issue) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
+  // Homeboy's cook verdict names a mechanics failure directly (a GitHub
+  // error, a lost runner); diagnose can quote the prompt instead.
+  const reason = failure === 'mechanics' ? outer?.cook?.reason : null;
+  return { ...settled, failure, cause: String(reason ?? explain(item.run_id, terminal, cook.issue) ?? item.error ?? '').split(/\n|\\n/)[0].slice(0, 240) || null };
 });
 const merged = [...new Set(confirms.flatMap((c) => c.merged || []))];
 const started = run?.job?.created_at_ms ?? null;
@@ -94,6 +115,9 @@ const line = {
   solved: now ? Object.keys(now).length === 0 : null,
   occurrences: now ? Object.values(now).reduce((a, b) => a + b, 0) : null,
   blockers: now,
+  // Measured blockers' value against their limit, so partial progress on
+  // one (a share, a weight) shows between passes while its count stays 1.
+  measures: now ? Object.fromEntries(evaluated.findings.filter((f) => f.severity === 'blocker' && f.occurrences.some((o) => o.evidence?.measure)).map((f) => [f.signature, f.occurrences.map((o) => o.evidence?.measure).filter(Boolean).map((m) => ({ value: m.value, limit: m.limit }))[0]])) : null,
   ...(incomplete.length ? { incomplete } : {}),
   // Against the previous pass on this board: what this pass's import fixed.
   removed: now && previous?.blockers ? Object.keys(previous.blockers).filter((s) => !(s in now)) : null,
@@ -128,7 +152,7 @@ fs.writeFileSync(path.join(args.runs, `${args.slug}-status.md`), [
   '',
 ].join('\n'));
 const delta = previous?.occurrences != null && line.occurrences != null ? ` (${line.occurrences - previous.occurrences >= 0 ? '+' : ''}${line.occurrences - previous.occurrences})` : '';
-console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}, failures ${JSON.stringify(line.cook_failures)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min`);
+console.error(`[score] ${args.slug} pass ${line.iteration}: ${line.blocker_count} blockers, ${line.occurrences} occurrences${delta}; cooks ${JSON.stringify(line.cook_outcomes)}, failures ${JSON.stringify(line.cook_failures)}; merged ${merged.length ? merged.join(' ') : 'none'}; ${line.minutes} min${cooks.some((c) => c.timing) ? `; cook ${cooks.filter((c) => c.timing).map((c) => `${c.timing.minutes ?? '?'}m/${c.timing.attempts ?? '?'} attempts`).join(', ')}` : ''}`);
 // What the chain's stop_unchanged compares: this pass's blockers (count and
 // excess past their limits) and what it merged. A pass that merges a fix is
 // progress the next pass's evaluation has yet to see.
