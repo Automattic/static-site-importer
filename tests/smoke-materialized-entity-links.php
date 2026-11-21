@@ -23,6 +23,7 @@ $wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
 require_once $wp_root . '/wp-includes/compat-utf8.php';
 require_once $wp_root . '/wp-includes/utf8.php';
 require_once __DIR__ . '/fixtures/core-html-api.php';
+require_once $wp_root . '/wp-includes/class-wp-block-processor.php';
 
 function wp_parse_url( $url ) {
 	return parse_url( $url ); }
@@ -176,15 +177,17 @@ $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative
 // A captured dialog keeps HTML snapshots as JSON in data attributes, both in the
 // block comment and in the saved markup. Both copies must decode to the same panel.
 $panel_copies = static function ( string $block ): array {
-	$comment    = substr( $block, 22, (int) strpos( $block, ' -->' ) - 22 );
-	$attributes = json_decode( $comment, true )['sourceAttributes'] ?? array();
+	$blocks = new WP_Block_Processor( $block );
+	$blocks->next_delimiter();
+	$attributes = $blocks->allocate_and_return_parsed_attributes()['sourceAttributes'] ?? array();
 	$tags       = new WP_HTML_Tag_Processor( $block );
 	$tags->next_tag();
 	$copies = array();
 	foreach ( $attributes as $attribute ) {
+		$decode                       = str_starts_with( $attribute['name'], 'data-blocks-engine-capture-' ) ? static fn( $value ) => json_decode( (string) $value, true ) : static fn( $value ) => $value;
 		$copies[ $attribute['name'] ] = array(
-			'block comment' => json_decode( (string) $attribute['value'], true ),
-			'saved markup'  => json_decode( (string) $tags->get_attribute( $attribute['name'] ), true ),
+			'block comment' => $decode( $attribute['value'] ),
+			'saved markup'  => $decode( $tags->get_attribute( $attribute['name'] ) ),
 		);
 	}
 	return $copies;
@@ -246,6 +249,68 @@ $panel_case(
 		'opened'  => array( 'html' => '<a href="/">Home</a>', 'hidden' => false ),
 	)
 );
+// Block shapes Gutenberg accepts: delimiter spacing, entry order, a raw `-->` in
+// attribute JSON, and an anchor trigger whose own href is also a source attribute.
+$panel_routes = array( '/' => '/', '/second' => '/second-page/', '/en' => '/english/' );
+$panel_state  = (string) json_encode( array( 'html' => '<a hreflang="en" href="/second/index.html">Second</a>' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+$panel_after  = array( 'html' => '<a hreflang="en" href="/second-page/">Second</a>' );
+$shape_case   = static function ( string $label, string $block, array $expected ) use ( $assert, $panel_copies, $panel_routes ): string {
+	$unresolved = array();
+	$block      = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+	$copies     = $panel_copies( $block );
+	foreach ( $expected as $name => $value ) {
+		foreach ( $copies[ $name ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+			$assert( $value === $decoded, $label . ': ' . $name . ' in the ' . $copy . ' matches the expected value.' );
+		}
+	}
+	$assert( array() === $unresolved, $label . ': nothing is left unresolved.' );
+	return $block;
+};
+$encode_block = static fn( array $attributes ): string => \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( $attributes );
+$markup       = '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/panel -->';
+$panel_key    = 'data-blocks-engine-capture-dialog-panel-state';
+$shape_case( 'Two spaces after the comment opener', '<!--  wp:example/panel ' . $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->' . $markup, array( $panel_key => $panel_after ) );
+$shape_case( 'Value before name', '<!-- wp:example/panel ' . $encode_block( array( 'sourceAttributes' => array( array( 'value' => $panel_state, 'name' => $panel_key ) ) ) ) . ' -->' . $markup, array( $panel_key => $panel_after ) );
+// Core's block parser does not read this delimiter, but the block editor does, so
+// neither copy of its snapshot may change.
+$raw_close_block = '<!-- wp:example/panel {"label":"a-->b",' . substr( $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ), 1 ) . ' -->' . $markup;
+$unresolved      = array();
+$assert( $raw_close_block === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $raw_close_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' ), 'A raw comment closer inside attribute JSON leaves both snapshot copies as written.' );
+$anchor = $shape_case(
+	'An anchor trigger with its own href',
+	'<!-- wp:example/panel ' . $encode_block( array( 'url' => '/second/index.html', 'sourceAttributes' => array( array( 'name' => 'href', 'value' => '/second/index.html' ), array( 'name' => 'hreflang', 'value' => '/en/index.html' ), array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->'
+		. '<a href="/second/index.html" hreflang="/en/index.html" xlink:href="/second/index.html" data-href="/second/index.html" data-config=\'{"url":"/second/index.html"}\' ' . $panel_key . '="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</a><!-- /wp:example/panel -->',
+	array(
+		'href'     => '/second-page/',
+		'hreflang' => '/en/index.html',
+		$panel_key => $panel_after,
+	)
+);
+$anchor_tag = new WP_HTML_Tag_Processor( $anchor );
+$anchor_tag->next_tag();
+$assert( '/second-page/' === $anchor_tag->get_attribute( 'xlink:href' ) && '/second-page/' === $anchor_tag->get_attribute( 'data-href' ) && '{"url":"/second-page/"}' === $anchor_tag->get_attribute( 'data-config' ), 'Other link attributes on a snapshot-bearing tag keep their route rewrite.' );
+$assert( str_contains( $anchor, '"url":"/second-page/"' ), 'A sibling url block attribute keeps its route rewrite.' );
+// A wrapper block keeps the existing-panel snapshot under its attribute name.
+$existing       = (string) json_encode( array( 'resting' => array( 'html' => '<a href="/second/index.html">Second</a>' ) ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+$existing_key   = 'data-blocks-engine-capture-existing-panel';
+$wrapper_block  = '<!-- wp:example/shell ' . $encode_block( array( 'wrappers' => array( array( 'tagName' => 'div', 'attributes' => array( 'href' => '/second/index.html', $existing_key => $existing ) ) ) ) ) . ' -->'
+	. '<div href="/second/index.html" ' . $existing_key . '="' . htmlspecialchars( $existing, ENT_QUOTES, 'UTF-8' ) . '"></div><!-- /wp:example/shell -->';
+$unresolved     = array();
+$wrapper_block  = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $wrapper_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html' );
+$wrapper_parsed = new WP_Block_Processor( $wrapper_block );
+$wrapper_parsed->next_delimiter();
+$wrapper_attrs = $wrapper_parsed->allocate_and_return_parsed_attributes()['wrappers'][0]['attributes'] ?? array();
+$wrapper_tag   = new WP_HTML_Tag_Processor( $wrapper_block );
+$wrapper_tag->next_tag();
+$wrapper_after = array( 'resting' => array( 'html' => '<a href="/second-page/">Second</a>' ) );
+$assert( $wrapper_after === json_decode( (string) ( $wrapper_attrs[ $existing_key ] ?? '' ), true ) && $wrapper_after === json_decode( (string) $wrapper_tag->get_attribute( $existing_key ), true ), 'A keyed existing-panel snapshot is rewritten in both copies.' );
+$assert( '/second-page/' === ( $wrapper_attrs['href'] ?? null ) && '/second-page/' === $wrapper_tag->get_attribute( 'href' ), 'A keyed wrapper href keeps its route rewrite in both copies.' );
+// Order-of-magnitude guard: one pass over the document, however many blocks precede the panel.
+$paragraphs = str_repeat( '<!-- wp:paragraph --><p>Body text with <a href="/second/index.html">a link</a>.</p><!-- /wp:paragraph -->', 30000 );
+$started    = microtime( true );
+$timed      = $shape_case( 'A panel after a few MB of paragraphs', $paragraphs . '<!-- wp:example/panel ' . $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->' . $markup, array() );
+$assert( microtime( true ) - $started < 1.0, 'A panel after ' . round( strlen( $paragraphs ) / 1048576, 1 ) . ' MB of paragraphs rewrites in under a second.' );
+$assert( 30000 === substr_count( $timed, '<a href="/second-page/">' ), 'Paragraph links still resolve.' );
 $unresolved = array();
 foreach ( array(
 	'/oman\\u002d\\u002d-unterwegs/index.html' => '/oman---unterwegs',

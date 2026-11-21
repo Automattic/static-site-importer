@@ -2019,7 +2019,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		};
 
 		// Captured panel snapshots are rewritten whole, never by the patterns above.
-		$edits = self::panel_snapshot_edits( $content, $resolve );
+		$edits = self::panel_snapshot_edits( $content, $resolve, $rewrite );
 		$out   = '';
 		$at    = 0;
 		foreach ( $edits as $edit ) {
@@ -2035,65 +2035,163 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/**
 	 * Captured dialog panels keep HTML snapshots as JSON in data attributes, once in
-	 * the block comment and once in the saved markup. Decode each copy whole, rewrite
-	 * its links with the HTML API, and encode both from the same rewritten snapshot.
+	 * the block comment's `sourceAttributes` and once on the saved tag. Each copy is
+	 * decoded whole, its links rewritten with the HTML API, and both copies encoded
+	 * from the same rewritten snapshot. Everything else on those blocks and tags still
+	 * goes through the route patterns, with only the snapshot values held out.
 	 *
 	 * @param string  $content Document markup.
 	 * @param Closure $resolve Link resolver: (decoded value, attribute name) => reference or null.
+	 * @param Closure $rewrite Route patterns for text outside snapshots.
 	 * @return array<int,array{int,int,string}> Replacements sorted by offset: offset, length, text.
 	 */
-	private static function panel_snapshot_edits( string $content, Closure $resolve ): array {
-		$names = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
-		if ( ! class_exists( 'WP_HTML_Tag_Processor' ) || ! preg_match( '/' . implode( '|', array_map( 'preg_quote', $names ) ) . '/', $content ) ) {
+	private static function panel_snapshot_edits( string $content, Closure $resolve, Closure $rewrite ): array {
+		$names  = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
+		$marker = '/' . implode( '|', array_map( 'preg_quote', array_merge( $names, array( 'sourceAttributes' ) ) ) ) . '/';
+		if ( ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! preg_match( $marker, $content ) ) {
 			return array();
 		}
-		$edits = array();
+		$placeholder = 'ssi0snapshot0' . bin2hex( random_bytes( 8 ) ) . '0';
+		$edits       = array();
 
-		// Block comment copy: a JSON string, keyed by the attribute or paired with its name.
-		for ( $start = strpos( $content, '<!-- wp:' ); false !== $start; $start = strpos( $content, '<!-- wp:', $end ) ) {
-			$end = strpos( $content, '-->', $start );
-			if ( false === $end ) {
-				break;
+		// Block comments: decoded attributes, so entry order and delimiter spacing do not matter.
+		$blocks     = new WP_Block_Processor( $content );
+		$delimiters = array();
+		while ( $blocks->next_delimiter() ) {
+			$span = $blocks->get_span();
+			if ( null === $span ) {
+				continue;
 			}
-			foreach ( $names as $name ) {
-				for ( $key = strpos( $content, '"' . $name . '"', $start ); false !== $key && $key < $end; $key = strpos( $content, '"' . $name . '"', $key + 1 ) ) {
-					$at = $key + strlen( $name ) + 2;
-					if ( ! preg_match( '/\G\s*(?::|,\s*"value"\s*:)\s*"/', $content, $match, 0, $at ) ) {
-						continue;
-					}
-					$open  = $at + strlen( $match[0] ) - 1;
-					$close = self::json_string_end( $content, $open );
-					$value = null === $close ? null : json_decode( substr( $content, $open, $close - $open + 1 ) );
-					if ( ! is_string( $value ) || $close > $end ) {
-						continue;
-					}
-					$snapshot = self::rewrite_panel_snapshot( $value, $resolve );
-					$token    = null === $snapshot ? substr( $content, $open, $close - $open + 1 ) : self::block_attribute_json( (string) wp_json_encode( $snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
-					$edits[]  = array( $open, $close - $open + 1, $token );
+			$delimiters[ $span->start ] = true;
+			if ( WP_Block_Processor::CLOSER === $blocks->get_delimiter_type() ) {
+				continue;
+			}
+			$delimiter = substr( $content, $span->start, $span->length );
+			$open      = strpos( $delimiter, '{' );
+			$close     = strrpos( $delimiter, '}' );
+			if ( ! preg_match( $marker, $delimiter ) || false === $open || false === $close || $close < $open ) {
+				continue;
+			}
+			// Snapshots may sit in a name/value entry or under their attribute name; link
+			// entries are rewritten only in sourceAttributes, as the saved tag's are.
+			$held    = array();
+			$changed = false;
+			$walk    = static function ( $node, bool $entries ) use ( &$walk, $names, $resolve, $placeholder, &$held, &$changed ) {
+				if ( is_array( $node ) ) {
+					return array_map( static fn( $item ) => $walk( $item, $entries ), $node );
 				}
+				if ( ! $node instanceof stdClass ) {
+					return $node;
+				}
+				if ( is_string( $node->name ?? null ) && is_string( $node->value ?? null ) ) {
+					if ( in_array( $node->name, $names, true ) ) {
+						$held[ $placeholder . count( $held ) . 'x' ] = self::rewrite_panel_snapshot( $node->value, $resolve ) ?? $node->value;
+						$node->value                                 = array_key_last( $held );
+						$changed                                     = true;
+					} elseif ( $entries && self::is_link_attribute( $node->name ) ) {
+						$reference   = self::local_reference( $resolve( $node->value, $node->name ) );
+						$node->value = $reference ?? $node->value;
+						$changed     = $changed || null !== $reference;
+					}
+				}
+				foreach ( get_object_vars( $node ) as $key => $value ) {
+					if ( is_string( $value ) && in_array( $key, $names, true ) ) {
+						$held[ $placeholder . count( $held ) . 'x' ] = self::rewrite_panel_snapshot( $value, $resolve ) ?? $value;
+						$node->$key                                  = array_key_last( $held );
+						$changed                                     = true;
+					} elseif ( is_array( $value ) || $value instanceof stdClass ) {
+						$node->$key = $walk( $value, 'sourceAttributes' === $key );
+					}
+				}
+				return $node;
+			};
+			$attributes = $walk( json_decode( substr( $delimiter, $open, $close - $open + 1 ) ), false );
+			if ( ! $changed ) {
+				continue;
 			}
+			$json = $rewrite( self::block_attribute_json( (string) wp_json_encode( $attributes, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) );
+			foreach ( $held as $token => $snapshot ) {
+				$json = str_replace( $token, substr( self::block_attribute_json( (string) wp_json_encode( $snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ), 1, -1 ), $json );
+			}
+			$edits[] = array( $span->start + $open, $close - $open + 1, $json );
 		}
 
-		// Saved markup copy: the attribute on its tag, with that tag's own links.
+		// Saved markup: the snapshot attribute on its tag. Its other attributes keep the patterns.
 		$tags = new class( $content ) extends WP_HTML_Tag_Processor {
-			/** @return array{int,int} Current tag's byte offset and length. */
+			/** @return array{int,int} Current token's byte offset and length. */
 			public function span(): array {
 				$this->set_bookmark( 'ssi-panel' );
 				return array( $this->bookmarks['ssi-panel']->start, $this->bookmarks['ssi-panel']->length );
 			}
 		};
-		while ( $tags->next_tag() ) {
+		while ( $tags->next_token() ) {
+			// A comment the block editor may read as a delimiter, but Core's block parser
+			// does not, could hold a snapshot copy this pass never saw: leave them all.
+			if ( '#comment' === $tags->get_token_type() && preg_match( '~^\s+/?wp:~', (string) $tags->get_full_comment_text() ) && ! isset( $delimiters[ $tags->span()[0] ] ) ) {
+				return array();
+			}
+			if ( '#tag' !== $tags->get_token_type() || $tags->is_tag_closer() ) {
+				continue;
+			}
 			$carried = array_filter( $names, static fn( string $name ): bool => is_string( $tags->get_attribute( $name ) ) );
 			if ( ! $carried ) {
 				continue;
 			}
-			$span    = $tags->span();
-			$tag     = substr( $content, $span[0], $span[1] );
-			$edits[] = array( $span[0], $span[1], self::rewrite_tag_links( $tag, $resolve, $carried ) ?? $tag );
+			$span = $tags->span();
+			$tag  = new WP_HTML_Tag_Processor( substr( $content, $span[0], $span[1] ) );
+			$tag->next_tag();
+			$held = array();
+			foreach ( $carried as $name ) {
+				$value                                       = (string) $tag->get_attribute( $name );
+				$held[ $placeholder . count( $held ) . 'x' ] = self::rewrite_panel_snapshot( $value, $resolve ) ?? $value;
+				$tag->set_attribute( $name, (string) array_key_last( $held ) );
+			}
+			$html = $rewrite( $tag->get_updated_html() );
+			foreach ( $held as $token => $snapshot ) {
+				$html = str_replace( $token, self::escape_attribute( $snapshot ), $html );
+			}
+			$edits[] = array( $span[0], $span[1], $html );
 		}
 		usort( $edits, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
 
 		return $edits;
+	}
+
+	/**
+	 * Attribute names the route patterns treat as links: href and action (also
+	 * namespaced or prefixed, like xlink:href or data-href) and data-*url.
+	 *
+	 * @param string $name Attribute name.
+	 */
+	private static function is_link_attribute( string $name ): bool {
+		return 1 === preg_match( '/(?:^|\W)(?:href|action|data-[a-z0-9_-]*url)$/i', $name );
+	}
+
+	/**
+	 * Resolver output written outside the route patterns must stay on this site.
+	 *
+	 * @param string|null $reference Resolved reference.
+	 */
+	private static function local_reference( ?string $reference ): ?string {
+		return null !== $reference && 1 === preg_match( '~^(?:/(?![/\\\\])|\?)~', $reference ) ? $reference : null;
+	}
+
+	/**
+	 * Double-quoted attribute value escaping, as the HTML API writes it.
+	 *
+	 * @param string $value Decoded value.
+	 */
+	private static function escape_attribute( string $value ): string {
+		return strtr(
+			$value,
+			array(
+				'<' => '&lt;',
+				'>' => '&gt;',
+				'&' => '&amp;',
+				'"' => '&quot;',
+				"'" => '&apos;',
+			)
+		);
 	}
 
 	/**
@@ -2150,72 +2248,36 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * Resolve link attributes on every tag, and re-encode the named snapshot attributes.
+	 * Resolve link attributes on every tag of a snapshot's HTML.
 	 *
-	 * @param string            $html HTML fragment.
-	 * @param Closure           $resolve Link resolver.
-	 * @param array<int,string> $snapshots Snapshot attributes to rewrite on these tags.
+	 * @param string  $html HTML fragment.
+	 * @param Closure $resolve Link resolver.
 	 * @return string|null Updated HTML, or null when nothing changed.
 	 */
-	private static function rewrite_tag_links( string $html, Closure $resolve, array $snapshots = array() ): ?string {
+	private static function rewrite_tag_links( string $html, Closure $resolve ): ?string {
 		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
-			/** Set a value with plain attribute escaping, including on URL attributes. */
-			public function set_plain_attribute( string $name, string $value ): bool {
+			/** Replace a value with plain attribute escaping, where set_attribute() would apply esc_url(). */
+			public function replace_value( string $name, string $escaped ): bool {
 				$key = strtolower( $name );
 				if ( ! $this->set_attribute( $name, '#' ) || ! isset( $this->lexical_updates[ $key ] ) ) {
 					return false;
 				}
-				$this->lexical_updates[ $key ]->text = $name . '="' . strtr(
-					$value,
-					array(
-						'<' => '&lt;',
-						'>' => '&gt;',
-						'&' => '&amp;',
-						'"' => '&quot;',
-						"'" => '&apos;',
-					)
-				) . '"';
+				$this->lexical_updates[ $key ]->text = $name . '="' . $escaped . '"';
 				return true;
 			}
 		};
 		$changed = false;
 		while ( $tags->next_tag() ) {
 			foreach ( $tags->get_attribute_names_with_prefix( '' ) ?? array() as $name ) {
-				$value = $tags->get_attribute( $name );
-				if ( ! is_string( $value ) ) {
-					continue;
-				}
-				$updated = in_array( $name, $snapshots, true ) ? self::rewrite_panel_snapshot( $value, $resolve ) : null;
-				if ( null === $updated && preg_match( '/^(?:href|action|data-[a-z0-9_-]*url\b)/', $name ) ) {
-					$updated = $resolve( $value, $name );
-				}
-				if ( null !== $updated && $tags->set_plain_attribute( $name, $updated ) ) {
+				$value     = $tags->get_attribute( $name );
+				$reference = is_string( $value ) && self::is_link_attribute( $name ) ? self::local_reference( $resolve( $value, $name ) ) : null;
+				if ( null !== $reference && $tags->replace_value( $name, self::escape_attribute( $reference ) ) ) {
 					$changed = true;
 				}
 			}
 		}
 
 		return $changed ? $tags->get_updated_html() : null;
-	}
-
-	/**
-	 * Offset of the quote closing the JSON string that opens at `$open`.
-	 *
-	 * @param string $json JSON text.
-	 * @param int    $open Offset of the opening quote.
-	 */
-	private static function json_string_end( string $json, int $open ): ?int {
-		$length = strlen( $json );
-		for ( $at = $open + 1; $at < $length; $at += 2 ) {
-			$at += strcspn( $json, '"\\', $at );
-			if ( $at >= $length ) {
-				return null;
-			}
-			if ( '"' === $json[ $at ] ) {
-				return $at;
-			}
-		}
-		return null;
 	}
 
 	/**
