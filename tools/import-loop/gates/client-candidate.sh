@@ -5,7 +5,9 @@
 # `capture_args` into <capture>, then import that capture on <php-transformer
 # dir> (gates/reimport.sh) and print the served site's URL. The packed client
 # stays as <capture>/.client.tgz so the compare uses the same build
-# (IMPORT_LOOP_CLIENT_PACKAGE in checks.mjs). The merged tree is no git
+# (IMPORT_LOOP_CLIENT_PACKAGE in checks.mjs), and <capture>/.capture-client.json
+# names it as the client the capture was taken with, as import.sh does for a
+# release capture. The merged tree is no git
 # checkout, so pack skips the release's provenance stamp (prepack).
 #
 # Usage: client-candidate.sh <client source> <url> <capture> <php-transformer dir> <site dir>
@@ -23,4 +25,5 @@ npx --yes "--package=$package" "$(jq -r .executable "$client")" "$url" --output 
 kept=$(dirname "$(ls "$work"/source/*/capture-receipt.json 2> /dev/null | head -1 || true)")
 [ -f "$kept/capture-receipt.json" ] || { echo "import_failed: the candidate client kept no capture for $url" >&2; exit 1; }
 rm -rf "$capture"; mkdir -p "$(dirname "$capture")"; mv "$kept" "$capture"; cp "$package" "$capture/.client.tgz"
+jq -n --arg package "$(cd "$capture" && pwd)/.client.tgz" '{package: $package}' > "$capture/.capture-client.json"
 bash "$here/reimport.sh" "$transformer" "$capture" "$site"
