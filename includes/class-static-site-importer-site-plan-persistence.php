@@ -2039,8 +2039,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)((?:(?!\\\\u005c\\\\u0022)\S)*?)(\\\\u005c\\\\u0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)((?:(?!\\\\&quot;)[^\s<>"])*?)(\\\\&quot;)/i',
+			// Panel snapshot values end at their own quote and never cross a tag, so text
+			// that merely contains `href="` cannot reach the next link's quote.
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)([^\\\\]*+(?:\\\\(?!u005c\\\\u0022|u003c|u003e)[^\\\\]*+)*+)(\\\\u005c\\\\u0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)([^\\\\&<>"]*+(?:(?:\\\\(?!&quot;)|&(?!lt;|gt;))[^\\\\&<>"]*+)*+)(\\\\&quot;)/i',
 			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
 			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
 		) as $pattern ) {
