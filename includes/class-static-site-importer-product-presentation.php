@@ -341,14 +341,16 @@ final class Static_Site_Importer_Product_Presentation {
 	}
 
 	/**
-	 * Flank paint on Woo's stepper buttons. Where the source sizes its own
-	 * buttons, Woo's intrinsic min-width and dimmed opacity no longer apply.
+	 * Flank box on Woo's stepper buttons. The source buttons replace Woo's, so
+	 * Woo's sizing floor gives way to the source's min-width (else none). Glyph
+	 * paint stays Woo's: an icon button's visible paint is its icon's fill, not
+	 * the button's text color, and the capture does not report icon fill.
 	 */
 	private static function button_declarations( array $styles ): string {
 		$button = array();
 		foreach ( $styles as $property => $value ) {
 			$property = str_replace( '-', '_', (string) $property );
-			if ( in_array( $property, array( 'width', 'height', 'color', 'line_height', 'letter_spacing', 'text_transform', 'box_sizing' ), true ) || str_starts_with( $property, 'font_' ) || str_starts_with( $property, 'padding' ) || str_starts_with( $property, 'background' ) || str_starts_with( $property, 'border' ) ) {
+			if ( in_array( $property, array( 'width', 'height', 'line_height', 'letter_spacing', 'text_transform', 'box_sizing' ), true ) || str_starts_with( $property, 'font_' ) || str_starts_with( $property, 'padding' ) || str_starts_with( $property, 'background' ) || str_starts_with( $property, 'border' ) ) {
 				$button[ $property ] = $value;
 			}
 		}
@@ -356,11 +358,8 @@ final class Static_Site_Importer_Product_Presentation {
 		if ( '' === $css ) {
 			return '';
 		}
-		$sizing = array_filter( array( $styles['width'] ?? null, $styles['height'] ?? null, $styles['min_width'] ?? $styles['min-width'] ?? null ), static fn( $value ) => is_string( $value ) && '' !== trim( $value ) );
-		if ( $sizing ) {
-			$min  = self::length( $styles['min_width'] ?? $styles['min-width'] ?? '0' );
-			$css .= 'min-width:' . ( '' === $min ? '0' : $min ) . ' !important;opacity:1 !important;';
-		}
+		$min  = self::length( $styles['min_width'] ?? $styles['min-width'] ?? '0' );
+		$css .= 'min-width:' . ( '' === $min ? '0' : $min ) . ' !important;';
 		return $css;
 	}
 

@@ -724,7 +724,7 @@ if ( str_contains( $css, 'javascript' ) ) {
 	throw new RuntimeException( 'Unsafe caption image reached the stylesheet.' );
 }
 // SSI #3239: Cornerstone-shaped stepper (tel qty[] between two default buttons)
-// renders a 109x43 pill with orange glyphs and a bold number.
+// renders a padded pill with source-sized buttons and a bold number.
 $cornerstone = array(
 	'entity_kind'        => 'add_to_cart_form',
 	'controls'           => array(
@@ -759,7 +759,7 @@ foreach ( array(
 	'quantity'                         => array( ' input.qty{', array( 'width:37px', 'padding:0px', 'font-weight:700', 'text-align:center' ) ),
 	'quantity-frame'                   => array( ' form.cart .quantity{', array( 'width:109px', 'height:43px', 'box-sizing:border-box', 'padding-inline:12px', 'padding-top:9px', 'padding-bottom:9px', 'border-radius:999px' ) ),
 	'quantity-frame@(max-width:767px)' => array( ' form.cart .quantity{', array( 'padding:6px 10px' ) ),
-	'quantity-button'                  => array( ' form.cart .quantity .wc-block-components-quantity-selector__button{', array( 'color:rgb(242,101,34)', 'font-size:18px', 'padding:0px', 'width:24px', 'background-color:rgba(0,0,0,0)', 'border:0px none rgb(242,101,34)', 'min-width:0', 'opacity:1' ) ),
+	'quantity-button'                  => array( ' form.cart .quantity .wc-block-components-quantity-selector__button{', array( 'font-size:18px', 'padding:0px', 'width:24px', 'background-color:rgba(0,0,0,0)', 'border:0px none rgb(242,101,34)', 'min-width:0' ) ),
 ) as $slot => list( $selector, $expected ) ) {
 	$rule = $stepper_capture['rules'][ $slot ] ?? '';
 	$css  = $stepper_scope . $selector . $rule . '}';
