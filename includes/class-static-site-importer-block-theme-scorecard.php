@@ -405,15 +405,17 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 		$worst     = array();
 		$per_route = array();
 		foreach ( $routes as $key => $route ) {
-			$path    = (string) ( $route['route'] ?? $key );
-			$content = (string) ( $route['post_content'] ?? '' );
-			$blocks  = $route_blocks[ $key ];
-			$metrics = array(
-				'block_count'             => 0,
-				'core_html_count'         => 0,
-				'custom_block_count'      => 0,
-				'inline_style_attributes' => preg_match_all( '/\sstyle\s*=\s*[\'\"]/i', $content ),
-				'max_nesting_depth'       => 0,
+			$path       = (string) ( $route['route'] ?? $key );
+			$content    = (string) ( $route['post_content'] ?? '' );
+			$blocks     = $route_blocks[ $key ];
+			$raw_styles = preg_match_all( '/\sstyle\s*=\s*[\'\"]/i', $content );
+			$metrics    = array(
+				'block_count'                 => 0,
+				'core_html_count'             => 0,
+				'custom_block_count'          => 0,
+				'inline_style_attributes'     => max( 0, $raw_styles - self::native_inline_styles( $blocks ) ),
+				'raw_inline_style_attributes' => $raw_styles,
+				'max_nesting_depth'           => 0,
 			);
 			self::content_metrics( $blocks, 1, $metrics );
 			$existing = $route['editability_report']['metrics'] ?? array();
@@ -454,6 +456,66 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 			),
 			( $totals['core_html_count'] ?? 0 ) === 0 && ( $totals['custom_block_count'] ?? 0 ) === 0 && ( $worst['inline_style_attributes']['value'] ?? 0 ) <= 50 && ( $worst['block_count']['value'] ?? 0 ) <= 500 && ( $worst['max_nesting_depth']['value'] ?? 0 ) <= 12
 		);
+	}
+
+	/** Count editor-owned style attributes in each parsed block's own markup. */
+	private static function native_inline_styles( array $blocks ): int {
+		$count = 0;
+		foreach ( $blocks as $block ) {
+			$count += self::native_inline_styles( $block['innerBlocks'] ?? array() );
+			$html   = $block['innerHTML'] ?? '';
+			if ( '' === trim( $html ) ) {
+				continue;
+			}
+			$document = new DOMDocument();
+			$previous = libxml_use_internal_errors( true );
+			$document->loadHTML( '<?xml encoding="UTF-8"><body>' . $html . '</body>', LIBXML_NONET );
+			libxml_clear_errors();
+			libxml_use_internal_errors( $previous );
+			foreach ( $document->getElementsByTagName( '*' ) as $element ) {
+				if ( ! $element->hasAttribute( 'style' ) ) {
+					continue;
+				}
+				if ( 'mark' === $element->tagName && in_array( 'has-inline-color', (array) preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) ), true ) ) {
+					++$count;
+				} elseif ( 'core/image' === $block['blockName'] && 'img' === $element->tagName && self::native_image_style( $element->getAttribute( 'style' ), $block['attrs'] ?? array() ) ) {
+					++$count;
+				}
+			}
+		}
+		return $count;
+	}
+
+	/** Exempt an image only when every declaration matches an explicit native setting. */
+	private static function native_image_style( string $style, array $attrs ): bool {
+		$expected = array();
+		foreach ( array(
+			'scale'       => 'object-fit',
+			'width'       => 'width',
+			'height'      => 'height',
+			'aspectRatio' => 'aspect-ratio',
+		) as $attribute => $property ) {
+			if ( isset( $attrs[ $attribute ] ) && is_scalar( $attrs[ $attribute ] ) ) {
+				$value = (string) $attrs[ $attribute ];
+				if ( in_array( $attribute, array( 'width', 'height' ), true ) && is_numeric( $value ) ) {
+					$value .= 'px';
+				}
+				$expected[ $property ] = $value;
+			}
+		}
+		$found = false;
+		foreach ( explode( ';', $style ) as $declaration ) {
+			if ( '' === trim( $declaration ) ) {
+				continue;
+			}
+			$parts    = explode( ':', $declaration, 2 );
+			$property = strtolower( trim( $parts[0] ) );
+			if ( ! isset( $parts[1], $expected[ $property ] ) || trim( $parts[1] ) !== $expected[ $property ] ) {
+				return false;
+			}
+			$found = true;
+		}
+		return $found;
 	}
 
 	/** Measure theme metadata. */
