@@ -8,18 +8,19 @@ defined( 'ABSPATH' ) || exit;
 
 final class Static_Site_Importer_Product_Presentation {
 	private const SELECTORS = array(
-		'variation'      => 'select',
-		'quantity'       => 'input.qty',
-		'quantity-frame' => 'form.cart .quantity',
-		'submit'         => '.single_add_to_cart_button',
-		'submit-host'    => '.single_add_to_cart_button',
-		'submit-layer'   => '.single_add_to_cart_button::before',
-		'gallery'        => '.woocommerce-product-gallery',
-		'viewport'       => '.flex-viewport',
-		'image'          => '.woocommerce-product-gallery__image img',
-		'thumbs'         => '.flex-control-thumbs',
-		'thumb'          => '.flex-control-thumbs li',
-		'thumbimg'       => '.flex-control-thumbs img',
+		'variation'       => 'select',
+		'quantity'        => 'input.qty',
+		'quantity-frame'  => 'form.cart .quantity',
+		'quantity-button' => 'form.cart .quantity .wc-block-components-quantity-selector__button',
+		'submit'          => '.single_add_to_cart_button',
+		'submit-host'     => '.single_add_to_cart_button',
+		'submit-layer'    => '.single_add_to_cart_button::before',
+		'gallery'         => '.woocommerce-product-gallery',
+		'viewport'        => '.flex-viewport',
+		'image'           => '.woocommerce-product-gallery__image img',
+		'thumbs'          => '.flex-control-thumbs',
+		'thumb'           => '.flex-control-thumbs li',
+		'thumbimg'        => '.flex-control-thumbs img',
 	);
 
 	private const LAYOUT_SELECTORS = array(
@@ -59,6 +60,10 @@ final class Static_Site_Importer_Product_Presentation {
 			$type = strtolower( (string) ( $control['type'] ?? '' ) );
 			$name = strtolower( (string) ( $control['name'] ?? '' ) );
 			$role = 'select' === $tag ? 'variation' : ( 'input' === $tag && ( 'number' === $type || 'quantity' === $name ) ? 'quantity' : ( 'submit' === $type || ( 'button' === $tag && '' === $type ) || 'button' === strtolower( (string) ( $control['role'] ?? '' ) ) ? 'submit' : '' ) );
+			// A recognised stepper's middle member is the quantity, whatever its type or name.
+			if ( $buttons && $index === $buttons[1] ) {
+				$role = 'quantity';
+			}
 			if ( '' === $role ) {
 				continue;
 			}
@@ -99,8 +104,13 @@ final class Static_Site_Importer_Product_Presentation {
 				$conditional    = array_merge( $conditional, self::conditional_rules( $entity['presentation_graph']['variants'] ?? array(), $index, $slot, isset( $layers['submit-layer'] ) && 'submit' === $role ) );
 			}
 		}
+		// The stepper's quantity track is the whole frame, not its inner input.
+		$frame_width = $stepper && isset( $purchase['quantity'] ) ? self::absolute_length( $stepper['styles']['width'] ?? '' ) : '';
+		if ( '' !== $frame_width ) {
+			$purchase['quantity']['width'] = $frame_width;
+		}
 		$layout  = self::purchase_layout( $purchase, $entity['presentation_graph'] ?? array(), $indexes );
-		$frames  = $stepper ? array( 'quantity-frame' => self::frame_declarations( $stepper['styles'] ) ) : array();
+		$frames  = $stepper ? self::stepper_rules( $entity, $stepper ) : array();
 		$overlay = self::artifact( array_merge( $rules, $layout, $frames, $layers, $conditional, self::gallery_rules( $entity['gallery'] ?? array() ) ) );
 		$wording = self::validate_wording( $entity['variation_wording'] ?? array() );
 		if ( $wording ) {
@@ -293,12 +303,72 @@ final class Static_Site_Importer_Product_Presentation {
 		return $styles;
 	}
 
-	/** Container paint is distinct from input paint; do not guess absent chrome. */
+	/**
+	 * The stepper row's own frame (base and media variants) and the paint its
+	 * flanking buttons project onto Woo's native stepper buttons.
+	 *
+	 * @return array<string,string> Slot => declarations.
+	 */
+	private static function stepper_rules( array $entity, array $stepper ): array {
+		$rules = array( 'quantity-frame' => self::frame_declarations( $stepper['styles'] ) );
+		foreach ( $entity['presentation_graph']['variants'] ?? array() as $variant ) {
+			$query = self::media_query( $variant['condition'] ?? null );
+			if ( 'control_row' !== ( $variant['role'] ?? '' ) || ( $variant['index'] ?? null ) !== ( $stepper['index'] ?? null ) || '' === $query || ! is_array( $variant['style_patch'] ?? null ) ) {
+				continue;
+			}
+			$declarations = self::frame_declarations( $variant['style_patch'] );
+			if ( '' !== $declarations ) {
+				$rules[ 'quantity-frame@' . $query ] = $declarations;
+			}
+		}
+		$flanks = array();
+		foreach ( array( 0, 2 ) as $position ) {
+			$index  = $stepper['members'][ $position ]['index'];
+			$styles = $entity['controls'][ $index ]['styles'] ?? self::block_styles( $entity['controls'][ $index ]['presentation']['style'] ?? array() );
+			foreach ( $entity['presentation_graph']['controls'] ?? array() as $row ) {
+				if ( ( $row['index'] ?? null ) === $index && isset( $row['control']['styles'] ) ) {
+					$styles = self::resolve_urls( $row['control']['styles'], $row['control']['provenance'] ?? array() );
+					break;
+				}
+			}
+			$flanks += is_array( $styles ) ? $styles : array();
+		}
+		$buttons = self::button_declarations( $flanks );
+		if ( '' !== $buttons ) {
+			$rules['quantity-button'] = $buttons;
+		}
+		return $rules;
+	}
+
+	/**
+	 * Flank box on Woo's stepper buttons. The source buttons replace Woo's, so
+	 * Woo's sizing floor gives way to the source's min-width (else none). Glyph
+	 * paint stays Woo's: an icon button's visible paint is its icon's fill, not
+	 * the button's text color, and the capture does not report icon fill.
+	 */
+	private static function button_declarations( array $styles ): string {
+		$button = array();
+		foreach ( $styles as $property => $value ) {
+			$property = str_replace( '-', '_', (string) $property );
+			if ( in_array( $property, array( 'width', 'height', 'line_height', 'letter_spacing', 'text_transform', 'box_sizing' ), true ) || str_starts_with( $property, 'font_' ) || str_starts_with( $property, 'padding' ) || str_starts_with( $property, 'background' ) || str_starts_with( $property, 'border' ) ) {
+				$button[ $property ] = $value;
+			}
+		}
+		$css = self::declarations( $button );
+		if ( '' === $css ) {
+			return '';
+		}
+		$min  = self::length( $styles['min_width'] ?? $styles['min-width'] ?? '0' );
+		$css .= 'min-width:' . ( '' === $min ? '0' : $min ) . ' !important;';
+		return $css;
+	}
+
+	/** Container paint and padding are distinct from input paint; do not guess absent chrome. */
 	private static function frame_declarations( array $styles ): string {
 		$frame = array();
 		foreach ( $styles as $property => $value ) {
 			$property = str_replace( '-', '_', $property );
-			if ( in_array( $property, array( 'width', 'height', 'box_sizing', 'background', 'background_color' ), true ) || str_starts_with( $property, 'border' ) ) {
+			if ( in_array( $property, array( 'width', 'height', 'box_sizing', 'background', 'background_color' ), true ) || str_starts_with( $property, 'border' ) || str_starts_with( $property, 'padding' ) ) {
 				$frame[ $property ] = $value;
 			}
 		}
@@ -812,7 +882,7 @@ final class Static_Site_Importer_Product_Presentation {
 
 	/** Allowlisted computed CSS, with values unable to escape a declaration. */
 	private static function declarations( array $styles ): string {
-		$properties = array( 'width', 'height', 'min_width', 'max_width', 'min_height', 'max_height', 'box_sizing', 'border', 'border_width', 'border_style', 'border_color', 'border_radius', 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'color', 'font_family', 'font_size', 'font_weight', 'font_style', 'line_height', 'letter_spacing', 'text_transform', 'text_align', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'box_shadow' );
+		$properties = array( 'width', 'height', 'min_width', 'max_width', 'min_height', 'max_height', 'box_sizing', 'border', 'border_width', 'border_style', 'border_color', 'border_radius', 'background', 'background_color', 'background_image', 'background_position', 'background_repeat', 'background_size', 'color', 'font_family', 'font_size', 'font_weight', 'font_style', 'line_height', 'letter_spacing', 'text_transform', 'text_align', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_inline', 'padding_block', 'padding_inline_start', 'padding_inline_end', 'padding_block_start', 'padding_block_end', 'box_shadow' );
 		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
 			foreach ( array( 'width', 'style', 'color' ) as $part ) {
 				$properties[] = 'border_' . $side . '_' . $part;
@@ -863,7 +933,7 @@ final class Static_Site_Importer_Product_Presentation {
 		$frames   = array();
 		foreach ( $overlay['rules'] as $slot => $css ) {
 			list( $base_slot, $media ) = array_pad( explode( '@', $slot, 2 ), 2, '' );
-			$is_conditional            = '' !== $media && 1 === preg_match( '/^(?:variation:\d+|quantity|submit|submit-layer)$/D', $base_slot );
+			$is_conditional            = '' !== $media && 1 === preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit|submit-layer)$/D', $base_slot );
 			if ( '' !== $media && ( ! ( $is_conditional || in_array( $base_slot, array( 'layout:purchase-row', 'layout:simple-row' ), true ) ) || '' === self::media_query(
 				array(
 					'kind'  => 'media',
@@ -874,7 +944,7 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			$is_gallery = in_array( $slot, array( 'gallery', 'viewport', 'image', 'thumbs', 'thumb', 'thumbimg' ), true );
 			$is_layout  = str_starts_with( $slot, 'layout:' ) && isset( self::LAYOUT_SELECTORS[ substr( $base_slot, 7 ) ] );
-			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! $is_conditional && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|submit|submit-host|submit-layer)$/D', $slot ) ) ) {
+			if ( ! is_string( $css ) || ( ! $is_gallery && ! $is_layout && ! $is_conditional && ! preg_match( '/^(?:variation:\d+|quantity|quantity-frame|quantity-button|submit|submit-host|submit-layer)$/D', $slot ) ) ) {
 				return null;
 			}
 			$styles = array();
@@ -890,11 +960,15 @@ final class Static_Site_Importer_Product_Presentation {
 			}
 			if ( $is_conditional ) {
 				$styles          = array_combine( array_map( static fn( $key ) => str_replace( '-', '_', $key ), array_keys( $styles ) ), $styles );
-				$frames[ $slot ] = 'submit-layer' === $base_slot ? self::layer_paint( $styles ) : self::declarations( $styles );
+				$frames[ $slot ] = 'submit-layer' === $base_slot ? self::layer_paint( $styles ) : ( 'quantity-frame' === $base_slot ? self::frame_declarations( $styles ) : self::declarations( $styles ) );
 				continue;
 			}
 			if ( 'quantity-frame' === $slot ) {
 				$frames[ $slot ] = self::frame_declarations( $styles );
+				continue;
+			}
+			if ( 'quantity-button' === $slot ) {
+				$frames[ $slot ] = self::button_declarations( $styles );
 				continue;
 			}
 			if ( 'submit-host' === $slot ) {
