@@ -26,6 +26,9 @@
     "cook_placement": {
       "default": "auto"
     },
+    "cook_priority": {
+      "default": "high"
+    },
     "tools_repo": {
       "required": true
     },
@@ -212,6 +215,7 @@
         "prompt": "{{item.prompt}}",
         "verify": "{{item.verify}}",
         "placement": "{{inputs.cook_placement}}",
+        "priority": "{{inputs.cook_priority}}",
         "model": "{{inputs.cook_model}}",
         "acknowledge-model-override": true,
         "max-attempts": 2,
