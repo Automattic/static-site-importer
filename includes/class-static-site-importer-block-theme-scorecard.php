@@ -601,14 +601,19 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	 * Measure the class names written into block content. Clean output names
 	 * every class it authors in the theme's vocabulary: no converter-internal
 	 * prefixes and no opaque digests a person cannot read or reuse.
+	 *
+	 * @param string $theme_slug      Theme namespace authored classes may use.
+	 * @param array  ...$block_groups Parsed block trees keyed by template, part or route.
 	 */
 	private static function class_naming( string $theme_slug, array ...$block_groups ): array {
 		$tokens = array();
 		foreach ( $block_groups as $group ) {
 			foreach ( $group as $blocks ) {
 				foreach ( self::flatten( $blocks ) as $block ) {
-					$class_name = $block['attrs']['className'] ?? '';
-					$tokens     = array_merge( $tokens, is_string( $class_name ) ? ( preg_split( '/\s+/', trim( $class_name ), -1, PREG_SPLIT_NO_EMPTY ) ?: array() ) : array() );
+					$split = preg_split( '/\s+/', trim( (string) ( $block['attrs']['className'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
+					if ( is_array( $split ) ) {
+						$tokens = array_merge( $tokens, $split );
+					}
 				}
 			}
 		}
