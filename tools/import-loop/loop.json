@@ -213,7 +213,7 @@
         "repo": "{{item.repo}}",
         "task-url": "{{item.task_url}}",
         "prompt": "{{item.prompt}}",
-        "verify": "{{item.verify}}",
+        "repro": "{{item.repro}}",
         "placement": "{{inputs.cook_placement}}",
         "priority": "{{inputs.cook_priority}}",
         "model": "{{inputs.cook_model}}",
