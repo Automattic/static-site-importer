@@ -121,6 +121,13 @@ try {
 		$theme_json = Static_Site_Importer_Block_Theme_Scorecard::measure( $levels, array( array( 'route' => '/', 'post_content' => $content ) ), $context )['checks']['theme_json'];
 		scorecard_assert( $unstyled === $theme_json['measured']['unstyled_used'] && ( array() === $unstyled ? 'pass' : 'fail' ) === $theme_json['status'] && 0 === $theme_json['measured']['block_style_count'], 'theme_json expects styles for rendered elements: ' . json_encode( $unstyled ) );
 	}
+	foreach ( array(
+		'source and theme names' => array( 'eyebrow good-hero is-style-outline', 'pass', 0, 0, 1 ),
+		'engine and digest names' => array( 'be-inline-geometry-0b1481a4e5f952a4 blocks-engine-subject eyebrow', 'fail', 2, 1, 0 ),
+	) as $name => list( $class_name, $status, $engine, $opaque, $namespaced ) ) {
+		$naming = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', array( array( 'route' => '/', 'post_content' => '<!-- wp:paragraph {"className":"' . $class_name . '"} --><p class="' . $class_name . '">Hi</p><!-- /wp:paragraph -->' ) ), $context )['checks']['class_naming'];
+		scorecard_assert( $status === $naming['status'] && $engine === $naming['measured']['engine_class_tokens'] && $opaque === $naming['measured']['opaque_class_tokens'] && $namespaced === $naming['measured']['theme_namespaced_tokens'], $name . ': class naming ' . json_encode( $naming['measured'] ) );
+	}
 	file_put_contents( $root . '/bad/parts/footer-unused.html', $footer );
 	$repeated = '<!-- wp:group --><div><!-- wp:paragraph --><p>Sidebar</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
 	for ( $i = 1; $i <= 3; ++$i ) { file_put_contents( $root . '/bad/templates/page-' . $i . '.html', $template . $repeated . '<!-- wp:heading {"anchor":"id-' . $i . '"} --><h2>Page ' . $i . '</h2><!-- /wp:heading -->' ); }
