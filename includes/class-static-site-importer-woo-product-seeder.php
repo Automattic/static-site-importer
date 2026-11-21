@@ -574,6 +574,14 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			}
 
 			$product->update_meta_data( '_static_site_importer_source_route', (string) ( $manifest_product['source_route'] ?? '/products/' . $slug ) );
+			// An unpriced product shows its captured label ("Price on request")
+			// where WooCommerce would print the price.
+			$price_label = '' === self::price_value( $manifest_product, 'regular_price' ) ? self::string_value( $manifest_product, 'price_label' ) : '';
+			if ( '' !== $price_label ) {
+				$product->update_meta_data( Static_Site_Importer_Product_Grid_Runtime::PRICE_LABEL_META, $price_label );
+			} else {
+				$product->delete_meta_data( Static_Site_Importer_Product_Grid_Runtime::PRICE_LABEL_META );
+			}
 			$product_id = (int) $product->save();
 			if ( $product_id <= 0 ) {
 				return array(

@@ -168,6 +168,34 @@ namespace {
 		)
 	);
 	$assert( ! empty( $duplicate_products['errors'] ), 'duplicate-product-slugs-reject-provider-result-ambiguity' );
+	// A price-on-request product declares its captured label instead of a price.
+	$unpriced = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+		array(
+			'schema_version' => 1,
+			'products'       => array(
+				array(
+					'name'        => 'Vase',
+					'slug'        => 'vase',
+					'price_label' => 'Price on request',
+				),
+				array(
+					'name' => 'Bare',
+					'slug' => 'bare',
+				),
+			),
+		)
+	);
+	$assert( array( '$.products[1].regular_price' ) === array_column( $unpriced['errors'], 'path' ), 'only-a-product-without-price-or-label-is-rejected', wp_json_encode( $unpriced ) );
+	$assert( '' === ( $unpriced['products'][0]['regular_price'] ?? null ) && 'Price on request' === ( $unpriced['products'][0]['price_label'] ?? null ), 'price-on-request-product-keeps-its-label-unpriced', wp_json_encode( $unpriced ) );
+	$row = Static_Site_Importer_Product_Finding_Materializer::product_finding_manifest_row(
+		array(
+			'name'        => 'Vase',
+			'slug'        => 'vase',
+			'price_label' => 'Price on request',
+		),
+		''
+	);
+	$assert( is_array( $row ) && 'Price on request' === ( $row['price_label'] ?? null ) && ! isset( $row['regular_price'] ), 'price-on-request-finding-becomes-a-manifest-row', wp_json_encode( $row ) );
 	// A producer's shopper-facing category and attribute values reach the seeder.
 	$described = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
 		array(
