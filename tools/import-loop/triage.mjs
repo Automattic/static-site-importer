@@ -397,8 +397,11 @@ function acceptanceGate(item, repo) {
     // whose CI fails, and the next Cook receives those failures. On the Lab it
     // took about half the CPU and caught 20 of 244 candidates, each of which
     // CI catches one pass later. A heartbeat runs for as long as acceptance
-    // does, so a long acceptance never meets Cook's no-output limit.
-    verify: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate acceptance_exit=$accept"; [ $accept -eq 0 ]`,
+    // does, so a long acceptance never meets Cook's no-output limit. It is a
+    // repro gate: it fails on the Cook's base (the site has the defect) and
+    // passes on a fix, so a candidate that is still red retries with that
+    // failure instead of being excused as inherited from the base.
+    repro: `acceptance=$(mktemp); bash "$IMPORT_LOOP_GATE" >"$acceptance" 2>&1 & gate=$!; (while kill -0 $gate 2>/dev/null; do sleep 60; echo "import-loop-gate acceptance running"; done) & wait $gate; accept=$?; cat "$acceptance"; grep "^import-loop-gate phase=" "$acceptance"; rm -f "$acceptance"; echo "import-loop-gate acceptance_exit=$accept"; [ $accept -eq 0 ]`,
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: evidence.map((input) => JSON.stringify(input)),
     omitted: inputs.filter((input) => input.id !== 'bare-wp' && !evidence.some((e) => e.id === input.id)).map((input) => input.id),
