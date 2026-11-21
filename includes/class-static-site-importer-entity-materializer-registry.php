@@ -2500,10 +2500,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 			}
 			$seen_slugs[ $slug ] = true;
-			if ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) {
+			// A price-on-request product publishes a captured label instead of
+			// a price; it is seeded as an unpriced simple product.
+			$price_label = '' === $regular_price && ! array_key_exists( 'regular_price', $product ) ? self::manifest_string( $product, 'price_label' ) : '';
+			if ( '' === $price_label && ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.regular_price',
-					'message' => 'regular_price is required and must be a decimal string such as "19.00".',
+					'message' => 'regular_price is required and must be a decimal string such as "19.00", unless the product declares a price_label instead.',
 				);
 			}
 			if ( '' !== $sale_price && ! self::is_manifest_price( $sale_price ) ) {
@@ -2644,6 +2647,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
+			if ( '' !== $price_label ) {
+				$summary['price_label'] = $price_label;
+			}
 			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors', 'sku', 'images', 'tags', 'variants', 'losses', 'source_page', 'source_path', 'url', 'id', 'whole_page_candidate' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];

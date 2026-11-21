@@ -573,15 +573,23 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 		}
 
 		$regular_price = isset( $product['regular_price'] ) && is_scalar( $product['regular_price'] ) ? trim( (string) $product['regular_price'] ) : '';
-		if ( '' === $regular_price || 1 !== preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $regular_price ) ) {
+		$price_label   = ! isset( $product['regular_price'] ) && isset( $product['price_label'] ) && is_string( $product['price_label'] ) ? trim( $product['price_label'] ) : '';
+		if ( '' !== $price_label ) {
+			// A price-on-request product: seeded unpriced, showing its label.
+			$row = array(
+				'name'        => $name,
+				'slug'        => $slug,
+				'price_label' => $price_label,
+			);
+		} elseif ( '' === $regular_price || 1 !== preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $regular_price ) ) {
 			return null;
+		} else {
+			$row = array(
+				'name'          => $name,
+				'slug'          => $slug,
+				'regular_price' => $regular_price,
+			);
 		}
-
-		$row = array(
-			'name'          => $name,
-			'slug'          => $slug,
-			'regular_price' => $regular_price,
-		);
 
 		$sale_price = isset( $product['sale_price'] ) && is_scalar( $product['sale_price'] ) ? trim( (string) $product['sale_price'] ) : '';
 		$sale_price = 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $sale_price ) ? $sale_price : '';

@@ -35,6 +35,9 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Persistent source badge templates for AJAX requests. */
 	public const CART_BADGES_OPTION = 'static_site_importer_cart_badges';
 
+	/** Product meta holding the captured label of a product published without a price (written by the product seeder). */
+	public const PRICE_LABEL_META = '_static_site_importer_price_label';
+
 	/** Class on the product collection whose loop wrappers are flattened. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
@@ -59,6 +62,7 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'blocks_engine_served_route', array( self::class, 'served_route' ), 10, 2 );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_filter( 'woocommerce_add_to_cart_fragments', array( self::class, 'cart_fragments' ) );
+		add_filter( 'woocommerce_empty_price_html', array( self::class, 'price_label' ), 10, 2 );
 		add_filter( 'render_block_woocommerce/product-price', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/breadcrumbs', array( self::class, 'render_field_presentation' ), 20, 2 );
 		add_filter( 'render_block_woocommerce/product-image-gallery', array( self::class, 'gallery_identity' ), 10, 2 );
@@ -67,6 +71,17 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 		add_filter( 'render_block_woocommerce/product-collection', array( self::class, 'flatten_collection' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
 		add_action( 'enqueue_block_assets', array( self::class, 'enqueue_editor_layout' ) );
+	}
+
+	/**
+	 * Print a price-on-request product's captured label where its price goes.
+	 *
+	 * @param string $html    WooCommerce empty-price markup.
+	 * @param mixed  $product Product being rendered.
+	 */
+	public static function price_label( $html, $product ): string {
+		$label = is_object( $product ) && method_exists( $product, 'get_meta' ) ? (string) $product->get_meta( self::PRICE_LABEL_META ) : '';
+		return '' === $label ? (string) $html : '<span class="ssi-price-label">' . esc_html( $label ) . '</span>';
 	}
 
 	/** Fill only the declared badge, preserving the surrounding source markup. */
