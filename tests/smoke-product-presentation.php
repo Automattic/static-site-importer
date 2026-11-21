@@ -723,4 +723,64 @@ foreach ( array(
 if ( str_contains( $css, 'javascript' ) ) {
 	throw new RuntimeException( 'Unsafe caption image reached the stylesheet.' );
 }
+// SSI #3239: Cornerstone-shaped stepper (tel qty[] between two default buttons)
+// renders a 109x43 pill with orange glyphs and a bold number.
+$cornerstone = array(
+	'entity_kind'        => 'add_to_cart_form',
+	'controls'           => array(
+		array( 'tag' => 'button', 'type' => 'button', 'text' => '-' ),
+		array( 'tag' => 'input', 'type' => 'tel', 'name' => 'qty[]', 'inputmode' => 'numeric', 'pattern' => '[0-9]*' ),
+		array( 'tag' => 'button', 'type' => 'button', 'text' => '+' ),
+		array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Add to cart' ),
+	),
+	'presentation_graph' => array(
+		'schema'       => 'generic/computed-form-presentation/v3',
+		'controls'     => array(
+			array( 'index' => 0, 'control' => array( 'styles' => array( 'width' => '24px', 'height' => '24px', 'padding' => '0px', 'color' => 'rgb(242,101,34)', 'font_size' => '18px', 'font_family' => 'Inter, sans-serif', 'background_color' => 'rgba(0,0,0,0)', 'border' => '0px none rgb(242,101,34)' ) ) ),
+			array( 'index' => 1, 'control' => array( 'styles' => array( 'width' => '37px', 'height' => '24px', 'padding' => '0px', 'border' => '0px none rgb(0,0,0)', 'font_weight' => '700', 'font_size' => '16px', 'text_align' => 'center' ) ) ),
+			array( 'index' => 2, 'control' => array( 'styles' => array( 'width' => '24px', 'height' => '24px', 'padding' => '0px', 'color' => 'rgb(242,101,34)', 'font_size' => '18px', 'font_family' => 'Inter, sans-serif', 'background_color' => 'rgba(0,0,0,0)', 'border' => '0px none rgb(242,101,34)' ) ) ),
+		),
+		'control_rows' => array(
+			array(
+				'index'   => 0,
+				'flow'    => 'inline',
+				'styles'  => array( 'display' => 'flex', 'width' => '109px', 'height' => '43px', 'box_sizing' => 'border-box', 'padding_inline' => '12px', 'padding_top' => '9px', 'padding_bottom' => '9px', 'border' => '1px solid rgb(221,221,221)', 'border_radius' => '999px' ),
+				'members' => array( array( 'index' => 0 ), array( 'index' => 1 ), array( 'index' => 2 ) ),
+			),
+		),
+		'variants'     => array(
+			array( 'index' => 0, 'role' => 'control_row', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:767px)' ), 'style_patch' => array( 'padding' => '6px 10px' ) ),
+		),
+	),
+);
+$stepper_capture = Static_Site_Importer_Product_Presentation::capture( $cornerstone );
+$stepper_scope   = '.' . ( $stepper_capture['className'] ?? '' ) . '.' . ( $stepper_capture['className'] ?? '' );
+foreach ( array(
+	'quantity'                         => array( ' input.qty{', array( 'width:37px', 'padding:0px', 'font-weight:700', 'text-align:center' ) ),
+	'quantity-frame'                   => array( ' form.cart .quantity{', array( 'width:109px', 'height:43px', 'box-sizing:border-box', 'padding-inline:12px', 'padding-top:9px', 'padding-bottom:9px', 'border-radius:999px' ) ),
+	'quantity-frame@(max-width:767px)' => array( ' form.cart .quantity{', array( 'padding:6px 10px' ) ),
+	'quantity-button'                  => array( ' form.cart .quantity .wc-block-components-quantity-selector__button{', array( 'color:rgb(242,101,34)', 'font-size:18px', 'padding:0px', 'width:24px', 'background-color:rgba(0,0,0,0)', 'border:0px none rgb(242,101,34)', 'min-width:0', 'opacity:1' ) ),
+) as $slot => list( $selector, $expected ) ) {
+	$rule = $stepper_capture['rules'][ $slot ] ?? '';
+	$css  = $stepper_scope . $selector . $rule . '}';
+	if ( ! str_contains( $stepper_capture['css'] ?? '', str_contains( $slot, '@' ) ? '@media (max-width:767px){' . $css : $css ) ) {
+		throw new RuntimeException( 'Cornerstone stepper rule not published: ' . $slot );
+	}
+	foreach ( $expected as $declaration ) {
+		if ( ! str_contains( $rule, $declaration . ' !important;' ) ) {
+			throw new RuntimeException( 'Cornerstone stepper missing ' . $slot . ' ' . $declaration . ': ' . $rule );
+		}
+	}
+}
+if ( ! str_contains( $stepper_capture['rules']['layout:simple-row'] ?? '', 'grid-template-columns:109px minmax(0,1fr) !important;' ) ) {
+	throw new RuntimeException( 'Stepper quantity track must hold the whole frame.' );
+}
+if ( $stepper_capture !== Static_Site_Importer_Product_Presentation::validate_overlay( $stepper_capture ) ) {
+	throw new RuntimeException( 'Cornerstone stepper receipt rejected.' );
+}
+$bad = $stepper_capture;
+$bad['rules']['quantity-button'] .= 'position:fixed !important;';
+if ( null !== Static_Site_Importer_Product_Presentation::validate_overlay( $bad ) ) {
+	throw new RuntimeException( 'Stepper button slot accepted an unsupported declaration.' );
+}
 echo "Product presentation passed.\n";
