@@ -608,9 +608,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 			foreach ( $group as $blocks ) {
 				foreach ( self::flatten( $blocks ) as $block ) {
 					$class_name = $block['attrs']['className'] ?? '';
-					foreach ( is_string( $class_name ) ? preg_split( '/\s+/', trim( $class_name ), -1, PREG_SPLIT_NO_EMPTY ) : array() as $token ) {
-						$tokens[] = $token;
-					}
+					$tokens     = array_merge( $tokens, is_string( $class_name ) ? ( preg_split( '/\s+/', trim( $class_name ), -1, PREG_SPLIT_NO_EMPTY ) ?: array() ) : array() );
 				}
 			}
 		}
@@ -625,12 +623,12 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 		arsort( $families );
 		return self::check(
 			array(
-				'class_tokens' => count( $tokens ),
-				'engine_class_tokens'       => count( $engine ),
-				'distinct_engine_classes'   => count( array_unique( $engine ) ),
-				'opaque_class_tokens'       => count( $opaque ),
-				'theme_namespaced_tokens'   => count( $namespaced ),
-				'engine_class_families'     => $families,
+				'class_tokens'            => count( $tokens ),
+				'engine_class_tokens'     => count( $engine ),
+				'distinct_engine_classes' => count( array_unique( $engine ) ),
+				'opaque_class_tokens'     => count( $opaque ),
+				'theme_namespaced_tokens' => count( $namespaced ),
+				'engine_class_families'   => $families,
 			),
 			array(
 				'engine_class_tokens_max' => 0,
