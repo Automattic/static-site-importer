@@ -36,6 +36,8 @@ $assert( ! str_contains( $bound, '/media/' ) && ! str_contains( $bound, 'lightbo
 foreach ( array( 'price', 'regular_price', 'sale_price' ) as $key ) {
 	$assert( str_contains( Static_Site_Importer_Product_Field_Blocks::bind_document( $paragraph( '$27.99 USD' ), array( $key => '27.99' ) ), 'woocommerce/product-price' ), $key . ': suffixed price' );
 }
+$hidden_label = Static_Site_Importer_Product_Field_Blocks::bind_document( $paragraph( '<mark style="display:none;color:inherit">Now:</mark><mark class="price">$22.00</mark>' ), array( 'price' => '22.00' ) );
+$assert( str_contains( $hidden_label, 'woocommerce/product-price' ) && ! str_contains( $hidden_label, 'Now:' ), 'Hidden price wording is not a visible prefix' );
 $unmatched = $paragraph( 'Save 2 on $27.99' );
 $assert( $unmatched === Static_Site_Importer_Product_Field_Blocks::bind_document( $unmatched, array( 'price' => '27.99' ) ), 'Multiple numeric values are not a price' );
 $existing = '<!-- wp:woocommerce/product-image-gallery /-->' . $group( 'gallery-lightbox-wrapper', '<!-- wp:image --><figure><img src="/other.jpg" /></figure><!-- /wp:image -->' );

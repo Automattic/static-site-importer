@@ -289,6 +289,8 @@ final class Static_Site_Importer_Product_Field_Blocks {
 
 	/** Compare rendered text rather than source-platform selectors. */
 	private static function text( string $value ): string {
+		// Only rendered wording is field text; inline-hidden labels (e.g. a sale-only "Now:") are not.
+		$value = preg_replace( '/<([a-z][a-z0-9-]*)\b[^>]*\bstyle=(["\x27])(?:(?!\2).)*\bdisplay\s*:\s*none\b(?:(?!\2).)*\2[^>]*>.*?<\/\1>/isu', '', $value );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Compare text in standalone producer consumers too.
 		return trim( preg_replace( '/\s+/u', ' ', html_entity_decode( strip_tags( $value ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
 	}
