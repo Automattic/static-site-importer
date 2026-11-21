@@ -1933,65 +1933,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param string                 $document_path Current document path.
 	 */
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null, string $source_url = '', array $product_routes = array(), string $document_path = '/', array $anchors = array(), ?array &$fragments = null ): string {
-		$replace = static function ( array $matches ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): string {
-			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
-			// HTML inside a JSON data attribute, outermost layer first: the block comment's
-			// attribute JSON, or the saved markup's entities, around the snapshot's own JSON.
-			$layers = array();
-			if ( str_ends_with( $matches[1], '\\u005c\\u0022' ) ) {
-				$layers = array( 'block_json', 'json' );
-			} elseif ( str_ends_with( $matches[1], '\\&quot;' ) ) {
-				$layers = array( 'entities', 'json' );
-			}
-			$value = $matches[2];
-			foreach ( $layers as $layer ) {
-				$value = 'entities' === $layer ? html_entity_decode( $value, ENT_QUOTES, 'UTF-8' ) : json_decode( '"' . $value . '"' );
-				if ( ! is_string( $value ) ) {
-					return $matches[0];
-				}
-			}
-			if ( ! $layers ) {
-				$value = $is_json ? json_decode( '"' . $value . '"' ) : str_replace( '\\/', '/', (string) $value );
-			}
-			if ( ! is_string( $value ) ) {
-				return $matches[0];
-			}
-			$value = html_entity_decode( $value, ENT_QUOTES, 'UTF-8' );
+		// The local reference for one decoded link value, or null to leave it as written.
+		$resolve = static function ( string $value, string $attribute ) use ( $routes, &$unresolved, $source_url, $product_routes, $document_path, $anchors, &$fragments ): ?string {
 			// Unlike href/action, data attributes may be flags or identifiers, not links.
-			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $matches[1] ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
-				return $matches[0];
+			if ( preg_match( '/^data-[a-z0-9_-]*url\b/i', $attribute ) && ( is_numeric( $value ) || ! preg_match( '~^(?:[a-z][a-z0-9+.-]*:|[?#])|[/.]~i', $value ) ) ) {
+				return null;
 			}
 			$is_local = (bool) preg_match( '~^[#?]~', $value );
-			$json_string = static function ( string $text ): string {
-				return substr( (string) wp_json_encode( $text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 1, -1 );
-			};
-			// Match serialize_block_attributes(), including comment-delimiter protection.
-			$block_json = static function ( string $text ) use ( $json_string ): string {
-				return str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json_string( $text ) );
-			};
-			$encode = static function ( string $reference ) use ( $is_json, $layers, $json_string, $block_json ): string {
-				if ( $layers ) {
-					$reference = htmlspecialchars( $reference, ENT_QUOTES, 'UTF-8' );
-					foreach ( array_reverse( $layers ) as $layer ) {
-						$reference = match ( $layer ) {
-							'json'       => $json_string( $reference ),
-							'block_json' => $block_json( $reference ),
-							default      => htmlspecialchars( $reference, ENT_QUOTES, 'UTF-8' ),
-						};
-					}
-					return $reference;
-				}
-				return $is_json ? $block_json( $reference ) : $reference;
-			};
 			if ( '' === $value ) {
-				return $matches[0];
+				return null;
 			}
-			if ( preg_match( '~^[#?]~', $value ) ) {
+			if ( $is_local ) {
 				$value = $document_path . $value;
 			}
 			if ( preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//)~i', $value ) ) {
 				if ( ! self::same_source_origin( $value, $source_url ) ) {
-					return $matches[0];
+					return null;
 				}
 				$value = (string) preg_replace( '~^(?:https?:)?//[^/]+~i', '', $value );
 			} elseif ( ! str_starts_with( $value, '/' ) ) {
@@ -2012,44 +1969,253 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						'fragment' => $fragment,
 					);
 				}
-				if ( $is_local ) {
-					return $matches[0];
-				}
-				return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
+				return $is_local ? null : Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix );
 			}
 			if ( in_array( $route, array( '/cart', '/search', '/account' ), true ) && function_exists( 'wc_get_page_id' ) ) {
 				if ( '/search' === $route ) {
 					parse_str( ltrim( $suffix, '?' ), $query );
-					$target = wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
-					return $matches[1] . $encode( $target ) . $matches[3];
+					return wp_make_link_relative( home_url( '/?s=' . rawurlencode( is_string( $query['q'] ?? null ) ? $query['q'] : '' ) . '&post_type=product' ) );
 				}
 				$id     = (int) wc_get_page_id( '/account' === $route ? 'myaccount' : 'cart' );
 				$target = $id > 0 ? wp_make_link_relative( (string) get_permalink( $id ) ) : '';
 				if ( '' !== $target ) {
-					return $matches[1] . $encode( Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix ) ) . $matches[3];
+					return Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $target, $suffix );
 				}
 			}
 			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
 				$unresolved[] = $route;
 			}
-			return $matches[0];
+			return null;
 		};
-		foreach ( array(
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
-			// Panel snapshot values end at their own quote and never cross a tag, so text
-			// that merely contains `href="` cannot reach the next link's quote.
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005c\\\\u0022)([^\\\\]*+(?:\\\\(?!u005c\\\\u0022|u003c|u003e)[^\\\\]*+)*+)(\\\\u005c\\\\u0022)/i',
-			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\&quot;)([^\\\\&<>"]*+(?:(?:\\\\(?!&quot;)|&(?!lt;|gt;))[^\\\\&<>"]*+)*+)(\\\\&quot;)/i',
-			'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
-			'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
-		) as $pattern ) {
-			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
+		$replace = static function ( array $matches ) use ( $resolve ): string {
+			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
+			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
+			if ( ! is_string( $value ) ) {
+				return $matches[0];
+			}
+			$reference = $resolve( html_entity_decode( $value, ENT_QUOTES, 'UTF-8' ), $matches[1] );
+			if ( null === $reference ) {
+				return $matches[0];
+			}
+			if ( $is_json ) {
+				// Match serialize_block_attributes(), including comment-delimiter protection.
+				$json      = (string) wp_json_encode( $reference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+				$reference = substr( str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), $json ), 1, -1 );
+			}
+			return $matches[1] . $reference . $matches[3];
+		};
+		$rewrite = static function ( string $text ) use ( $replace ): string {
+			foreach ( array(
+				'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
+				'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
+				'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
+				'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u005cu0022)(.*?)(\\\\u005cu0022)/i',
+				'/("(?:url|href|action)"\s*:\s*")((?:[^"\\\\]|\\\\.)*)(")/i',
+				'/(\'(?:url|href|action)\'\s*:\s*\')([^\']+)(\')/i',
+			) as $pattern ) {
+				$text = preg_replace_callback( $pattern, $replace, $text ) ?? $text;
+			}
+			return $text;
+		};
+
+		// Captured panel snapshots are rewritten whole, never by the patterns above.
+		$edits = self::panel_snapshot_edits( $content, $resolve );
+		$out   = '';
+		$at    = 0;
+		foreach ( $edits as $edit ) {
+			if ( $edit[0] < $at ) {
+				continue;
+			}
+			$out .= $rewrite( substr( $content, $at, $edit[0] - $at ) ) . $edit[2];
+			$at   = $edit[0] + $edit[1];
 		}
 
-		return $content;
+		return $out . $rewrite( substr( $content, $at ) );
+	}
+
+	/**
+	 * Captured dialog panels keep HTML snapshots as JSON in data attributes, once in
+	 * the block comment and once in the saved markup. Decode each copy whole, rewrite
+	 * its links with the HTML API, and encode both from the same rewritten snapshot.
+	 *
+	 * @param string  $content Document markup.
+	 * @param Closure $resolve Link resolver: (decoded value, attribute name) => reference or null.
+	 * @return array<int,array{int,int,string}> Replacements sorted by offset: offset, length, text.
+	 */
+	private static function panel_snapshot_edits( string $content, Closure $resolve ): array {
+		$names = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
+		if ( ! class_exists( 'WP_HTML_Tag_Processor' ) || ! preg_match( '/' . implode( '|', array_map( 'preg_quote', $names ) ) . '/', $content ) ) {
+			return array();
+		}
+		$edits = array();
+
+		// Block comment copy: a JSON string, keyed by the attribute or paired with its name.
+		for ( $start = strpos( $content, '<!-- wp:' ); false !== $start; $start = strpos( $content, '<!-- wp:', $end ) ) {
+			$end = strpos( $content, '-->', $start );
+			if ( false === $end ) {
+				break;
+			}
+			foreach ( $names as $name ) {
+				for ( $key = strpos( $content, '"' . $name . '"', $start ); false !== $key && $key < $end; $key = strpos( $content, '"' . $name . '"', $key + 1 ) ) {
+					$at = $key + strlen( $name ) + 2;
+					if ( ! preg_match( '/\G\s*(?::|,\s*"value"\s*:)\s*"/', $content, $match, 0, $at ) ) {
+						continue;
+					}
+					$open  = $at + strlen( $match[0] ) - 1;
+					$close = self::json_string_end( $content, $open );
+					$value = null === $close ? null : json_decode( substr( $content, $open, $close - $open + 1 ) );
+					if ( ! is_string( $value ) || $close > $end ) {
+						continue;
+					}
+					$snapshot = self::rewrite_panel_snapshot( $value, $resolve );
+					$token    = null === $snapshot ? substr( $content, $open, $close - $open + 1 ) : self::block_attribute_json( (string) wp_json_encode( $snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+					$edits[]  = array( $open, $close - $open + 1, $token );
+				}
+			}
+		}
+
+		// Saved markup copy: the attribute on its tag, with that tag's own links.
+		$tags = new class( $content ) extends WP_HTML_Tag_Processor {
+			/** @return array{int,int} Current tag's byte offset and length. */
+			public function span(): array {
+				$this->set_bookmark( 'ssi-panel' );
+				return array( $this->bookmarks['ssi-panel']->start, $this->bookmarks['ssi-panel']->length );
+			}
+		};
+		while ( $tags->next_tag() ) {
+			$carried = array_filter( $names, static fn( string $name ): bool => is_string( $tags->get_attribute( $name ) ) );
+			if ( ! $carried ) {
+				continue;
+			}
+			$span    = $tags->span();
+			$tag     = substr( $content, $span[0], $span[1] );
+			$edits[] = array( $span[0], $span[1], self::rewrite_tag_links( $tag, $resolve, $carried ) ?? $tag );
+		}
+		usort( $edits, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
+
+		return $edits;
+	}
+
+	/**
+	 * Block-attribute JSON escaping, as Blocks Engine's BlockAttributes::escapeJson()
+	 * writes it: serialize_block_attributes() plus escaped backslashes.
+	 *
+	 * @param string $json JSON text.
+	 */
+	private static function block_attribute_json( string $json ): string {
+		return strtr(
+			$json,
+			array(
+				'\\\\' => '\\u005c',
+				'--'   => '\\u002d\\u002d',
+				'<'    => '\\u003c',
+				'>'    => '\\u003e',
+				'&'    => '\\u0026',
+				'\\"'  => '\\u0022',
+			)
+		);
+	}
+
+	/**
+	 * Rewrite every `html` string in a JSON panel snapshot.
+	 *
+	 * @param string  $json Snapshot JSON.
+	 * @param Closure $resolve Link resolver.
+	 * @return string|null Re-encoded snapshot, or null when nothing changed.
+	 */
+	private static function rewrite_panel_snapshot( string $json, Closure $resolve ): ?string {
+		$snapshot = json_decode( $json, true );
+		if ( ! is_array( $snapshot ) ) {
+			return null;
+		}
+		$changed = false;
+		$walk    = static function ( array $node ) use ( &$walk, &$changed, $resolve ): array {
+			foreach ( $node as $key => $value ) {
+				if ( is_array( $value ) ) {
+					$node[ $key ] = $walk( $value );
+				} elseif ( 'html' === $key && is_string( $value ) ) {
+					$html = self::rewrite_tag_links( $value, $resolve );
+					if ( null !== $html ) {
+						$node[ $key ] = $html;
+						$changed      = true;
+					}
+				}
+			}
+			return $node;
+		};
+		$snapshot = $walk( $snapshot );
+		$encoded  = $changed ? wp_json_encode( $snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : false;
+
+		return is_string( $encoded ) ? $encoded : null;
+	}
+
+	/**
+	 * Resolve link attributes on every tag, and re-encode the named snapshot attributes.
+	 *
+	 * @param string            $html HTML fragment.
+	 * @param Closure           $resolve Link resolver.
+	 * @param array<int,string> $snapshots Snapshot attributes to rewrite on these tags.
+	 * @return string|null Updated HTML, or null when nothing changed.
+	 */
+	private static function rewrite_tag_links( string $html, Closure $resolve, array $snapshots = array() ): ?string {
+		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
+			/** Set a value with plain attribute escaping, including on URL attributes. */
+			public function set_plain_attribute( string $name, string $value ): bool {
+				$key = strtolower( $name );
+				if ( ! $this->set_attribute( $name, '#' ) || ! isset( $this->lexical_updates[ $key ] ) ) {
+					return false;
+				}
+				$this->lexical_updates[ $key ]->text = $name . '="' . strtr(
+					$value,
+					array(
+						'<' => '&lt;',
+						'>' => '&gt;',
+						'&' => '&amp;',
+						'"' => '&quot;',
+						"'" => '&apos;',
+					)
+				) . '"';
+				return true;
+			}
+		};
+		$changed = false;
+		while ( $tags->next_tag() ) {
+			foreach ( $tags->get_attribute_names_with_prefix( '' ) ?? array() as $name ) {
+				$value = $tags->get_attribute( $name );
+				if ( ! is_string( $value ) ) {
+					continue;
+				}
+				$updated = in_array( $name, $snapshots, true ) ? self::rewrite_panel_snapshot( $value, $resolve ) : null;
+				if ( null === $updated && preg_match( '/^(?:href|action|data-[a-z0-9_-]*url\b)/', $name ) ) {
+					$updated = $resolve( $value, $name );
+				}
+				if ( null !== $updated && $tags->set_plain_attribute( $name, $updated ) ) {
+					$changed = true;
+				}
+			}
+		}
+
+		return $changed ? $tags->get_updated_html() : null;
+	}
+
+	/**
+	 * Offset of the quote closing the JSON string that opens at `$open`.
+	 *
+	 * @param string $json JSON text.
+	 * @param int    $open Offset of the opening quote.
+	 */
+	private static function json_string_end( string $json, int $open ): ?int {
+		$length = strlen( $json );
+		for ( $at = $open + 1; $at < $length; $at += 2 ) {
+			$at += strcspn( $json, '"\\', $at );
+			if ( $at >= $length ) {
+				return null;
+			}
+			if ( '"' === $json[ $at ] ) {
+				return $at;
+			}
+		}
+		return null;
 	}
 
 	/**

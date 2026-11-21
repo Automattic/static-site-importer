@@ -19,6 +19,10 @@ require dirname( __DIR__ ) . '/vendor/autoload.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route.php';
+$wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
+require_once $wp_root . '/wp-includes/compat-utf8.php';
+require_once $wp_root . '/wp-includes/utf8.php';
+require_once __DIR__ . '/fixtures/core-html-api.php';
 
 function wp_parse_url( $url ) {
 	return parse_url( $url ); }
@@ -57,6 +61,10 @@ function taxonomy_exists( $taxonomy ) {
 	return true; }
 function wp_kses_post( $content ) {
 	return $content; }
+function wp_kses_uri_attributes() {
+	return array( 'action', 'href', 'src' ); }
+function esc_url( $url ) {
+	return $url; }
 class WC_Product_Simple {
 	public function __call( $method, $arguments ) {}
 	public function update_meta_data( $key, $value ) {
@@ -142,7 +150,7 @@ $assert( str_contains( $stored, '/entity/88/' ), 'Cart stores the Woo page perma
 $assert( str_contains( $stored, '?s=field%20kit&post_type=product' ), 'Search is a local product search.' );
 $assert( null === Static_Site_Importer_Site_Plan_Persistence::scoped_product_reference( '/products/not-field-kit', array( '/products/field-kit' => '/?p=42' ) ), 'Other handles do not match.' );
 // Data URL attributes can also contain flags; only URL-shaped values are links.
-foreach ( array( '"', "'", '\\"', '\\u0022', '\\u005cu0022', '\\u005c\\u0022', '\\&quot;' ) as $quote ) {
+foreach ( array( '"', "'", '\\"', '\\u0022', '\\u005cu0022' ) as $quote ) {
 	$fixture = '<product-info data-update-url="true" data-url="/products/x"><a href="/products/x">x</a></product-info>';
 	$fixture = str_replace( '"', $quote, $fixture );
 	$unresolved = array();
@@ -165,23 +173,79 @@ $relative   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_referenc
 $nested     = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '{"html":"\\u005cu003ca href=\\u005cu0022https://source.example/products/field-kit\\u005cu0022\\u005cu003e"}', array(), $unresolved, 'https://source.example/', array( '/products/field-kit' => '/?p=42' ) );
 $assert( str_contains( $nested, 'href=\\u005cu0022/?p=42\\u005cu0022' ), 'HTML escaped twice inside block attributes is rewritten.' );
 $assert( str_contains( $relative, '/?p=42&ref=nav#details' ), 'Document-relative routes preserve query and fragment.' );
-// A captured dialog keeps its opened panel as JSON in a data attribute, both in
-// the block comment and in the saved button markup.
-$long_query  = substr( str_repeat( '&amp;utm_term=floor', 500 ), 5 );
-$panel_state = (string) json_encode( array( 'html' => '<div role="dialog"><span>Example: href="</span><a href="/index.html">Home</a><a href="/second/index.html?ref=menu&amp;copy=1#top">Second</a><a href="/about--us/index.html">About</a><a href="/search?q=field&amp;sort=popular">Find</a><a href="/second/index.html?ref=summer sale">Sale</a><a href="/second/index.html?' . $long_query . '">Long</a><a href="/index.html">Again</a></div>' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-$panel_block = '<!-- wp:example/menu-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $panel_state ) ) ) ) . ' -->'
-	. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/menu-button -->';
-$unresolved  = array();
-$panel_block = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $panel_block, array( '/' => '/', '/second' => '/second-page/', '/about--us' => '/about-us/' ), $unresolved, 'https://source.example/', array(), '/index.html' );
-preg_match( '/^<!-- wp:example\/menu-button (\{.*?\}) -->/', $panel_block, $panel_comment );
-preg_match( '/data-blocks-engine-capture-dialog-panel-state="([^"]*)"/', $panel_block, $panel_markup );
-foreach ( array(
-	'block comment' => json_decode( (string) ( json_decode( $panel_comment[1] ?? '', true )['sourceAttributes'][0]['value'] ?? '' ), true ),
-	'saved markup'  => json_decode( html_entity_decode( $panel_markup[1] ?? '', ENT_QUOTES, 'UTF-8' ), true ),
-) as $panel_copy => $panel ) {
-	$assert( '<div role="dialog"><span>Example: href="</span><a href="/">Home</a><a href="/second-page/?ref=menu&amp;copy=1#top">Second</a><a href="/about-us/">About</a><a href="/?s=field&amp;post_type=product">Find</a><a href="/second-page/?ref=summer sale">Sale</a><a href="/second-page/?' . $long_query . '">Long</a><a href="/">Again</a></div>' === ( $panel['html'] ?? null ), 'Captured dialog panel links resolve to permalinks in the ' . $panel_copy . '.' );
-}
-$assert( array() === $unresolved, 'Captured dialog panel links leave nothing unresolved.' );
+// A captured dialog keeps HTML snapshots as JSON in data attributes, both in the
+// block comment and in the saved markup. Both copies must decode to the same panel.
+$panel_copies = static function ( string $block ): array {
+	$comment    = substr( $block, 22, (int) strpos( $block, ' -->' ) - 22 );
+	$attributes = json_decode( $comment, true )['sourceAttributes'] ?? array();
+	$tags       = new WP_HTML_Tag_Processor( $block );
+	$tags->next_tag();
+	$copies = array();
+	foreach ( $attributes as $attribute ) {
+		$copies[ $attribute['name'] ] = array(
+			'block comment' => json_decode( (string) $attribute['value'], true ),
+			'saved markup'  => json_decode( (string) $tags->get_attribute( $attribute['name'] ), true ),
+		);
+	}
+	return $copies;
+};
+$panel_case = static function ( string $label, string $name, array $snapshot, array $expected, array $routes = array() ) use ( $assert, $panel_copies ): void {
+	$state = (string) json_encode( $snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+	$block = '<!-- wp:example/panel ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => $name, 'value' => $state ) ) ) ) . ' -->'
+		. '<button ' . $name . '="' . htmlspecialchars( $state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/panel -->';
+	$unresolved = array();
+	$block      = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $block, $routes + array( '/' => '/', '/second' => '/second-page/', '/about--us' => '/about-us/' ), $unresolved, 'https://source.example/', array(), '/index.html' );
+	foreach ( $panel_copies( $block )[ $name ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+		$assert( $expected === $decoded, $label . ': the ' . $copy . ' decodes to the rewritten panel.' );
+	}
+	$assert( array() === $unresolved, $label . ': nothing is left unresolved.' );
+	$expected_comment = '<!-- wp:example/panel ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => $name, 'value' => (string) json_encode( $expected, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) ) ) ) . ' -->';
+	$assert( str_starts_with( $block, $expected_comment ), $label . ': the block comment is encoded as Blocks Engine encodes it.' );
+};
+$long_query = substr( str_repeat( '&amp;utm_term=floor', 500 ), 5 );
+$panel_case(
+	'Combined panel links',
+	'data-blocks-engine-capture-dialog-panel-state',
+	array( 'html' => '<div role="dialog"><span>Example: href="</span><a href="/index.html">Home</a><a href="/second/index.html?ref=menu&amp;copy=1#top">Second</a><a href="/about--us/index.html">About</a><a href="/search?q=field&amp;sort=popular">Find</a><a href="/second/index.html?ref=summer sale">Sale</a><a href="/second/index.html?' . $long_query . '">Long</a><a href="/index.html">Again</a></div>' ),
+	array( 'html' => '<div role="dialog"><span>Example: href="</span><a href="/">Home</a><a href="/second-page/?ref=menu&amp;copy=1#top">Second</a><a href="/about-us/">About</a><a href="/?s=field&amp;post_type=product">Find</a><a href="/second-page/?ref=summer sale">Sale</a><a href="/second-page/?' . $long_query . '">Long</a><a href="/">Again</a></div>' )
+);
+$panel_case(
+	'An attribute value that reads like an href',
+	'data-blocks-engine-capture-dialog-panel-state',
+	array( 'html' => '<nav><a title="href=" href="/second/index.html">Second</a></nav>' ),
+	array( 'html' => '<nav><a title="href=" href="/second-page/">Second</a></nav>' )
+);
+$panel_case(
+	'Visible text that reads like an href',
+	'data-blocks-engine-capture-dialog-panel-state',
+	array( 'html' => '<p><code>href="/second/index.html?ref=summer sale"</code> <a href="/index.html">Home</a></p>' ),
+	array( 'html' => '<p><code>href="/second/index.html?ref=summer sale"</code> <a href="/">Home</a></p>' )
+);
+$panel_case(
+	'Raw angle brackets in a quoted href',
+	'data-blocks-engine-capture-dialog-panel-state',
+	array( 'html' => '<a href="/second/index.html?ref=<sale>">Sale</a>' ),
+	array( 'html' => '<a href="/second-page/?ref=&lt;sale&gt;">Sale</a>' )
+);
+$backslashes = str_repeat( 'C:\\\\Floors\\\\"quoted"\\\\ ', 60000 );
+$panel_case(
+	'A large backslash-heavy panel',
+	'data-blocks-engine-capture-dialog-panel-state',
+	array( 'html' => '<a href="/index.html">Home</a><pre>' . $backslashes . '</pre><a href="/second/index.html">Second</a>' ),
+	array( 'html' => '<a href="/">Home</a><pre>' . $backslashes . '</pre><a href="/second-page/">Second</a>' )
+);
+$panel_case(
+	'Resting and opened existing-panel snapshots',
+	'data-blocks-engine-capture-existing-panel',
+	array(
+		'resting' => array( 'html' => '<a href="/second/index.html">Second</a>', 'hidden' => true ),
+		'opened'  => array( 'html' => '<a href="/index.html">Home</a>', 'hidden' => false ),
+	),
+	array(
+		'resting' => array( 'html' => '<a href="/second-page/">Second</a>', 'hidden' => true ),
+		'opened'  => array( 'html' => '<a href="/">Home</a>', 'hidden' => false ),
+	)
+);
 $unresolved = array();
 foreach ( array(
 	'/oman\\u002d\\u002d-unterwegs/index.html' => '/oman---unterwegs',
