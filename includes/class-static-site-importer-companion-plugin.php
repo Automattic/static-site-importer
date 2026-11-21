@@ -637,14 +637,9 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Normalize the block list from the payload.
-	 *
-	 * @param array<string,mixed> $payload Generated companion-plugin payload.
-	 * @return array<int,array<string,mixed>>
-	 */
-	/**
 	 * Registered names of the payload's blocks whose name is one of the given
-	 * generated block types, as build_block() registers them.
+	 * generated block types, as build_block() registers them. Entries whose name
+	 * would have no namespace, or would be a core block, are skipped.
 	 *
 	 * @param mixed    $payload Generated companion-plugin payload.
 	 * @param string[] $types Generated block type names, such as `layout-shell`.
@@ -654,20 +649,45 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! is_array( $payload ) ) {
 			return array();
 		}
-		$namespace = self::block_namespace( $payload );
-		$names     = array();
+		$declared_name = static function ( array $block ): string {
+			$json = $block['block_json'] ?? null;
+			$name = is_array( $json ) ? ( $json['name'] ?? null ) : ( is_object( $json ) ? ( $json->name ?? null ) : null );
+			return is_string( $name ) ? $name : '';
+		};
+		$site_slug = self::site_slug( $payload );
+		$namespace = '' === $site_slug ? '' : 'ssi-' . $site_slug;
+		foreach ( self::payload_blocks( $payload ) as $block ) {
+			$declared = $declared_name( $block );
+			if ( 1 === preg_match( '/^([a-z][a-z0-9-]*)\//', $declared, $match ) && 'core' !== $match[1] ) {
+				$namespace = $match[1];
+				break;
+			}
+		}
+		$names = array();
 		foreach ( self::payload_blocks( $payload ) as $block ) {
 			$name = isset( $block['name'] ) && is_scalar( $block['name'] ) ? self::sanitize_slug( (string) $block['name'] ) : '';
 			if ( '' === $name || ! in_array( $name, $types, true ) ) {
 				continue;
 			}
-			$declared = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
-			$names[]  = preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared ) ? $declared : $namespace . '/' . $name;
+			$declared = $declared_name( $block );
+			if ( 1 === preg_match( '/^([a-z][a-z0-9-]*)\/[a-z0-9-]+$/', $declared, $match ) ) {
+				if ( 'core' !== $match[1] ) {
+					$names[] = $declared;
+				}
+			} elseif ( '' !== $namespace ) {
+				$names[] = $namespace . '/' . $name;
+			}
 		}
 
 		return array_values( array_unique( $names ) );
 	}
 
+	/**
+	 * Normalize the block list from the payload.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return array<int,array<string,mixed>>
+	 */
 	private static function payload_blocks( array $payload ): array {
 		$blocks = isset( $payload['blocks'] ) && is_array( $payload['blocks'] ) ? $payload['blocks'] : array();
 		return array_values( array_filter( $blocks, 'is_array' ) );

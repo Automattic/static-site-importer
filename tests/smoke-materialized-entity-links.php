@@ -285,7 +285,10 @@ $unresolved      = array();
 $assert( $route_patterns( $raw_close_block, $panel_routes ) === Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $raw_close_block, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS ), 'A raw comment closer inside attribute JSON keeps the route patterns.' );
 $anchor_input = '<!-- wp:example/authored-button ' . $encode_block( array( 'url' => '/second/index.html', 'sourceAttributes' => array( array( 'name' => 'href', 'value' => '/second/index.html' ), array( 'name' => 'hreflang', 'value' => '/en/index.html' ), array( 'name' => $panel_key, 'value' => $panel_state ) ) ) ) . ' -->'
 	. '<a href="/second/index.html" hreflang="/en/index.html" xlink:href="/second/index.html" data-href="/second/index.html" data-config=\'{"url":"/second/index.html"}\' ' . $panel_key . '="' . htmlspecialchars( $panel_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</a><!-- /wp:example/authored-button -->';
-$anchor       = $shape_case( 'An anchor trigger with its own href', $anchor_input, array( $panel_key => $panel_after ) );
+$unresolved   = array();
+$anchor       = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $anchor_input, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+// The route patterns rewrite the trigger's own links, so the whole block keeps their output.
+$assert( $route_patterns( $anchor_input, $panel_routes ) === $anchor, 'An anchor trigger whose own links the route patterns rewrite keeps their output.' );
 $assert( $outside_snapshots( $route_patterns( $anchor_input, $panel_routes ) ) === $outside_snapshots( $anchor ), 'Everything outside the snapshots of an anchor trigger matches the route patterns.' );
 $assert( str_contains( $anchor, '"url":"/second-page/"' ), 'A sibling url block attribute keeps its route rewrite.' );
 // A wrapper block keeps the existing-panel snapshot under its attribute name.
@@ -302,7 +305,15 @@ $wrapper_attrs = $wrapper_parsed->allocate_and_return_parsed_attributes()['wrapp
 $wrapper_tag   = new WP_HTML_Tag_Processor( $wrapper_block );
 $wrapper_tag->next_tag();
 $wrapper_after = array( 'resting' => array( 'html' => '<a href="/second-page/">Second</a>' ) );
-$assert( $wrapper_after === json_decode( (string) ( $wrapper_attrs[ $existing_key ] ?? '' ), true ) && $wrapper_after === json_decode( (string) $wrapper_tag->get_attribute( $existing_key ), true ), 'A keyed existing-panel snapshot is rewritten in both copies.' );
+$assert( $route_patterns( $wrapper_input, $panel_routes ) === $wrapper_block, 'A keyed existing-panel snapshot whose wrapper links the route patterns rewrite keeps their output.' );
+$plain_wrapper = '<!-- wp:example/layout-shell ' . $encode_block( array( 'wrappers' => array( array( 'tagName' => 'div', 'attributes' => array( 'class' => 'menu', $existing_key => $existing ) ) ) ) ) . ' -->'
+	. '<div class="menu" ' . $existing_key . '="' . htmlspecialchars( $existing, ENT_QUOTES, 'UTF-8' ) . '"></div><!-- /wp:example/layout-shell -->';
+$plain_after   = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $plain_wrapper, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+$plain_parsed  = new WP_Block_Processor( $plain_after );
+$plain_parsed->next_delimiter();
+$plain_tag = new WP_HTML_Tag_Processor( $plain_after );
+$plain_tag->next_tag();
+$assert( $wrapper_after === json_decode( (string) ( $plain_parsed->allocate_and_return_parsed_attributes()['wrappers'][0]['attributes'][ $existing_key ] ?? '' ), true ) && $wrapper_after === json_decode( (string) $plain_tag->get_attribute( $existing_key ), true ), 'A keyed existing-panel snapshot is rewritten in both copies.' );
 $assert( $outside_snapshots( $route_patterns( $wrapper_input, $panel_routes ) ) === $outside_snapshots( $wrapper_block ), 'Everything outside a wrapper snapshot matches the route patterns.' );
 // Wrapper attributes around a snapshot keep the route patterns in both copies, whether
 // the snapshot needs rewriting, is already rewritten, or is not a snapshot at all.
@@ -328,7 +339,6 @@ $shell_copies = static function ( string $block ): array {
 $config_links = "{'url':'/second/index.html','href':'/second/index.html','action':'/second/index.html'}";
 $config_after = "{'url':'/second-page/','href':'/second-page/','action':'/second-page/'}";
 foreach ( array(
-	'A snapshot that needs rewriting'   => array( $existing, (string) json_encode( $wrapper_after, JSON_UNESCAPED_SLASHES ) ),
 	'A snapshot already rewritten'      => array( (string) json_encode( $wrapper_after, JSON_UNESCAPED_SLASHES ), (string) json_encode( $wrapper_after, JSON_UNESCAPED_SLASHES ) ),
 	'A snapshot value that is not JSON' => array( 'not-json', 'not-json' ),
 	'A scalar snapshot value'           => array( '"scalar"', '"scalar"' ),
@@ -425,7 +435,9 @@ $nested_shell = '<!-- wp:example/layout-shell ' . $encode_block( array( 'wrapper
 $nested_after = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $nested_shell, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
 $nested_tag   = new WP_HTML_Tag_Processor( $nested_after );
 $nested_tag->next_tag();
-$assert( '/second-page/' === $nested_tag->get_attribute( 'data-href' ) && $wrapper_after === json_decode( (string) $nested_tag->get_attribute( $existing_key ), true ), 'A covered parent is rewritten around an uncovered child.' );
+$nested_main  = new WP_HTML_Tag_Processor( $route_patterns( $nested_shell, $panel_routes ) );
+$nested_main->next_tag();
+$assert( '/second-page/' === $nested_tag->get_attribute( 'data-href' ) && $nested_main->get_attribute( $existing_key ) === $nested_tag->get_attribute( $existing_key ), 'A covered parent whose bytes the route patterns change keeps their output.' );
 $assert( str_contains( $nested_after, $label_after ), 'The uncovered child keeps the route patterns inside a covered parent.' );
 $assert( $panel_after === ( $panel_copies( substr( $nested_after, strpos( $nested_after, '<!-- wp:example/authored-button ' ) ) )[ $panel_key ]['saved markup'] ?? null ), 'A covered sibling is rewritten next to an uncovered child.' );
 // A delimiter only the block editor reads, naming a snapshot in a label, keeps the
@@ -504,6 +516,39 @@ $large_found = $scan->invoke( null, $encode_block( array( 'sourceAttributes' => 
 ini_set( 'pcre.backtrack_limit', (string) $limit );
 $assert( is_array( $large_found ) && 1 === count( $large_found ) && $large_state === $large_found[0][2], 'A large snapshot is read without depending on the PCRE backtrack limit.' );
 unset( $large_state, $large_found );
+// The route patterns' output is kept whole, so an earlier rewrite that leaves text
+// looking like an escaped attribute opener matches as it does on main.
+$menu_for   = static fn( string $state ): string => $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $state ) ) ), '<button ' . $panel_attr( $state ) . '>Menu</button>' );
+$opener_doc = '<a href="/first?ref=href=&#92;u0022/second?carry=">Before</a>' . $menu_for( (string) json_encode( array( 'html' => '<a href="/second/index.html">Menu</a>' ), JSON_UNESCAPED_SLASHES ) );
+$opener_rt  = $panel_routes + array( '/first' => '/one/' );
+$opener_out = $rewrite_panels( $opener_doc, $opener_rt );
+$assert( explode( '<!-- wp:', $route_patterns( $opener_doc, $opener_rt ) )[0] === explode( '<!-- wp:', $opener_out )[0], 'Text before a panel that an earlier pattern turns into an escaped opener is written as main writes it.' );
+$assert( ! str_contains( $opener_out, '/second/index.html' ), 'The panel after that text is still rewritten.' );
+// Inside a snapshot only links change: an accessible label that reads like a link stays.
+$label_html = "<a href='/second/index.html' aria-label='Example href=\"/second/index.html\">'>Menu</a>";
+$label_out  = $rewrite_panels( $menu_for( (string) json_encode( array( 'html' => $label_html ), JSON_UNESCAPED_SLASHES ) ), $panel_routes );
+foreach ( $panel_copies( $label_out )[ $panel_key ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+	$label_tag = new WP_HTML_Tag_Processor( (string) ( $decoded['html'] ?? '' ) );
+	$label_tag->next_tag( 'a' );
+	$assert( '/second-page/' === $label_tag->get_attribute( 'href' ) && 'Example href="/second/index.html">' === $label_tag->get_attribute( 'aria-label' ), 'A label that reads like a link stays as written in the ' . $copy . '.' );
+}
+// A prefixed data-*url keeps main's exemption for identifiers.
+$record_out = $rewrite_panels( $menu_for( (string) json_encode( array( 'html' => '<menu vendor:data-url="123"><a href="/second/index.html">Menu</a></menu>' ), JSON_UNESCAPED_SLASHES ) ), $panel_routes + array( '/123' => '/record/' ) );
+foreach ( $panel_copies( $record_out )[ $panel_key ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+	$assert( '<menu vendor:data-url="123"><a href="/second-page/">Menu</a></menu>' === ( $decoded['html'] ?? null ), 'A prefixed data-url identifier stays as written in the ' . $copy . '.' );
+}
+// A snapshot that does not encode back to its own bytes, such as one with an integer
+// beyond 64 bits, keeps the route patterns' output.
+$bigint_doc = $menu_for( '{"html":"<a href=\"/second/index.html\">Menu</a>","id":9223372036854775809}' );
+$assert( $route_patterns( $bigint_doc, $panel_routes ) === $rewrite_panels( $bigint_doc, $panel_routes ), 'A snapshot with an integer beyond 64 bits keeps the route patterns\' output.' );
+// Panel block names from the companion payload, as build_block() registers them.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
+$names_for = static fn( $payload ): array => Static_Site_Importer_Companion_Plugin::generated_block_names( $payload, Static_Site_Importer_Site_Plan_Persistence::PANEL_BLOCK_TYPES );
+$name_base = array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => 'my-theme' );
+$assert( array( 'my-theme/authored-button' ) === $names_for( $name_base + array( 'blocks' => array( array( 'name' => 'authored-button', 'block_json' => (object) array( 'name' => 'my-theme/authored-button' ) ) ) ) ), 'Block metadata given as an object is read.' );
+$assert( array() === $names_for( array( 'blocks' => array( array( 'name' => 'authored-button', 'block_json' => array() ) ) ) ), 'A block with no namespace is skipped.' );
+$assert( array() === $names_for( $name_base + array( 'blocks' => array( array( 'name' => 'authored-button', 'block_json' => array( 'name' => 'core/button' ) ) ) ) ), 'A core block name is skipped.' );
+$assert( array( 'ssi-my-theme/layout-shell' ) === $names_for( $name_base + array( 'blocks' => array( array( 'name' => 'layout-shell' ), array( 'name' => 'authored-label' ) ) ) ), 'A block without declared metadata takes the site namespace.' );
 // Memory: two hundred panels in a few MB stay close to the route patterns' own peak.
 $paragraph_fill = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 150 );
 $many_panels    = str_repeat( $menu_block . $paragraph_fill, 200 );
@@ -518,8 +563,24 @@ $memory_before = memory_get_usage();
 $panels_after  = $rewrite_panels( $many_panels, $panel_routes );
 $head_peak     = memory_get_peak_usage() - $memory_before;
 $assert( ! str_contains( $panels_after, '/second/index.html' ), 'Every link in two hundred panels and the paragraphs around them is rewritten.' );
-$assert( $head_peak < $main_peak + strlen( $many_panels ) / 2, 'Two hundred panels in ' . round( strlen( $many_panels ) / 1048576, 1 ) . ' MB stay within half the document size of the route patterns\' peak (' . round( $main_peak / 1048576, 1 ) . ' MB against ' . round( $head_peak / 1048576, 1 ) . ' MB).' );
+$assert( $head_peak < $main_peak + strlen( $many_panels ), 'Two hundred panels in ' . round( strlen( $many_panels ) / 1048576, 1 ) . ' MB stay within one document size of the route patterns\' peak (' . round( $main_peak / 1048576, 1 ) . ' MB against ' . round( $head_peak / 1048576, 1 ) . ' MB).' );
 unset( $many_panels, $panels_after );
+// Memory: one menu after 3 MB of linked paragraphs holds the route patterns' output and
+// one spliced copy, with no slices of the whole document.
+$linked_page = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 ) . $menu_block;
+$route_patterns( $linked_page, $panel_routes );
+$rewrite_panels( $linked_page, $panel_routes );
+memory_reset_peak_usage();
+$memory_before = memory_get_usage();
+$route_patterns( $linked_page, $panel_routes );
+$main_peak = memory_get_peak_usage() - $memory_before;
+memory_reset_peak_usage();
+$memory_before = memory_get_usage();
+$linked_after  = $rewrite_panels( $linked_page, $panel_routes );
+$head_peak     = memory_get_peak_usage() - $memory_before;
+$assert( ! str_contains( $linked_after, '/second/index.html' ), 'One menu after 3 MB of linked paragraphs is rewritten with them.' );
+$assert( $head_peak < $main_peak + strlen( $linked_page ) * 0.8, 'One menu after ' . round( strlen( $linked_page ) / 1048576, 1 ) . ' MB stays within 80% of the document size of the route patterns\' peak (' . round( $main_peak / 1048576, 1 ) . ' MB against ' . round( $head_peak / 1048576, 1 ) . ' MB).' );
+unset( $linked_page, $linked_after );
 // Snapshot copies that disagree between the comment and the saved markup keep the route patterns.
 $many_entries = array_fill( 0, 5000, array( 'name' => $panel_key, 'value' => $panel_state ) );
 $many_input   = $panel_block( 'authored-button', array( 'sourceAttributes' => $many_entries ), '<button ' . $panel_attr( $panel_state ) . '>Menu</button>' );
