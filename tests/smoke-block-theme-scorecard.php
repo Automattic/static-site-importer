@@ -101,6 +101,14 @@ try {
 	scorecard_assert( filesize( $root . '/good/style.css' ) === $good['checks']['proportionate_assets']['measured']['theme_css_bytes'], 'CSS bytes' );
 	$multi_route = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', array_merge( $routes, array( array( 'route' => '/nested', 'post_content' => '<!-- wp:group --><div><!-- wp:paragraph --><p>Nested</p><!-- /wp:paragraph --></div><!-- /wp:group -->' ) ) ), $context );
 	scorecard_assert( 2 === $multi_route['checks']['content_quality']['measured']['totals']['max_nesting_depth'], 'Total nesting depth is the maximum across routes, not the sum' );
+	// Core editor-owned styles are not debt; unrelated group styles still are.
+	$native_styles = '<!-- wp:group --><div style="border:1px solid red"><!-- wp:image {"scale":"cover","width":"100%","height":"100%"} --><figure class="wp-block-image"><img src="photo.jpg" style="height:100%;object-fit:cover;width:100%" /></figure><!-- /wp:image --><!-- wp:paragraph --><p>A <mark style="background-color:#ff0" class="highlight has-inline-color">highlighted phrase</mark>.</p><!-- /wp:paragraph --></div><!-- /wp:group -->';
+	$quality = Static_Site_Importer_Block_Theme_Scorecard::measure( $root . '/good', array( array( 'route' => '/native-styles', 'post_content' => $native_styles ) ), $context )['checks']['content_quality'];
+	foreach ( array( $quality['measured']['totals'], $quality['measured']['routes']['/native-styles'] ) as $metrics ) {
+		scorecard_assert( 1 === $metrics['inline_style_attributes'], 'Only the group border counts as inline style debt' );
+		scorecard_assert( 3 === $metrics['raw_inline_style_attributes'], 'Raw inline styles remain visible' );
+	}
+	scorecard_assert( array( 'route' => '/native-styles', 'value' => 1 ) === $quality['measured']['worst_routes']['inline_style_attributes'], 'Worst route uses gated styles' );
 	// Element styles are expected for the elements the content renders, and
 	// per-level heading styles style headings. Block styles are not required.
 	$levels = $root . '/levels'; mkdir( $levels . '/templates', 0777, true ); mkdir( $levels . '/parts' );
