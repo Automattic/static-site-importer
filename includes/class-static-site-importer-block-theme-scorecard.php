@@ -129,6 +129,7 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'content_quality'      => self::content_quality( $routes, $route_blocks ),
 				'theme_metadata'       => self::theme_metadata( $theme_dir ),
 				'template_economy'     => self::template_economy( $template_blocks ),
+				'class_naming'         => self::class_naming( basename( $theme_dir ), $template_blocks, $part_blocks, $route_blocks ),
 			),
 		);
 	}
@@ -593,6 +594,52 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'repeated_block_markup_bytes_max' => 0,
 			),
 			$custom <= count( $custom_fingerprints ) && 0 === $repeated
+		);
+	}
+
+	/**
+	 * Measure the class names written into block content. Clean output names
+	 * every class it authors in the theme's vocabulary: no converter-internal
+	 * prefixes and no opaque digests a person cannot read or reuse.
+	 *
+	 * @param string $theme_slug      Theme namespace authored classes may use.
+	 * @param array  ...$block_groups Parsed block trees keyed by template, part or route.
+	 */
+	private static function class_naming( string $theme_slug, array ...$block_groups ): array {
+		$tokens = array();
+		foreach ( $block_groups as $group ) {
+			foreach ( $group as $blocks ) {
+				foreach ( self::flatten( $blocks ) as $block ) {
+					$split = preg_split( '/\s+/', trim( (string) ( $block['attrs']['className'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
+					if ( is_array( $split ) ) {
+						$tokens = array_merge( $tokens, $split );
+					}
+				}
+			}
+		}
+		$engine     = array_values( array_filter( $tokens, static fn( string $token ): bool => (bool) preg_match( '/^(?:be|blocks-engine)-/', $token ) ) );
+		$opaque     = array_values( array_filter( $tokens, static fn( string $token ): bool => (bool) preg_match( '/(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{8,}/', $token ) ) );
+		$namespaced = '' === $theme_slug ? array() : array_filter( $tokens, static fn( string $token ): bool => str_starts_with( $token, $theme_slug . '-' ) );
+		$families   = array();
+		foreach ( $engine as $token ) {
+			$family              = preg_replace( '/-?[0-9a-f]{6,}(?:-\d+)?$/', '', $token );
+			$families[ $family ] = ( $families[ $family ] ?? 0 ) + 1;
+		}
+		arsort( $families );
+		return self::check(
+			array(
+				'class_tokens'            => count( $tokens ),
+				'engine_class_tokens'     => count( $engine ),
+				'distinct_engine_classes' => count( array_unique( $engine ) ),
+				'opaque_class_tokens'     => count( $opaque ),
+				'theme_namespaced_tokens' => count( $namespaced ),
+				'engine_class_families'   => $families,
+			),
+			array(
+				'engine_class_tokens_max' => 0,
+				'opaque_class_tokens_max' => 0,
+			),
+			array() === $engine && array() === $opaque
 		);
 	}
 
