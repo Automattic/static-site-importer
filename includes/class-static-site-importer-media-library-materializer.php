@@ -643,14 +643,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		// their slug namespace with attachments. Reserve the planned page slugs
 		// so an image never takes its page's source route: core suffixes the
 		// attachment exactly as it would beside an existing page.
-		$page_slugs = array();
-		foreach ( $state['ordered_pages'] ?? array() as $page ) {
-			if ( 'page' === ( $page['post_type'] ?? 'page' ) && '' === ( $page['parent_source_path'] ?? '' ) ) {
-				$page_slugs[ (string) $page['slug'] ] = true;
-			}
-		}
-		$reserve_page_slugs = static fn( bool $bad, string $slug ): bool => $bad || isset( $page_slugs[ $slug ] );
-		add_filter( 'wp_unique_post_slug_is_bad_attachment_slug', $reserve_page_slugs, 10, 2 );
+		require_once __DIR__ . '/class-static-site-importer-route-slug-reservation.php';
+		$release_route_slugs = Static_Site_Importer_Route_Slug_Reservation::reserve( $state['ordered_pages'] ?? array() );
 		try {
 			$writes = array_column( $state['resolved']['writes'], null, 'target_path' );
 			foreach ( $assets as $asset ) {
@@ -769,7 +763,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			return $resolutions;
 		} finally {
-			remove_filter( 'wp_unique_post_slug_is_bad_attachment_slug', $reserve_page_slugs, 10 );
+			$release_route_slugs();
 			foreach ( $files as $file ) {
 				wp_delete_file( $file );
 				$parent = dirname( $file );
