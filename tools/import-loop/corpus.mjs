@@ -144,12 +144,15 @@ async function main() {
         if (Number.isInteger(pid) && pid > 1) try { process.kill(-pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
       }
       result.seconds = (Date.now() - start) / 1000;
+      // A site's import and screenshots are gigabytes; only --out keeps them.
+      if (!args.out) fs.rmSync(dir, { recursive: true, force: true });
     }
     return result;
   }
   await Promise.all(Array.from({ length: Math.min(jobs, sites.length) }, async () => {
     while (index < sites.length) { const i = index++; results[i] = await measure(sites[i]); }
   }));
+  if (!args.out) fs.rmSync(out, { recursive: true, force: true });
   const regressed = results.some(s => s.regressions.length > 0);
   console.log(JSON.stringify({ sites: results, regressed }));
   process.exitCode = regressed || results.some(s => s.unmeasured.length) ? 1 : 0;

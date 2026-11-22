@@ -58,8 +58,8 @@ package and the loop's compare/report contract, in parallel (default half the
 available CPUs). Each worker stops its own server in `finally`. Original captures
 are never modified; `no-box-tree` imports a working copy with every directory
 named `box-tree` removed, and compares against the full capture, so the frozen
-reference is still proven. Logs and artifacts remain under `--out` (a
-new temporary directory by default).
+reference is still proven. Logs and artifacts remain under `--out`; without
+it, each site's scratch import is removed once measured.
 
 Stdout is one JSON document with `sites` and `regressed`. A class appearing or
 growing within a state/profile, or a passing cell failing, is a regression;
