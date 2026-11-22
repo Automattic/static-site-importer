@@ -171,6 +171,16 @@ Global Styles and core block styles; developer block themes load 1.5-36 KB,
 and Extendable, the heaviest measured, 85 KB. A structure repeated three or more times on a page stays
 an advisory, because developer pages repeat cards from one pattern too.
 
+`block_duplicated_content` (`duplicated-content.mjs`, a blocker owned by
+`blocks-engine`) catches content a builder put in one document twice and hid
+per breakpoint with CSS. It collects text runs (12 or more characters) and
+images (by upload source) from each page's saved post content, renders the
+frontend at each evaluated width, and reports content saved more than once
+whose copies show at disjoint widths. Evidence lists each duplicate's text or
+src, occurrence count, and each copy's visible widths and block path. Copies
+visible at the same widths are repeated structure, not duplication. A route
+that also has a `source_device_documents` finding carries its signature.
+
 `progress.mjs` compares block instance counts (not boolean predicate results).
 Acceptance requires fewer own occurrences in the recorded cells, no growing or
 new unrelated blocker, and no new parity failure or missing evidence. Output

@@ -13,6 +13,7 @@ import { chromium } from 'playwright';
 import { listViewEvidence } from './list-view.mjs';
 import { themeChecks } from './theme.mjs';
 import { imageSubject } from './image-subject.mjs';
+import { duplicatedContentOnPage } from './duplicated-content.mjs';
 import { sampleCanvas, canvasParityMismatches, canvasParityEvidence, templatePartsRendered } from './canvas-parity.mjs';
 
 // Text the user can edit: Gutenberg marks template and template-part blocks
@@ -26,7 +27,7 @@ const SAVED_IMAGE_PROBES = 5;
 // Blocks of each probed type (heading, paragraph, button, group) whose style controls are set.
 const BLOCK_CONTROL_PROBES = 3;
 
-export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) {
+export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells, widths = [1440]) {
   const wp = wordpressRunner(site, wpCli);
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
@@ -76,6 +77,12 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
         return all;
       });
       const route = new URL(url).pathname;
+      // The saved content before any probe edits it, rendered at each width:
+      // content saved twice and shown at disjoint widths (duplicated-content.mjs).
+      const original = wp('post', 'get', String(ID), '--field=post_content');
+      let duplicates;
+      try { duplicates = await duplicatedContentOnPage(browser, url, original, widths); }
+      catch (error) { duplicates = { error: String(error.message || error) }; }
       // The subject is the check, so a finding's signature stays stable across
       // imports; `image` names the failing image in the evidence, so a Replace
       // failure is never anonymous. Upload paths carry the month and
@@ -122,7 +129,6 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
         if (blocks.filter((b) => b.name === 'core/group').length > blocks.length / 2 && Math.max(...blocks.map((b) => b.depth)) > 8) throw Object.assign(new Error('List View dominated by deeply nested groups'), { evidence: listViewEvidence(blocks) });
       });
       // Save real edits, then restore the exact original post even on failure.
-      const original = wp('post', 'get', String(ID), '--field=post_content');
       const marker = `Import loop edit ${randomBytes(5).toString('hex')}`;
       try {
         await check('editor_saved_text', async () => {
@@ -243,7 +249,7 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells) 
         writeFileSync(file, original);
         try { wp('post', 'update', String(ID), file); } finally { unlinkSync(file); }
       }
-      return { id: ID, route, blocks };
+      return { id: ID, route, blocks, duplicates };
     };
     let next = 0;
     const tab = async () => {
