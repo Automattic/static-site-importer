@@ -38,6 +38,11 @@ class StaticSiteImporterRouteSlugReservationTest extends WP_UnitTestCase {
 	 */
 	public function test_entity_attachment_titled_like_a_page_keeps_the_page_route(): void {
 		$attachments = &$this->created_attachments;
+		$admin = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		if ( is_multisite() ) {
+			grant_super_admin( $admin );
+		}
+		wp_set_current_user( $admin );
 		// Plan resolution needs an absolute theme URI; the test runtime's may be relative.
 		add_filter( 'theme_root_uri', static fn(): string => 'http://example.org/wp-content/themes' );
 		add_filter( 'ssi_shop_plugin', static fn(): string => 'route-fixture-shop' );
