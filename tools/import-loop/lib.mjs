@@ -104,6 +104,34 @@ export const routeDocument = (website, route = '/') => {
 // the finding in that repository with a reroute scope naming the site, and
 // that site's passes track the finding there from then on (ownIssue); every
 // other site keeps the original issue.
+// Gate tools: tools/ and lib/ in the repository layout, plus the packages the
+// import-loop modules reach (through relative imports) and those packages'
+// own dependencies, so a check that adds an import runs on the runner too.
+export function stageGateTools(repo, out) {
+  fs.rmSync(out, { recursive: true, force: true });
+  for (const dir of ['tools', 'lib']) fs.cpSync(path.join(repo, dir), path.join(out, dir), { recursive: true, dereference: true, filter: (source) => path.basename(source) !== 'node_modules' });
+  const loop = path.join(repo, 'tools', 'import-loop');
+  const seen = new Set(), pending = new Set();
+  const visit = (file) => {
+    if (seen.has(file) || !fs.existsSync(file)) return;
+    seen.add(file);
+    for (const [, spec] of fs.readFileSync(file, 'utf8').matchAll(/(?:^\s*import\s+|\bfrom\s+|\bimport\(\s*)['"]([^'"]+)['"]/gm)) {
+      if (spec.startsWith('.')) visit(path.resolve(path.dirname(file), spec));
+      else if (!spec.startsWith('node:')) pending.add(spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/'));
+    }
+  };
+  for (const file of fs.readdirSync(loop, { recursive: true })) if (file.endsWith('.mjs')) visit(path.join(loop, file));
+  const staged = new Set();
+  for (const name of pending) {
+    const source = path.join(repo, 'node_modules', name);
+    if (staged.has(name) || !fs.existsSync(path.join(source, 'package.json'))) continue;
+    staged.add(name);
+    fs.cpSync(fs.realpathSync(source), path.join(out, 'node_modules', name), { recursive: true, dereference: true });
+    for (const dependency of Object.keys(JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')).dependencies || {})) pending.add(dependency);
+  }
+  return [...staged].sort();
+}
+
 export const COOK_NOTE = '<!-- homeboy:key=agent-task-note:';
 export const REROUTE_NOTICE = '<!-- import-loop:rerouted -->';
 export const rerouteScope = (scope) => `<!-- import-loop:reroute-scope ${JSON.stringify(scope)} -->`;
