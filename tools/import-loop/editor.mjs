@@ -27,7 +27,7 @@ const SAVED_IMAGE_PROBES = 5;
 // Blocks of each probed type (heading, paragraph, button, group) whose style controls are set.
 const BLOCK_CONTROL_PROBES = 3;
 
-export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells, widths = [1440]) {
+export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells, widths = [1440], captureRoot) {
   const wp = wordpressRunner(site, wpCli);
   const user = wp('user', 'list', '--role=administrator', '--field=user_login').split('\n')[0];
   const pass = randomBytes(12).toString('hex');
@@ -258,7 +258,7 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells, 
       try { while (next < todo.length) { const at = next++; result[at] = await checkPage(own, todo[at]); } } finally { await own.close(); }
     };
     await Promise.all(Array.from({ length: Math.min(todo.length, Number(process.env.IMPORT_LOOP_EDITOR_TABS) || 4) }, tab));
-    try { await themeChecks(page, wpUrl, result.map((p) => p.route), report); }
+    try { await themeChecks(page, wpUrl, result.map((p) => p.route), report, captureRoot); }
     catch (error) { report({ stage: 'theme', check: 'theme_checks_unverified', owner_repo: 'static-site-importer', subject: 'site_editor', evidence: String(error.message || error) }); }
     return result;
   } finally {

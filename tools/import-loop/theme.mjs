@@ -1,6 +1,7 @@
 // Authenticated Playwright checks; REST requests run in the owner's browser
 // with its nonce, not from unauthenticated external report counters.
 import { styleTokens, themeCss, QUALITY } from './quality.mjs';
+import { sourceCss, themeCssWeight } from './source-css.mjs';
 // Each area's chrome is template-owned: every template references one of the
 // area's parts, and every part of the area serves some template. A route
 // that presents the site's header or footer its own way (a landing page's
@@ -18,7 +19,7 @@ export function shellFindings(templates, parts, pages) {
   }
   return findings;
 }
-export async function themeChecks(page, wpUrl, routes, report) {
+export async function themeChecks(page, wpUrl, routes, report, captureRoot) {
   await page.goto(new URL('/wp-admin/site-editor.php', wpUrl).href, { waitUntil: 'load' });
   await page.waitForFunction(() => window.wp?.apiFetch, null, { timeout: 120_000 });
   // apiFetch rejects with a plain REST error object, which Playwright reduces
@@ -78,7 +79,8 @@ export async function themeChecks(page, wpUrl, routes, report) {
         ...await Promise.all([...document.querySelectorAll('link[rel=stylesheet]')].map(async (l) => ({ href: l.href, bytes: (await (await fetch(l.href)).text()).length }))),
         ...[...document.querySelectorAll('style')].map((s) => ({ id: s.id, bytes: s.textContent.length })),
       ]));
-      if (css.kb > QUALITY.theme_css_kb) report({ stage: 'theme', check: 'theme_css_weight', owner_repo: 'blocks-engine', subject: 'theme_css_weight', route, evidence: { ...css, threshold_kb: QUALITY.theme_css_kb, measure: { value: css.kb, limit: QUALITY.theme_css_kb } } });
+      const evidence = themeCssWeight(css, sourceCss(captureRoot, route));
+      if (evidence.kb > evidence.limit_kb) report({ stage: 'theme', check: 'theme_css_weight', owner_repo: 'blocks-engine', subject: 'theme_css_weight', route, evidence });
     }
     const before = await observe();
     const styles = structuredClone(original.styles || {});
