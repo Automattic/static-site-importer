@@ -71,7 +71,29 @@ reports that same unavailable source cell explicitly without failing the site;
 it never counts as passing, and candidate-side failures are not exempt. Do not overwrite
 baselines to hide a flapping class: investigate identical-transformer disagreements
 and retain the evidence before adopting any explicit instability exception.
-Corpus replay is not yet wired into `confirm.mjs`.
+
+### Corpus no-regression checks
+
+Two consumers hold every change to the corpus (`corpus-check.mjs`). Each records
+one baseline per Blocks Engine trunk and importer release under
+`<corpus>/.baselines/`, and replays a candidate head against it. A regressed
+site is replayed a second time, and only cells that fail both replays count.
+
+- **The loop's confirm step** (`LOOP_CORPUS`, `LOOP_CORPUS_SITES` in `run.sh`)
+  refutes its own fix when it regresses another site. It records the regressed
+  cells on the pull request, and the next triage reworks the head.
+- **Every other open pull request** in Blocks Engine and the importer gets the
+  commit status `import-loop/corpus` from `corpus-pr.mjs`. Run it on the corpus
+  machine on the `corpus-pr.json` cadence:
+
+```sh
+BARE_WP=<bare-wp> homeboy workflow run tools/import-loop/corpus-pr.json \
+  --input tools=<checkout> --input corpus=<corpus> --input runs_dir=<runs> \
+  --input sites=agency,bizcasual,bolt-lumen,replit-zach,sdnunca
+```
+
+Each head is measured once, most recently updated first, up to `max` per run.
+A head that conflicts with its base is skipped.
 
 ## Run the loop
 
