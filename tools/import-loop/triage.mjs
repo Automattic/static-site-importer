@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, stageGateTools as stageGateToolsInto, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 import { reportRegression } from './bisect-report.mjs';
 import { corpusRefutation } from './corpus-check.mjs';
@@ -331,13 +331,7 @@ for (const finding of blockers) {
 const gateTools = path.join(args.work, 'gate-tools');
 function stageGateTools() {
   execFileSync('bash', [path.join(here, 'gates', 'bare-wp.sh'), BARE_WP], { stdio: ['ignore', 'ignore', 'inherit'] });
-  fs.rmSync(gateTools, { recursive: true, force: true });
-  // The tools import shared modules from lib/ (../../lib), so the snapshot
-  // keeps the repository layout for both (tests/import-loop-gate-tools.test.mjs).
-  for (const dir of ['tools', 'lib']) fs.cpSync(path.join(here, '..', '..', dir), path.join(gateTools, dir), { recursive: true, dereference: true, filter: (source) => path.basename(source) !== 'node_modules' });
-  for (const pkg of ['playwright', 'playwright-core']) {
-    fs.cpSync(fs.realpathSync(path.join(here, '..', '..', 'node_modules', pkg)), path.join(gateTools, 'node_modules', pkg), { recursive: true, dereference: true });
-  }
+  stageGateToolsInto(path.join(here, '..', '..'), gateTools);
 }
 const quote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
 
