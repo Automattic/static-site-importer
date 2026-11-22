@@ -166,9 +166,13 @@ style values may be literal rather than theme presets (CSS-wide keywords such
 as `inherit` count as neither). Each threshold sits just past the maximum
 `calibrate.mjs` measures across Twenty Twenty-Five, Twenty Twenty-Four, Ollie
 and Frost; rerun it with more themes or `--site <imported WordPress>` to see an
-import against them. Each route may load at most 90 KB of theme CSS beyond
-Global Styles and core block styles; developer block themes load 1.5-36 KB,
-and Extendable, the heaviest measured, 85 KB. A structure repeated three or more times on a page stays
+import against them. Each route may load up to the larger of 90 KB or its
+captured source CSS weight in theme CSS beyond Global Styles and core block
+styles. Source weight includes inline `<style>` text and the route's captured
+linked stylesheets, using the same decoded-text accounting as imported CSS.
+Missing source CSS falls back to 90 KB and is marked unmeasured in evidence.
+Developer block themes load 1.5-36 KB, and Extendable, the heaviest measured,
+85 KB; larger builder imports are held to no heavier than their source. A structure repeated three or more times on a page stays
 an advisory, because developer pages repeat cards from one pattern too.
 
 `block_duplicated_content` (`duplicated-content.mjs`, a blocker owned by

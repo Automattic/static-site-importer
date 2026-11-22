@@ -191,7 +191,7 @@ export async function checkImport(args) {
   timings.import_report = Date.now() - mark; mark = Date.now();
   const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
   try {
-    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells), WIDTHS);
+    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells), WIDTHS, captureRoot);
     const tally = (list, key) => list.reduce((m, b) => m.set(key(b), (m.get(key(b)) || 0) + 1), new Map());
     for (const { route, blocks, duplicates } of pages) {
       const cell = { route, width: 1440 };
