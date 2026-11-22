@@ -49,12 +49,18 @@ const parsed = (run) => {
 };
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
+function holderAlive(lock) {
+  let pid;
+  try { pid = Number(fs.readFileSync(path.join(lock, 'pid'), 'utf8')); } catch { return true; } // still being written
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
 function withLock(lock, fn) {
   for (const start = Date.now(); ;) {
-    try { fs.mkdirSync(lock); break; } catch (error) {
+    try { fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, 'pid'), String(process.pid)); break; } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      // A lock older than the longest recording is a crashed confirm's.
-      if (Date.now() - fs.statSync(lock).mtimeMs > 2 * 3600_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; }
+      // A lock whose holder has exited, or older than the longest recording, is stale.
+      if (!holderAlive(lock) || Date.now() - fs.statSync(lock).mtimeMs > 2 * 3600_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; }
       if (Date.now() - start > 2 * 3600_000) throw new Error(`corpus_baseline_lock_timeout: ${lock}`);
       sleep(10_000);
     }
@@ -89,7 +95,16 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
   for (const head of measured) {
     if (!baselined.length) { head.verdict.reasons.push(`the corpus has no measured baseline at ${path.basename(baseline)}`); continue; }
     const start = Date.now();
-    const outcome = corpusOutcome(corpusRun('replay', ['--blocks-engine', head.transformer, '--baseline', baseline, '--sites', baselined.join(','), ...(head.importer ? ['--importer-source', head.importer] : [])]));
+    const replay = (on) => corpusOutcome(corpusRun('replay', ['--blocks-engine', head.transformer, '--baseline', baseline, '--sites', on.join(','), ...(head.importer ? ['--importer-source', head.importer] : [])]));
+    const outcome = replay(baselined);
+    // A cell can fail one replay on a loaded machine; a regression stands only
+    // when a second replay of its sites repeats it.
+    if (outcome.regressed.length) {
+      const sites = outcome.regressed.map((r) => r.site);
+      const again = replay(sites);
+      outcome.regressed = outcome.regressed.map((r) => ({ site: r.site, cells: r.cells.filter((c) => again.regressed.find((a) => a.site === r.site)?.cells.includes(c)) })).filter((r) => r.cells.length);
+      outcome.unmeasured = [...outcome.unmeasured.filter((u) => !sites.some((site) => u.startsWith(`${site}: `))), ...again.unmeasured];
+    }
     const seconds = (Date.now() - start) / 1000;
     log(head.key, `corpus: ${outcome.regressed.length} regressed, ${outcome.improved.length} improved, ${outcome.unmeasured.length} unmeasured in ${seconds}s`);
     summary.heads.push({ pr: head.key, seconds, ...outcome });

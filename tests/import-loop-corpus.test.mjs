@@ -24,3 +24,11 @@ test('a corpus refutation confirm records reworks that head only', async () => {
   assert.equal(corpusRefutation(comments, 'b'.repeat(40)), null);
   assert.equal(corpusRefutation([{ body: 'unrelated' }], 'a'.repeat(40)), null);
 });
+
+test('a corpus replay posts failure for regressions, error when unmeasured, success otherwise', async () => {
+  const { corpusStatus } = await import('../tools/import-loop/corpus-pr.mjs');
+  const sites = ['agency', 'bizcasual'];
+  assert.deepEqual(corpusStatus({ failing: [{ corpus: [{ site: 'bizcasual', cells: ['/@390', '/@768'] }] }], reasons: [] }, sites), { state: 'failure', description: 'worse on bizcasual (2)' });
+  assert.equal(corpusStatus({ failing: [], reasons: ['corpus replay could not measure: x'] }, sites).state, 'error');
+  assert.deepEqual(corpusStatus({ failing: [], reasons: [] }, sites), { state: 'success', description: 'no regression on 2 corpus sites' });
+});
