@@ -73,6 +73,7 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
   if (!measured.length) return { summary };
   const baseline = path.join(root, '.baselines', `${triage.trunk.slice(0, 12)}-${triage.bases['static-site-importer'].slice(0, 12)}`);
   const recorded = path.join(baseline, '.recorded.json');
+  fs.mkdirSync(path.dirname(baseline), { recursive: true });
   withLock(`${baseline}.lock`, () => {
     if (fs.existsSync(recorded)) return;
     const start = Date.now();
