@@ -93,7 +93,11 @@ $bound_files      = is_array( $bound_extracted ) ? array_column( $bound_extracte
 $assert( $box_tree_document === ( $bound_files['website/index.html']['content'] ?? null ), 'A box-tree bound document must keep its captured bytes.' );
 $assert( $box_tree['source_hash'] === hash( 'sha256', $bound_files['website/index.html']['content'] ) && $box_tree_sidecar === ( $bound_files['website/box-tree/index.json'] ?? null ), 'The document must still hash to its untouched box-tree source_hash.' );
 $assert( $record === ( $bound_extracted['records']['website/photo.png'] ?? null ), 'A bound document must still bind its image record.' );
+// Box-tree intake is opt-in in Blocks Engine (blocks-engine#7352); this checks that
+// the bound evidence survives image intake and is accepted when intake is on.
+putenv( 'BLOCKS_ENGINE_BOX_TREE_INTAKE=1' );
 $bound_compiled = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( $bound_extracted['artifact'] )->toArray();
+putenv( 'BLOCKS_ENGINE_BOX_TREE_INTAKE' );
 $assert( ! str_contains( json_encode( $bound_compiled['diagnostics'] ?? array() ), 'box_tree_' ), 'Blocks Engine must accept the bound box-tree evidence.' );
 $stale = $bound;
 $stale['files'][ count( $stale['files'] ) - 1 ]['content'] = json_encode( array_merge( $box_tree, array( 'source_hash' => str_repeat( '0', 64 ) ) ) );
