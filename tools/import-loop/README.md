@@ -29,6 +29,50 @@ finding's refuted PR is closed.
 It starts the next pass until no blocker is left with an issue to work on,
 the blockers are unchanged for 3 passes, or 60 passes have run.
 
+## Frozen-capture corpus
+
+Keep `<corpus>/<site>/capture/` (including `.capture-client.json` and frozen
+reference evidence) for names in `sites.json`. From the worktree root:
+
+```sh
+node tools/import-loop/corpus.mjs record --corpus /data/corpus --blocks-engine /src/blocks-engine --sites agency,bolt-lumen --ssi-zip /tmp/static-site-importer.zip
+node tools/import-loop/corpus.mjs replay --corpus /data/corpus --blocks-engine /src/blocks-engine --sites agency,bolt-lumen --jobs 2 --out /tmp/corpus-results
+node tools/import-loop/corpus.mjs replay --corpus /data/corpus --blocks-engine /src/blocks-engine --sites bolt-lumen --variant no-box-tree
+node --test tests/import-loop-corpus.test.mjs
+node tools/run-test-manifest.mjs --check
+# Acceptance repro (when the frozen fixtures and gate are installed):
+SSI_ZIP=/tmp/static-site-importer.zip SSI3249_CORPUS=/data/corpus SSI3249_BE=/src/blocks-engine bash /path/to/ssi3249-gate.sh
+```
+
+`--blocks-engine` also accepts its `php-transformer` directory;
+`--importer-source` overlays candidate importer sources on the latest SSI release.
+The release zip comes from `--ssi-zip <zip>` or `SSI_ZIP` when given, so a gate
+needs no `gh` auth; otherwise `ssi-release.sh` downloads the newest uploaded
+release, as `import.sh` does. The recorded release tag is read from the zip's
+plugin header. `BARE_WP` reuses an existing `gates/bare-wp.sh` install. The only
+network access a replay needs is `npx` fetching the capture's client package
+(and WordPress itself when no `BARE_WP` install is given).
+Record writes each site's `expected.json`, including the transformer SHA, SSI
+release, client package and per-state scores. Replay uses the capture's own client
+package and the loop's compare/report contract, in parallel (default half the
+available CPUs). Each worker stops its own server in `finally`. Original captures
+are never modified; `no-box-tree` imports a working copy with every directory
+named `box-tree` removed, and compares against the full capture, so the frozen
+reference is still proven. Logs and artifacts remain under `--out` (a
+new temporary directory by default).
+
+Stdout is one JSON document with `sites` and `regressed`. A class appearing or
+growing within a state/profile, or a passing cell failing, is a regression;
+reductions are also reported as improvements. Missing evidence is `unmeasured`,
+not an improvement. Regressions and unmeasured sites exit 1. The only exception
+is a source cell already marked `readiness.ready: false` in the frozen reference:
+record preserves it as `frozen_unmeasured` with its readiness evidence. Replay
+reports that same unavailable source cell explicitly without failing the site;
+it never counts as passing, and candidate-side failures are not exempt. Do not overwrite
+baselines to hide a flapping class: investigate identical-transformer disagreements
+and retain the evidence before adopting any explicit instability exception.
+Corpus replay is not yet wired into `confirm.mjs`.
+
 ## Run the loop
 
 Give it a URL:

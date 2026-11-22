@@ -10,7 +10,8 @@ import { coreHtmlFindings } from './core-html.mjs';
 import { compareImports, excess, parityFailureClass, UNCHECKED } from './progress.mjs';
 import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 
-export const WIDTHS = [390, 768, 1440];
+import { WIDTHS, compareInvocation, visualCells } from './visual.mjs';
+export { WIDTHS } from './visual.mjs';
 const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
 const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
 const advisory = new Set(['restyle_coverage_low', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure']);
@@ -103,8 +104,7 @@ export async function checkImport(args) {
   fs.rmSync(capture, { recursive: true, force: true });
   fs.cpSync(captureRoot, capture, { recursive: true, dereference: true });
   // A client candidate (gates/client-candidate.sh) compares with its own package.
-  const command = ['--yes', `--package=${process.env.IMPORT_LOOP_CLIENT_PACKAGE || capturedWith}`, compareClient.executable, 'compare', capture, '--candidate', args['wp-url']];
-  const reportPath = path.join(capture, 'compare', 'materialization', 'report.json');
+  const { command, reportPath } = compareInvocation(capture, args['wp-url'], process.env.IMPORT_LOOP_CLIENT_PACKAGE || capturedWith);
   fs.rmSync(reportPath, { force: true });
   let compareCommand = command;
   let compareEnv = process.env;
@@ -134,21 +134,13 @@ export async function checkImport(args) {
   // capture's --reference-sample; default 1, the homepage). An unsampled route
   // is uncompared scope by the capture's contract, not a parity failure. A
   // sampled route without scores still fails.
-  const reference = JSON.parse(fs.readFileSync(path.join(captureRoot, 'fidelity-reference.json'), 'utf8'));
-  const sampled = reference.scope?.referenceSample === undefined ? null : new Set((reference.entries || []).map((e) => e.route));
-  const visual = [];
-  const sameRoute = (value, route) => new URL(value, args.url).pathname === route;
-  for (const route of routes) for (const width of WIDTHS) {
-    if (!scopedCell(route, width)) continue;
-    const scores = (parity?.scores || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
-    const pending = (parity?.pending || []).filter((s) => sameRoute(s.route, route) && s.viewport === width);
-    const cell = { route, width, scores, pending, verified: scores.length > 0 && pending.length === 0 };
-    if (sampled && !sampled.has(route) && !scores.length && !pending.length) {
-      report({ stage: 'materialization', check: 'visual_parity_unsampled', owner_repo: 'static-site-importer', subject: 'reference_sample', evidence: { route, width, reference_sample: reference.scope.referenceSample }, route, width });
-      continue;
-    }
-    visual.push(cell);
-    for (const partial of parityCellReports(cell)) report({ stage: 'materialization', check: 'visual_parity', ...partial, route, width });
+  const measured = visualCells(captureRoot, routes, parity, args.url);
+  const visual = measured.cells.filter(c => scopedCell(c.route, c.width));
+  for (const { route, width } of measured.unsampled) {
+    if (scopedCell(route, width)) report({ stage: 'materialization', check: 'visual_parity_unsampled', owner_repo: 'static-site-importer', subject: 'reference_sample', evidence: { route, width, reference_sample: measured.reference.scope.referenceSample }, route, width });
+  }
+  for (const cell of visual) {
+    for (const partial of parityCellReports(cell)) report({ stage: 'materialization', check: 'visual_parity', ...partial, route: cell.route, width: cell.width });
   }
 
   timings.visual_parity = Date.now() - mark; mark = Date.now();

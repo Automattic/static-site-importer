@@ -57,8 +57,7 @@ trunk=$(git -C "$be" rev-parse FETCH_HEAD)
 git -C "$be" archive "$trunk" php-transformer | tar -x -C "$pass"
 # The newest release whose zip is uploaded: auto-release publishes the tag a
 # few minutes before its asset.
-tag=$(gh api 'repos/Automattic/static-site-importer/releases?per_page=10' --jq '[.[] | select(.draft | not) | select(any(.assets[]; .name == "static-site-importer.zip" and .state == "uploaded"))][0].tag_name')
-gh release download "$tag" -R Automattic/static-site-importer -p static-site-importer.zip -O "$pass/static-site-importer.zip"
+tag=$(bash "$here/ssi-release.sh" "$pass/static-site-importer.zip")
 ln -s "$capture" "$pass/source/$host"
 
 site_url=$(SSI_ZIP="$pass/static-site-importer.zip" BARE_WP="$bare" bash "$here/gates/reimport.sh" "$pass/php-transformer" "$capture" "$pass/site" 2> "$pass/reimport.log" | tail -1) ||
