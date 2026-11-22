@@ -637,6 +637,52 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
+	 * Registered names of the payload's blocks whose name is one of the given
+	 * generated block types, as build_block() registers them. Entries whose name
+	 * would have no namespace, or would be a core block, are skipped.
+	 *
+	 * @param mixed    $payload Generated companion-plugin payload.
+	 * @param string[] $types Generated block type names, such as `layout-shell`.
+	 * @return string[]
+	 */
+	public static function generated_block_names( $payload, array $types ): array {
+		if ( ! is_array( $payload ) ) {
+			return array();
+		}
+		$declared_name = static function ( array $block ): string {
+			$json = $block['block_json'] ?? null;
+			$name = is_array( $json ) ? ( $json['name'] ?? null ) : ( is_object( $json ) ? ( $json->name ?? null ) : null );
+			return is_string( $name ) ? $name : '';
+		};
+		$site_slug = self::site_slug( $payload );
+		$namespace = '' === $site_slug ? '' : 'ssi-' . $site_slug;
+		foreach ( self::payload_blocks( $payload ) as $block ) {
+			$declared = $declared_name( $block );
+			if ( 1 === preg_match( '/^([a-z][a-z0-9-]*)\//', $declared, $match ) && 'core' !== $match[1] ) {
+				$namespace = $match[1];
+				break;
+			}
+		}
+		$names = array();
+		foreach ( self::payload_blocks( $payload ) as $block ) {
+			$name = isset( $block['name'] ) && is_scalar( $block['name'] ) ? self::sanitize_slug( (string) $block['name'] ) : '';
+			if ( '' === $name || ! in_array( $name, $types, true ) ) {
+				continue;
+			}
+			$declared = $declared_name( $block );
+			if ( 1 === preg_match( '/^([a-z][a-z0-9-]*)\/[a-z0-9-]+$/', $declared, $match ) ) {
+				if ( 'core' !== $match[1] ) {
+					$names[] = $declared;
+				}
+			} elseif ( '' !== $namespace ) {
+				$names[] = $namespace . '/' . $name;
+			}
+		}
+
+		return array_values( array_unique( $names ) );
+	}
+
+	/**
 	 * Normalize the block list from the payload.
 	 *
 	 * @param array<string,mixed> $payload Generated companion-plugin payload.

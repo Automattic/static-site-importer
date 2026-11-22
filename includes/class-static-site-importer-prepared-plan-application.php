@@ -206,6 +206,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$prepared['args']['whole_page_provider_results']  = $page_ready ? array() : self::whole_page_provider_results( $entities );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
+		$prepared['args']['panel_block_names']            = Static_Site_Importer_Companion_Plugin::generated_block_names( $runtime_payload, Static_Site_Importer_Site_Plan_Persistence::PANEL_BLOCK_TYPES );
 
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed'][ $theme_owned ? 'theme_runtime' : 'companion_plugin' ] = $companion;
