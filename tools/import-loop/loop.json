@@ -34,6 +34,12 @@
     },
     "tools_ref": {
       "default": "origin/main"
+    },
+    "corpus": {
+      "default": ""
+    },
+    "corpus_sites": {
+      "default": ""
     }
   },
   "env": {
@@ -259,7 +265,11 @@
           "--uncooked",
           "1",
           "--merge",
-          "1"
+          "1",
+          "--corpus",
+          "{{inputs.corpus}}",
+          "--corpus-sites",
+          "{{inputs.corpus_sites}}"
         ]
       },
       "retry": {
@@ -304,7 +314,11 @@
           "--issue",
           "{{item.item.issue_url}}",
           "--merge",
-          "1"
+          "1",
+          "--corpus",
+          "{{inputs.corpus}}",
+          "--corpus-sites",
+          "{{inputs.corpus_sites}}"
         ]
       },
       "retry": {

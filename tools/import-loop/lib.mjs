@@ -203,7 +203,7 @@ export function reimportSite(transformer, reimport, dir, importer = '') {
 // writes the repository's `candidate.paths` of the merge once per head under
 // `work`/heads (gates/merge-onto.sh); a conflict is an import_failed reason.
 const heads = new Map();
-function mergedHead(item, pr, { clone, candidate, base, work }) {
+export function mergedHead(item, pr, { clone, candidate, base, work }) {
   const dir = `${work}/heads/${item.repo}-${pr.number}-${pr.headRefOid.slice(0, 8)}-on-${base.slice(0, 8)}`;
   if (!heads.has(dir) && !fs.existsSync(dir)) {
     execFileSync('git', ['-C', clone, 'fetch', '-q', 'origin', base, `pull/${pr.number}/head`]);

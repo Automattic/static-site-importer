@@ -15,3 +15,12 @@ test('corpus compares classes per state: regression, improvement, unmeasured', (
   const unknown = cell(); unknown.pass = false; unknown.scores[0].pass = false;
   assert.deepEqual(compareCells([cell()], [unknown]).regressions, ['/@390']);
 });
+
+test('a corpus refutation confirm records reworks that head only', async () => {
+  const { corpusNote, corpusRefutation } = await import('../tools/import-loop/corpus-check.mjs');
+  const regressed = [{ site: 'bizcasual', cells: ['/@390'] }];
+  const comments = [{ body: 'unrelated' }, { body: corpusNote('a'.repeat(40), regressed, '/c/.baselines/t-r') }];
+  assert.deepEqual(corpusRefutation(comments, 'a'.repeat(40)), regressed);
+  assert.equal(corpusRefutation(comments, 'b'.repeat(40)), null);
+  assert.equal(corpusRefutation([{ body: 'unrelated' }], 'a'.repeat(40)), null);
+});
