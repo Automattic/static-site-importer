@@ -49,20 +49,22 @@ function main() {
   execFileSync('bash', [path.join(here, 'gates', 'bare-wp.sh'), bare], { stdio: ['ignore', 'ignore', 'inherit'] });
   const triage = { trunk, bases: { 'static-site-importer': release }, transformer: path.join(trunkDir, be.candidate.paths[0]), reimport: { ssi_zip: zip, bare_wp: bare } };
 
-  // Heads not yet measured, oldest first, at most --max per run.
+  // Heads not yet measured, most recently updated first, at most --max per run.
   const pending = [];
   for (const [name, repo] of Object.entries(repos)) {
     if (!['transformer', 'importer'].includes(repo.candidate.slot)) continue;
-    for (const pr of JSON.parse(gh('pr', 'list', '-R', repo.github, '--state', 'open', '--base', repo.branch, '--limit', '200', '--json', 'number,headRefOid,url')).reverse()) {
+    for (const pr of JSON.parse(gh('pr', 'list', '-R', repo.github, '--state', 'open', '--base', repo.branch, '--limit', '200', '--json', 'number,headRefOid,url,updatedAt'))) {
       const statuses = JSON.parse(gh('api', `repos/${repo.github}/commits/${pr.headRefOid}/statuses?per_page=100`));
       if (!statuses.some((s) => s.context === CONTEXT && s.state !== 'pending')) pending.push({ name, repo, pr });
     }
   }
-  const batch = pending.slice(0, Number(args.max || 4));
-  log(`${pending.length} unmeasured heads; measuring ${batch.length} at trunk ${trunk.slice(0, 8)} and ${release}`);
+  pending.sort((a, b) => b.pr.updatedAt.localeCompare(a.pr.updatedAt));
+  const max = Number(args.max || 4);
+  log(`${pending.length} unmeasured heads; measuring up to ${max} at trunk ${trunk.slice(0, 8)} and ${release}`);
   const bases = { 'static-site-importer': tip('static-site-importer') };
   const heads = [];
-  for (const { name, repo, pr } of batch) {
+  for (const { name, repo, pr } of pending) {
+    if (heads.length >= max) break;
     const base = name === 'blocks-engine' ? trunk : bases[name];
     const dir = mergedHead({ repo: name }, pr, { clone: clone(name), candidate: repo.candidate, base, work });
     // A head that conflicts with its base cannot ship as is; GitHub reports that conflict itself.
