@@ -366,6 +366,7 @@
     { "path": "tests/import-loop-quality.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-theme-shell.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-capture-routes.test.mjs", "environment": "node" },
+    { "path": "tests/import-loop-duplicated-content.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-cook-cap.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-retention.test.mjs", "environment": "node" },
     { "path": "tests/import-loop-gate-tools.test.mjs", "environment": "node" },
