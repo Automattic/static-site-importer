@@ -13,7 +13,7 @@ import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
 export const WIDTHS = [390, 768, 1440];
 const compareClient = JSON.parse(fs.readFileSync(new URL('./compare-client.json', import.meta.url), 'utf8'));
 const slugStem = (slug) => slug.replace(/-[0-9a-f]{64}$/, '');
-const advisory = new Set(['restyle_coverage_low', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure']);
+const advisory = new Set(['restyle_coverage_low', 'quality_status', 'visual_parity_unsampled', 'block_repeated_structure', 'block_duplicated_content_unverified']);
 const findReport = (dir) => {
   for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
     const full = path.join(dir, entry.name);
@@ -71,6 +71,17 @@ export const foldedRoutes = (captureRoot) => {
     const alias = text(url), canonical = text(canonicalUrl);
     return alias !== null && canonical !== null && alias !== canonical;
   }).map(({ url, canonicalUrl }) => ({ route: new URL(url).pathname, canonical: new URL(canonicalUrl).pathname }));
+};
+
+// Content saved twice and shown at disjoint widths (duplicated-content.mjs):
+// one blocker per route, counted by duplicate. A route whose source shipped
+// separate device documents carries that finding's signature, so triage can
+// route the duplicate to capture.
+export const duplicatedContentFindings = (duplicates, route, findings = []) => {
+  if (duplicates?.error) return [{ stage: 'editability', check: 'block_duplicated_content_unverified', owner_repo: 'static-site-importer', subject: 'duplicated_content', evidence: duplicates.error }];
+  if (!duplicates?.length) return [];
+  const device = findings.filter((f) => f.check === 'source_device_documents' && f.occurrences.some((o) => o.route == null || o.route === route)).map((f) => f.signature);
+  return [{ stage: 'editability', check: 'block_duplicated_content', owner_repo: 'blocks-engine', subject: 'duplicated_content', evidence: { count: duplicates.length, duplicates, ...(device.length ? { source_device_documents: device } : {}) } }];
 };
 
 export async function checkImport(args) {
@@ -167,9 +178,9 @@ export async function checkImport(args) {
   timings.import_report = Date.now() - mark; mark = Date.now();
   const rawSlugs = new Set([...findings.values()].filter((f) => f.check === 'raw_html_companion_block_count').map((f) => f.subject));
   try {
-    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells));
+    const pages = await editorPages(args['wp-url'], args.site, args['wp-cli'], report, scope?.flatMap((s) => s.cells), WIDTHS);
     const tally = (list, key) => list.reduce((m, b) => m.set(key(b), (m.get(key(b)) || 0) + 1), new Map());
-    for (const { route, blocks } of pages) {
+    for (const { route, blocks, duplicates } of pages) {
       const cell = { route, width: 1440 };
       for (const [name, count] of tally(blocks.filter((b) => !b.valid), (b) => b.name)) report({ stage: 'editability', check: 'editor_invalid_block', owner_repo: 'blocks-engine', subject: name, evidence: { count }, ...cell });
       for (const [subject, count] of tally(blocks.filter((b) => /^(ssi-[a-z0-9-]+|custom)\//.test(b.name) && !rawSlugs.has(slugStem(b.name.split('/').pop()))), (b) => blockSubject(slugStem(b.name.split('/').pop()), blockShape(b)))) report({ stage: 'editability', check: 'non_core_block', owner_repo: 'blocks-engine', subject, evidence: { count, of: blocks.length }, ...cell });
@@ -179,6 +190,7 @@ export async function checkImport(args) {
       if (weight.heavy) report({ stage: 'editability', check: 'block_wrapper_heavy', owner_repo: 'blocks-engine', subject: 'block_wrappers', evidence: { ...weight, threshold: QUALITY.groups_per_leaf, measure: { value: weight.groups / Math.max(1, weight.leaves), limit: QUALITY.groups_per_leaf } }, ...cell });
       const repeated = repeatedStructures(blocks);
       if (repeated.length) report({ stage: 'editability', check: 'block_repeated_structure', owner_repo: 'blocks-engine', subject: 'repeated_structure', evidence: repeated, ...cell });
+      for (const finding of duplicatedContentFindings(duplicates, route, [...findings.values()])) report({ ...finding, ...cell });
     }
   } catch (error) { report({ stage: 'editability', check: 'editor_unreachable', owner_repo: 'static-site-importer', subject: 'block_editor', evidence: error.message }); }
 
