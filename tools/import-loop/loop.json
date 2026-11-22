@@ -220,6 +220,7 @@
         "task-url": "{{item.task_url}}",
         "prompt": "{{item.prompt}}",
         "repro": "{{item.repro}}",
+        "verify": "{{item.verify}}",
         "placement": "{{inputs.cook_placement}}",
         "priority": "{{inputs.cook_priority}}",
         "model": "{{inputs.cook_model}}",

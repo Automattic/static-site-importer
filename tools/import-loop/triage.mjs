@@ -567,8 +567,13 @@ for (const item of cookOrder) {
     // issue, where the cap counts it (cookHistory).
     if (item.refuted && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${REWORK_NOTE}\nPass ${args.iteration} on ${result.url} refuted ${pr.url} at head \`${pr.headRefOid.slice(0, 8)}\`; a Cook reworks it on its branch. Reworks count toward this issue's Cook cap.\n\n${disclosure}`);
     if (item.design && !args['dry-run']) gh('issue', 'comment', item.issue_url, '--body', `${DESIGN_NOTICE}\n${designScope({ site: result.url, instance: process.env.HOMEBOY_WORKFLOW_INSTANCE || null })}\nDesign round ${item.design} of ${DESIGN_ROUNDS} on ${result.url}: ${COOK_CAP} or more Cooks since the last guidance stopped without a fix. The next Cook decides this finding's scope on this site from their reports (narrow, change approach, accept it as correct output, or reroute it to the repository the defect originates in) and acts on it.\n\n${disclosure}`);
-    const { omitted, ...cook } = gate;
-    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook });
+    // A rework starts at its pull request's head, which often clears the
+    // defect already (refuted for CI, a conflict, the corpus or collateral).
+    // Acceptance then passes on the base and cannot be the repro: Cook stops
+    // before dispatch with `repro_passes_on_base`. A rework's candidate must
+    // still pass acceptance, as a verify gate.
+    const { omitted, repro, ...cook } = gate;
+    cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook, repro: item.refuted ? [] : [repro], verify: item.refuted ? [repro] : [] });
   }
 }
 
