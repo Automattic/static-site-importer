@@ -8,7 +8,9 @@
 # site's captures and issues; pass a new one for a fresh run. Runs land in
 # $LOOP_RUNS_DIR (default ~/loop-runs). The loop keeps its own Blocks Engine
 # clone there and fetches trunk into it each pass. LOOP_COOK_PLACEMENT and
-# LOOP_WP_CLI override the workflow's defaults. Any further arguments, such as
+# LOOP_WP_CLI override the workflow's defaults. LOOP_CORPUS (a frozen capture
+# corpus, see corpus.mjs) and LOOP_CORPUS_SITES make confirm refuse any fix that
+# regresses another corpus site. Any further arguments, such as
 # --notification-transport and --notification-route, go to `homeboy workflow run`.
 #
 # The run follows $LOOP_TOOLS_REF (default origin/main) of this checkout: each
@@ -35,6 +37,8 @@ mkdir -p "$runs/clones"
 optional=()
 [ -n "${LOOP_COOK_PLACEMENT:-}" ] && optional+=(--input "cook_placement=$LOOP_COOK_PLACEMENT")
 [ -n "${LOOP_WP_CLI:-}" ] && optional+=(--input "wp_cli=$LOOP_WP_CLI")
+[ -n "${LOOP_CORPUS:-}" ] && optional+=(--input "corpus=$LOOP_CORPUS")
+[ -n "${LOOP_CORPUS_SITES:-}" ] && optional+=(--input "corpus_sites=$LOOP_CORPUS_SITES")
 echo "import loop: $url as $slug in $runs, tools following $ref" >&2
 exec homeboy workflow run "$here/loop.json" \
   --input "url=$url" --input "slug=$slug" --input "loop_dir=$here" --input "tools_repo=$repo" --input "tools_ref=$ref" --input "runs_dir=$runs" \

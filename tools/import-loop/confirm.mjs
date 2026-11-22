@@ -12,7 +12,7 @@
 // `candidate` are unconfirmed.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>
-//          [--issue <url> | --uncooked 1] [--merge 1]
+//          [--issue <url> | --uncooked 1] [--merge 1] [--corpus <dir> [--corpus-sites a,b]]
 // Output: {confirmed:[{pr, head}], refuted:[{pr, head, cells}], unconfirmed:[{pr, head, reason}],
 //          merge:[{github, number, sha}], merge_count, merged:[github#number], confirm_path}
 // --issue confirms one tracked issue's pull requests: the loop runs it per Cook,
@@ -27,7 +27,8 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, collateralAtHead, gh, linkedPullRequests, repoClone } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, collateralAtHead, gh, linkedPullRequests, mergedHead, repoClone } from './lib.mjs';
+import { corpusCheck, corpusNote } from './corpus-check.mjs';
 import { compareImports } from './progress.mjs';
 
 // accept.mjs's verdict line lists warnings: blockers the fix ran past their limit without failing anywhere new.
@@ -62,6 +63,7 @@ for (const item of scope) {
     const verdict = verdicts.get(pr.url) || { head: pr.headRefOid, github: pr.github, number: pr.number, draft: pr.isDraft, failing: [], reasons: [], warnings: [] };
     verdicts.set(pr.url, verdict);
     const candidate = repos[item.repo]?.candidate;
+    if (candidate && clones[item.repo] && triage.bases?.[item.repo]) verdict.at = { item, pr, at: headAt(item) };
     if (!candidate || !clones[item.repo] || !triage.bases?.[item.repo]) { verdict.reasons.push(`the re-import does not run ${item.repo} code`); continue; }
     if (!item.cells?.length) { verdict.reasons.push(`no acceptance cells for ${item.signature}`); continue; }
     const at = headAt(item);
@@ -78,6 +80,16 @@ for (const item of scope) {
     else if (collateral.exit) verdict.reasons.push(`collateral comparison failed for ${item.signature}: ${collateral.report.at(-1)}`);
   }
 }
+// Cross-site no-regression: a transformer or importer head that passes here
+// must also leave every frozen corpus site no worse than this pass's trunk
+// and release (corpus-check.mjs). Without --corpus the check is reported as
+// not configured; a head it cannot measure stays unconfirmed.
+const corpus = corpusCheck({ corpus: args.corpus, sites: args['corpus-sites'], triage, here, log,
+  heads: [...verdicts.values()].filter((v) => !v.failing.length && !v.reasons.length && v.at).map((v) => {
+    const { item, pr, at } = v.at;
+    const dir = mergedHead(item, pr, at);
+    return { verdict: v, key: `${pr.github}#${pr.number}`, ...(at.candidate.slot === 'transformer' ? { transformer: path.join(dir, at.candidate.paths[0]) } : at.candidate.slot === 'importer' ? { transformer: triage.transformer, importer: dir } : { skip: `the frozen corpus does not exercise ${at.candidate.slot} candidates` }) };
+  }) });
 const entries = [...verdicts];
 const refuted = entries.filter(([, v]) => v.failing.length).map(([pr, v]) => ({ pr, head: v.head, cells: v.failing }));
 const unconfirmed = entries.filter(([, v]) => !v.failing.length && v.reasons.length).map(([pr, v]) => ({ pr, head: v.head, reason: [...new Set(v.reasons)].join("; ") }));
@@ -85,6 +97,9 @@ const confirmed = entries.filter(([, v]) => !v.failing.length && !v.reasons.leng
 // A confirmed fix that ran another over-budget blocker further past its limit
 // says so on its pull request before it lands: the warning is recorded, and the
 // blocker stays tracked for the next pass.
+// A corpus regression is recorded on the pull request for that head, where the
+// next triage reads it and reworks the head on its branch.
+for (const [pr, v] of entries) for (const f of v.failing.filter((f) => f.corpus)) gh('pr', 'comment', pr, '--body', `${corpusNote(v.head, f.corpus, f.baseline)}\n\nAI disclosure: posted by the import loop (Franklin, Claude Opus via Pi).`);
 for (const c of confirmed.filter((c) => c.warnings.length)) gh('pr', 'comment', c.pr, '--body', `Import loop confirmed this head \`${c.head.slice(0, 8)}\` as incremental progress on ${triage.url}: its own finding improves with no regression. It lands with these warnings, blockers that fail in the same places and run further past their limit; each stays tracked and the next pass measures it:\n\n${c.warnings.map((w) => `- \`${w}\``).join('\n')}\n\nAI disclosure: posted by the import loop (Franklin, Claude Opus via Pi).`);
 for (const [pr, v] of entries.filter(([, v]) => v.draft && !v.failing.length && !v.reasons.length)) { gh('pr', 'ready', pr); v.draft = false; }
 const merge = entries.filter(([, v]) => !v.failing.length && !v.reasons.length && !v.draft).map(([, v]) => ({ github: v.github, number: v.number, sha: v.head }));
@@ -105,6 +120,6 @@ const confirm_path = path.join(args.work, 'confirm.json');
 const live = args.after ? JSON.parse(fs.readFileSync(args.after, 'utf8')) : null;
 const before = triage.findings_path ? JSON.parse(fs.readFileSync(triage.findings_path, 'utf8')) : null;
 const live_checks = live && before ? triage.tracked.map((item) => ({ signature: item.signature, ...compareImports(before, live, item.signature, item.cells) })) : [];
-const output = { confirmed, refuted, unconfirmed, live_checks, live_status: live ? 'checked' : 'awaiting_next_import', progress: live && before ? compareImports(before, live).blockers : triage.progress, confirmed_count: confirmed.length, refuted_count: refuted.length, merge, merge_count: merge.length, merged, confirm_path };
+const output = { confirmed, refuted, unconfirmed, corpus: corpus.summary, live_checks, live_status: live ? 'checked' : 'awaiting_next_import', progress: live && before ? compareImports(before, live).blockers : triage.progress, confirmed_count: confirmed.length, refuted_count: refuted.length, merge, merge_count: merge.length, merged, confirm_path };
 fs.writeFileSync(confirm_path, JSON.stringify(output, null, 2));
 fs.writeFileSync(process.env.HOMEBOY_STEP_OUTPUT || '/dev/stdout', JSON.stringify(output));

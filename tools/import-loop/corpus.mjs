@@ -59,11 +59,15 @@ function removeTrees(dir) {
   }
 }
 async function main() {
-  const { values: args, positionals } = parseArgs({ allowPositionals: true, options: Object.fromEntries(['corpus', 'blocks-engine', 'importer-source', 'sites', 'jobs', 'out', 'variant', 'ssi-zip'].map(k => [k, { type: 'string' }])) });
+  const { values: args, positionals } = parseArgs({ allowPositionals: true, options: Object.fromEntries(['corpus', 'blocks-engine', 'importer-source', 'sites', 'jobs', 'out', 'variant', 'ssi-zip', 'baseline'].map(k => [k, { type: 'string' }])) });
   const mode = positionals[0];
-  if (!['record', 'replay'].includes(mode) || !args.corpus || !args['blocks-engine']) throw new Error('usage: corpus.mjs record|replay --corpus <dir> --blocks-engine <dir> [--importer-source <dir>] [--sites a,b] [--jobs N] [--out <dir>] [--ssi-zip <zip>] [--variant no-box-tree]');
+  if (!['record', 'replay'].includes(mode) || !args.corpus || !args['blocks-engine']) throw new Error('usage: corpus.mjs record|replay --corpus <dir> --blocks-engine <dir> [--importer-source <dir>] [--sites a,b] [--jobs N] [--out <dir>] [--ssi-zip <zip>] [--baseline <dir>] [--variant no-box-tree]');
   if (args.variant && (args.variant !== 'no-box-tree' || mode === 'record')) throw new Error('variant is replay-only: no-box-tree');
   const corpus = path.resolve(args.corpus), be = path.resolve(args['blocks-engine']);
+  // Expected results live with each capture, or under --baseline as <site>.json:
+  // one directory per measured transformer and release, so captures stay shared.
+  const expectedPath = site => args.baseline ? path.join(path.resolve(args.baseline), `${site}.json`) : path.join(corpus, site, 'expected.json');
+  if (args.baseline) fs.mkdirSync(path.resolve(args.baseline), { recursive: true });
   const transformer = fs.existsSync(path.join(be, 'php-transformer.php')) ? be : path.join(be, 'php-transformer');
   const known = json(path.join(here, 'sites.json'));
   const sites = args.sites ? args.sites.split(',') : fs.readdirSync(corpus).filter(s => known[s]);
@@ -124,9 +128,9 @@ async function main() {
       result.frozen_unmeasured = frozenUnready.map(c => ({ route: c.route, width: c.width, evidence: reference.entries.filter(e => e.route === c.route && e.viewport === c.width) }));
       if (mode === 'record') {
         result.unmeasured = result.cells.filter(c => !c.verified).map(c => `${c.route}@${c.width}`);
-        if (result.unmeasured.length === frozenUnready.length) save(path.join(corpus, site, 'expected.json'), { blocks_engine_sha: sha, ssi_release: release, client_package: client, frozen_unmeasured: result.frozen_unmeasured, cells: result.cells });
+        if (result.unmeasured.length === frozenUnready.length) save(expectedPath(site), { blocks_engine_sha: sha, ssi_release: release, client_package: client, frozen_unmeasured: result.frozen_unmeasured, cells: result.cells });
       } else {
-        const expected = json(path.join(corpus, site, 'expected.json'));
+        const expected = json(expectedPath(site));
         Object.assign(result, compareCells(expected.cells, result.cells));
         result.frozen_unmeasured = result.frozen_unmeasured.filter(c => expected.frozen_unmeasured?.some(e => e.route === c.route && e.width === c.width));
       }

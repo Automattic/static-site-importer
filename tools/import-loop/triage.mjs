@@ -26,6 +26,7 @@ import path from 'node:path';
 import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 import { reportRegression } from './bisect-report.mjs';
+import { corpusRefutation } from './corpus-check.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const required of ['findings', 'source', 'work', 'iteration', 'blocks-engine']) if (!args[required]) throw new Error(`triage_argument_missing: --${required}`);
@@ -83,6 +84,7 @@ function existingIssue(finding) {
   return ownIssue(hits, finding.signature, result.url, Object.keys(repos));
 }
 const issueComments = new Map();
+const prComments = (url) => JSON.parse(gh('pr', 'view', url, '--json', 'comments')).comments;
 const commentsOf = (url) => {
   if (!issueComments.has(url)) issueComments.set(url, JSON.parse(gh('issue', 'view', url, '--json', 'comments')).comments);
   return issueComments.get(url);
@@ -466,7 +468,9 @@ for (const item of cookOrder) {
   // first, with the commit and files, whatever GitHub's mergeability says.
   const trunkConflict = refuted.find((c) => /head conflicts with/.test(c.reason || ''));
   const conflicting = health.mergeable === 'CONFLICTING' || Boolean(trunkConflict);
-  if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}) };
+  // confirm.mjs records a frozen-corpus regression on the pull request for its head.
+  const corpusRegressed = pr ? corpusRefutation(prComments(pr.url), pr.headRefOid) : null;
+  if (refuted.length || collateral?.exit === 1 || health.failed.length || conflicting || corpusRegressed) item.refuted = { pr: pr.url, head: pr.headRefOid, cells: refuted, ...(collateral?.exit === 1 ? { collateral: collateral.report } : {}), ...(health.failed.length ? { ci: health.failed } : {}), ...(conflicting ? { conflicting } : {}), ...(corpusRegressed ? { corpus: corpusRegressed } : {}) };
   // A finding Cooks keep failing needs a design decision, not another
   // attempt. The loop makes it: past the cap it opens a design round, a Cook
   // that decides the scope from every earlier report, then implements it or
@@ -523,6 +527,11 @@ for (const item of cookOrder) {
         '',
         `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) fails CI. Continue on its branch and make these jobs pass (\`gh run view --log-failed\` on each); a failing contract or parity test that asserts existing behavior is a regression to fix, not an expectation to update, unless the issue says that behavior is the defect:`,
         ...[...new Map(health.failed.map((c) => [c.name, c])).values()].map((c) => `    - ${c.name}: ${c.url}`),
+      ] : []),
+      ...(corpusRegressed ? [
+        '',
+        `${pr.url} (head \`${pr.headRefOid.slice(0, 8)}\`) makes other imports worse: replaying the frozen capture corpus with it (\`tools/import-loop/corpus.mjs\` in static-site-importer) regresses these site cells against trunk, as recorded on the pull request. Continue on its branch and keep the fix from changing those sites' output:`,
+        ...corpusRegressed.map((r) => `    - ${r.site}: ${r.cells.join(', ')}`),
       ] : []),
       ...(collateral?.exit === 1 ? [
         '',
