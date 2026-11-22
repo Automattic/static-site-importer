@@ -49,12 +49,18 @@ const parsed = (run) => {
 };
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
+function holderAlive(lock) {
+  let pid;
+  try { pid = Number(fs.readFileSync(path.join(lock, 'pid'), 'utf8')); } catch { return true; } // still being written
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
 function withLock(lock, fn) {
   for (const start = Date.now(); ;) {
-    try { fs.mkdirSync(lock); break; } catch (error) {
+    try { fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, 'pid'), String(process.pid)); break; } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      // A lock older than the longest recording is a crashed confirm's.
-      if (Date.now() - fs.statSync(lock).mtimeMs > 2 * 3600_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; }
+      // A lock whose holder has exited, or older than the longest recording, is stale.
+      if (!holderAlive(lock) || Date.now() - fs.statSync(lock).mtimeMs > 2 * 3600_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; }
       if (Date.now() - start > 2 * 3600_000) throw new Error(`corpus_baseline_lock_timeout: ${lock}`);
       sleep(10_000);
     }
