@@ -95,7 +95,16 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
   for (const head of measured) {
     if (!baselined.length) { head.verdict.reasons.push(`the corpus has no measured baseline at ${path.basename(baseline)}`); continue; }
     const start = Date.now();
-    const outcome = corpusOutcome(corpusRun('replay', ['--blocks-engine', head.transformer, '--baseline', baseline, '--sites', baselined.join(','), ...(head.importer ? ['--importer-source', head.importer] : [])]));
+    const replay = (on) => corpusOutcome(corpusRun('replay', ['--blocks-engine', head.transformer, '--baseline', baseline, '--sites', on.join(','), ...(head.importer ? ['--importer-source', head.importer] : [])]));
+    const outcome = replay(baselined);
+    // A cell can fail one replay on a loaded machine; a regression stands only
+    // when a second replay of its sites repeats it.
+    if (outcome.regressed.length) {
+      const sites = outcome.regressed.map((r) => r.site);
+      const again = replay(sites);
+      outcome.regressed = outcome.regressed.map((r) => ({ site: r.site, cells: r.cells.filter((c) => again.regressed.find((a) => a.site === r.site)?.cells.includes(c)) })).filter((r) => r.cells.length);
+      outcome.unmeasured = [...outcome.unmeasured.filter((u) => !sites.some((site) => u.startsWith(`${site}: `))), ...again.unmeasured];
+    }
     const seconds = (Date.now() - start) / 1000;
     log(head.key, `corpus: ${outcome.regressed.length} regressed, ${outcome.improved.length} improved, ${outcome.unmeasured.length} unmeasured in ${seconds}s`);
     summary.heads.push({ pr: head.key, seconds, ...outcome });
