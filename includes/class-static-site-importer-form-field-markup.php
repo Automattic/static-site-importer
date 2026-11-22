@@ -824,7 +824,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 
-		return $block;
+		return self::with_accessible_name( $block, is_string( $presentation['accessible_name'] ?? null ) ? $presentation['accessible_name'] : '' );
 	}
 
 	/**
@@ -832,7 +832,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 *
 	 * @param array<string,array<int,string>> $icons Captured inline SVGs keyed `icon` (before the label) and `icon_after`.
 	 */
-	public static function button_block( string $text, string $class_name = '', array $icons = array(), ?array $label = null ): array {
+	public static function button_block( string $text, string $class_name = '', array $icons = array(), ?array $label = null, string $accessible_name = '' ): array {
 		$block = array(
 			'name'    => 'core/button',
 			'attrs'   => array(
@@ -854,7 +854,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$block[ $key ] = array( 'parts' => $icon_parts );
 			}
 		}
-		return $block;
+		return self::with_accessible_name( $block, $accessible_name );
 	}
 
 	/**
@@ -897,6 +897,47 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return '';
+	}
+
+	/**
+	 * The caption a source button paints. Blocks Engine reports `visible_text`
+	 * when an author names the button apart from its content (an `aria-label`
+	 * on an arrow glyph); `text` is then the accessible name, not the caption.
+	 * Metadata without the field falls back to the control text.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	public static function control_caption( array $control ): string {
+		$caption = self::control_text( array( 'text' => $control['visible_text'] ?? null ) );
+		return '' !== $caption ? $caption : self::control_text( $control );
+	}
+
+	/**
+	 * The accessible name a source button declares apart from its caption, or
+	 * '' when the caption is its name.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	public static function control_accessible_name( array $control ): string {
+		$name = self::control_text( array( 'text' => $control['accessible_name'] ?? null ) );
+		return '' !== $name && self::control_caption( $control ) !== $name ? $name : '';
+	}
+
+	/**
+	 * Record a button's accessible name on its block. Core's button saves no
+	 * `aria-label`, so the provider runtime applies it at render time
+	 * ({@see Static_Site_Importer_Provider_Form_Runtime_V1::project_button_accessible_name()}).
+	 *
+	 * @param array<string, mixed> $block Button block description.
+	 * @return array<string, mixed>
+	 */
+	private static function with_accessible_name( array $block, string $accessible_name ): array {
+		if ( '' !== trim( $accessible_name ) ) {
+			$block['attrs']['metadata'][ Static_Site_Importer_Provider_Form_Runtime_V1::ACCESSIBLE_NAME_METADATA ] = trim( $accessible_name );
+		}
+		return $block;
 	}
 
 	/**

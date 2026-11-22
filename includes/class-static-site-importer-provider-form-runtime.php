@@ -11,6 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /** Keeps source form presentation attached to provider-rendered controls. */
 final class Static_Site_Importer_Provider_Form_Runtime_V1 {
+	/** Block metadata key carrying a button's accessible name apart from its caption. */
+	public const ACCESSIBLE_NAME_METADATA = 'staticSiteImporterAccessibleName';
+
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
 
@@ -90,6 +93,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_choice_values' ), 30 );
 		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_form_container_scope' ) );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+		add_filter( 'render_block_core/button', array( __CLASS__, 'project_button_accessible_name' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
 	}
 
@@ -255,6 +259,31 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 
 
 
+
+	/**
+	 * Apply a source button's accessible name to its rendered control. Core's
+	 * button saves no `aria-label`, so the importer records the name in block
+	 * metadata when it differs from the visible caption
+	 * (`<button aria-label="Request email updates">↗</button>`).
+	 *
+	 * @param string              $html  Rendered button block.
+	 * @param array<string,mixed> $block Parsed block.
+	 * @return string
+	 */
+	public static function project_button_accessible_name( string $html, array $block = array() ): string {
+		$name = $block['attrs']['metadata'][ self::ACCESSIBLE_NAME_METADATA ] ?? null;
+		if ( ! is_string( $name ) || '' === trim( $name ) ) {
+			return $html;
+		}
+		$label     = htmlspecialchars( trim( $name ), ENT_QUOTES, 'UTF-8' );
+		$projected = preg_replace_callback(
+			'/<(button|a)\b([^>]*)>/i',
+			static fn ( array $matches ): string => preg_match( '/\saria-label\s*=/i', $matches[2] ) ? $matches[0] : '<' . $matches[1] . $matches[2] . ' aria-label="' . $label . '">',
+			$html,
+			1
+		);
+		return is_string( $projected ) ? $projected : $html;
+	}
 
 	/** Move source submit presentation from Core's wrapper onto its button control. */
 	public static function project_submit_presentation( string $html, array $block = array() ): string {

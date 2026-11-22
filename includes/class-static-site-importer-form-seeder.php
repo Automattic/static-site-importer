@@ -584,10 +584,11 @@ class Static_Site_Importer_Form_Seeder {
 		if ( 'button' === $tag && 'button' === $type ) {
 			// Mode and filter controls remain native buttons; they are not submits.
 			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::button_block(
-				Static_Site_Importer_Form_Field_Markup::control_text( $control ),
+				Static_Site_Importer_Form_Field_Markup::control_caption( $control ),
 				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Presentation::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] ),
 				self::control_icons( $state->form, $control_index ),
-				Static_Site_Importer_Form_Field_Markup::control_label( $control )
+				Static_Site_Importer_Form_Field_Markup::control_label( $control ),
+				Static_Site_Importer_Form_Field_Markup::control_accessible_name( $control )
 			);
 			$state->record_mapped( $control_index, 'core/button' );
 			return;
@@ -618,8 +619,14 @@ class Static_Site_Importer_Form_Seeder {
 	/** Map the indexed source submit and its presentation. */
 	private static function map_submit_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control, array $presentation_descriptor ): void {
 		$state->submit_presentation['control_carrier_classes'] = $control['control_carrier_classes'] ?? array();
-		$text               = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+		// The caption is what the source button paints; a separately declared
+		// accessible name stays the button's name, not its visible text.
+		$text               = Static_Site_Importer_Form_Field_Markup::control_caption( $control );
 		$state->submit_text = '' !== $text ? $text : $state->submit_text;
+		$accessible_name    = Static_Site_Importer_Form_Field_Markup::control_accessible_name( $control );
+		if ( '' !== $accessible_name ) {
+			$state->submit_presentation['accessible_name'] = $accessible_name;
+		}
 		if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {
 			$state->submit_presentation['block_attrs']['style'] = $control['presentation']['style'];
 		}
