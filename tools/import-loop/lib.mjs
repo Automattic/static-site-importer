@@ -125,12 +125,22 @@ export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
 export const DESIGN_NOTICE = '<!-- import-loop:design -->';
 export const designScope = (scope) => `<!-- import-loop:design-scope ${JSON.stringify(scope)} -->`;
+const cookKey = (body) => body.slice(COOK_NOTE.length).split(' ')[0];
+const designOf = (body) => { const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1]; return scope ? JSON.parse(scope) : null; };
+// A pass cancelled after triage posted its design notice never runs that
+// round's Cook: no Cook note carries its instance and no rework of a fix it
+// opened reports this site. Such a round never happened: it opens nothing and
+// resets nothing.
+const unrunDesign = (comments, index, site) => {
+  const { instance } = designOf(comments[index].body);
+  return Boolean(instance) && !comments.slice(index + 1).some(({ body = '' }) => (body.startsWith(COOK_NOTE) && cookKey(body).startsWith(`${instance}-`)) || (body.startsWith(REWORK_NOTE) && body.match(/ on (\S+) refuted /)?.[1] === site));
+};
 export const cookHistory = (comments, site) => {
   let failed = 0, designs = 0, accepted = false, rerouted = null;
   const scopes = [];
-  for (const { body = '' } of comments) {
+  for (const [index, { body = '' }] of comments.entries()) {
     if (body.startsWith(COOK_NOTE)) {
-      const key = body.slice(COOK_NOTE.length).split(' ')[0];
+      const key = cookKey(body);
       const scope = scopes.find((s) => s.instance && key.startsWith(`${s.instance}-`));
       if (!designs || !scope || scope.site === site) failed++;
       if (designs && scope?.site === site) {
@@ -141,9 +151,9 @@ export const cookHistory = (comments, site) => {
     }
     else if (body.startsWith(REWORK_NOTE)) { const from = body.match(/ on (\S+) refuted /)?.[1]; if (!designs || !from || from === site) failed++; }
     else if (body.startsWith(DESIGN_NOTICE)) {
-      const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1];
-      if (!scope) continue;
-      scopes.push(JSON.parse(scope));
+      const scope = designOf(body);
+      if (!scope || (scope.site === site && unrunDesign(comments, index, site))) continue;
+      scopes.push(scope);
       if (scopes.at(-1).site === site) { failed = 0; designs++; }
     }
     else if (!body.startsWith(CAP_NOTICE) && !body.startsWith(REROUTE_NOTICE)) { failed = 0; designs = 0; accepted = false; rerouted = null; }

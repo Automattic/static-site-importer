@@ -5,6 +5,8 @@ import { collateralResult, cookHistory, designScope, ownIssue, rerouteScope, COO
 
 test('Cook history counts failures and design rounds since guidance', () => {
   const note = { body: `${COOK_NOTE}wf-x -->\n### Cook stopped without a pull request` };
+  // The design round's own Cook, run by the pass that opened it.
+  const ran = { body: `${COOK_NOTE}wf-a-cook-i1-n0-a1 -->\n### Cook stopped without a pull request` };
   const accept = { body: `${COOK_NOTE}wf-a-cook-i1-n0-a1 -->\n**Summary:** Decision: accept — the nesting mirrors the source.` };
   const reroute = { body: `${COOK_NOTE}wf-a-cook-i1-n0-a1 -->\n**Summary:** Decision: reroute to \`Org/capture-repo\` — the badge is host residue the capture keeps.` };
   const guidance = { body: 'Root cause and architectural plan: #6160.' };
@@ -19,7 +21,7 @@ test('Cook history counts failures and design rounds since guidance', () => {
     [[], { failed: 0, designs: 0, accepted: false }],
     [[note, note, guidance, note], { failed: 1, designs: 0, accepted: false }],
     [[note, note, cap, note], { failed: 3, designs: 0, accepted: false }],
-    [[note, note, design, note, note, design, note], { failed: 1, designs: 2, accepted: false }],
+    [[note, note, design, ran, note, design, ran], { failed: 1, designs: 2, accepted: false }],
     [[note, note, design, accept], { failed: 1, designs: 1, accepted: true }],
     [[accept, note], { failed: 2, designs: 0, accepted: false }],
     [[note, design, accept, cap, guidance], { failed: 0, designs: 0, accepted: false }],
@@ -29,10 +31,15 @@ test('Cook history counts failures and design rounds since guidance', () => {
     [[note, note, design, reroute, { body: `${REROUTE_NOTICE}\nRerouted.` }], { failed: 1, designs: 1, accepted: false, rerouted: { repo: 'capture-repo', note: reroute.body } }],
     [[note, note, elsewhere, reroute], { failed: 3, designs: 0, accepted: false }],
     // Inside a site's design round, other sites' refutations do not spend it.
-    [[rework, rework, design, reworkElsewhere, elsewhere, { body: `${COOK_NOTE}wf-b-cook-i1-n0-a1 -->\nstopped` }, reworkElsewhere], { failed: 0, designs: 1, accepted: false }],
+    [[rework, rework, design, reworkElsewhere, elsewhere, { body: `${COOK_NOTE}wf-b-cook-i1-n0-a1 -->\nstopped` }, reworkElsewhere, ran], { failed: 1, designs: 1, accepted: false }],
     [[reworkElsewhere, reworkElsewhere, design, rework, reworkElsewhere], { failed: 1, designs: 1, accepted: false }],
+    // A round whose pass was cancelled before its Cook ran is not spent: a
+    // later pass's Cook reports next, and the round opens on the next triage.
+    [[note, note, design, { body: `${COOK_NOTE}wf-later-cook-i1-n0-a1 -->\nstopped` }], { failed: 3, designs: 0, accepted: false }],
+    [[note, note, design, rework, note], { failed: 2, designs: 1, accepted: false }],
+    [[note, note, design, ran], { failed: 1, designs: 1, accepted: false }],
     // Two sites opening rounds together use up neither's rounds.
-    [[note, note, design, elsewhere, elsewhere, note], { failed: 1, designs: 1, accepted: false }],
+    [[note, note, design, elsewhere, elsewhere, ran], { failed: 1, designs: 1, accepted: false }],
   ]) assert.deepEqual(cookHistory(comments, 'https://a.test/'), history);
 });
 
