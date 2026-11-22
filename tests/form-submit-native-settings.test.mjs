@@ -3,6 +3,13 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
+test( 'submit wrapper reset retains its provider target and remains a fallback', () => {
+	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-submit-carriers.php' ], { encoding: 'utf8' } ) );
+	// Public materialization must preserve the wrapper-reset target consumed by
+	// provider CSS tooling, without dropping the native-setting exclusion.
+	assert.match( fixture.css, /:not\(:has\([^{}]+\)\)[^{}]* \.ssi-node-[a-f0-9]{12}\{[^{}]*padding:0!important/ );
+} );
+
 test( 'submit presentation and wrapper resets yield to native block controls', async () => {
 	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-submit-carriers.php' ], { encoding: 'utf8' } ) );
 	const browser = await chromium.launch( { headless: true } );

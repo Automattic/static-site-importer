@@ -1117,7 +1117,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
 				|| ( in_array( substr( $selector, strlen( $scope ) ), array( ' .ssi-native-control-shell', ...array_keys( self::NATIVE_PASSTHROUGH ), self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
 		}
-		$unguarded_selector = str_replace( array( ':not([style*="font"]):not(.has-custom-font-size):not([class*="-font-size"])', ':not([style*="padding"])' ), '', $matches[1] );
+		$unguarded_selector = preg_replace( '/:not\(:has\(\.ssi-node-[a-f0-9]{12}(?:-destination-[a-z][a-z0-9-]{0,31})?:not\((?::not\([^()]*\))+\)\)\)/', '', $matches[1] );
+		$unguarded_selector = str_replace( array( ':not([style*="font"]):not(.has-custom-font-size):not([class*="-font-size"])', ':not([style*="padding"])' ), '', $unguarded_selector );
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $unguarded_selector ) && ! $native_safe ) {
 			return false;
 		}
@@ -1655,19 +1656,29 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			// Core saves native settings on the wrapper or its inner link, depending
 			// on the rendering surface. Imported paint and wrapper resets are only
 			// fallbacks: neither may defeat an explicit inspector setting.
+			// Ordinary provider declarations keep their existing cascade; only
+			// forced presentation needs exclusions to yield to inline settings.
 			$groups = array();
 			foreach ( $declarations as $declaration ) {
 				$property = explode( ':', $declaration, 2 )[0];
 				$guard    = '';
-				if ( $is_submit && ( 'font' === $property || str_starts_with( $property, 'font-' ) ) ) {
+				if ( $is_submit && 'important' === ( $destination['priority'] ?? '' ) && ( 'font' === $property || str_starts_with( $property, 'font-' ) ) ) {
 					$guard = ':not([style*="font"]):not(.has-custom-font-size):not([class*="-font-size"])';
-				} elseif ( $is_submit && ( 'padding' === $property || str_starts_with( $property, 'padding-' ) ) ) {
+				} elseif ( $is_submit && 'important' === ( $destination['priority'] ?? '' ) && ( 'padding' === $property || str_starts_with( $property, 'padding-' ) ) ) {
 					$guard = ':not([style*="padding"])';
 				}
 				$groups[ $guard ][] = $declaration;
 			}
 			foreach ( $groups as $guard => $group ) {
-				$rule    = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) . $guard ) . '{' . implode( ';', $group ) . '}';
+				$selector = self::authoritative_presentation_selector( $destination['selector'] );
+				if ( '' !== $guard && ! str_contains( $destination['selector'], 'wp-block-button__link' ) && ! str_ends_with( $destination['selector'], ' .rich-text' ) ) {
+					// Wrapper resets must yield too. Keep the provider's wrapper
+					// target intact and exclude only its explicitly styled instance.
+					$selector = preg_replace( '/^(\\.ssi-form-[a-f0-9]{12})/', '$1:not(:has(' . substr( $destination['selector'], strpos( $destination['selector'], ' ' ) + 1 ) . ':not(' . $guard . ')))', $selector, 1 );
+				} else {
+					$selector .= $guard;
+				}
+				$rule    = self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}';
 				$rules[] = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
 			}
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
