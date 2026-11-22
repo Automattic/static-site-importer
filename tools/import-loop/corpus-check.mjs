@@ -78,12 +78,14 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
     if (fs.existsSync(recorded)) return;
     const start = Date.now();
     const result = corpusRun('record', ['--blocks-engine', triage.transformer, '--baseline', baseline, ...(sites ? ['--sites', sites] : [])]);
-    fs.mkdirSync(baseline, { recursive: true });
-    fs.writeFileSync(recorded, JSON.stringify({ seconds: (Date.now() - start) / 1000, unmeasured: corpusOutcome(result).unmeasured }, null, 2));
+    const unmeasured = corpusOutcome(result).unmeasured;
+    // A recording that measured no site is retried by the next confirm.
+    if (!fs.existsSync(baseline) || !fs.readdirSync(baseline).some((f) => f.endsWith('.json'))) { log(`corpus baseline not recorded: ${unmeasured.join('; ').slice(0, 500)}`); return; }
+    fs.writeFileSync(recorded, JSON.stringify({ seconds: (Date.now() - start) / 1000, unmeasured }, null, 2));
   });
   // Sites trunk itself cannot measure have no baseline: reported, never dropped silently.
-  const baselined = fs.readdirSync(baseline).filter((f) => f.endsWith('.json') && !f.startsWith('.')).map((f) => f.slice(0, -5)).filter((s) => !sites || sites.split(',').includes(s));
-  Object.assign(summary, { baseline, sites: baselined, unbaselined: JSON.parse(fs.readFileSync(recorded, 'utf8')).unmeasured });
+  const baselined = !fs.existsSync(recorded) ? [] : fs.readdirSync(baseline).filter((f) => f.endsWith('.json') && !f.startsWith('.')).map((f) => f.slice(0, -5)).filter((s) => !sites || sites.split(',').includes(s));
+  Object.assign(summary, { baseline, sites: baselined, unbaselined: fs.existsSync(recorded) ? JSON.parse(fs.readFileSync(recorded, 'utf8')).unmeasured : ['no site measured at trunk'] });
   for (const head of measured) {
     if (!baselined.length) { head.verdict.reasons.push(`the corpus has no measured baseline at ${path.basename(baseline)}`); continue; }
     const start = Date.now();
