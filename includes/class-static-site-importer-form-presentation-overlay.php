@@ -1117,7 +1117,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
 				|| ( in_array( substr( $selector, strlen( $scope ) ), array( ' .ssi-native-control-shell', ...array_keys( self::NATIVE_PASSTHROUGH ), self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
 		}
-		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
+		$unguarded_selector = str_replace( array( ':not([style*="font"]):not(.has-custom-font-size):not([class*="-font-size"])', ':not([style*="padding"])' ), '', $matches[1] );
+		if ( ! preg_match( '/^' . $scope_selector . '$/D', $unguarded_selector ) && ! $native_safe ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'float', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
@@ -1650,8 +1651,25 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			if ( 'important' === ( $destination['priority'] ?? '' ) ) {
 				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
 			}
-			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
-			$rules[]      = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
+			// Imported presentation is a fallback, not an override of native
+			// block settings. Keep guards on the destination itself: core/button
+			// writes typography and spacing on its link, not its layout wrapper.
+			$groups = array();
+			foreach ( $declarations as $declaration ) {
+				$property  = explode( ':', $declaration, 2 )[0];
+				$guard     = '';
+				$is_submit = str_contains( $destination['selector'], ' > .wp-block-button__link' ) || str_ends_with( $destination['selector'], ' .rich-text' );
+				if ( $is_submit && ( 'font' === $property || str_starts_with( $property, 'font-' ) ) ) {
+					$guard = ':not([style*="font"]):not(.has-custom-font-size):not([class*="-font-size"])';
+				} elseif ( $is_submit && ( 'padding' === $property || str_starts_with( $property, 'padding-' ) ) ) {
+					$guard = ':not([style*="padding"])';
+				}
+				$groups[ $guard ][] = $declaration;
+			}
+			foreach ( $groups as $guard => $group ) {
+				$rule    = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) . $guard ) . '{' . implode( ';', $group ) . '}';
+				$rules[] = null === $condition || $state ? $rule : self::conditional_rule( $condition, $rule );
+			}
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition && ! $state );
 			// A select restored to its native appearance draws its own chevron;
 			// the provider's decorative chevron inside the same hook then hides.
