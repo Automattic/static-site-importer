@@ -23,11 +23,15 @@ export const gh = (...argv) => {
 };
 
 // Open pull requests that name the issue, by URL, by #number, or by Cook's branch name.
+// A pull request fixes an issue when GitHub links it to close the issue, or
+// its branch was cut for it (`issue-<n>-`). A pull request that only mentions
+// the issue (a loop fix citing it as evidence) is not its fix.
+export const fixesIssue = (pr, number) => (pr.closingIssuesReferences || []).some((ref) => String(ref.number) === String(number)) || pr.headRefName.includes(`issue-${number}-`);
 export function linkedPullRequests(issueUrl) {
   const [, owner, name, , number] = new URL(issueUrl).pathname.split('/');
   const github = `${owner}/${name}`;
-  return JSON.parse(gh('pr', 'list', '-R', github, '--state', 'open', '--json', 'number,url,body,headRefName,headRefOid,isDraft,mergeable,statusCheckRollup', '-L', '100'))
-    .filter((pr) => (pr.body || '').includes(issueUrl) || new RegExp(`#${number}\\b`).test(pr.body || '') || pr.headRefName.includes(`issue-${number}-`))
+  return JSON.parse(gh('pr', 'list', '-R', github, '--state', 'open', '--json', 'number,url,body,headRefName,headRefOid,isDraft,mergeable,statusCheckRollup,closingIssuesReferences', '-L', '100'))
+    .filter((pr) => fixesIssue(pr, number))
     .map((pr) => ({ ...pr, github, mergeable: knownMergeable(github, pr) }));
 }
 

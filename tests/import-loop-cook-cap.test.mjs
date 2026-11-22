@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { collateralResult, cookHistory, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
+import { collateralResult, cookHistory, fixesIssue, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
 
 test('Cook history counts failures and design rounds since guidance', () => {
   const note = { body: `${COOK_NOTE}wf-x -->\n### Cook stopped without a pull request` };
@@ -66,4 +66,14 @@ test('Only a printed verdict refutes a head; a crashed comparison leaves it unco
     ["await import('./gate-tools/lib/authoring-parity.mjs');", 2],
     ['console.log(JSON.stringify({ pass: true }));', 0],
   ]) assert.equal(collateralResult(run(code)).exit, exit);
+});
+
+test('Only a closing link or an issue branch makes a pull request the issue\'s fix', () => {
+  for (const [pr, fixes] of [
+    [{ headRefName: 'fix/issue-3265-static-site-importer', closingIssuesReferences: [{ number: 3265 }] }, true],
+    [{ headRefName: 'fix/issue-3265-static-site-importer-2', closingIssuesReferences: [] }, true],
+    // A loop fix citing the issue as evidence (SSI#3270 on #3265).
+    [{ headRefName: 'fix/rework-acceptance-as-verify', body: 'Both rework Cooks for SSI#3265 stopped', closingIssuesReferences: [] }, false],
+    [{ headRefName: 'fix/issue-32650-x', closingIssuesReferences: [{ number: 32650 }] }, false],
+  ]) assert.equal(fixesIssue(pr, 3265), fixes);
 });
