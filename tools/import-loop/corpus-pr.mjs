@@ -28,6 +28,9 @@ export function corpusStatus({ failing, reasons }, sites) {
   return { state: 'success', description: `no regression on ${sites.length} corpus sites` };
 }
 
+// Whether a pull request's changed files reach the candidate the corpus imports with.
+export const touchesCandidate = (files, paths) => (files || []).some(({ path: file }) => paths.some((p) => file === p || file.startsWith(`${p}/`)));
+
 const gh = (...a) => execFileSync('gh', a, { encoding: 'utf8', maxBuffer: 64 << 20 });
 const log = (...a) => console.error(`[corpus-pr] ${a.join(' ')}`);
 
@@ -53,9 +56,17 @@ function main() {
   const pending = [];
   for (const [name, repo] of Object.entries(repos)) {
     if (!['transformer', 'importer'].includes(repo.candidate.slot)) continue;
-    for (const pr of JSON.parse(gh('pr', 'list', '-R', repo.github, '--state', 'open', '--base', repo.branch, '--limit', '200', '--json', 'number,headRefOid,url,updatedAt'))) {
+    for (const pr of JSON.parse(gh('pr', 'list', '-R', repo.github, '--state', 'open', '--base', repo.branch, '--limit', '200', '--json', 'number,headRefOid,url,updatedAt,files'))) {
       const statuses = JSON.parse(gh('api', `repos/${repo.github}/commits/${pr.headRefOid}/statuses?per_page=100`));
-      if (!statuses.some((s) => s.context === CONTEXT && s.state !== 'pending')) pending.push({ name, repo, pr });
+      if (statuses.some((s) => s.context === CONTEXT && s.state !== 'pending')) continue;
+      // A head that changes none of the candidate's paths imports exactly as
+      // its base does: a replay measures only noise, so it passes unreplayed.
+      if (!touchesCandidate(pr.files, repo.candidate.paths)) {
+        log(pr.url, 'changes no candidate path; not replayed');
+        if (!args['dry-run']) gh('api', `repos/${repo.github}/statuses/${pr.headRefOid}`, '-f', 'state=success', '-f', `context=${CONTEXT}`, '-f', `description=changes no ${repo.candidate.slot} path; nothing to replay`);
+        continue;
+      }
+      pending.push({ name, repo, pr });
     }
   }
   pending.sort((a, b) => b.pr.updatedAt.localeCompare(a.pr.updatedAt));

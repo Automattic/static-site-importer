@@ -32,3 +32,14 @@ test('a corpus replay posts failure for regressions, error when unmeasured, succ
   assert.equal(corpusStatus({ failing: [], reasons: ['corpus replay could not measure: x'] }, sites).state, 'error');
   assert.deepEqual(corpusStatus({ failing: [], reasons: [] }, sites), { state: 'success', description: 'no regression on 2 corpus sites' });
 });
+
+test('A pull request is replayed only when it changes a candidate path', async () => {
+  const { touchesCandidate } = await import('../tools/import-loop/corpus-pr.mjs');
+  const importer = ['static-site-importer.php', 'includes'];
+  for (const [files, replayed] of [
+    [[{ path: 'tools/import-loop/editor.mjs' }], false], // SSI#3282: a check change, measured as noise
+    [[{ path: 'includes/class-importer.php' }, { path: 'tests/x.php' }], true],
+    [[{ path: 'static-site-importer.php' }], true],
+    [[{ path: 'includes-extra/x.php' }], false],
+  ]) assert.equal(touchesCandidate(files, importer), replayed);
+});
