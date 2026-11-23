@@ -19,7 +19,10 @@ case "$1 $2" in
   'auth token') echo example-token ;;
   'api repos/Automattic/data-liberation-agent/releases?per_page=10') echo https://example.org/data-liberation.tgz ;;
   'api repos/Automattic/static-site-importer/releases?per_page=10') echo v-example ;;
-  'release download') touch "\${@: -1}" ;;
+  'release download')
+    # The release zip whose plugin header names the tag; write it to the -O path.
+    while [[ $# -gt 0 && "$1" != -O ]]; do shift; done
+    php -r '$z = new ZipArchive(); $z->open($argv[1], ZipArchive::CREATE | ZipArchive::OVERWRITE); $z->addFromString("static-site-importer/static-site-importer.php", "<?php\n/**\n * Version: example\n */\n"); $z->close();' "$2" ;;
   *) exit 1 ;;
 esac
 `, { mode: 0o755 });
@@ -78,7 +81,7 @@ exit 1
     assert.equal(preserved.status, 0, preserved.stderr);
     assert.deepEqual(JSON.parse(fs.readFileSync(output)), {
       url: 'https://example.org/', site: `${site}/site`, site_url: 'http://localhost:9000', log: `${site}/reimport.log`, source: `${site}/source`,
-      wp_cli: `php ${dir}/bare-wp/wp-cli.phar`, blocks_engine: 'example-engine-sha', ssi_zip: `${site}/static-site-importer.zip`, ssi_release: 'v-example',
+      wp_cli: `php ${dir}/bare-wp/wp-cli.phar`, blocks_engine: 'example-engine-sha', ssi_zip: `${site}/static-site-importer.zip`, ssi_release: 'vexample',
     });
     assert.equal(fs.readFileSync(env.START_LOG, 'utf8'), 'reimported\n');
     assert.equal(alive(servers['loop-p1']), false);

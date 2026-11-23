@@ -1030,7 +1030,23 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		$target_path = is_array( $resolved ) && is_string( $resolved['target_path'] ?? null ) && '' !== $resolved['target_path'] ? $resolved['target_path'] : $source;
-		$filename    = sanitize_file_name( basename( $target_path ) );
+		$theme_dir   = is_array( $resolved ) && is_string( $resolved['theme_dir'] ?? null ) ? $resolved['theme_dir'] : '';
+		if ( '' !== $theme_dir ) {
+			// The import's media path owns plan images: it admits validated SVG
+			// and keys identity so page content later reuses this attachment.
+			require_once __DIR__ . '/class-static-site-importer-media-library-materializer.php';
+			$media = Static_Site_Importer_Media_Library_Materializer::plan_image_attachment( $theme_dir, $target_path, $bytes, $alt, is_array( $resolved['record'] ?? null ) ? $resolved['record'] : null );
+			if ( $media['id'] <= 0 ) {
+				return 0;
+			}
+			if ( $media['created'] ) {
+				update_post_meta( $media['id'], self::SOURCE_IMAGE_META_KEY, $source );
+				$created_attachments[] = $media['id'];
+			}
+			self::apply_attachment_alt_text( $media['id'], $alt );
+			return $media['id'];
+		}
+		$filename = sanitize_file_name( basename( $target_path ) );
 		if ( '' === $filename ) {
 			return 0;
 		}
