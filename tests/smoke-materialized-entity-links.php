@@ -608,6 +608,9 @@ foreach (
 ) {
 	$assert( $route_patterns( $literal_doc, $panel_routes ) === $rewrite_panels( $literal_doc, $panel_routes ), 'Block markup ' . $context . ' keeps the route patterns\' output.' );
 }
+// An attribute right after a quoted value, as browsers read it, is not literal text.
+$decoy_out = $rewrite_panels( '<p><a title="href="#"/second/index.html" class="decoy">Second</a></p>' . $literal_menu, $panel_routes );
+$assert( '<a href="/second-page/">Menu</a>' === ( $panel_copies( substr( $decoy_out, strpos( $decoy_out, '<!-- wp:' ) ) )[ $panel_key ]['saved markup']['html'] ?? null ), 'A menu after an attribute that follows a quoted value is still rewritten.' );
 // A panel whose HTML holds a noscript keeps the route patterns' output.
 $noscript_doc = $menu_for( (string) json_encode( array( 'html' => '<noscript><a href="/second/index.html">Menu</a></noscript>' ), JSON_UNESCAPED_SLASHES ) );
 $assert( $route_patterns( $noscript_doc, $panel_routes ) === $rewrite_panels( $noscript_doc, $panel_routes ), 'A panel holding a noscript keeps the route patterns\' output.' );

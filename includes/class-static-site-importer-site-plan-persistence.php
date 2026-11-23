@@ -2237,7 +2237,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					$end    = $open + strlen( $match[0] ?? '' );
 					$at     = $end;
 				} elseif ( ctype_alpha( $next ) || '/' === $next || '?' === $next ) {
-					$failed = 1 !== preg_match( '~</?[a-z][^\s/>]*+(?:[\s/]++(?:[^\s/>=][^\s/>=]*+(?:\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s>]++))?)?)*+>~iA', $content, $match, 0, $open );
+					$failed = 1 !== preg_match( '~</?[a-z][^\s/>]*+(?:[\s/]++|[^\s/>=]++(?:\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s>]++))?)*+>~iA', $content, $match, 0, $open );
 					$at     = $open + strlen( $match[0] ?? '' );
 				} else {
 					$at = $open + 1;
