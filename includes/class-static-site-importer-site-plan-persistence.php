@@ -2078,12 +2078,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * other block keeps the patterns' output, and the whole document keeps it when a
 	 * block delimiter is not live markup, such as text inside a textarea.
 	 *
-	 * @param string     $content Document markup.
-	 * @param string     $rewritten The same markup after the route patterns.
-	 * @param string[]   $panel_blocks Exact names of the Blocks Engine panel block types.
-	 * @param Closure    $resolve Link resolver: (decoded value, attribute name) => reference or null.
-	 * @param array|null $unresolved The resolver's unresolved targets, kept only for accepted snapshots.
-	 * @param array|null $fragments The resolver's unresolved fragments, kept only for accepted snapshots.
+	 * @param string                 $content Document markup.
+	 * @param string                 $rewritten The same markup after the route patterns.
+	 * @param string[]               $panel_blocks Exact names of the Blocks Engine panel block types.
+	 * @param Closure                $resolve Link resolver: (decoded value, attribute name) => reference or null.
+	 * @param array<int,string>|null $unresolved The resolver's unresolved targets, kept only for accepted snapshots.
+	 * @param array|null             $fragments The resolver's unresolved fragments, kept only for accepted snapshots.
 	 * @return array{list<int>,list<int>,list<string>} Replacements in the patterns' output, sorted by offset: offsets, lengths and texts.
 	 */
 	private static function panel_snapshot_edits( string $content, string $rewritten, array $panel_blocks, Closure $resolve, ?array &$unresolved, ?array &$fragments ): array {
@@ -2152,7 +2152,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param string   $content Document markup.
 	 * @param string[] $panel_blocks Exact block type names.
 	 * @param bool     $read Whether to read snapshot values.
-	 * @return Generator<int,array{type:string,start:int,end:int,values:array<int,array{int,int,string,bool}>}|null|false>
+	 * @return Generator<int,array{type:string,start:int,end:int,values:array<int,array{int,int,string,bool}>}|array{type:string,start:int,end:int}|null|false>
 	 */
 	private static function panel_slots( string $content, array $panel_blocks, bool $read ): Generator {
 		$blocks = new WP_Block_Processor( $content );
@@ -2175,7 +2175,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					}
 					continue;
 				}
-				if ( null !== $live && ! $live->comment_at( $span->start ) ) {
+				if ( null !== $live && ! $live( $span->start ) ) {
 					yield false;
 					return;
 				}
@@ -2188,7 +2188,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			for ( $remaining = count( $open ); $remaining > $depth; --$remaining ) {
 				$frame = array_pop( $open );
 				if ( null !== $frame ) {
-					yield $read ? self::panel_slot( $content, $frame ) : ( null === $frame['end'] ? null : $frame );
+					yield $read ? self::panel_slot( $content, $frame ) : self::panel_bounds( $frame );
 				}
 			}
 			if ( ! $more ) {
@@ -2220,12 +2220,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * comment; or null when the markup holds none of these, so every delimiter is live.
 	 *
 	 * @param string $content Document markup.
+	 * @return (Closure(int): bool)|null Whether a live comment starts at an offset, asked in increasing order.
 	 */
-	private static function live_comments( string $content ): ?WP_HTML_Tag_Processor {
+	private static function live_comments( string $content ): ?Closure {
 		if ( 1 !== preg_match( '~<(?:textarea|title|script|style|xmp|plaintext|noscript|noembed|noframes|iframe|svg|math)\b|<!--(?!\s+/?wp:)|<!\[|<\?~i', $content ) ) {
 			return null;
 		}
-		return new class( $content ) extends WP_HTML_Tag_Processor {
+		$reader = new class( $content ) extends WP_HTML_Tag_Processor {
 			/** Offset of the last comment read, or -1. */
 			private int $comment_start = -1;
 
@@ -2242,6 +2243,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				return $this->comment_start === $at;
 			}
 		};
+		return static fn( int $at ): bool => $reader->comment_at( $at );
+	}
+
+	/**
+	 * A closed block's type and offsets, or null when it is not closed.
+	 *
+	 * @param array $frame Block frame from panel_slots().
+	 * @return array{type:string,start:int,end:int}|null
+	 */
+	private static function panel_bounds( array $frame ): ?array {
+		if ( null === $frame['end'] ) {
+			return null;
+		}
+		return array(
+			'type'  => (string) $frame['type'],
+			'start' => (int) $frame['start'],
+			'end'   => (int) $frame['end'],
+		);
 	}
 
 	/**
@@ -2295,14 +2314,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * its snapshot copies are not all valid and identical, when the patterns changed
 	 * any byte of the block, or when no link in them changes.
 	 *
-	 * @param string     $content Document markup.
-	 * @param array      $before The block in the document, from panel_slot().
-	 * @param string     $rewritten The route patterns' output.
-	 * @param array      $after The block paired with it in that output.
-	 * @param Closure    $resolve Link resolver.
-	 * @param array      $cache Rewritten snapshots, their diagnostics and value texts, by value.
-	 * @param array|null $unresolved The resolver's unresolved targets.
-	 * @param array|null $fragments The resolver's unresolved fragments.
+	 * @param string                 $content Document markup.
+	 * @param array                  $before The block in the document, from panel_slot().
+	 * @param string                 $rewritten The route patterns' output.
+	 * @param array                  $after The block paired with it in that output.
+	 * @param Closure                $resolve Link resolver.
+	 * @param array                  $cache Rewritten snapshots, their diagnostics and value texts, by value.
+	 * @param array<int,string>|null $unresolved The resolver's unresolved targets.
+	 * @param array|null             $fragments The resolver's unresolved fragments.
 	 * @return array<int,array{int,int,string}>
 	 */
 	private static function panel_slot_edits( string $content, array $before, string $rewritten, array $after, Closure $resolve, array &$cache, ?array &$unresolved, ?array &$fragments ): array {
@@ -2310,7 +2329,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( $before['type'] !== $after['type'] || $after['end'] - $after['start'] !== $length || ! self::same_bytes( $content, $before['start'], $rewritten, $after['start'], $length ) ) {
 			return array();
 		}
-		$shift = $after['start'] - $before['start'];
+		$shift   = $after['start'] - $before['start'];
 		$comment = array();
 		$saved   = array();
 		foreach ( $before['values'] as $value ) {
@@ -2328,8 +2347,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$snapshots = array();
 		foreach ( array_unique( $comment ) as $value ) {
 			if ( ! array_key_exists( $value, $cache['snapshots'] ?? array() ) ) {
-				$unresolved_at                 = is_array( $unresolved ) ? count( $unresolved ) : 0;
-				$fragments_at                  = is_array( $fragments ) ? count( $fragments ) : 0;
+				$unresolved_at                  = is_array( $unresolved ) ? count( $unresolved ) : 0;
+				$fragments_at                   = is_array( $fragments ) ? count( $fragments ) : 0;
 				$cache['snapshots'][ $value ]   = self::rewrite_snapshot( $value, $resolve );
 				$cache['diagnostics'][ $value ] = array(
 					is_array( $unresolved ) ? array_splice( $unresolved, $unresolved_at ) : array(),
