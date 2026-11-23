@@ -60,7 +60,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$runtime_payload = self::with_runtime_companion_configuration( $companion_payload, $lifecycle, $args );
 		// Routing is a runtime dependency even when the import declares no blocks.
 		foreach ( $prepared['resolved']['pages'] ?? array() as $page ) {
-			if ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) ) {
+			if ( ! empty( $prepared['plan']['date_archives'] ) || ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) ) ) {
 				$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
 				$runtime_payload['post_source_routes'] = true;
 				break;

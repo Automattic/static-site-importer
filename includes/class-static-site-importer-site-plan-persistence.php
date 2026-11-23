@@ -394,6 +394,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::serve_post_source_routes( $state ) ) {
 			return self::failed_receipt( $state, 'post_source_routes_not_applied' );
 		}
+		if ( ! self::serve_date_archive_routes( $state ) ) {
+			return self::failed_receipt( $state, 'date_archive_routes_not_applied' );
+		}
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
 			return self::failed_receipt_from_error( $state, $route_links );
@@ -1770,6 +1773,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 		}
+		// Date archives keep their source routes, which the runtime serves natively.
+		foreach ( array_keys( self::date_archive_routes( $state['plan'] ) ) as $source_route ) {
+			$routes[ $source_route ] = user_trailingslashit( $source_route );
+		}
 		$product_routes = array();
 		foreach ( $state['args']['materialized_entity_reports'] ?? array() as $report ) {
 			foreach ( $report['products'] ?? array() as $product ) {
@@ -2003,7 +2010,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			return null;
 		};
-		$replace = static function ( array $matches ) use ( $resolve_route ): string {
+		$replace       = static function ( array $matches ) use ( $resolve_route ): string {
 			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
 			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
 			if ( ! is_string( $value ) ) {
@@ -2020,7 +2027,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			return $matches[1] . $reference . $matches[3];
 		};
-		$rewrite = static function ( string $text ) use ( $replace ): string {
+		$rewrite       = static function ( string $text ) use ( $replace ): string {
 			foreach ( self::ROUTE_PATTERNS as $pattern ) {
 				$text = preg_replace_callback( $pattern, $replace, $text ) ?? $text;
 			}
@@ -2112,7 +2119,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	private static function panel_slots( string $content, array $panel_blocks ): Generator {
 		$blocks = new WP_Block_Processor( $content );
-		$open   = array();
+		/** @var array<int,array{type:string,start:int,end:int|null,opener:array{int,int},spans:list<array{int,int}>}|null> $open */
+		$open = array();
 		while ( true ) {
 			$more  = $blocks->next_token();
 			$depth = 0;
@@ -2135,7 +2143,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				$depth = WP_Block_Processor::CLOSER === $type ? $depth : $depth - 1;
 			}
-			while ( count( $open ) > $depth ) {
+			for ( $remaining = count( $open ); $remaining > $depth; --$remaining ) {
 				$frame = array_pop( $open );
 				if ( null !== $frame ) {
 					yield self::panel_slot( $content, $frame );
@@ -2271,7 +2279,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$raw               = substr( $content, $start, $length );
 			$editor            = str_contains( $raw, '\\\\' );
 			$text              = $value === $snapshots[ $value ] ? $raw : ( $cache[ ( $in_comment ? ( $editor ? 'e' : 'c' ) : 'm' ) . $value ] ??= ( $in_comment ? substr( self::block_attribute_json( (string) wp_json_encode( $snapshots[ $value ], self::PANEL_JSON_FLAGS ), $editor ), 1, -1 ) : self::escape_attribute( $snapshots[ $value ] ) ) );
-			if ( $text !== substr( $rewritten, $at, $size ) ) {
+			if ( substr( $rewritten, $at, $size ) !== $text ) {
 				$edits[] = array( $at, $size, $text );
 			}
 		}
@@ -2311,9 +2319,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private static function json_snapshot_values( string $json, int $base ): ?array {
 		$values   = array();
 		$mentions = array();
-		$stack    = array();
-		$length   = strlen( $json );
-		$at       = 0;
+		/** @var list<array<string,mixed>|null> $stack */
+		$stack  = array();
+		$length = strlen( $json );
+		$at     = 0;
 		while ( $at < $length ) {
 			$char = $json[ $at ];
 			$top  = count( $stack ) - 1;
@@ -2396,7 +2405,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::mentions_panel_snapshot( $html ) ) {
 			return array();
 		}
-		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
+		$tags   = new class( $html ) extends WP_HTML_Tag_Processor {
 			/** The span of an attribute as written, which set_attribute() records for replacement. */
 			public function attribute_span( string $name ): ?array {
 				if ( ! $this->set_attribute( $name, '' ) || ! isset( $this->lexical_updates[ $name ] ) ) {
@@ -2453,11 +2462,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'&gt;'   => '>',
 			'&amp;'  => '&',
 		);
-		$counted = 0;
+		$counted    = 0;
 		foreach ( array_keys( $references ) as $reference ) {
 			$counted += substr_count( $raw, $reference );
 		}
-		if ( $counted !== substr_count( $raw, '&' ) || strlen( $raw ) !== strcspn( $raw, "\0\r" ) ) {
+		if ( substr_count( $raw, '&' ) !== $counted || strlen( $raw ) !== strcspn( $raw, "\0\r" ) ) {
 			return null;
 		}
 
@@ -2702,7 +2711,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! str_contains( $html, '<' ) ) {
 			return null;
 		}
-		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
+		$tags    = new class( $html ) extends WP_HTML_Tag_Processor {
 			/** Replace a value with plain attribute escaping, where set_attribute() would apply esc_url(). */
 			public function replace_value( string $name, string $escaped ): bool {
 				$key = strtolower( $name );
@@ -3868,6 +3877,57 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return true;
 	}
 
+	/**
+	 * Serve each declared native date archive at its source route. The plan's
+	 * list replaces the importer-owned option, so a reimport drops stale routes.
+	 */
+	public static function serve_date_archive_routes( array &$state ): bool {
+		$routes = self::date_archive_routes( $state['plan'] );
+		$before = get_option( 'static_site_importer_date_archive_routes', array() );
+		if ( $routes === $before ) {
+			return true;
+		}
+		self::journal_option( $state, 'static_site_importer_date_archive_routes' );
+		if ( ! self::write_option( 'static_site_importer_date_archive_routes', $routes ) ) {
+			return false;
+		}
+		flush_rewrite_rules( false );
+		$state['applied']['operations'][] = array(
+			'kind'        => 'set_date_archive_source_routes',
+			'reason_code' => 'native_date_archives_keep_source_routes',
+			'routes'      => $routes,
+		);
+		return true;
+	}
+
+	/**
+	 * Declared date archive routes mapped to their native date query.
+	 *
+	 * @return array<string,array<string,int>>
+	 */
+	public static function date_archive_routes( array $plan ): array {
+		$routes = array();
+		foreach ( is_array( $plan['date_archives'] ?? null ) ? $plan['date_archives'] : array() as $entry ) {
+			$archive = is_array( $entry['archive'] ?? null ) ? $entry['archive'] : array();
+			$route   = self::normalized_route_path( (string) ( $archive['source_route'] ?? '' ) );
+			$query   = is_array( $archive['query'] ?? null ) ? $archive['query'] : array();
+			$year    = (int) ( $query['year'] ?? 0 );
+			$month   = (int) ( $query['monthnum'] ?? 0 );
+			$day     = (int) ( $query['day'] ?? 0 );
+			if ( '' === $route || '/' === $route || $year < 1000 || $year > 9999 || $month < 0 || $month > 12 || $day < 0 || $day > 31 || ( $day > 0 && 0 === $month ) ) {
+				continue;
+			}
+			$routes[ $route ] = array_filter(
+				array(
+					'year'     => $year,
+					'monthnum' => $month,
+					'day'      => $day,
+				)
+			);
+		}
+		return $routes;
+	}
+
 	/** Move core rewrite bases that would route an imported page path to an archive. */
 	public static function keep_page_routes_reachable( array &$state ): bool {
 		if ( 'existing_theme' === ( $state['args']['destination'] ?? '' ) ) {
@@ -4253,7 +4313,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				self::record_rollback_failure( $state, 'option', (string) $option, $error );
 			}
 		}
-		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) || isset( $options['permalink_structure'] ) || isset( $options['static_site_importer_post_routes'] ) ) {
+		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) || isset( $options['permalink_structure'] ) || isset( $options['static_site_importer_post_routes'] ) || isset( $options['static_site_importer_date_archive_routes'] ) ) {
 			delete_option( 'rewrite_rules' );
 		}
 	}
