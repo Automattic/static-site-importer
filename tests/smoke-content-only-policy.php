@@ -9,6 +9,8 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
 		public function __construct( private string $code, private string $message = '', private mixed $data = null ) {}
 		public function get_error_code(): string { return $this->code; }
+		public function get_error_message(): string { return $this->message; }
+		public function get_error_data(): mixed { return $this->data; }
 	}
 }
 if ( ! function_exists( 'is_wp_error' ) ) {
@@ -16,6 +18,7 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-redirects-manifest.php';
 
 $failures = array();
 $assert = static function ( bool $condition, string $label ) use ( &$failures ): void {
@@ -105,7 +108,30 @@ $assert( $left_out( $admit( $artifact( 'evil', 'payload' ) ), $skipped ), 'exten
 $assert( $left_out( $admit( $artifact( 'website/blog/_redirects', "/a /b 301\n" ) ), $skipped ), 'nested-redirects-artifact-skipped' );
 // The root redirects manifest fails closed.
 $assert( $rejected( $admit( $artifact( 'website/_redirects', '<?php system("id");' ) ) ), 'redirects-manifest-server-code-rejected' );
-$assert( $rejected( $admit( $artifact( 'website/_redirects', str_repeat( "/a /b 301\n", 7000 ) ) ) ), 'oversized-redirects-manifest-rejected' );
+// A manifest sized for thousands of rules (a large tagged blog) is admitted and every rule is honored.
+$rule_lines = '';
+$targets    = array();
+for ( $i = 1; $i <= 3000; ++$i ) {
+	$rule_lines .= sprintf( "/blog/tag/topic-%1$04d/  /blog/topics/topic-%1$04d/index.html  301\n", $i );
+	$targets[]   = sprintf( 'website/blog/topics/topic-%04d/index.html', $i );
+}
+$large_manifest = $admit( $artifact( 'website/_redirects', $rule_lines ) );
+$assert( strlen( $rule_lines ) > 65536 && $admitted( $large_manifest ) && 1 === count( $large_manifest['artifact']['files'] ?? array() ), 'thousands-of-rules-redirects-manifest-admitted' );
+$extracted = is_array( $large_manifest ) ? Static_Site_Importer_Redirects_Manifest::extract( $large_manifest['artifact'] ) : null;
+$aliases   = is_array( $extracted ) ? Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $extracted['aliases'], $targets ) : array();
+$assert( 3000 === count( $aliases ) && array( 'blog/tag/topic-3000' ) === ( $aliases['website/blog/topics/topic-3000/index.html'] ?? null ), 'thousands-of-rules-redirects-manifest-honored' );
+// Over the bound, the manifest fails with its real reason, size and limit.
+$over_limit = str_pad( '', Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES + 1, "/a /b 301\n" );
+$too_large  = $admit( $artifact( 'website/_redirects', $over_limit ) );
+$assert(
+	is_wp_error( $too_large )
+		&& 'static_site_importer_redirects_manifest_too_large' === $too_large->get_error_code()
+		&& ! str_contains( $too_large->get_error_message(), 'not static content' )
+		&& 'redirects_manifest_too_large' === ( $too_large->get_error_data()['reason_code'] ?? null )
+		&& strlen( $over_limit ) === ( $too_large->get_error_data()['bytes'] ?? null )
+		&& Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES === ( $too_large->get_error_data()['max_bytes'] ?? null ),
+	'oversized-redirects-manifest-reports-size-and-limit'
+);
 $assert( $rejected( $admit( array( 'files' => array( array( 'path' => 'website/_redirects' ) ) ) ) ), 'unreadable-redirects-manifest-rejected' );
 
 // Neutral source examples exercise core tokenization, not a parser shape stub.
