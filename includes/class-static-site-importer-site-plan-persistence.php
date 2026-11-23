@@ -52,6 +52,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private const RECONCILIATION_META_KEY          = '_static_site_importer_reconciliation_identity';
 	private const PRODUCER_RECONCILIATION_META_KEY = '_blocks_engine_reconciliation_identity';
 	private const PANEL_SNAPSHOTS                  = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
+	private const LITERAL_TEXT_CONTEXT             = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template)\b|<iframe\b[^>]*?\bsrcdoc~i';
 	private const PANEL_JSON_FLAGS                 = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION;
 	// Blocks Engine generators whose blocks carry captured panels.
 	public const PANEL_BLOCK_TYPES = array( 'authored-button', 'layout-shell', 'accessible-link' );
@@ -2036,36 +2037,27 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 		$rewritten = $rewrite( $content );
 		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route, $unresolved, $fragments );
-		if ( array() === $edits[0] ) {
-			return $rewritten;
-		}
 		// The route patterns' output stays as it is; only the snapshot values of
-		// blocks the patterns left untouched are written again. The result is built
-		// in order from offsets, so it is the only copy beside the patterns' output.
-		$out = '';
-		$at  = 0;
-		foreach ( $edits[0] as $index => $start ) {
-			self::append_range( $out, $rewritten, $at, $start - $at );
-			$out .= $edits[2][ $index ];
-			$at   = $start + $edits[1][ $index ];
+		// blocks the patterns left untouched are written again, back to front in
+		// that one string. Edits within 64 KiB of each other share one splice, so a
+		// document costs one copy of itself per group of nearby panels.
+		$last = count( $edits[0] ) - 1;
+		while ( $last >= 0 ) {
+			$first = $last;
+			$end   = $edits[0][ $last ] + $edits[1][ $last ];
+			while ( $first > 0 && $end - $edits[0][ $first - 1 ] <= 65536 ) {
+				--$first;
+			}
+			$text = '';
+			for ( $index = $first; $index <= $last; ++$index ) {
+				$after = $edits[0][ $index ] + $edits[1][ $index ];
+				$text .= $edits[2][ $index ] . ( $index < $last ? substr( $rewritten, $after, $edits[0][ $index + 1 ] - $after ) : '' );
+			}
+			$rewritten = substr_replace( $rewritten, $text, $edits[0][ $first ], $end - $edits[0][ $first ] );
+			$last      = $first - 1;
 		}
-		self::append_range( $out, $rewritten, $at, strlen( $rewritten ) - $at );
 
-		return $out;
-	}
-
-	/**
-	 * Append a range of a string in slices, so no large slice is copied at once.
-	 *
-	 * @param string $out String to append to.
-	 * @param string $from Source string.
-	 * @param int    $at Range offset.
-	 * @param int    $length Range length.
-	 */
-	private static function append_range( string &$out, string $from, int $at, int $length ): void {
-		for ( $done = 0; $done < $length; $done += 65536 ) {
-			$out .= substr( $from, $at + $done, min( 65536, $length - $done ) );
-		}
+		return $rewritten;
 	}
 
 	/**
@@ -2092,7 +2084,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return $none;
 		}
 		$openers = '~<!--\s+wp:(?:' . implode( '|', array_map( static fn( string $name ): string => preg_quote( $name, '~' ), $panel_blocks ) ) . ')\s~';
-		if ( ! preg_match( $openers, $content ) ) {
+		if ( ! preg_match( $openers, $content ) || preg_match( self::LITERAL_TEXT_CONTEXT, $content ) ) {
 			return $none;
 		}
 		// Blocks are paired in the order they close. A pair is used only when both
@@ -2149,7 +2141,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * Every block of the given types, in the order they close, with its span and,
 	 * when read, the snapshot values in its comment and own saved markup; null for a
 	 * block whose snapshots cannot be read. It yields false and stops at a block
-	 * delimiter that is not a live HTML comment.
+	 * delimiter that is not exactly one HTML comment outside any tag.
 	 *
 	 * @param string   $content Document markup.
 	 * @param string[] $panel_blocks Exact block type names.
@@ -2158,7 +2150,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	private static function panel_slots( string $content, array $panel_blocks, bool $read ): Generator {
 		$blocks = new WP_Block_Processor( $content );
-		$live   = self::live_comments( $content );
+		$live   = self::comment_reader( $content );
 		/** @var array<int,array{type:string,start:int,end:int|null,opener:array{int,int},spans:list<array{int,int}>}|null> $open */
 		$open = array();
 		while ( true ) {
@@ -2177,7 +2169,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					}
 					continue;
 				}
-				if ( null !== $live && ! $live( $span->start ) ) {
+				if ( $live( $span->start ) !== $span->start + $span->length ) {
 					yield false;
 					return;
 				}
@@ -2217,35 +2209,42 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * A reader that confirms block delimiters are live HTML comments, not text in a
-	 * textarea, title, script, style or other raw text element, or inside another
-	 * comment; or null when the markup holds none of these, so every delimiter is live.
+	 * A reader of the HTML comments in markup that holds no raw text elements, found
+	 * by a linear scan that steps over whole tags, quoted attribute values included.
+	 * Asked for offsets in increasing order, it gives the end of the comment that
+	 * starts there, or null when none does or the scan meets markup it cannot read
+	 * plainly, such as a bogus comment or a tag it cannot parse.
 	 *
 	 * @param string $content Document markup.
-	 * @return (Closure(int): bool)|null Whether a live comment starts at an offset, asked in increasing order.
+	 * @return Closure(int): ?int
 	 */
-	private static function live_comments( string $content ): ?Closure {
-		if ( 1 !== preg_match( '~<(?:textarea|title|script|style|xmp|plaintext|noscript|noembed|noframes|iframe|svg|math)\b|<!--(?!\s+/?wp:)|<!\[|<\?~i', $content ) ) {
-			return null;
-		}
-		$reader = new class( $content ) extends WP_HTML_Tag_Processor {
-			/** Offset of the last comment read, or -1. */
-			private int $comment_start = -1;
-
-			/** Whether a live comment starts at an offset, reading forward to it. */
-			public function comment_at( int $at ): bool {
-				while ( $this->comment_start < $at ) {
-					if ( ! $this->next_token() ) {
-						return false;
-					}
-					if ( '#comment' === $this->get_token_type() && $this->set_bookmark( 'comment' ) ) {
-						$this->comment_start = $this->bookmarks['comment']->start;
-					}
+	private static function comment_reader( string $content ): Closure {
+		$at     = 0;
+		$start  = -1;
+		$end    = -1;
+		$failed = false;
+		return static function ( int $offset ) use ( $content, &$at, &$start, &$end, &$failed ): ?int {
+			while ( ! $failed && $start < $offset ) {
+				$open = strpos( $content, '<', $at );
+				if ( false === $open ) {
+					$start = PHP_INT_MAX;
+					break;
 				}
-				return $this->comment_start === $at;
+				$next = $content[ $open + 1 ] ?? '';
+				if ( '!' === $next ) {
+					$failed = 1 !== preg_match( '~<!--(?!-?>)(?:[^-]++|-(?!-!?>))*+-->~A', $content, $match, 0, $open );
+					$start  = $open;
+					$end    = $open + strlen( $match[0] ?? '' );
+					$at     = $end;
+				} elseif ( ctype_alpha( $next ) || '/' === $next || '?' === $next ) {
+					$failed = 1 !== preg_match( '~</?[a-z][^\s/>]*+(?:[\s/]++(?:[^\s/>=][^\s/>=]*+(?:\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s>]++))?)?)*+>~iA', $content, $match, 0, $open );
+					$at     = $open + strlen( $match[0] ?? '' );
+				} else {
+					$at = $open + 1;
+				}
 			}
+			return ! $failed && $start === $offset ? $end : null;
 		};
-		return static fn( int $at ): bool => $reader->comment_at( $at );
 	}
 
 	/**
@@ -2716,31 +2715,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$failed   = $failed || ( $changed && ! is_string( $json ) );
 			return is_string( $json ) ? $json : null;
 		}
-		$attribute = self::link_attribute( $name );
-		if ( null === $attribute ) {
+		if ( ! self::link_attribute( $name ) ) {
 			return null;
 		}
-		$reference = self::local_reference( $resolve( $value, $attribute ) );
+		$reference = self::local_reference( $resolve( $value, 'href' ) );
 		return $reference === $value ? null : $reference;
 	}
 
 	/**
-	 * The part of a URL-bearing attribute name the route patterns match, which the
-	 * resolver reads: href, xlink:href and data-href as href, a form's action, and
-	 * data-*url (also namespaced, like vendor:data-url); null for any other name,
-	 * such as data-turbo-action.
+	 * Whether an attribute name inside a snapshot is a link the resolver reads:
+	 * href only. Other names, such as action, data-href or data-*url, stay as written.
 	 *
 	 * @param string $name Attribute name.
 	 */
-	private static function link_attribute( string $name ): ?string {
-		$name = strtolower( $name );
-		if ( in_array( $name, array( 'href', 'xlink:href', 'data-href' ), true ) ) {
-			return 'href';
-		}
-		if ( 'action' === $name ) {
-			return 'action';
-		}
-		return 1 === preg_match( '/^(?:[a-z][a-z0-9_.-]*:)?(data-[a-z0-9_-]*url)$/', $name, $match ) ? $match[1] : null;
+	private static function link_attribute( string $name ): bool {
+		return 'href' === strtolower( $name );
 	}
 
 	/**
@@ -2802,8 +2791,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * Rewrite link attributes and nested panel snapshots on every tag of an HTML
-	 * fragment. Other attributes and text stay as written.
+	 * Rewrite href on the links and areas of an HTML fragment, and nested panel
+	 * snapshots on any tag. Other attributes and text stay as written, and a fragment
+	 * holding raw or template text, such as a script or noscript, fails.
 	 *
 	 * @param string  $html HTML fragment.
 	 * @param Closure $resolve Link resolver.
@@ -2812,6 +2802,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	private static function rewrite_tag_links( string $html, Closure $resolve, bool &$failed ): ?string {
 		if ( ! str_contains( $html, '<' ) ) {
+			return null;
+		}
+		if ( 1 === preg_match( self::LITERAL_TEXT_CONTEXT, $html ) ) {
+			$failed = true;
 			return null;
 		}
 		$tags    = new class( $html ) extends WP_HTML_Tag_Processor {
@@ -2827,7 +2821,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		};
 		$changed = false;
 		while ( $tags->next_tag() ) {
+			$link = in_array( $tags->get_tag(), array( 'A', 'AREA' ), true );
 			foreach ( $tags->get_attribute_names_with_prefix( '' ) ?? array() as $name ) {
+				if ( ! in_array( $name, self::PANEL_SNAPSHOTS, true ) && ! ( $link && 'href' === $name ) ) {
+					continue;
+				}
 				$value = $tags->get_attribute( $name );
 				$value = is_string( $value ) ? self::rewrite_attribute_value( $name, $value, $resolve, $failed ) : null;
 				if ( null === $value ) {

@@ -77,6 +77,23 @@ function wc_get_page_id( $page ) {
 	return $GLOBALS['cart_page_id']; }
 $GLOBALS['cart_page_id'] = 88;
 
+// A child run for the memory limit check below: one menu after 3 MB of linked
+// paragraphs, rewritten with or without panel blocks once only the given headroom
+// is left under the memory limit.
+$memory_probe = getenv( 'SSI_PANEL_MEMORY_PROBE' );
+if ( is_string( $memory_probe ) && '' !== $memory_probe ) {
+	list( $probe_mode, $probe_headroom ) = explode( ':', $memory_probe );
+	$probe_state  = '{"html":"<a href=\\"/second/index.html\\">Menu</a>"}';
+	$probe_doc    = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 )
+		. '<!-- wp:example/authored-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $probe_state ) ) ) ) . ' -->'
+		. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $probe_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/authored-button -->';
+	$probe_names  = 'head' === $probe_mode ? array( 'example/authored-button' ) : array();
+	$probe_retain = str_repeat( 'x', max( 0, ini_parse_quantity( (string) ini_get( 'memory_limit' ) ) - memory_get_usage( true ) - (int) $probe_headroom ) );
+	$probe_out    = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $probe_doc, array( '/second' => '/second-page/' ), $probe_unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: $probe_names );
+	echo str_contains( $probe_out, '/second/index.html' ) === ( 'head' !== $probe_mode ) ? 'ok' : 'wrong', PHP_EOL;
+	exit( 0 );
+}
+
 $assert = static function ( $condition, $message ) {
 	if ( ! $condition ) {
 		fwrite( STDERR, "FAIL: $message\n" );
@@ -579,6 +596,29 @@ $unresolved    = array();
 $rejected_doc  = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => '{"html":"<a href=\"/second/index.html\">Menu</a><a href=\"/missing\">Missing</a>"}' ), array( 'name' => $existing_key, 'value' => '{"html":"<p>Panel</p>","id":9223372036854775808}' ) ) ), '<button ' . $panel_attr( '{"html":"<a href=\"/second/index.html\">Menu</a><a href=\"/missing\">Missing</a>"}' ) . ' ' . $existing_key . '="' . htmlspecialchars( '{"html":"<p>Panel</p>","id":9223372036854775808}', ENT_QUOTES, 'UTF-8' ) . '">Menu</button>' );
 $rejected_out  = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $rejected_doc, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
 $assert( $route_patterns( $rejected_doc, $panel_routes ) === $rejected_out && ! in_array( '/missing', $unresolved, true ), 'A block that keeps the route patterns\' output adds no unresolved target from its panel.' );
+// Block markup that is literal text, not live markup, keeps the route patterns' output.
+$literal_menu = $menu_for( (string) json_encode( array( 'html' => '<a href="/second/index.html">Menu</a>' ), JSON_UNESCAPED_SLASHES ) );
+foreach (
+	array(
+		'inside a noscript'         => '<noscript>' . $literal_menu . '</noscript>',
+		'after a plaintext'         => '<plaintext>' . $literal_menu,
+		'inside a quoted attribute' => "<div data-demo='" . $literal_menu . "'></div>",
+		'inside a template'         => '<template>' . $literal_menu . '</template>',
+	) as $context => $literal_doc
+) {
+	$assert( $route_patterns( $literal_doc, $panel_routes ) === $rewrite_panels( $literal_doc, $panel_routes ), 'Block markup ' . $context . ' keeps the route patterns\' output.' );
+}
+// A panel whose HTML holds a noscript keeps the route patterns' output.
+$noscript_doc = $menu_for( (string) json_encode( array( 'html' => '<noscript><a href="/second/index.html">Menu</a></noscript>' ), JSON_UNESCAPED_SLASHES ) );
+$assert( $route_patterns( $noscript_doc, $panel_routes ) === $rewrite_panels( $noscript_doc, $panel_routes ), 'A panel holding a noscript keeps the route patterns\' output.' );
+// Inside panel HTML only href on links and areas changes: action, data-href and
+// data-*url values, numeric ones included, stay as written.
+$unresolved = array();
+$narrow_out = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $menu_for( (string) json_encode( array( 'html' => '<a href="/second/index.html">Menu</a><button action="advance">Go</button><button data-href="123">Pick</button><form action="/second/index.html"></form><div data-url="/second/index.html"></div>' ), JSON_UNESCAPED_SLASHES ) ), $panel_routes + array( '/advance' => '/advance/', '/123' => '/record/' ), $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+foreach ( $panel_copies( $narrow_out )[ $panel_key ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+	$assert( '<a href="/second-page/">Menu</a><button action="advance">Go</button><button data-href="123">Pick</button><form action="/second/index.html"></form><div data-url="/second/index.html"></div>' === ( $decoded['html'] ?? null ), 'Only the link href changes in the ' . $copy . '.' );
+}
+$assert( array() === $unresolved, 'Attributes that stay as written add no unresolved target.' );
 // Memory: two hundred panels in a few MB stay close to the route patterns' own peak.
 $paragraph_fill = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 150 );
 $many_panels    = str_repeat( $menu_block . $paragraph_fill, 200 );
@@ -595,8 +635,8 @@ $head_peak     = memory_get_peak_usage() - $memory_before;
 $assert( ! str_contains( $panels_after, '/second/index.html' ), 'Every link in two hundred panels and the paragraphs around them is rewritten.' );
 $assert( $head_peak < $main_peak + strlen( $many_panels ), 'Two hundred panels in ' . round( strlen( $many_panels ) / 1048576, 1 ) . ' MB stay within one document size of the route patterns\' peak (' . round( $main_peak / 1048576, 1 ) . ' MB against ' . round( $head_peak / 1048576, 1 ) . ' MB).' );
 unset( $many_panels, $panels_after );
-// Memory: one menu after 3 MB of linked paragraphs holds the route patterns' output and
-// one spliced copy, with no slices of the whole document.
+// Memory: one menu after 3 MB of linked paragraphs is spliced into the route patterns'
+// output, with no slices of the whole document.
 $linked_page = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 ) . $menu_block;
 $route_patterns( $linked_page, $panel_routes );
 $rewrite_panels( $linked_page, $panel_routes );
@@ -611,6 +651,26 @@ $head_peak     = memory_get_peak_usage() - $memory_before;
 $assert( ! str_contains( $linked_after, '/second/index.html' ), 'One menu after 3 MB of linked paragraphs is rewritten with them.' );
 $assert( $head_peak < $main_peak + strlen( $linked_page ) * 0.8, 'One menu after ' . round( strlen( $linked_page ) / 1048576, 1 ) . ' MB stays within 80% of the document size of the route patterns\' peak (' . round( $main_peak / 1048576, 1 ) . ' MB against ' . round( $head_peak / 1048576, 1 ) . ' MB).' );
 unset( $linked_page, $linked_after );
+// Memory: under a memory limit, rewriting the menu as well as the links of that page
+// needs at most 1 MB more headroom than the route patterns alone, since it keeps only
+// their output and one spliced copy.
+$memory_run = static function ( string $mode, int $headroom ): bool {
+	$output = array();
+	exec( 'SSI_PANEL_MEMORY_PROBE=' . escapeshellarg( $mode . ':' . $headroom ) . ' ' . escapeshellarg( PHP_BINARY ) . ' -d memory_limit=64M ' . escapeshellarg( __FILE__ ) . ' 2>/dev/null', $output, $status );
+	return 0 === $status && array( 'ok' ) === $output;
+};
+$low  = 0;
+$high = 16 << 20;
+$assert( $memory_run( 'main', $high ), 'The route patterns rewrite 3 MB of linked paragraphs with 16 MB of headroom.' );
+while ( $high - $low > 128 << 10 ) {
+	$middle = intdiv( $low + $high, 2 );
+	if ( $memory_run( 'main', $middle ) ) {
+		$high = $middle;
+	} else {
+		$low = $middle;
+	}
+}
+$assert( $memory_run( 'head', $high + ( 1 << 20 ) ), 'One menu after 3 MB of linked paragraphs is rewritten within 1 MB of the ' . round( $high / 1048576, 2 ) . ' MB of headroom the route patterns need.' );
 // Memory: when the route patterns change nothing, one menu after 3 MB of plain
 // paragraphs costs one copy of the document, built without copied slices.
 $plain_page = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links, repeated for size.</p><!-- /wp:paragraph -->', 33000 ) . $menu_block;
