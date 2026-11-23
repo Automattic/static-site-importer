@@ -1774,7 +1774,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		// Date archives keep their source routes, which the runtime serves natively.
-		foreach ( array_keys( self::date_archive_routes( $state['plan'] ) ) as $source_route ) {
+		foreach ( array_keys( self::date_archive_routes( (array) ( $state['plan'] ?? array() ) ) ) as $source_route ) {
 			$routes[ $source_route ] = user_trailingslashit( $source_route );
 		}
 		$product_routes = array();
@@ -2010,7 +2010,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			return null;
 		};
-		$replace = static function ( array $matches ) use ( $resolve_route ): string {
+		$replace       = static function ( array $matches ) use ( $resolve_route ): string {
 			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
 			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
 			if ( ! is_string( $value ) ) {
@@ -2027,7 +2027,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			return $matches[1] . $reference . $matches[3];
 		};
-		$rewrite = static function ( string $text ) use ( $replace ): string {
+		$rewrite       = static function ( string $text ) use ( $replace ): string {
 			foreach ( self::ROUTE_PATTERNS as $pattern ) {
 				$text = preg_replace_callback( $pattern, $replace, $text ) ?? $text;
 			}
@@ -2119,7 +2119,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 */
 	private static function panel_slots( string $content, array $panel_blocks ): Generator {
 		$blocks = new WP_Block_Processor( $content );
-		$open   = array();
+		/** @var array<int,array{type:string,start:int,end:int|null,opener:array{int,int},spans:list<array{int,int}>}|null> $open */
+		$open = array();
 		while ( true ) {
 			$more  = $blocks->next_token();
 			$depth = 0;
@@ -2142,7 +2143,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 				$depth = WP_Block_Processor::CLOSER === $type ? $depth : $depth - 1;
 			}
-			while ( count( $open ) > $depth ) {
+			for ( $remaining = count( $open ); $remaining > $depth; --$remaining ) {
 				$frame = array_pop( $open );
 				if ( null !== $frame ) {
 					yield self::panel_slot( $content, $frame );
@@ -2278,7 +2279,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$raw               = substr( $content, $start, $length );
 			$editor            = str_contains( $raw, '\\\\' );
 			$text              = $value === $snapshots[ $value ] ? $raw : ( $cache[ ( $in_comment ? ( $editor ? 'e' : 'c' ) : 'm' ) . $value ] ??= ( $in_comment ? substr( self::block_attribute_json( (string) wp_json_encode( $snapshots[ $value ], self::PANEL_JSON_FLAGS ), $editor ), 1, -1 ) : self::escape_attribute( $snapshots[ $value ] ) ) );
-			if ( $text !== substr( $rewritten, $at, $size ) ) {
+			if ( substr( $rewritten, $at, $size ) !== $text ) {
 				$edits[] = array( $at, $size, $text );
 			}
 		}
@@ -2318,9 +2319,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private static function json_snapshot_values( string $json, int $base ): ?array {
 		$values   = array();
 		$mentions = array();
-		$stack    = array();
-		$length   = strlen( $json );
-		$at       = 0;
+		/** @var list<array<string,mixed>|null> $stack */
+		$stack  = array();
+		$length = strlen( $json );
+		$at     = 0;
 		while ( $at < $length ) {
 			$char = $json[ $at ];
 			$top  = count( $stack ) - 1;
@@ -2403,7 +2405,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::mentions_panel_snapshot( $html ) ) {
 			return array();
 		}
-		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
+		$tags   = new class( $html ) extends WP_HTML_Tag_Processor {
 			/** The span of an attribute as written, which set_attribute() records for replacement. */
 			public function attribute_span( string $name ): ?array {
 				if ( ! $this->set_attribute( $name, '' ) || ! isset( $this->lexical_updates[ $name ] ) ) {
@@ -2460,11 +2462,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'&gt;'   => '>',
 			'&amp;'  => '&',
 		);
-		$counted = 0;
+		$counted    = 0;
 		foreach ( array_keys( $references ) as $reference ) {
 			$counted += substr_count( $raw, $reference );
 		}
-		if ( $counted !== substr_count( $raw, '&' ) || strlen( $raw ) !== strcspn( $raw, "\0\r" ) ) {
+		if ( substr_count( $raw, '&' ) !== $counted || strlen( $raw ) !== strcspn( $raw, "\0\r" ) ) {
 			return null;
 		}
 
@@ -2709,7 +2711,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! str_contains( $html, '<' ) ) {
 			return null;
 		}
-		$tags = new class( $html ) extends WP_HTML_Tag_Processor {
+		$tags    = new class( $html ) extends WP_HTML_Tag_Processor {
 			/** Replace a value with plain attribute escaping, where set_attribute() would apply esc_url(). */
 			public function replace_value( string $name, string $escaped ): bool {
 				$key = strtolower( $name );
