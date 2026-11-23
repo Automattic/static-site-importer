@@ -28,6 +28,13 @@ if ( ! class_exists( 'Static_Site_Importer_Post_Source_Route_Runtime', false ) )
 			foreach ( (array) get_option( 'static_site_importer_post_routes', array() ) as $id => $route ) {
 				$exact[ '^' . preg_quote( ltrim( rawurldecode( $route ), '/' ), '#' ) . '/?$' ] = 'index.php?p=' . (int) $id;
 			}
+			// Declared native date archives answer their source route and its pages.
+			foreach ( (array) get_option( 'static_site_importer_date_archive_routes', array() ) as $route => $query ) {
+				$path  = preg_quote( trim( rawurldecode( (string) $route ), '/' ), '#' );
+				$query = 'index.php?' . http_build_query( array_map( 'intval', (array) $query ) );
+				$exact[ '^' . $path . '/page/?([0-9]{1,})/?$' ] = $query . '&paged=$matches[1]';
+				$exact[ '^' . $path . '/?$' ]                   = $query;
+			}
 			return $exact + $rules;
 		}
 
