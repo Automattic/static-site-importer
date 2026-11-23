@@ -2035,90 +2035,128 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		};
 
 		$rewritten = $rewrite( $content );
-		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route );
-		if ( array() === $edits ) {
+		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route, $unresolved, $fragments );
+		if ( array() === $edits[0] ) {
 			return $rewritten;
 		}
 		// The route patterns' output stays as it is; only the snapshot values of
-		// blocks the patterns left untouched around them are written again.
-		$pieces = array();
-		$at     = 0;
-		foreach ( $edits as list( $start, $length, $text ) ) {
-			$pieces[] = substr( $rewritten, $at, $start - $at );
-			$pieces[] = $text;
-			$at       = $start + $length;
+		// blocks the patterns left untouched are written again. The result is built
+		// in order from offsets, so it is the only copy beside the patterns' output.
+		$out = '';
+		$at  = 0;
+		foreach ( $edits[0] as $index => $start ) {
+			self::append_range( $out, $rewritten, $at, $start - $at );
+			$out .= $edits[2][ $index ];
+			$at   = $start + $edits[1][ $index ];
 		}
-		$pieces[] = substr( $rewritten, $at );
-		unset( $rewritten, $edits );
+		self::append_range( $out, $rewritten, $at, strlen( $rewritten ) - $at );
 
-		return implode( '', $pieces );
+		return $out;
+	}
+
+	/**
+	 * Append a range of a string in slices, so no large slice is copied at once.
+	 *
+	 * @param string $out String to append to.
+	 * @param string $from Source string.
+	 * @param int    $at Range offset.
+	 * @param int    $length Range length.
+	 */
+	private static function append_range( string &$out, string $from, int $at, int $length ): void {
+		for ( $done = 0; $done < $length; $done += 65536 ) {
+			$out .= substr( $from, $at + $done, min( 65536, $length - $done ) );
+		}
 	}
 
 	/**
 	 * Captured dialog panels keep HTML snapshots as JSON in data attributes, once in
 	 * the block comment and once on the saved tag, where the route patterns can only
 	 * patch the escaped text. For each block of one of the given Blocks Engine panel
-	 * types whose comment and saved markup hold the same valid snapshots, and whose
-	 * bytes around those values the route patterns left unchanged, each value in the
-	 * patterns' output is replaced with the snapshot rewritten from its decoded
-	 * structure. Any other block keeps the patterns' output.
+	 * types whose comment and saved markup hold the same valid snapshots, and which
+	 * the route patterns left byte for byte unchanged, each value in the patterns'
+	 * output is replaced with the snapshot rewritten from its decoded structure. Any
+	 * other block keeps the patterns' output, and the whole document keeps it when a
+	 * block delimiter is not live markup, such as text inside a textarea.
 	 *
-	 * @param string   $content Document markup.
-	 * @param string   $rewritten The same markup after the route patterns.
-	 * @param string[] $panel_blocks Exact names of the Blocks Engine panel block types.
-	 * @param Closure  $resolve Link resolver: (decoded value, attribute name) => reference or null.
-	 * @return array<int,array{int,int,string}> Replacements in the patterns' output, sorted by offset: offset, length, text.
+	 * @param string     $content Document markup.
+	 * @param string     $rewritten The same markup after the route patterns.
+	 * @param string[]   $panel_blocks Exact names of the Blocks Engine panel block types.
+	 * @param Closure    $resolve Link resolver: (decoded value, attribute name) => reference or null.
+	 * @param array|null $unresolved The resolver's unresolved targets, kept only for accepted snapshots.
+	 * @param array|null $fragments The resolver's unresolved fragments, kept only for accepted snapshots.
+	 * @return array{list<int>,list<int>,list<string>} Replacements in the patterns' output, sorted by offset: offsets, lengths and texts.
 	 */
-	private static function panel_snapshot_edits( string $content, string $rewritten, array $panel_blocks, Closure $resolve ): array {
+	private static function panel_snapshot_edits( string $content, string $rewritten, array $panel_blocks, Closure $resolve, ?array &$unresolved, ?array &$fragments ): array {
+		$none = array( array(), array(), array() );
 		if ( array() === $panel_blocks || ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! self::mentions_panel_snapshot( $content ) ) {
-			return array();
+			return $none;
 		}
 		$openers = '~<!--\s+wp:(?:' . implode( '|', array_map( static fn( string $name ): string => preg_quote( $name, '~' ), $panel_blocks ) ) . ')\s~';
 		if ( ! preg_match( $openers, $content ) ) {
-			return array();
+			return $none;
 		}
-		// Blocks are paired in the order they close; the patterns never add or
-		// remove a block delimiter of these types, or the pairing stops.
-		$before = self::panel_slots( $content, $panel_blocks );
-		$after  = self::panel_slots( $rewritten, $panel_blocks );
-		$edits  = array();
+		// Blocks are paired in the order they close. A pair is used only when both
+		// hold the same bytes, so a shifted pairing never moves one block's panel
+		// into another.
+		$before = self::panel_slots( $content, $panel_blocks, true );
+		$after  = self::panel_slots( $rewritten, $panel_blocks, false );
+		$starts = array();
+		$sizes  = array();
+		$texts  = array();
 		$sorted = true;
 		$cache  = array();
 		foreach ( $before as $slot ) {
-			if ( ! $after->valid() ) {
-				return array();
+			if ( false === $slot || ! $after->valid() || false === $after->current() ) {
+				return $none;
 			}
 			$other = $after->current();
 			$after->next();
 			if ( null === $slot || null === $other ) {
 				continue;
 			}
-			foreach ( self::panel_slot_edits( $content, $slot, $rewritten, $other, $resolve, $cache ) as $edit ) {
-				$sorted  = $sorted && ( array() === $edits || end( $edits )[0] < $edit[0] );
-				$edits[] = $edit;
+			foreach ( self::panel_slot_edits( $content, $slot, $rewritten, $other, $resolve, $cache, $unresolved, $fragments ) as $edit ) {
+				$sorted   = $sorted && ( array() === $starts || end( $starts ) < $edit[0] );
+				$starts[] = $edit[0];
+				$sizes[]  = $edit[1];
+				$texts[]  = $edit[2];
 			}
 		}
 		if ( $after->valid() ) {
-			return array();
+			return $none;
+		}
+		if ( array() !== $starts ) {
+			// Diagnostics come only from the snapshots that are written.
+			foreach ( $cache['accepted'] ?? array() as $value => $unused ) {
+				list( $value_unresolved, $value_fragments ) = $cache['diagnostics'][ $value ];
+				if ( is_array( $unresolved ) ) {
+					array_push( $unresolved, ...$value_unresolved );
+				}
+				if ( is_array( $fragments ) ) {
+					array_push( $fragments, ...$value_fragments );
+				}
+			}
 		}
 		if ( ! $sorted ) {
-			usort( $edits, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
+			array_multisort( $starts, $sizes, $texts );
 		}
 
-		return $edits;
+		return array( $starts, $sizes, $texts );
 	}
 
 	/**
-	 * Every block of the given types, in the order they close, with its span and the
-	 * snapshot values in its comment and own saved markup, or null for a block whose
-	 * snapshots cannot be read.
+	 * Every block of the given types, in the order they close, with its span and,
+	 * when read, the snapshot values in its comment and own saved markup; null for a
+	 * block whose snapshots cannot be read. It yields false and stops at a block
+	 * delimiter that is not a live HTML comment.
 	 *
 	 * @param string   $content Document markup.
 	 * @param string[] $panel_blocks Exact block type names.
-	 * @return Generator<int,array{type:string,start:int,end:int,values:array<int,array{int,int,string,bool}>}|null>
+	 * @param bool     $read Whether to read snapshot values.
+	 * @return Generator<int,array{type:string,start:int,end:int,values:array<int,array{int,int,string,bool}>}|null|false>
 	 */
-	private static function panel_slots( string $content, array $panel_blocks ): Generator {
+	private static function panel_slots( string $content, array $panel_blocks, bool $read ): Generator {
 		$blocks = new WP_Block_Processor( $content );
+		$live   = self::live_comments( $content );
 		/** @var array<int,array{type:string,start:int,end:int|null,opener:array{int,int},spans:list<array{int,int}>}|null> $open */
 		$open = array();
 		while ( true ) {
@@ -2137,6 +2175,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					}
 					continue;
 				}
+				if ( null !== $live && ! $live->comment_at( $span->start ) ) {
+					yield false;
+					return;
+				}
 				$type = $blocks->get_delimiter_type();
 				if ( WP_Block_Processor::CLOSER === $type && isset( $open[ $depth ] ) ) {
 					$open[ $depth ]['end'] = $span->start + $span->length;
@@ -2146,7 +2188,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			for ( $remaining = count( $open ); $remaining > $depth; --$remaining ) {
 				$frame = array_pop( $open );
 				if ( null !== $frame ) {
-					yield self::panel_slot( $content, $frame );
+					yield $read ? self::panel_slot( $content, $frame ) : ( null === $frame['end'] ? null : $frame );
 				}
 			}
 			if ( ! $more ) {
@@ -2170,6 +2212,36 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				);
 			}
 		}
+	}
+
+	/**
+	 * A reader that confirms block delimiters are live HTML comments, not text in a
+	 * textarea, title, script, style or other raw text element, or inside another
+	 * comment; or null when the markup holds none of these, so every delimiter is live.
+	 *
+	 * @param string $content Document markup.
+	 */
+	private static function live_comments( string $content ): ?WP_HTML_Tag_Processor {
+		if ( 1 !== preg_match( '~<(?:textarea|title|script|style|xmp|plaintext|noscript|noembed|noframes|iframe|svg|math)\b|<!--(?!\s+/?wp:)|<!\[|<\?~i', $content ) ) {
+			return null;
+		}
+		return new class( $content ) extends WP_HTML_Tag_Processor {
+			/** Offset of the last comment read, or -1. */
+			private int $comment_start = -1;
+
+			/** Whether a live comment starts at an offset, reading forward to it. */
+			public function comment_at( int $at ): bool {
+				while ( $this->comment_start < $at ) {
+					if ( ! $this->next_token() ) {
+						return false;
+					}
+					if ( '#comment' === $this->get_token_type() && $this->set_bookmark( 'comment' ) ) {
+						$this->comment_start = $this->bookmarks['comment']->start;
+					}
+				}
+				return $this->comment_start === $at;
+			}
+		};
 	}
 
 	/**
@@ -2221,33 +2293,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	/**
 	 * Replacements in the route patterns' output for one panel block, or none when
 	 * its snapshot copies are not all valid and identical, when the patterns changed
-	 * any byte of the block outside those values, or when no link in them changes.
+	 * any byte of the block, or when no link in them changes.
 	 *
-	 * @param string  $content Document markup.
-	 * @param array   $before The block in the document, from panel_slot().
-	 * @param string  $rewritten The route patterns' output.
-	 * @param array   $after The same block in that output.
-	 * @param Closure $resolve Link resolver.
-	 * @param array   $cache Rewritten snapshots and value texts already written, by value.
+	 * @param string     $content Document markup.
+	 * @param array      $before The block in the document, from panel_slot().
+	 * @param string     $rewritten The route patterns' output.
+	 * @param array      $after The block paired with it in that output.
+	 * @param Closure    $resolve Link resolver.
+	 * @param array      $cache Rewritten snapshots, their diagnostics and value texts, by value.
+	 * @param array|null $unresolved The resolver's unresolved targets.
+	 * @param array|null $fragments The resolver's unresolved fragments.
 	 * @return array<int,array{int,int,string}>
 	 */
-	private static function panel_slot_edits( string $content, array $before, string $rewritten, array $after, Closure $resolve, array &$cache ): array {
-		if ( $before['type'] !== $after['type'] || count( $before['values'] ) !== count( $after['values'] ) ) {
+	private static function panel_slot_edits( string $content, array $before, string $rewritten, array $after, Closure $resolve, array &$cache, ?array &$unresolved, ?array &$fragments ): array {
+		$length = $before['end'] - $before['start'];
+		if ( $before['type'] !== $after['type'] || $after['end'] - $after['start'] !== $length || ! self::same_bytes( $content, $before['start'], $rewritten, $after['start'], $length ) ) {
 			return array();
 		}
-		$from = $before['start'];
-		$to   = $after['start'];
-		foreach ( $before['values'] as $index => $value ) {
-			$other = $after['values'][ $index ];
-			if ( $value[3] !== $other[3] || $value[0] - $from !== $other[0] - $to || ! self::same_bytes( $content, $from, $rewritten, $to, $value[0] - $from ) ) {
-				return array();
-			}
-			$from = $value[0] + $value[1];
-			$to   = $other[0] + $other[1];
-		}
-		if ( $before['end'] - $from !== $after['end'] - $to || ! self::same_bytes( $content, $from, $rewritten, $to, $before['end'] - $from ) ) {
-			return array();
-		}
+		$shift = $after['start'] - $before['start'];
 		$comment = array();
 		$saved   = array();
 		foreach ( $before['values'] as $value ) {
@@ -2264,24 +2327,35 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$snapshots = array();
 		foreach ( array_unique( $comment ) as $value ) {
-			$snapshot = $cache[ 's' . $value ] ??= self::rewrite_snapshot( $value, $resolve );
-			if ( null === $snapshot ) {
+			if ( ! array_key_exists( $value, $cache['snapshots'] ?? array() ) ) {
+				$unresolved_at                 = is_array( $unresolved ) ? count( $unresolved ) : 0;
+				$fragments_at                  = is_array( $fragments ) ? count( $fragments ) : 0;
+				$cache['snapshots'][ $value ]   = self::rewrite_snapshot( $value, $resolve );
+				$cache['diagnostics'][ $value ] = array(
+					is_array( $unresolved ) ? array_splice( $unresolved, $unresolved_at ) : array(),
+					is_array( $fragments ) ? array_splice( $fragments, $fragments_at ) : array(),
+				);
+			}
+			if ( null === $cache['snapshots'][ $value ] ) {
 				return array();
 			}
-			$snapshots[ $value ] = $snapshot;
+			$snapshots[ $value ] = $cache['snapshots'][ $value ];
 		}
 		if ( array_keys( $snapshots ) === array_values( $snapshots ) ) {
 			return array();
 		}
 		$edits = array();
-		foreach ( $before['values'] as $index => list( $start, $length, $value, $in_comment ) ) {
-			list( $at, $size ) = $after['values'][ $index ];
-			$raw               = substr( $content, $start, $length );
-			$editor            = str_contains( $raw, '\\\\' );
-			$text              = $value === $snapshots[ $value ] ? $raw : ( $cache[ ( $in_comment ? ( $editor ? 'e' : 'c' ) : 'm' ) . $value ] ??= ( $in_comment ? substr( self::block_attribute_json( (string) wp_json_encode( $snapshots[ $value ], self::PANEL_JSON_FLAGS ), $editor ), 1, -1 ) : self::escape_attribute( $snapshots[ $value ] ) ) );
-			if ( substr( $rewritten, $at, $size ) !== $text ) {
-				$edits[] = array( $at, $size, $text );
+		foreach ( $before['values'] as list( $start, $size, $value, $in_comment ) ) {
+			if ( $value === $snapshots[ $value ] ) {
+				continue;
 			}
+			$raw     = substr( $content, $start, $size );
+			$editor  = str_contains( $raw, '\\\\' );
+			$key     = ( $in_comment ? ( $editor ? 'editor' : 'comment' ) : 'markup' );
+			$text    = $cache[ $key ][ $value ] ??= ( $in_comment ? substr( self::block_attribute_json( (string) wp_json_encode( $snapshots[ $value ], self::PANEL_JSON_FLAGS ), $editor ), 1, -1 ) : self::escape_attribute( $snapshots[ $value ] ) );
+			$edits[] = array( $start + $shift, $size, $text );
+
+			$cache['accepted'][ $value ] = true;
 		}
 
 		return $edits;
@@ -2630,14 +2704,22 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * The part of an attribute name the route patterns match as a link, which the
-	 * resolver reads: href or action (also namespaced or prefixed, like xlink:href)
-	 * and data-*url, or null for any other attribute.
+	 * The part of a URL-bearing attribute name the route patterns match, which the
+	 * resolver reads: href, xlink:href and data-href as href, a form's action, and
+	 * data-*url (also namespaced, like vendor:data-url); null for any other name,
+	 * such as data-turbo-action.
 	 *
 	 * @param string $name Attribute name.
 	 */
 	private static function link_attribute( string $name ): ?string {
-		return 1 === preg_match( '/(?:^|\W)(href|action|data-[a-z0-9_-]*url)$/i', $name, $match ) ? $match[1] : null;
+		$name = strtolower( $name );
+		if ( in_array( $name, array( 'href', 'xlink:href', 'data-href' ), true ) ) {
+			return 'href';
+		}
+		if ( 'action' === $name ) {
+			return 'action';
+		}
+		return 1 === preg_match( '/^(?:[a-z][a-z0-9_.-]*:)?(data-[a-z0-9_-]*url)$/', $name, $match ) ? $match[1] : null;
 	}
 
 	/**
