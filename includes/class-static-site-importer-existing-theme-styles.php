@@ -492,6 +492,9 @@ final class Static_Site_Importer_Existing_Theme_Styles {
 				'source_path' => $page['source_path'],
 			);
 		}
+		if ( ! Static_Site_Importer_Site_Plan_Persistence::serve_post_source_routes( $state ) ) {
+			return Static_Site_Importer_Site_Plan_Persistence::failed_receipt( $state, 'post_source_routes_not_applied' );
+		}
 		$links = Static_Site_Importer_Site_Plan_Persistence::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $links ) ) {
 			return Static_Site_Importer_Site_Plan_Persistence::failed_receipt_from_error( $state, $links );

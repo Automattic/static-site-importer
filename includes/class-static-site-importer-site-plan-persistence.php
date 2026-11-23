@@ -3853,10 +3853,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			unset( $routes[ $id ] );
-			if ( 'post' !== get_post_type( $id ) ) {
+			if ( 'post' !== get_post_type( $id ) && empty( $page['serve_source_route'] ) ) {
 				continue;
 			}
-			$route = self::normalized_route_path( '/' . Static_Site_Importer_Source_Route::public_source_route( $page['source_path'] ) );
+			// An owner-kept synthetic parent has no source document, only its route.
+			$route = self::normalized_route_path( empty( $page['synthetic'] ) ? '/' . Static_Site_Importer_Source_Route::public_source_route( $page['source_path'] ) : (string) $page['route']['path'] );
 			if ( '' !== $route ) {
 				$routes[ $id ] = $route;
 			}

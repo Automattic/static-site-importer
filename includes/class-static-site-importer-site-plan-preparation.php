@@ -1179,6 +1179,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// No source document backs this parent: the source serves nothing at
 				// its URL, so it stays an editable draft unless the owner took it over.
 				$page['materialized_post_status'] = self::synthetic_parent_status( $page, $path );
+				// A draft would only be a placeholder: serve descendants by source route.
+				if ( 'draft' === $page['materialized_post_status'] ) {
+					$page['skip_materialization'] = true;
+				}
 				continue;
 			}
 			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );
@@ -1191,6 +1195,28 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// published descendants, but the exact parent URL belongs to the alias.
 			$page['materialized_post_status'] = 'draft';
 			$page['alias_target_source_path'] = $targets[ $path ];
+		}
+		unset( $page );
+		self::flatten_skipped_synthetic_descendants( $state['resolved']['pages'] );
+	}
+
+	/** Detach captured descendants from skipped parents; their exact source routes serve them. */
+	private static function flatten_skipped_synthetic_descendants( array &$pages ): void {
+		$parents = array_column( $pages, 'parent_source_path', 'source_path' );
+		$skipped = array();
+		foreach ( $pages as $page ) {
+			if ( ! empty( $page['synthetic'] ) && ! empty( $page['skip_materialization'] ) ) {
+				$skipped[ $page['source_path'] ] = true;
+			}
+		}
+		foreach ( $pages as &$page ) {
+			for ( $parent = $page['parent_source_path']; '' !== $parent; $parent = $parents[ $parent ] ?? '' ) {
+				if ( isset( $skipped[ $parent ] ) ) {
+					$page['parent_source_path'] = '';
+					$page['serve_source_route'] = true;
+					break;
+				}
+			}
 		}
 		unset( $page );
 	}
