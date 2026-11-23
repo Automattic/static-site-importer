@@ -79,8 +79,8 @@ $GLOBALS['cart_page_id'] = 88;
 
 // A child run for the memory limit checks below: a 3 MB page, rewritten with or
 // without panel blocks once only the given headroom is left under the memory limit.
-// The page is one menu after linked paragraphs, two menus 3 MB apart, or one menu
-// whose snapshot copies hold 1.5 MB of text each.
+// The page is one menu after linked paragraphs, two menus 3 MB apart, one menu
+// whose snapshot copies hold 1.5 MB of text each, or two distinct 250 KB menus.
 $memory_probe = getenv( 'SSI_PANEL_MEMORY_PROBE' );
 if ( is_string( $memory_probe ) && '' !== $memory_probe ) {
 	list( $probe_mode, $probe_page, $probe_headroom ) = explode( ':', $memory_probe );
@@ -92,6 +92,7 @@ if ( is_string( $memory_probe ) && '' !== $memory_probe ) {
 	$probe_doc  = match ( $probe_page ) {
 		'two'   => $probe_menu( 'Menu' ) . str_repeat( 'Ordinary copy without links. ', 103000 ) . $probe_menu( 'Menu' ),
 		'big'   => $probe_menu( str_repeat( 'x', 1500000 ) ),
+		'pair'  => $probe_menu( 'Menu' . str_repeat( 'x', 250000 ) . '1' ) . $probe_menu( 'Menu' . str_repeat( 'x', 250000 ) . '2' ),
 		default => str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 ) . $probe_menu( 'Menu' ),
 	};
 	unset( $probe_menu );
@@ -537,10 +538,11 @@ $scan        = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence:
 $large_state = (string) json_encode( array( 'html' => '<a href="/second/index.html">Second</a><pre>' . str_repeat( 'C:\\Floors\\"quoted"\\ ', 60000 ) . '</pre>' ), JSON_UNESCAPED_SLASHES );
 $limit       = ini_get( 'pcre.backtrack_limit' );
 ini_set( 'pcre.backtrack_limit', '1000' );
-$large_found = $scan->invoke( null, $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $large_state ) ) ) ), 0 );
+$large_json  = $encode_block( array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $large_state ) ) ) );
+$large_found = $scan->invoke( null, $large_json, 0, strlen( $large_json ) - 1 );
 ini_set( 'pcre.backtrack_limit', (string) $limit );
-$assert( is_array( $large_found ) && 1 === count( $large_found ) && $large_state === $large_found[0][2], 'A large snapshot is read without depending on the PCRE backtrack limit.' );
-unset( $large_state, $large_found );
+$assert( is_array( $large_found ) && 1 === count( $large_found ) && hash( 'sha256', $large_state ) === $large_found[0][2], 'A large snapshot is read without depending on the PCRE backtrack limit.' );
+unset( $large_state, $large_json, $large_found );
 // The route patterns' output is kept whole, so an earlier rewrite that leaves text
 // looking like an escaped attribute opener matches as it does on main.
 $menu_for   = static fn( string $state ): string => $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $state ) ) ), '<button ' . $panel_attr( $state ) . '>Menu</button>' );
@@ -642,6 +644,35 @@ $assert( $route_patterns( $oversized_doc, $panel_routes ) === $rewrite_panels( $
 // A panel holding svg markup without CDATA is still rewritten.
 $svg_doc = $rewrite_panels( $menu_for( (string) json_encode( array( 'html' => '<svg viewBox="0 0 1 1"><path d="M0 0"></path></svg><a href="/second/index.html">Menu</a>' ), JSON_UNESCAPED_SLASHES ) ), $panel_routes );
 $assert( '<svg viewBox="0 0 1 1"><path d="M0 0"></path></svg><a href="/second-page/">Menu</a>' === ( $panel_copies( $svg_doc )[ $panel_key ]['saved markup']['html'] ?? null ), 'A panel holding svg markup is still rewritten.' );
+// An area is a link only in HTML content: one inside svg stays as written and adds
+// no unresolved target, while an svg link and an area in a foreignObject change.
+foreach (
+	array(
+		'<svg><area href="/second/index.html"/></svg>' => '<svg><area href="/second/index.html"/></svg>',
+		'<svg><area href="/missing"/></svg><a href="/second/index.html">Menu</a>' => '<svg><area href="/missing"/></svg><a href="/second-page/">Menu</a>',
+		'<svg><a href="/second/index.html"><text>Menu</text></a></svg>' => '<svg><a href="/second-page/"><text>Menu</text></a></svg>',
+		'<svg><foreignObject><area href="/second/index.html"></foreignObject></svg>' => '<svg><foreignObject><area href="/second-page/"></foreignObject></svg>',
+	) as $svg_html => $svg_expected
+) {
+	$unresolved = array();
+	$svg_out    = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $menu_for( (string) json_encode( array( 'html' => $svg_html ), JSON_UNESCAPED_SLASHES ) ), $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+	foreach ( $panel_copies( $svg_out )[ $panel_key ] ?? array( 'missing' => null ) as $copy => $decoded ) {
+		$assert( ( $decoded['html'] ?? null ) === $svg_expected, 'The ' . $copy . ' of ' . $svg_html . ' is written as ' . $svg_expected . '.' );
+	}
+	$assert( ! in_array( '/missing', $unresolved, true ), 'An area inside svg adds no unresolved target.' );
+}
+// A saved copy beyond the 512 KiB scan window leaves the whole block as the route
+// patterns write it, so the copies are never paired.
+$panel_state = (string) json_encode( array( 'html' => '<a href="/second/index.html">Menu</a>' ), JSON_UNESCAPED_SLASHES );
+$saved_copy  = '<button ' . $panel_attr( $panel_state ) . '>Menu</button>';
+$window_doc  = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ) ) ), $saved_copy . str_repeat( ' ', 524288 - strlen( $saved_copy ) ) . $saved_copy );
+$assert( $route_patterns( $window_doc, $panel_routes ) === $rewrite_panels( $window_doc, $panel_routes ), 'A saved copy at 512 KiB keeps the route patterns\' output for every copy.' );
+// Only the attribute paths the panel blocks write are snapshots: a name/value pair
+// elsewhere in the block attributes leaves the block as the route patterns write it.
+foreach ( array( 'nested' => array( 'example' => array( 'name' => $panel_key, 'value' => $panel_state ) ), 'top-level' => array( 'name' => $panel_key, 'value' => $panel_state ) ) as $pair_place => $pair_attributes ) {
+	$pair_doc = $panel_block( 'authored-button', $pair_attributes, $saved_copy );
+	$assert( $route_patterns( $pair_doc, $panel_routes ) === $rewrite_panels( $pair_doc, $panel_routes ), 'A ' . $pair_place . ' name/value pair outside sourceAttributes keeps the route patterns\' output.' );
+}
 // Inside panel HTML only href on links and areas changes: action, data-href and
 // data-*url values, numeric ones included, stay as written.
 $unresolved = array();
@@ -685,9 +716,9 @@ unset( $linked_page, $linked_after );
 // Memory: under a memory limit, rewriting the menu as well as the links of that page
 // needs at most 1 MB more headroom than the route patterns alone, since it keeps only
 // their output and one spliced copy.
-$memory_run = static function ( string $mode, int $headroom, string $page = 'linked' ): ?int {
+$memory_run = static function ( string $mode, int $headroom, string $page = 'linked', string $temp = '' ): ?int {
 	$output = array();
-	exec( 'SSI_PANEL_MEMORY_PROBE=' . escapeshellarg( $mode . ':' . $page . ':' . $headroom ) . ' ' . escapeshellarg( PHP_BINARY ) . ' -d memory_limit=64M ' . escapeshellarg( __FILE__ ) . ' 2>/dev/null', $output, $status );
+	exec( 'SSI_PANEL_MEMORY_PROBE=' . escapeshellarg( $mode . ':' . $page . ':' . $headroom ) . ' ' . escapeshellarg( PHP_BINARY ) . ' -d memory_limit=64M -d display_errors=1 -d error_reporting=-1' . ( '' === $temp ? '' : ' -d sys_temp_dir=' . escapeshellarg( $temp ) ) . ' ' . escapeshellarg( __FILE__ ) . ' 2>/dev/null', $output, $status );
 	return 0 === $status && 1 === count( $output ) && str_starts_with( $output[0], '1 ' ) ? (int) substr( $output[0], 2 ) : null;
 };
 $low  = 0;
@@ -702,6 +733,7 @@ while ( $high - $low > 128 << 10 ) {
 	}
 }
 $assert( null !== $memory_run( 'head', $high + ( 1 << 20 ) ), 'One menu after 3 MB of linked paragraphs is rewritten within 1 MB of the ' . round( $high / 1048576, 2 ) . ' MB of headroom the route patterns need.' );
+$assert( null !== $memory_run( 'head', $high + ( 1 << 20 ), 'linked', sys_get_temp_dir() . '/ssi-missing-temp-' . getmypid() ), 'The same page is rewritten within that headroom, without a warning, when no temporary file can be written.' );
 // Memory: two menus 3 MB apart are written into one copy of the page, and a menu
 // whose snapshot copies hold 1.5 MB each keeps the route patterns' output without
 // copying them, so either page needs no more than one page copy of headroom.
@@ -709,6 +741,9 @@ foreach ( array( 'two' => 'Two menus 3 MB apart are rewritten', 'big' => 'A menu
 	$page_bytes = (int) $memory_run( 'main', 16 << 20, $memory_page );
 	$assert( $page_bytes > 0 && null !== $memory_run( 'head', $page_bytes + ( 1 << 20 ), $memory_page ), $memory_label . ' with one page copy and 1 MB of headroom.' );
 }
+// Memory: only replacement lengths are kept between blocks, so two distinct 250 KB
+// menus fit in 3 MB of headroom; keeping their decoded and rewritten copies needs 4 MB.
+$assert( null !== $memory_run( 'head', 3 << 20, 'pair' ), 'Two distinct 250 KB menus are rewritten within 3 MB of headroom.' );
 // Memory: when the route patterns change nothing, one menu after 3 MB of plain
 // paragraphs costs one copy of the document, built without copied slices.
 $plain_page = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links, repeated for size.</p><!-- /wp:paragraph -->', 33000 ) . $menu_block;

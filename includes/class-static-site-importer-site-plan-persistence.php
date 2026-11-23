@@ -55,6 +55,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private const LITERAL_TEXT_CONTEXT             = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math)\b|<!\[CDATA\[~i';
 	private const LITERAL_PANEL_HTML               = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math|select|base)\b|<!\[CDATA\[~i';
 	private const PANEL_SNAPSHOT_BYTES             = 262144;
+	private const SVG_BREAKOUT_TAGS                = array( 'B', 'BIG', 'BLOCKQUOTE', 'BODY', 'BR', 'CENTER', 'CODE', 'DD', 'DIV', 'DL', 'DT', 'EM', 'EMBED', 'FONT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HR', 'I', 'IMG', 'LI', 'LISTING', 'MENU', 'META', 'NOBR', 'OL', 'P', 'PRE', 'RUBY', 'S', 'SMALL', 'SPAN', 'STRONG', 'STRIKE', 'SUB', 'SUP', 'TABLE', 'TT', 'U', 'UL', 'VAR' );
 	private const PANEL_JSON_FLAGS                 = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION;
 	// Blocks Engine generators whose blocks carry captured panels.
 	public const PANEL_BLOCK_TYPES = array( 'authored-button', 'layout-shell', 'accessible-link' );
@@ -2040,71 +2041,100 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$rewritten = $rewrite( $content );
 		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route, $unresolved, $fragments );
 
-		return array() === $edits[0] ? $rewritten : self::apply_panel_edits( $rewritten, $edits );
+		return array() === $edits[0] ? $rewritten : self::apply_panel_edits( $content, $rewritten, $edits, $resolve_route, $unresolved, $fragments );
 	}
 
 	/**
-	 * The route patterns' output with the snapshot edits applied, built once. The
-	 * pieces go to a file-backed temporary stream and are read back in one exact
-	 * allocation, so the result costs one copy of the page; when no temporary file
-	 * can be written, the result is appended in 64 KiB slices instead.
+	 * The route patterns' output with the snapshot edits applied, written byte by
+	 * byte into one string allocated at its final length. Each replacement is made
+	 * again from the document as it is written, so only one is held at a time and
+	 * the result costs one copy of the page.
 	 *
-	 * @param string                                  $rewritten The route patterns' output.
-	 * @param array{list<int>,list<int>,list<string>} $edits Offsets, lengths and texts, sorted by offset.
+	 * @param string                                                          $content Document markup.
+	 * @param string                                                          $rewritten The route patterns' output.
+	 * @param array{list<int>,list<int>,list<int>,list<string>,list<int>,int} $edits From panel_snapshot_edits().
+	 * @param Closure                                                         $resolve Link resolver.
+	 * @param array<int,string>|null                                          $unresolved The resolver's unresolved targets, already recorded.
+	 * @param array<int,mixed>|null                                           $fragments The resolver's unresolved fragments, already recorded.
 	 */
-	private static function apply_panel_edits( string $rewritten, array $edits ): string {
-		$length = strlen( $rewritten );
-		foreach ( $edits[2] as $index => $text ) {
-			$length += strlen( $text ) - $edits[1][ $index ];
-		}
-		$buffer = fopen( 'php://temp/maxmemory:0', 'w+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- A private temporary stream.
-		if ( false !== $buffer ) {
-			$write   = static fn( string $piece ): bool => strlen( $piece ) === fwrite( $buffer, $piece ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- A private temporary stream.
-			$written = self::write_panel_pieces( $rewritten, $edits, $write ) && rewind( $buffer );
-			$out     = $written ? stream_get_contents( $buffer ) : false;
-			fclose( $buffer ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- A private temporary stream.
-			if ( is_string( $out ) && strlen( $out ) === $length ) {
-				return $out;
+	private static function apply_panel_edits( string $content, string $rewritten, array $edits, Closure $resolve, ?array &$unresolved, ?array &$fragments ): string {
+		list( $starts, $sizes, $sources, $kinds, $ids, $length ) = $edits;
+		unset( $edits );
+		$out      = str_repeat( ' ', $length );
+		$to       = 0;
+		$from     = 0;
+		$last     = -1;
+		$json     = null;
+		$starts[] = strlen( $rewritten );
+		foreach ( $starts as $edit => $until ) {
+			if ( $to + $until - $from > $length ) {
+				return $rewritten;
 			}
-			unset( $out );
-		}
-		$out = '';
-		self::write_panel_pieces(
-			$rewritten,
-			$edits,
-			static function ( string $piece ) use ( &$out ): bool {
-				$out .= $piece;
-				return true;
+			for ( ; $from < $until; ++$from ) {
+				$out[ $to++ ] = $rewritten[ $from ];
 			}
+			if ( ! isset( $kinds[ $edit ] ) ) {
+				break;
+			}
+			list( $size, $at, $kind ) = array( $sizes[ $edit ], $sources[ $edit ], $kinds[ $edit ] );
+			if ( $ids[ $edit ] !== $last ) {
+				$json  = null;
+				$value = self::panel_value( $content, $at, $size, 'markup' !== $kind );
+				$json  = is_string( $value ) ? self::rewrite_panel_value( $value, $resolve, $unresolved, $fragments )[0] : null;
+				$last  = $ids[ $edit ];
+				unset( $value );
+			}
+			$text        = is_string( $json ) ? self::panel_text( $json, $kind ) : '';
+			$text_length = strlen( $text );
+			if ( null === $json || $to + $text_length > $length ) {
+				return $rewritten;
+			}
+			for ( $index = 0; $index < $text_length; ++$index ) {
+				$out[ $to++ ] = $text[ $index ];
+			}
+			unset( $text );
+			$from = $until + $size;
+		}
+
+		return $to === $length ? $out : $rewritten;
+	}
+
+	/**
+	 * A snapshot rewritten from its decoded structure, as rewrite_snapshot() gives
+	 * it, with the resolver diagnostics it added, which are taken off the lists.
+	 *
+	 * @param string                 $value Snapshot JSON.
+	 * @param Closure                $resolve Link resolver.
+	 * @param array<int,string>|null $unresolved The resolver's unresolved targets.
+	 * @param array<int,mixed>|null  $fragments The resolver's unresolved fragments.
+	 * @return array{string|null,array{array<int,string>,array<int,mixed>}}
+	 */
+	private static function rewrite_panel_value( string $value, Closure $resolve, ?array &$unresolved, ?array &$fragments ): array {
+		$unresolved_at = is_array( $unresolved ) ? count( $unresolved ) : 0;
+		$fragments_at  = is_array( $fragments ) ? count( $fragments ) : 0;
+		$json          = self::rewrite_snapshot( $value, $resolve );
+
+		return array(
+			$json,
+			array(
+				is_array( $unresolved ) ? array_splice( $unresolved, $unresolved_at ) : array(),
+				is_array( $fragments ) ? array_splice( $fragments, $fragments_at ) : array(),
+			),
 		);
-
-		return $out;
 	}
 
 	/**
-	 * Pass the route patterns' output with the edits applied, in order, to a writer:
-	 * unchanged text in slices of at most 64 KiB, and each replacement text.
+	 * A rewritten snapshot encoded for one kind of copy: block comment JSON, block
+	 * comment JSON as the block editor writes it, or a saved attribute value.
 	 *
-	 * @param string                                  $rewritten The route patterns' output.
-	 * @param array{list<int>,list<int>,list<string>} $edits Offsets, lengths and texts, sorted by offset.
-	 * @param Closure                                 $write Writer: (piece) => whether it was written.
+	 * @param string $json Rewritten snapshot JSON.
+	 * @param string $kind 'comment', 'editor' or 'markup'.
 	 */
-	private static function write_panel_pieces( string $rewritten, array $edits, Closure $write ): bool {
-		$at = 0;
-		foreach ( array_merge( $edits[0], array( strlen( $rewritten ) ) ) as $index => $until ) {
-			for ( ; $at < $until; $at += 65536 ) {
-				if ( ! $write( substr( $rewritten, $at, min( 65536, $until - $at ) ) ) ) {
-					return false;
-				}
-			}
-			if ( isset( $edits[2][ $index ] ) ) {
-				if ( ! $write( $edits[2][ $index ] ) ) {
-					return false;
-				}
-				$at = $until + $edits[1][ $index ];
-			}
+	private static function panel_text( string $json, string $kind ): string {
+		if ( 'markup' === $kind ) {
+			return self::escape_attribute( $json );
 		}
-		return true;
+		return substr( self::block_attribute_json( (string) wp_json_encode( $json, self::PANEL_JSON_FLAGS ), 'editor' === $kind ), 1, -1 );
 	}
 
 	/**
@@ -2123,11 +2153,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param Closure                $resolve Link resolver: (decoded value, attribute name) => reference or null.
 	 * @param array<int,string>|null $unresolved The resolver's unresolved targets, kept only for accepted snapshots.
 	 * @param array|null             $fragments The resolver's unresolved fragments, kept only for accepted snapshots.
-	 * @return array{list<int>,list<int>,list<string>} Replacements in the patterns' output, sorted by offset: offsets, lengths and texts.
+	 * @return array{list<int>,list<int>,list<int>,list<string>,list<int>,int} Replacements sorted by offset, as lists of the offset in the patterns' output, length, offset in the document, kind of copy and value id, then the length of the output with them applied.
 	 */
 	private static function panel_snapshot_edits( string $content, string $rewritten, array $panel_blocks, Closure $resolve, ?array &$unresolved, ?array &$fragments ): array {
-		$none = array( array(), array(), array() );
-		if ( array() === $panel_blocks || ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! self::mentions_panel_snapshot( $content ) ) {
+		$none = array( array(), array(), array(), array(), array(), 0 );
+		if ( array() === $panel_blocks || ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! class_exists( 'WP_HTML_Decoder' ) || ! self::mentions_panel_snapshot( $content ) ) {
 			return $none;
 		}
 		$openers = '~<!--\s+wp:(?:' . implode( '|', array_map( static fn( string $name ): string => preg_quote( $name, '~' ), $panel_blocks ) ) . ')\s~';
@@ -2137,13 +2167,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		// Blocks are paired in the order they close. A pair is used only when both
 		// hold the same bytes, so a shifted pairing never moves one block's panel
 		// into another.
-		$before = self::panel_slots( $content, $panel_blocks, true );
-		$after  = self::panel_slots( $rewritten, $panel_blocks, false );
-		$starts = array();
-		$sizes  = array();
-		$texts  = array();
-		$sorted = true;
-		$cache  = array();
+		$before   = self::panel_slots( $content, $panel_blocks, true );
+		$after    = self::panel_slots( $rewritten, $panel_blocks, false );
+		$edits    = $none;
+		$edits[5] = strlen( $rewritten );
+		$sorted   = true;
+		$cache    = array();
 		foreach ( $before as $slot ) {
 			if ( false === $slot || ! $after->valid() || false === $after->current() ) {
 				return $none;
@@ -2153,21 +2182,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( null === $slot || null === $other ) {
 				continue;
 			}
-			foreach ( self::panel_slot_edits( $content, $slot, $rewritten, $other, $resolve, $cache, $unresolved, $fragments ) as $edit ) {
-				$sorted   = $sorted && ( array() === $starts || end( $starts ) < $edit[0] );
-				$starts[] = $edit[0];
-				$sizes[]  = $edit[1];
-				$texts[]  = $edit[2];
+			foreach ( self::panel_slot_edits( $content, $slot, $rewritten, $other, $resolve, $cache, $unresolved, $fragments ) as list( $start, $size, $source, $kind, $id, $text_length ) ) {
+				$sorted     = $sorted && ( array() === $edits[0] || end( $edits[0] ) < $start );
+				$edits[0][] = $start;
+				$edits[1][] = $size;
+				$edits[2][] = $source;
+				$edits[3][] = $kind;
+				$edits[4][] = $id;
+				$edits[5]  += $text_length - $size;
 			}
 		}
 		if ( $after->valid() ) {
 			return $none;
 		}
-		if ( array() !== $starts ) {
-			// Diagnostics come only from the snapshots that are written.
-			foreach ( $cache['accepted'] ?? array() as $value => $unused ) {
+		// Diagnostics come only from the snapshots that are written.
+		foreach ( $cache as $entry ) {
+			if ( $entry['accepted'] ) {
 				/** @var array{array<int,string>,array<int,mixed>} $diagnostics */
-				$diagnostics                                = $cache['diagnostics'][ $value ];
+				$diagnostics                                = $entry['diagnostics'];
 				list( $value_unresolved, $value_fragments ) = $diagnostics;
 				if ( is_array( $unresolved ) ) {
 					array_push( $unresolved, ...$value_unresolved );
@@ -2178,10 +2210,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		if ( ! $sorted ) {
-			array_multisort( $starts, $sizes, $texts );
+			array_multisort( $edits[0], $edits[1], $edits[2], $edits[3], $edits[4] );
 		}
 
-		return array( $starts, $sizes, $texts );
+		return $edits;
 	}
 
 	/**
@@ -2312,8 +2344,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * One block's snapshot values, comment copies flagged true, sorted by offset, or
-	 * null when they cannot be read or the block is not closed.
+	 * One block's snapshot copies, comment copies flagged true, sorted by offset, or
+	 * null when they cannot be read or the block is not closed. Each copy keeps the
+	 * hash of its decoded value, which panel_value() reads again when needed.
 	 *
 	 * @param string $content Document markup.
 	 * @param array  $frame Block frame from panel_slots().
@@ -2324,34 +2357,30 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return null;
 		}
 		list( $start, $length ) = $frame['opener'];
-		// Larger snapshots keep the route patterns' output rather than be copied.
+		// Larger snapshots and markup keep the route patterns' output rather than be copied.
 		if ( $length > self::PANEL_SNAPSHOT_BYTES ) {
 			return null;
 		}
-		$delimiter = substr( $content, $start, $length );
-		$open      = strpos( $delimiter, '{' );
-		$close     = strrpos( $delimiter, '}' );
-		if ( ! self::mentions_panel_snapshot( $delimiter ) || false === $open || false === $close || $close < $open ) {
+		$open  = strpos( $content, '{', $start );
+		$close = strrpos( $content, '}', $start + $length - 1 - strlen( $content ) );
+		if ( false === $open || false === $close || $close < $open || $open >= $start + $length ) {
 			return null;
 		}
-		$comment = self::json_snapshot_values( substr( $delimiter, $open, $close - $open + 1 ), $start + $open );
+		$comment = self::json_snapshot_values( $content, $open, $close );
 		if ( null === $comment || array() === $comment ) {
 			return null;
 		}
 		$values = array();
-		foreach ( $comment as list( $at, $size, $value ) ) {
-			$values[] = array( $at, $size, $value, true );
+		foreach ( $comment as list( $at, $size, $hash ) ) {
+			$values[] = array( $at, $size, $hash, true );
 		}
-		// Saved snapshots sit on the block's opening tags, so only the start of a long
-		// span is read; a value beyond it leaves the copies unequal, and the block
-		// keeps the route patterns' output.
 		foreach ( $frame['spans'] as list( $at, $size ) ) {
-			$markup = self::markup_snapshot_values( substr( $content, $at, min( $size, 2 * self::PANEL_SNAPSHOT_BYTES ) ), $at );
+			$markup = $size > 2 * self::PANEL_SNAPSHOT_BYTES ? null : self::markup_snapshot_values( substr( $content, $at, $size ), $at );
 			if ( null === $markup ) {
 				return null;
 			}
-			foreach ( $markup as list( $value_at, $value_size, $value ) ) {
-				$values[] = array( $value_at, $value_size, $value, false );
+			foreach ( $markup as list( $value_at, $value_size, $hash ) ) {
+				$values[] = array( $value_at, $value_size, $hash, false );
 			}
 		}
 		usort( $values, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
@@ -2367,29 +2396,31 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	/**
 	 * Replacements in the route patterns' output for one panel block, or none when
 	 * its snapshot copies are not all valid and identical, when the patterns changed
-	 * any byte of the block, or when no link in them changes.
+	 * any byte of the block, or when no link in them changes. Only the length of
+	 * each replacement is kept; apply_panel_edits() makes it again as it writes.
 	 *
 	 * @param string                 $content Document markup.
 	 * @param array                  $before The block in the document, from panel_slot().
 	 * @param string                 $rewritten The route patterns' output.
 	 * @param array                  $after The block paired with it in that output.
 	 * @param Closure                $resolve Link resolver.
-	 * @param array                  $cache Rewritten snapshots, their diagnostics and value texts, by value.
+	 * @param array                  $cache By value hash: id, outcome, diagnostics, replacement lengths and whether one is written.
 	 * @param array<int,string>|null $unresolved The resolver's unresolved targets.
 	 * @param array|null             $fragments The resolver's unresolved fragments.
-	 * @return array<int,array{int,int,string}>
+	 * @return list<array{int,int,int,string,int,int}> Offset in the patterns' output, length, offset in the document, kind of copy, value id and replacement length.
 	 */
 	private static function panel_slot_edits( string $content, array $before, string $rewritten, array $after, Closure $resolve, array &$cache, ?array &$unresolved, ?array &$fragments ): array {
 		$length = $before['end'] - $before['start'];
 		if ( $before['type'] !== $after['type'] || $after['end'] - $after['start'] !== $length || ! self::same_bytes( $content, $before['start'], $rewritten, $after['start'], $length ) ) {
 			return array();
 		}
-		$shift   = $after['start'] - $before['start'];
 		$comment = array();
 		$saved   = array();
+		$copies  = array();
 		foreach ( $before['values'] as $value ) {
 			if ( $value[3] ) {
-				$comment[] = $value[2];
+				$comment[]           = $value[2];
+				$copies[ $value[2] ] = $value;
 			} else {
 				$saved[] = $value[2];
 			}
@@ -2399,40 +2430,65 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( $comment !== $saved ) {
 			return array();
 		}
-		$snapshots = array();
-		foreach ( array_unique( $comment ) as $value ) {
-			if ( ! array_key_exists( $value, $cache['snapshots'] ?? array() ) ) {
-				$unresolved_at                  = is_array( $unresolved ) ? count( $unresolved ) : 0;
-				$fragments_at                   = is_array( $fragments ) ? count( $fragments ) : 0;
-				$cache['snapshots'][ $value ]   = self::rewrite_snapshot( $value, $resolve );
-				$cache['diagnostics'][ $value ] = array(
-					is_array( $unresolved ) ? array_splice( $unresolved, $unresolved_at ) : array(),
-					is_array( $fragments ) ? array_splice( $fragments, $fragments_at ) : array(),
+		$changes = false;
+		foreach ( $copies as $key => list( $at, $size ) ) {
+			if ( ! isset( $cache[ $key ] ) ) {
+				$value                      = (string) self::panel_value( $content, $at, $size, true );
+				list( $json, $diagnostics ) = self::rewrite_panel_value( $value, $resolve, $unresolved, $fragments );
+				$cache[ $key ]              = array(
+					'id'          => count( $cache ),
+					'changed'     => null === $json ? null : $json !== $value,
+					'diagnostics' => $diagnostics,
+					'lengths'     => array(),
+					'accepted'    => false,
 				);
+				unset( $value );
+				foreach ( $cache[ $key ]['changed'] ? array( 'comment', 'editor', 'markup' ) : array() as $kind ) {
+					$cache[ $key ]['lengths'][ $kind ] = strlen( self::panel_text( (string) $json, $kind ) );
+				}
+				unset( $json );
 			}
-			if ( null === $cache['snapshots'][ $value ] ) {
+			if ( null === $cache[ $key ]['changed'] ) {
 				return array();
 			}
-			$snapshots[ $value ] = $cache['snapshots'][ $value ];
+			$changes = $changes || $cache[ $key ]['changed'];
 		}
-		if ( array_keys( $snapshots ) === array_values( $snapshots ) ) {
+		if ( ! $changes ) {
 			return array();
 		}
+		$shift = $after['start'] - $before['start'];
 		$edits = array();
-		foreach ( $before['values'] as list( $start, $size, $value, $in_comment ) ) {
-			if ( $value === $snapshots[ $value ] ) {
+		foreach ( $before['values'] as list( $start, $size, $key, $in_comment ) ) {
+			if ( ! $cache[ $key ]['changed'] ) {
 				continue;
 			}
-			$raw     = substr( $content, $start, $size );
-			$editor  = str_contains( $raw, '\\\\' );
-			$key     = ( $in_comment ? ( $editor ? 'editor' : 'comment' ) : 'markup' );
-			$text    = $cache[ $key ][ $value ] ??= ( $in_comment ? substr( self::block_attribute_json( (string) wp_json_encode( $snapshots[ $value ], self::PANEL_JSON_FLAGS ), $editor ), 1, -1 ) : self::escape_attribute( $snapshots[ $value ] ) );
-			$edits[] = array( $start + $shift, $size, $text );
+			$kind    = $in_comment ? ( str_contains( substr( $content, $start, $size ), '\\\\' ) ? 'editor' : 'comment' ) : 'markup';
+			$edits[] = array( $start + $shift, $size, $start, $kind, $cache[ $key ]['id'], $cache[ $key ]['lengths'][ $kind ] );
 
-			$cache['accepted'][ $value ] = true;
+			$cache[ $key ]['accepted'] = true;
 		}
 
 		return $edits;
+	}
+
+	/**
+	 * The decoded value of one snapshot copy: the bytes between the quotes of a JSON
+	 * string in the block comment, or of an attribute value in saved markup.
+	 *
+	 * @param string $content Document markup.
+	 * @param int    $at Offset of the value bytes.
+	 * @param int    $size Length of the value bytes.
+	 * @param bool   $in_comment Whether the copy is in the block comment.
+	 */
+	private static function panel_value( string $content, int $at, int $size, bool $in_comment ): ?string {
+		if ( $in_comment ) {
+			$value = json_decode( substr( $content, $at - 1, $size + 2 ) );
+		} else {
+			$raw   = substr( $content, $at, $size );
+			$value = self::decode_escaped_attribute( $raw ) ?? WP_HTML_Decoder::decode_attribute( $raw );
+		}
+
+		return is_string( $value ) ? $value : null;
 	}
 
 	/**
@@ -2455,49 +2511,50 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * Snapshot strings in block attribute JSON: values keyed by a snapshot name, and
-	 * values of name/value entries naming one, with their raw offsets in the document.
-	 * A snapshot name anywhere else, such as inside an HTML field, leaves the copies
-	 * ambiguous. The scan is linear, without regular expressions.
+	 * Snapshot strings in block attribute JSON, at the paths the panel block schemas
+	 * write them: name/value entries in a `sourceAttributes` list, and values keyed
+	 * by a snapshot name in a `sourceAttributes` object or in the `attributes` of a
+	 * wrapper or content part. A snapshot name anywhere else, such as in another
+	 * object or inside an HTML field, leaves the copies ambiguous. The scan is
+	 * linear, without regular expressions on the JSON text.
 	 *
-	 * @param string $json Attribute JSON text.
-	 * @param int    $base Offset of the JSON text in the document.
-	 * @return array<int,array{int,int,string}>|null Offset, length and decoded value of each, or null for invalid or ambiguous JSON.
+	 * @param string $content Document markup.
+	 * @param int    $from Offset of the JSON text's first byte.
+	 * @param int    $to Offset of its last byte.
+	 * @return array<int,array{int,int,string}>|null Offset, length and decoded value hash of each, or null for invalid or ambiguous JSON.
 	 */
-	private static function json_snapshot_values( string $json, int $base ): ?array {
+	private static function json_snapshot_values( string $content, int $from, int $to ): ?array {
 		$values   = array();
 		$mentions = array();
-		/** @var list<array<string,mixed>|null> $stack */
-		$stack  = array();
-		$length = strlen( $json );
-		$at     = 0;
-		while ( $at < $length ) {
-			$char = $json[ $at ];
+		/** @var list<array{path:string,key:string|null,members:array<string,array{int,int,string,bool}>}|array{path:string}> $stack */
+		$stack = array();
+		$at    = $from;
+		while ( $at <= $to ) {
+			$char = $content[ $at ];
 			$top  = count( $stack ) - 1;
 			if ( '"' === $char ) {
 				$end = $at + 1;
 				while ( true ) {
-					$end += strcspn( $json, '"\\', $end );
-					if ( $end >= $length ) {
+					$end += strcspn( $content, '"\\', $end, max( 0, $to + 1 - $end ) );
+					if ( $end > $to ) {
 						return null;
 					}
-					if ( '\\' !== $json[ $end ] ) {
+					if ( '\\' !== $content[ $end ] ) {
 						break;
 					}
 					$end += 2;
 				}
-				$token = substr( $json, $at, $end - $at + 1 );
 				$start = $at;
 				$at    = $end + 1;
 				if ( $top < 0 ) {
 					continue;
 				}
-				$string = json_decode( $token );
-				if ( ! is_string( $string ) ) {
+				$string = self::panel_value( $content, $start + 1, $end - $start - 1, true );
+				if ( null === $string ) {
 					return null;
 				}
 				$named = in_array( strtolower( $string ), self::PANEL_SNAPSHOTS, true );
-				if ( ! is_array( $stack[ $top ] ) ) {
+				if ( ! array_key_exists( 'key', $stack[ $top ] ) ) {
 					if ( self::mentions_panel_snapshot( $string ) ) {
 						return null;
 					}
@@ -2507,32 +2564,38 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						return null;
 					}
 				} else {
-					$stack[ $top ]['members'][ $stack[ $top ]['key'] ] = array( $base + $start + 1, strlen( $token ) - 2, $string );
-					if ( ! ( $named && 'name' === $stack[ $top ]['key'] ) && self::mentions_panel_snapshot( $string ) ) {
-						$mentions[] = $base + $start + 1;
+					$key                              = $stack[ $top ]['key'];
+					$stack[ $top ]['members'][ $key ] = array( $start + 1, $end - $start - 1, hash( 'sha256', $string ), $named );
+					if ( ! ( $named && 'name' === $key ) && self::mentions_panel_snapshot( $string ) ) {
+						$mentions[] = $start + 1;
 					}
 				}
+				unset( $string );
 				continue;
 			}
 			++$at;
 			if ( '{' === $char || '[' === $char ) {
+				$path    = $top < 0 ? '' : $stack[ $top ]['path'] . '/' . ( array_key_exists( 'key', $stack[ $top ] ) ? (string) $stack[ $top ]['key'] : '#' );
 				$stack[] = '{' === $char ? array(
+					'path'    => $path,
 					'key'     => null,
 					'members' => array(),
-				) : null;
+				) : array( 'path' => $path );
 			} elseif ( '}' === $char || ']' === $char ) {
 				$frame = array_pop( $stack );
-				if ( is_array( $frame ) ) {
-					foreach ( $frame['members'] as $key => $member ) {
-						if ( in_array( strtolower( (string) $key ), self::PANEL_SNAPSHOTS, true ) ) {
-							$values[] = $member;
+				$keyed = 1 === preg_match( '~^/(?:sourceAttributes|(?:wrappers|labelWrappers)/#/attributes|contentParts/#(?:/parts/#)*+/attributes)$~', (string) ( $frame['path'] ?? '' ) );
+				foreach ( $frame['members'] ?? array() as $key => $member ) {
+					$entry = 'name' === $key && $member[3];
+					if ( $entry && '/sourceAttributes/#' === $frame['path'] && isset( $frame['members']['value'] ) ) {
+						$values[] = array_slice( $frame['members']['value'], 0, 3 );
+					} elseif ( $entry || in_array( strtolower( (string) $key ), self::PANEL_SNAPSHOTS, true ) ) {
+						if ( $entry || ! $keyed ) {
+							return null;
 						}
-					}
-					if ( isset( $frame['members']['name'], $frame['members']['value'] ) && in_array( strtolower( $frame['members']['name'][2] ), self::PANEL_SNAPSHOTS, true ) ) {
-						$values[] = $frame['members']['value'];
+						$values[] = array_slice( $member, 0, 3 );
 					}
 				}
-			} elseif ( ',' === $char && $top >= 0 && is_array( $stack[ $top ] ) ) {
+			} elseif ( ',' === $char && $top >= 0 && array_key_exists( 'key', $stack[ $top ] ) ) {
 				$stack[ $top ]['key'] = null;
 			}
 		}
@@ -2547,7 +2610,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 *
 	 * @param string $html HTML fragment.
 	 * @param int    $base Offset of the fragment in the document.
-	 * @return array<int,array{int,int,string}>|null Offset, length and decoded value of each, or null when one cannot be read.
+	 * @return array<int,array{int,int,string}>|null Offset, length and decoded value hash of each, or null when one cannot be read.
 	 */
 	private static function markup_snapshot_values( string $html, int $base ): ?array {
 		if ( ! self::mentions_panel_snapshot( $html ) ) {
@@ -2575,18 +2638,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return null;
 				}
 				// Only the bytes between the quotes are replaced; `name = "…"` keeps its spacing.
-				$written = substr( $html, $span[0], $span[1] );
-				$equals  = strpos( $written, '=' );
-				$quote   = false === $equals ? false : $equals + 1 + strspn( $written, " \t\n\r\f", $equals + 1 );
-				if ( false === $quote || ! in_array( $written[ $quote ] ?? '', array( '"', "'" ), true ) || $written[ $quote ] !== $written[ $span[1] - 1 ] || $quote === $span[1] - 1 ) {
+				$last   = $span[0] + $span[1] - 1;
+				$equals = strpos( $html, '=', $span[0] );
+				$quote  = false === $equals || $equals > $last ? false : $equals + 1 + strspn( $html, " \t\n\r\f", $equals + 1 );
+				if ( false === $quote || $quote >= $last || ! in_array( $html[ $quote ], array( '"', "'" ), true ) || $html[ $quote ] !== $html[ $last ] ) {
 					return null;
 				}
-				$raw   = substr( $written, $quote + 1, $span[1] - $quote - 2 );
-				$value = self::decode_escaped_attribute( $raw ) ?? $tags->get_attribute( $name );
-				if ( ! is_string( $value ) ) {
-					return null;
-				}
-				$values[] = array( $base + $span[0] + $quote + 1, strlen( $raw ), $value );
+				$value    = (string) self::panel_value( $html, $quote + 1, $last - $quote - 1, false );
+				$values[] = array( $base + $quote + 1, $last - $quote - 1, hash( 'sha256', $value ) );
+				unset( $value );
 			}
 		}
 
@@ -2721,8 +2781,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$changed     = true;
 			}
 		}
-		foreach ( get_object_vars( $node ) as $key => $value ) {
-			$key = (string) $key;
+		foreach ( array_keys( get_object_vars( $node ) ) as $key ) {
+			$key   = (string) $key;
+			$value = $node->$key;
 			if ( $entry && ( 'name' === $key || 'value' === $key ) ) {
 				continue;
 			}
@@ -2876,8 +2937,30 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		};
 		$changed = false;
-		while ( $tags->next_tag() ) {
-			$link = in_array( $tags->get_tag(), array( 'A', 'AREA' ), true );
+		// Elements open from the first svg inward, each with whether its content is
+		// HTML; an area is a link only in HTML content, and svg markup that HTML
+		// parsing would leave early fails.
+		$foreign = array();
+		while ( $tags->next_tag( array( 'tag_closers' => 'visit' ) ) ) {
+			$tag  = (string) $tags->get_tag();
+			$html = array() === $foreign || end( $foreign )[1];
+			if ( $tags->is_tag_closer() ) {
+				if ( array() !== $foreign && end( $foreign )[0] === $tag ) {
+					array_pop( $foreign );
+				} elseif ( ! $html || in_array( $tag, array_column( $foreign, 0 ), true ) ) {
+					$failed = true;
+					return null;
+				}
+				continue;
+			}
+			if ( ! $html && in_array( $tag, self::SVG_BREAKOUT_TAGS, true ) ) {
+				$failed = true;
+				return null;
+			}
+			if ( ( ! $html || 'SVG' === $tag ) && ! $tags->has_self_closing_flag() ) {
+				$foreign[] = array( $tag, ! $html && in_array( $tag, array( 'FOREIGNOBJECT', 'DESC', 'TITLE' ), true ) );
+			}
+			$link = 'A' === $tag || ( 'AREA' === $tag && $html );
 			foreach ( $tags->get_attribute_names_with_prefix( '' ) ?? array() as $name ) {
 				if ( ! in_array( $name, self::PANEL_SNAPSHOTS, true ) && ! ( $link && 'href' === $name ) ) {
 					continue;
