@@ -55,6 +55,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private const LITERAL_TEXT_CONTEXT             = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math)\b|<!\[CDATA\[~i';
 	private const LITERAL_PANEL_HTML               = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math|select|base)\b|<!\[CDATA\[~i';
 	private const PANEL_SNAPSHOT_BYTES             = 262144;
+	private const PANEL_KINDS                      = array( 'comment', 'editor', 'markup' );
+	private const PANEL_EDIT_BYTES                 = 17;
 	private const SVG_BREAKOUT_TAGS                = array( 'B', 'BIG', 'BLOCKQUOTE', 'BODY', 'BR', 'CENTER', 'CODE', 'DD', 'DIV', 'DL', 'DT', 'EM', 'EMBED', 'FONT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HR', 'I', 'IMG', 'LI', 'LISTING', 'MENU', 'META', 'NOBR', 'OL', 'P', 'PRE', 'RUBY', 'S', 'SMALL', 'SPAN', 'STRONG', 'STRIKE', 'SUB', 'SUP', 'TABLE', 'TT', 'U', 'UL', 'VAR' );
 	private const PANEL_JSON_FLAGS                 = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION;
 	// Blocks Engine generators whose blocks carry captured panels.
@@ -2041,53 +2043,75 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$rewritten = $rewrite( $content );
 		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route, $unresolved, $fragments );
 
-		return array() === $edits[0] ? $rewritten : self::apply_panel_edits( $content, $rewritten, $edits, $resolve_route, $unresolved, $fragments );
+		$output = '' === $edits[0] ? null : self::apply_panel_edits( $content, $rewritten, $edits, $resolve_route, $unresolved, $fragments );
+		if ( null === $output ) {
+			return $rewritten;
+		}
+		// Diagnostics come only from the snapshots that are written.
+		foreach ( $edits[3] as list( $value_unresolved, $value_fragments ) ) {
+			if ( is_array( $unresolved ) ) {
+				array_push( $unresolved, ...$value_unresolved );
+			}
+			if ( is_array( $fragments ) ) {
+				array_push( $fragments, ...$value_fragments );
+			}
+		}
+
+		return $output;
 	}
 
 	/**
 	 * The route patterns' output with the snapshot edits applied, written byte by
 	 * byte into one string allocated at its final length. Each replacement is made
 	 * again from the document as it is written, so only one is held at a time and
-	 * the result costs one copy of the page.
+	 * the result costs one copy of the page. Null when any replacement differs from
+	 * the one paired, such as when a link filter answers differently the second
+	 * time, so the caller keeps the patterns' output.
 	 *
-	 * @param string                                                          $content Document markup.
-	 * @param string                                                          $rewritten The route patterns' output.
-	 * @param array{list<int>,list<int>,list<int>,list<string>,list<int>,int} $edits From panel_snapshot_edits().
-	 * @param Closure                                                         $resolve Link resolver.
-	 * @param array<int,string>|null                                          $unresolved The resolver's unresolved targets, already recorded.
-	 * @param array<int,mixed>|null                                           $fragments The resolver's unresolved fragments, already recorded.
+	 * @param string                                                                              $content Document markup.
+	 * @param string                                                                              $rewritten The route patterns' output.
+	 * @param array{string,int,array<int,string>,list<array{array<int,string>,array<int,mixed>}>} $edits From panel_snapshot_edits().
+	 * @param Closure                                                                             $resolve Link resolver.
+	 * @param array<int,string>|null                                                              $unresolved The resolver's unresolved targets.
+	 * @param array<int,mixed>|null                                                               $fragments The resolver's unresolved fragments.
 	 */
-	private static function apply_panel_edits( string $content, string $rewritten, array $edits, Closure $resolve, ?array &$unresolved, ?array &$fragments ): string {
-		list( $starts, $sizes, $sources, $kinds, $ids, $length ) = $edits;
+	private static function apply_panel_edits( string $content, string $rewritten, array $edits, Closure $resolve, ?array &$unresolved, ?array &$fragments ): ?string {
+		list( $records, $length, $digests ) = $edits;
 		unset( $edits );
-		$out      = str_repeat( ' ', $length );
-		$to       = 0;
-		$from     = 0;
-		$last     = -1;
-		$json     = null;
-		$starts[] = strlen( $rewritten );
-		foreach ( $starts as $edit => $until ) {
+		$count = intdiv( strlen( $records ), self::PANEL_EDIT_BYTES );
+		$out   = str_repeat( ' ', $length );
+		$to    = 0;
+		$from  = 0;
+		$last  = -1;
+		$json  = null;
+		for ( $edit = 0; $edit <= $count; ++$edit ) {
+			$record = $edit < $count ? unpack( 'Nstart/Nsize/Nsource/Nid/Ckind', $records, self::PANEL_EDIT_BYTES * $edit ) : false;
+			$until  = false === $record ? strlen( $rewritten ) : (int) $record['start'];
 			if ( $to + $until - $from > $length ) {
-				return $rewritten;
+				return null;
 			}
 			for ( ; $from < $until; ++$from ) {
 				$out[ $to++ ] = $rewritten[ $from ];
 			}
-			if ( ! isset( $kinds[ $edit ] ) ) {
+			if ( false === $record ) {
 				break;
 			}
-			list( $size, $at, $kind ) = array( $sizes[ $edit ], $sources[ $edit ], $kinds[ $edit ] );
-			if ( $ids[ $edit ] !== $last ) {
+			$size = (int) $record['size'];
+			$kind = self::PANEL_KINDS[ (int) $record['kind'] ];
+			if ( $record['id'] !== $last ) {
 				$json  = null;
-				$value = self::panel_value( $content, $at, $size, 'markup' !== $kind );
+				$value = self::panel_value( $content, (int) $record['source'], $size, 'markup' !== $kind );
 				$json  = is_string( $value ) ? self::rewrite_panel_value( $value, $resolve, $unresolved, $fragments )[0] : null;
-				$last  = $ids[ $edit ];
+				$last  = $record['id'];
 				unset( $value );
+				if ( ! is_string( $json ) || hash( 'xxh128', $json, true ) !== ( $digests[ $last ] ?? null ) ) {
+					return null;
+				}
 			}
-			$text        = is_string( $json ) ? self::panel_text( $json, $kind ) : '';
+			$text        = self::panel_text( (string) $json, $kind );
 			$text_length = strlen( $text );
-			if ( null === $json || $to + $text_length > $length ) {
-				return $rewritten;
+			if ( $to + $text_length > $length ) {
+				return null;
 			}
 			for ( $index = 0; $index < $text_length; ++$index ) {
 				$out[ $to++ ] = $text[ $index ];
@@ -2096,7 +2120,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$from = $until + $size;
 		}
 
-		return $to === $length ? $out : $rewritten;
+		return $to === $length ? $out : null;
 	}
 
 	/**
@@ -2151,13 +2175,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param string                 $rewritten The same markup after the route patterns.
 	 * @param string[]               $panel_blocks Exact names of the Blocks Engine panel block types.
 	 * @param Closure                $resolve Link resolver: (decoded value, attribute name) => reference or null.
-	 * @param array<int,string>|null $unresolved The resolver's unresolved targets, kept only for accepted snapshots.
-	 * @param array|null             $fragments The resolver's unresolved fragments, kept only for accepted snapshots.
-	 * @return array{list<int>,list<int>,list<int>,list<string>,list<int>,int} Replacements sorted by offset, as lists of the offset in the patterns' output, length, offset in the document, kind of copy and value id, then the length of the output with them applied.
+	 * @param array<int,string>|null $unresolved The resolver's unresolved targets, left as they are.
+	 * @param array|null             $fragments The resolver's unresolved fragments, left as they are.
+	 * @return array{string,int,array<int,string>,list<array{array<int,string>,array<int,mixed>}>} Replacements sorted by offset as packed records of the offset in the patterns' output, length, offset in the document, value id and kind of copy; the length of the output with them applied; the digest of each replacement by value id; and the diagnostics of the snapshots replaced.
 	 */
 	private static function panel_snapshot_edits( string $content, string $rewritten, array $panel_blocks, Closure $resolve, ?array &$unresolved, ?array &$fragments ): array {
-		$none = array( array(), array(), array(), array(), array(), 0 );
-		if ( array() === $panel_blocks || ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! class_exists( 'WP_HTML_Decoder' ) || ! self::mentions_panel_snapshot( $content ) ) {
+		$none = array( '', 0, array(), array() );
+		if ( array() === $panel_blocks || strlen( $rewritten ) > 0xFFFFFFFF || ! class_exists( 'WP_Block_Processor' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) || ! class_exists( 'WP_HTML_Decoder' ) || ! self::mentions_panel_snapshot( $content ) ) {
 			return $none;
 		}
 		$openers = '~<!--\s+wp:(?:' . implode( '|', array_map( static fn( string $name ): string => preg_quote( $name, '~' ), $panel_blocks ) ) . ')\s~';
@@ -2167,12 +2191,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		// Blocks are paired in the order they close. A pair is used only when both
 		// hold the same bytes, so a shifted pairing never moves one block's panel
 		// into another.
-		$before   = self::panel_slots( $content, $panel_blocks, true );
-		$after    = self::panel_slots( $rewritten, $panel_blocks, false );
-		$edits    = $none;
-		$edits[5] = strlen( $rewritten );
-		$sorted   = true;
-		$cache    = array();
+		$before  = self::panel_slots( $content, $panel_blocks, true );
+		$after   = self::panel_slots( $rewritten, $panel_blocks, false );
+		$records = '';
+		$length  = strlen( $rewritten );
+		$sorted  = true;
+		$last    = -1;
+		$cache   = array();
 		foreach ( $before as $slot ) {
 			if ( false === $slot || ! $after->valid() || false === $after->current() ) {
 				return $none;
@@ -2183,37 +2208,33 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue;
 			}
 			foreach ( self::panel_slot_edits( $content, $slot, $rewritten, $other, $resolve, $cache, $unresolved, $fragments ) as list( $start, $size, $source, $kind, $id, $text_length ) ) {
-				$sorted     = $sorted && ( array() === $edits[0] || end( $edits[0] ) < $start );
-				$edits[0][] = $start;
-				$edits[1][] = $size;
-				$edits[2][] = $source;
-				$edits[3][] = $kind;
-				$edits[4][] = $id;
-				$edits[5]  += $text_length - $size;
+				$sorted   = $sorted && $last < $start;
+				$last     = $start;
+				$records .= pack( 'N4C', $start, $size, $source, $id, array_search( $kind, self::PANEL_KINDS, true ) );
+				$length  += $text_length - $size;
 			}
 		}
 		if ( $after->valid() ) {
 			return $none;
 		}
-		// Diagnostics come only from the snapshots that are written.
+		$digests     = array();
+		$diagnostics = array();
 		foreach ( $cache as $entry ) {
 			if ( $entry['accepted'] ) {
-				/** @var array{array<int,string>,array<int,mixed>} $diagnostics */
-				$diagnostics                                = $entry['diagnostics'];
-				list( $value_unresolved, $value_fragments ) = $diagnostics;
-				if ( is_array( $unresolved ) ) {
-					array_push( $unresolved, ...$value_unresolved );
-				}
-				if ( is_array( $fragments ) ) {
-					array_push( $fragments, ...$value_fragments );
-				}
+				$digests[ $entry['id'] ] = $entry['digest'];
+				$diagnostics[]           = $entry['diagnostics'];
 			}
 		}
+		unset( $cache );
 		if ( ! $sorted ) {
-			array_multisort( $edits[0], $edits[1], $edits[2], $edits[3], $edits[4] );
+			// Records begin with their big-endian offset, so they sort as strings.
+			$split = str_split( $records, self::PANEL_EDIT_BYTES );
+			sort( $split, SORT_STRING );
+			$records = implode( '', $split );
+			unset( $split );
 		}
 
-		return $edits;
+		return array( $records, $length, $digests, $diagnostics );
 	}
 
 	/**
@@ -2404,7 +2425,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	 * @param string                 $rewritten The route patterns' output.
 	 * @param array                  $after The block paired with it in that output.
 	 * @param Closure                $resolve Link resolver.
-	 * @param array                  $cache By value hash: id, outcome, diagnostics, replacement lengths and whether one is written.
+	 * @param array                  $cache By value hash: id, outcome, diagnostics, replacement lengths, whether one is written and its digest.
 	 * @param array<int,string>|null $unresolved The resolver's unresolved targets.
 	 * @param array|null             $fragments The resolver's unresolved fragments.
 	 * @return list<array{int,int,int,string,int,int}> Offset in the patterns' output, length, offset in the document, kind of copy, value id and replacement length.
@@ -2441,6 +2462,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					'diagnostics' => $diagnostics,
 					'lengths'     => array(),
 					'accepted'    => false,
+					'digest'      => is_string( $json ) ? hash( 'xxh128', $json, true ) : '',
 				);
 				unset( $value );
 				foreach ( $cache[ $key ]['changed'] ? array( 'comment', 'editor', 'markup' ) : array() as $kind ) {
@@ -2583,7 +2605,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				) : array( 'path' => $path );
 			} elseif ( '}' === $char || ']' === $char ) {
 				$frame = array_pop( $stack );
-				$keyed = 1 === preg_match( '~^/(?:sourceAttributes|(?:wrappers|labelWrappers)/#/attributes|contentParts/#(?:/parts/#)*+/attributes)$~', (string) ( $frame['path'] ?? '' ) );
+				$keyed = 1 === preg_match( '~^/(?:sourceAttributes|contentAttributes|(?:wrappers|labelWrappers)/#/attributes|contentParts/#(?:/parts/#)*+/attributes)$~', (string) ( $frame['path'] ?? '' ) );
 				foreach ( $frame['members'] ?? array() as $key => $member ) {
 					$entry = 'name' === $key && $member[3];
 					if ( $entry && '/sourceAttributes/#' === $frame['path'] && isset( $frame['members']['value'] ) ) {

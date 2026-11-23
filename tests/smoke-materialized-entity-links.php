@@ -47,7 +47,7 @@ function wp_make_link_relative( $link ) {
 }
 
 function get_permalink( $id ) {
-	return 'https://local.example/entity/' . $id . '/'; }
+	return isset( $GLOBALS['permalink_filter'] ) ? ( $GLOBALS['permalink_filter'] )( $id ) : 'https://local.example/entity/' . $id . '/'; }
 function home_url( $path = '' ) {
 	return 'https://local.example' . $path; }
 function get_page_by_path( $path, $output = null, $type = null ) {
@@ -673,6 +673,53 @@ foreach ( array( 'nested' => array( 'example' => array( 'name' => $panel_key, 'v
 	$pair_doc = $panel_block( 'authored-button', $pair_attributes, $saved_copy );
 	$assert( $route_patterns( $pair_doc, $panel_routes ) === $rewrite_panels( $pair_doc, $panel_routes ), 'A ' . $pair_place . ' name/value pair outside sourceAttributes keeps the route patterns\' output.' );
 }
+// A permalink filter can answer differently each time it is asked, as a page_link
+// filter may for the cart. When the replacement written differs from the one paired,
+// the page keeps the route patterns' output and gains no panel diagnostics.
+$cart_state   = (string) json_encode( array( 'html' => '<a href="/cart">Cart</a><a href="/missing">Missing</a>' ), JSON_UNESCAPED_SLASHES );
+$shop_state   = (string) json_encode( array( 'html' => '<a href="/second/index.html">Shop</a>' ), JSON_UNESCAPED_SLASHES );
+$two_menu_doc = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $cart_state ), array( 'name' => $existing_key, 'value' => $shop_state ) ) ), '<button ' . $panel_attr( $cart_state ) . ' ' . $existing_key . '="' . htmlspecialchars( $shop_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button>' );
+foreach (
+	array(
+		'a different page of the same length' => static fn( int $call ): string => 'https://local.example/cart-' . chr( 97 + $call % 26 ) . '/',
+		'a longer page'                       => static fn( int $call ): string => 'https://local.example/cart' . str_repeat( 'x', $call ) . '/',
+	) as $filter_name => $cart_link
+) {
+	$cart_calls                  = 0;
+	$GLOBALS['permalink_filter'] = static function ( $id ) use ( $cart_link, &$cart_calls ): string {
+		return $cart_link( $cart_calls++ );
+	};
+	$unresolved                  = array();
+	$filtered_out                = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $two_menu_doc, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+	$filtered_unresolved         = $unresolved;
+	unset( $GLOBALS['permalink_filter'] );
+	$assert( $route_patterns( $two_menu_doc, $panel_routes ) === $filtered_out, 'A cart link that resolves to ' . $filter_name . ' the second time keeps the route patterns\' output.' );
+	$assert( ! in_array( '/missing', $filtered_unresolved, true ), 'A cart link that resolves to ' . $filter_name . ' the second time adds no unresolved target from its panel.' );
+}
+// The link block writes a wrapper's snapshot in contentAttributes; it is rewritten in
+// both copies, as on main.
+$link_attrs     = array(
+	'href'              => 'https://elsewhere.example/',
+	'accessibleLabel'   => 'Open the full shop menu',
+	'content'           => 'Menu',
+	'contentMode'       => 'rich-text',
+	'contentAttributes' => array(
+		'class'    => 'label',
+		$panel_key => $shop_state,
+	),
+	'className'         => 'btn',
+	'sourceAttributes'  => array(),
+);
+$content_doc    = $panel_block( 'accessible-link', $link_attrs, ( new \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Generators\AccessibleLinkBlockGenerator() )->markup( $link_attrs ) );
+$unresolved     = array();
+$content_out    = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $content_doc, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
+$content_parsed = new WP_Block_Processor( $content_out );
+$content_parsed->next_delimiter();
+$content_tag = new WP_HTML_Tag_Processor( $content_out );
+$content_tag->next_tag( array( 'class_name' => 'label' ) );
+$content_after = array( 'html' => '<a href="/second-page/">Shop</a>' );
+$assert( json_decode( (string) ( $content_parsed->allocate_and_return_parsed_attributes()['contentAttributes'][ $panel_key ] ?? '' ), true ) === $content_after && json_decode( (string) $content_tag->get_attribute( $panel_key ), true ) === $content_after, 'A wrapper snapshot in contentAttributes is rewritten in both copies.' );
+$assert( $outside_snapshots( $route_patterns( $content_doc, $panel_routes ) ) === $outside_snapshots( $content_out ), 'Everything outside a contentAttributes snapshot matches the route patterns.' );
 // Inside panel HTML only href on links and areas changes: action, data-href and
 // data-*url values, numeric ones included, stay as written.
 $unresolved = array();
