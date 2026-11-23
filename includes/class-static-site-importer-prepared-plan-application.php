@@ -59,12 +59,13 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		// failure must occur before any runtime dependency can require compensation.
 		$runtime_payload = self::with_runtime_companion_configuration( $companion_payload, $lifecycle, $args );
 		// Routing is a runtime dependency even when the import declares no blocks.
+		$serves_routes = ! empty( $prepared['plan']['date_archives'] );
 		foreach ( $prepared['resolved']['pages'] ?? array() as $page ) {
-			if ( ! empty( $prepared['plan']['date_archives'] ) || ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) ) ) {
-				$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
-				$runtime_payload['post_source_routes'] = true;
-				break;
-			}
+			$serves_routes = $serves_routes || ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) );
+		}
+		if ( $serves_routes ) {
+			$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
+			$runtime_payload['post_source_routes'] = true;
 		}
 		$theme_owned = Static_Site_Importer_Import_Destination::GENERATED_THEME === ( $prepared['destination']['mode'] ?? Static_Site_Importer_Import_Destination::GENERATED_THEME );
 		if ( $theme_owned ) {
