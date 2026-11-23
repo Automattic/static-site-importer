@@ -77,20 +77,28 @@ function wc_get_page_id( $page ) {
 	return $GLOBALS['cart_page_id']; }
 $GLOBALS['cart_page_id'] = 88;
 
-// A child run for the memory limit check below: one menu after 3 MB of linked
-// paragraphs, rewritten with or without panel blocks once only the given headroom
-// is left under the memory limit.
+// A child run for the memory limit checks below: a 3 MB page, rewritten with or
+// without panel blocks once only the given headroom is left under the memory limit.
+// The page is one menu after linked paragraphs, two menus 3 MB apart, or one menu
+// whose snapshot copies hold 1.5 MB of text each.
 $memory_probe = getenv( 'SSI_PANEL_MEMORY_PROBE' );
 if ( is_string( $memory_probe ) && '' !== $memory_probe ) {
-	list( $probe_mode, $probe_headroom ) = explode( ':', $memory_probe );
-	$probe_state  = '{"html":"<a href=\\"/second/index.html\\">Menu</a>"}';
-	$probe_doc    = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 )
-		. '<!-- wp:example/authored-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $probe_state ) ) ) ) . ' -->'
-		. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $probe_state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/authored-button -->';
+	list( $probe_mode, $probe_page, $probe_headroom ) = explode( ':', $memory_probe );
+	$probe_menu = static function ( string $text ): string {
+		$state = (string) json_encode( array( 'html' => '<a href="/second/index.html">' . $text . '</a>' ), JSON_UNESCAPED_SLASHES );
+		return '<!-- wp:example/authored-button ' . \Automattic\BlocksEngine\PhpTransformer\Support\BlockAttributes::encode( array( 'sourceAttributes' => array( array( 'name' => 'data-blocks-engine-capture-dialog-panel-state', 'value' => $state ) ) ) ) . ' -->'
+			. '<button data-blocks-engine-capture-dialog-panel-state="' . htmlspecialchars( $state, ENT_QUOTES, 'UTF-8' ) . '">Menu</button><!-- /wp:example/authored-button -->';
+	};
+	$probe_doc  = match ( $probe_page ) {
+		'two'   => $probe_menu( 'Menu' ) . str_repeat( 'Ordinary copy without links. ', 103000 ) . $probe_menu( 'Menu' ),
+		'big'   => $probe_menu( str_repeat( 'x', 1500000 ) ),
+		default => str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links. <a href="/second/index.html">Link</a></p><!-- /wp:paragraph -->', 27000 ) . $probe_menu( 'Menu' ),
+	};
+	unset( $probe_menu );
 	$probe_names  = 'head' === $probe_mode ? array( 'example/authored-button' ) : array();
 	$probe_retain = str_repeat( 'x', max( 0, ini_parse_quantity( (string) ini_get( 'memory_limit' ) ) - memory_get_usage( true ) - (int) $probe_headroom ) );
 	$probe_out    = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $probe_doc, array( '/second' => '/second-page/' ), $probe_unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: $probe_names );
-	echo str_contains( $probe_out, '/second/index.html' ) === ( 'head' !== $probe_mode ) ? 'ok' : 'wrong', PHP_EOL;
+	echo 'head' === $probe_mode && 'big' !== $probe_page ? (int) ! str_contains( $probe_out, '/second/index.html' ) : (int) ( $probe_out === $probe_doc || 'linked' === $probe_page ), ' ', strlen( $probe_doc ), PHP_EOL;
 	exit( 0 );
 }
 
@@ -248,7 +256,7 @@ $panel_case(
 	array( 'html' => '<a href="/second/index.html?ref=<sale>">Sale</a>' ),
 	array( 'html' => '<a href="/second-page/?ref=&lt;sale&gt;">Sale</a>' )
 );
-$backslashes = str_repeat( 'C:\\\\Floors\\\\"quoted"\\\\ ', 60000 );
+$backslashes = str_repeat( 'C:\\\\Floors\\\\"quoted"\\\\ ', 2000 );
 $panel_case(
 	'A large backslash-heavy panel',
 	'data-blocks-engine-capture-dialog-panel-state',
@@ -604,6 +612,13 @@ foreach (
 		'after a plaintext'         => '<plaintext>' . $literal_menu,
 		'inside a quoted attribute' => "<div data-demo='" . $literal_menu . "'></div>",
 		'inside a template'         => '<template>' . $literal_menu . '</template>',
+		'inside an iframe'          => '<iframe>' . $literal_menu . '</iframe>',
+		'inside a noembed'          => '<noembed>' . $literal_menu . '</noembed>',
+		'inside a noframes'         => '<noframes>' . $literal_menu . '</noframes>',
+		'inside a math element'     => '<math>' . $literal_menu . '</math>',
+		'inside an svg CDATA'       => '<svg><![CDATA[' . $literal_menu . ']]></svg>',
+		'after a vertical tab'      => "<i title=\v'><div data-demo='>" . $literal_menu . "'></div></i>",
+		'in a tag with a control'   => "<i title=\v\">" . $literal_menu . '"</i>',
 	) as $context => $literal_doc
 ) {
 	$assert( $route_patterns( $literal_doc, $panel_routes ) === $rewrite_panels( $literal_doc, $panel_routes ), 'Block markup ' . $context . ' keeps the route patterns\' output.' );
@@ -611,9 +626,22 @@ foreach (
 // An attribute right after a quoted value, as browsers read it, is not literal text.
 $decoy_out = $rewrite_panels( '<p><a title="href="#"/second/index.html" class="decoy">Second</a></p>' . $literal_menu, $panel_routes );
 $assert( '<a href="/second-page/">Menu</a>' === ( $panel_copies( substr( $decoy_out, strpos( $decoy_out, '<!-- wp:' ) ) )[ $panel_key ]['saved markup']['html'] ?? null ), 'A menu after an attribute that follows a quoted value is still rewritten.' );
-// A panel whose HTML holds a noscript keeps the route patterns' output.
-$noscript_doc = $menu_for( (string) json_encode( array( 'html' => '<noscript><a href="/second/index.html">Menu</a></noscript>' ), JSON_UNESCAPED_SLASHES ) );
-$assert( $route_patterns( $noscript_doc, $panel_routes ) === $rewrite_panels( $noscript_doc, $panel_routes ), 'A panel holding a noscript keeps the route patterns\' output.' );
+// A panel whose HTML holds raw text, foreign CDATA, an iframe, a select or a base
+// element keeps the route patterns' output, and adds none of its unresolved targets.
+foreach ( array( '<noscript><a href="/second/index.html">Menu</a></noscript>', '<iframe><a href="/second/index.html">Menu</a></iframe>', '<svg><![CDATA[<b>x</b><a href="/missing">Literal</a>]]></svg><a href="/second/index.html">Menu</a>', '<select><a href="/second/index.html">Menu</a></select>', '<base href="https://other.example/"><a href="/second/index.html">Menu</a>' ) as $skipped_html ) {
+	$unresolved  = array();
+	$skipped_doc = $menu_for( (string) json_encode( array( 'html' => $skipped_html ), JSON_UNESCAPED_SLASHES ) );
+	$assert( $route_patterns( $skipped_doc, $panel_routes ) === $rewrite_panels( $skipped_doc, $panel_routes ) && array() === $unresolved, 'A panel holding ' . strtok( substr( $skipped_html, 1 ), ' >' ) . ' keeps the route patterns\' output and adds no unresolved target.' );
+}
+// Outside the snapshot HTML, keyed links such as metadata stay as written.
+$metadata_doc = $rewrite_panels( $menu_for( (string) json_encode( array( 'html' => '<a href="/second/index.html">Menu</a>', 'metadata' => array( 'href' => '/second/index.html', 'url' => '/second/index.html' ) ), JSON_UNESCAPED_SLASHES ) ), $panel_routes );
+$assert( array( 'href' => '/second/index.html', 'url' => '/second/index.html' ) === ( $panel_copies( $metadata_doc )[ $panel_key ]['saved markup']['metadata'] ?? null ) && '<a href="/second-page/">Menu</a>' === ( $panel_copies( $metadata_doc )[ $panel_key ]['saved markup']['html'] ?? null ), 'Keyed metadata links stay as written while the panel HTML is rewritten.' );
+// A panel whose snapshot copies exceed 256 KiB keeps the route patterns' output.
+$oversized_doc = $menu_for( (string) json_encode( array( 'html' => '<a href="/second/index.html">' . str_repeat( 'x', 300000 ) . '</a>' ), JSON_UNESCAPED_SLASHES ) );
+$assert( $route_patterns( $oversized_doc, $panel_routes ) === $rewrite_panels( $oversized_doc, $panel_routes ), 'A panel over 256 KiB keeps the route patterns\' output.' );
+// A panel holding svg markup without CDATA is still rewritten.
+$svg_doc = $rewrite_panels( $menu_for( (string) json_encode( array( 'html' => '<svg viewBox="0 0 1 1"><path d="M0 0"></path></svg><a href="/second/index.html">Menu</a>' ), JSON_UNESCAPED_SLASHES ) ), $panel_routes );
+$assert( '<svg viewBox="0 0 1 1"><path d="M0 0"></path></svg><a href="/second-page/">Menu</a>' === ( $panel_copies( $svg_doc )[ $panel_key ]['saved markup']['html'] ?? null ), 'A panel holding svg markup is still rewritten.' );
 // Inside panel HTML only href on links and areas changes: action, data-href and
 // data-*url values, numeric ones included, stay as written.
 $unresolved = array();
@@ -657,23 +685,30 @@ unset( $linked_page, $linked_after );
 // Memory: under a memory limit, rewriting the menu as well as the links of that page
 // needs at most 1 MB more headroom than the route patterns alone, since it keeps only
 // their output and one spliced copy.
-$memory_run = static function ( string $mode, int $headroom ): bool {
+$memory_run = static function ( string $mode, int $headroom, string $page = 'linked' ): ?int {
 	$output = array();
-	exec( 'SSI_PANEL_MEMORY_PROBE=' . escapeshellarg( $mode . ':' . $headroom ) . ' ' . escapeshellarg( PHP_BINARY ) . ' -d memory_limit=64M ' . escapeshellarg( __FILE__ ) . ' 2>/dev/null', $output, $status );
-	return 0 === $status && array( 'ok' ) === $output;
+	exec( 'SSI_PANEL_MEMORY_PROBE=' . escapeshellarg( $mode . ':' . $page . ':' . $headroom ) . ' ' . escapeshellarg( PHP_BINARY ) . ' -d memory_limit=64M ' . escapeshellarg( __FILE__ ) . ' 2>/dev/null', $output, $status );
+	return 0 === $status && 1 === count( $output ) && str_starts_with( $output[0], '1 ' ) ? (int) substr( $output[0], 2 ) : null;
 };
 $low  = 0;
 $high = 16 << 20;
-$assert( $memory_run( 'main', $high ), 'The route patterns rewrite 3 MB of linked paragraphs with 16 MB of headroom.' );
+$assert( null !== $memory_run( 'main', $high ), 'The route patterns rewrite 3 MB of linked paragraphs with 16 MB of headroom.' );
 while ( $high - $low > 128 << 10 ) {
 	$middle = intdiv( $low + $high, 2 );
-	if ( $memory_run( 'main', $middle ) ) {
+	if ( null !== $memory_run( 'main', $middle ) ) {
 		$high = $middle;
 	} else {
 		$low = $middle;
 	}
 }
-$assert( $memory_run( 'head', $high + ( 1 << 20 ) ), 'One menu after 3 MB of linked paragraphs is rewritten within 1 MB of the ' . round( $high / 1048576, 2 ) . ' MB of headroom the route patterns need.' );
+$assert( null !== $memory_run( 'head', $high + ( 1 << 20 ) ), 'One menu after 3 MB of linked paragraphs is rewritten within 1 MB of the ' . round( $high / 1048576, 2 ) . ' MB of headroom the route patterns need.' );
+// Memory: two menus 3 MB apart are written into one copy of the page, and a menu
+// whose snapshot copies hold 1.5 MB each keeps the route patterns' output without
+// copying them, so either page needs no more than one page copy of headroom.
+foreach ( array( 'two' => 'Two menus 3 MB apart are rewritten', 'big' => 'A menu with 1.5 MB snapshot copies keeps the route patterns\' output' ) as $memory_page => $memory_label ) {
+	$page_bytes = (int) $memory_run( 'main', 16 << 20, $memory_page );
+	$assert( $page_bytes > 0 && null !== $memory_run( 'head', $page_bytes + ( 1 << 20 ), $memory_page ), $memory_label . ' with one page copy and 1 MB of headroom.' );
+}
 // Memory: when the route patterns change nothing, one menu after 3 MB of plain
 // paragraphs costs one copy of the document, built without copied slices.
 $plain_page = str_repeat( '<!-- wp:paragraph --><p>Ordinary copy without links, repeated for size.</p><!-- /wp:paragraph -->', 33000 ) . $menu_block;

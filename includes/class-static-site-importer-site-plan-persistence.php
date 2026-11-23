@@ -52,7 +52,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	private const RECONCILIATION_META_KEY          = '_static_site_importer_reconciliation_identity';
 	private const PRODUCER_RECONCILIATION_META_KEY = '_blocks_engine_reconciliation_identity';
 	private const PANEL_SNAPSHOTS                  = array( 'data-blocks-engine-capture-dialog-panel-state', 'data-blocks-engine-capture-existing-panel' );
-	private const LITERAL_TEXT_CONTEXT             = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template)\b|<iframe\b[^>]*?\bsrcdoc~i';
+	private const LITERAL_TEXT_CONTEXT             = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math)\b|<!\[CDATA\[~i';
+	private const LITERAL_PANEL_HTML               = '~<(?:noscript|plaintext|textarea|xmp|title|script|style|template|iframe|noembed|noframes|math|select|base)\b|<!\[CDATA\[~i';
+	private const PANEL_SNAPSHOT_BYTES             = 262144;
 	private const PANEL_JSON_FLAGS                 = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION;
 	// Blocks Engine generators whose blocks carry captured panels.
 	public const PANEL_BLOCK_TYPES = array( 'authored-button', 'layout-shell', 'accessible-link' );
@@ -2037,27 +2039,72 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 		$rewritten = $rewrite( $content );
 		$edits     = self::panel_snapshot_edits( $content, $rewritten, $panel_blocks, $resolve_route, $unresolved, $fragments );
-		// The route patterns' output stays as it is; only the snapshot values of
-		// blocks the patterns left untouched are written again, back to front in
-		// that one string. Edits within 64 KiB of each other share one splice, so a
-		// document costs one copy of itself per group of nearby panels.
-		$last = count( $edits[0] ) - 1;
-		while ( $last >= 0 ) {
-			$first = $last;
-			$end   = $edits[0][ $last ] + $edits[1][ $last ];
-			while ( $first > 0 && $end - $edits[0][ $first - 1 ] <= 65536 ) {
-				--$first;
-			}
-			$text = '';
-			for ( $index = $first; $index <= $last; ++$index ) {
-				$after = $edits[0][ $index ] + $edits[1][ $index ];
-				$text .= $edits[2][ $index ] . ( $index < $last ? substr( $rewritten, $after, $edits[0][ $index + 1 ] - $after ) : '' );
-			}
-			$rewritten = substr_replace( $rewritten, $text, $edits[0][ $first ], $end - $edits[0][ $first ] );
-			$last      = $first - 1;
-		}
 
-		return $rewritten;
+		return array() === $edits[0] ? $rewritten : self::apply_panel_edits( $rewritten, $edits );
+	}
+
+	/**
+	 * The route patterns' output with the snapshot edits applied, built once. The
+	 * pieces go to a file-backed temporary stream and are read back in one exact
+	 * allocation, so the result costs one copy of the page; when no temporary file
+	 * can be written, the result is appended in 64 KiB slices instead.
+	 *
+	 * @param string                                  $rewritten The route patterns' output.
+	 * @param array{list<int>,list<int>,list<string>} $edits Offsets, lengths and texts, sorted by offset.
+	 */
+	private static function apply_panel_edits( string $rewritten, array $edits ): string {
+		$length = strlen( $rewritten );
+		foreach ( $edits[2] as $index => $text ) {
+			$length += strlen( $text ) - $edits[1][ $index ];
+		}
+		$buffer = fopen( 'php://temp/maxmemory:0', 'w+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- A private temporary stream.
+		if ( false !== $buffer ) {
+			$write   = static fn( string $piece ): bool => strlen( $piece ) === fwrite( $buffer, $piece ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- A private temporary stream.
+			$written = self::write_panel_pieces( $rewritten, $edits, $write ) && rewind( $buffer );
+			$out     = $written ? stream_get_contents( $buffer ) : false;
+			fclose( $buffer ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- A private temporary stream.
+			if ( is_string( $out ) && strlen( $out ) === $length ) {
+				return $out;
+			}
+			unset( $out );
+		}
+		$out = '';
+		self::write_panel_pieces(
+			$rewritten,
+			$edits,
+			static function ( string $piece ) use ( &$out ): bool {
+				$out .= $piece;
+				return true;
+			}
+		);
+
+		return $out;
+	}
+
+	/**
+	 * Pass the route patterns' output with the edits applied, in order, to a writer:
+	 * unchanged text in slices of at most 64 KiB, and each replacement text.
+	 *
+	 * @param string                                  $rewritten The route patterns' output.
+	 * @param array{list<int>,list<int>,list<string>} $edits Offsets, lengths and texts, sorted by offset.
+	 * @param Closure                                 $write Writer: (piece) => whether it was written.
+	 */
+	private static function write_panel_pieces( string $rewritten, array $edits, Closure $write ): bool {
+		$at = 0;
+		foreach ( array_merge( $edits[0], array( strlen( $rewritten ) ) ) as $index => $until ) {
+			for ( ; $at < $until; $at += 65536 ) {
+				if ( ! $write( substr( $rewritten, $at, min( 65536, $until - $at ) ) ) ) {
+					return false;
+				}
+			}
+			if ( isset( $edits[2][ $index ] ) ) {
+				if ( ! $write( $edits[2][ $index ] ) ) {
+					return false;
+				}
+				$at = $until + $edits[1][ $index ];
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -2237,7 +2284,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					$end    = $open + strlen( $match[0] ?? '' );
 					$at     = $end;
 				} elseif ( ctype_alpha( $next ) || '/' === $next || '?' === $next ) {
-					$failed = 1 !== preg_match( '~</?[a-z][^\s/>]*+(?:[\s/]++|[^\s/>=]++(?:\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s>]++))?)*+>~iA', $content, $match, 0, $open );
+					$failed = 1 !== preg_match( '~</?[a-z][^\x00-\x20\x7f/>]*+(?:[ \t\n\f\r/]++|[^\x00-\x20\x7f/>=]++(?:[ \t\n\f\r]*+=[ \t\n\f\r]*+(?:"[^"]*+"|\'[^\']*+\'|[^\x00-\x20\x7f>]++))?)*+>~iA', $content, $match, 0, $open );
 					$at     = $open + strlen( $match[0] ?? '' );
 				} else {
 					$at = $open + 1;
@@ -2277,9 +2324,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return null;
 		}
 		list( $start, $length ) = $frame['opener'];
-		$delimiter              = substr( $content, $start, $length );
-		$open                   = strpos( $delimiter, '{' );
-		$close                  = strrpos( $delimiter, '}' );
+		// Larger snapshots keep the route patterns' output rather than be copied.
+		if ( $length > self::PANEL_SNAPSHOT_BYTES ) {
+			return null;
+		}
+		$delimiter = substr( $content, $start, $length );
+		$open      = strpos( $delimiter, '{' );
+		$close     = strrpos( $delimiter, '}' );
 		if ( ! self::mentions_panel_snapshot( $delimiter ) || false === $open || false === $close || $close < $open ) {
 			return null;
 		}
@@ -2291,8 +2342,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( $comment as list( $at, $size, $value ) ) {
 			$values[] = array( $at, $size, $value, true );
 		}
+		// Saved snapshots sit on the block's opening tags, so only the start of a long
+		// span is read; a value beyond it leaves the copies unequal, and the block
+		// keeps the route patterns' output.
 		foreach ( $frame['spans'] as list( $at, $size ) ) {
-			$markup = self::markup_snapshot_values( substr( $content, $at, $size ), $at );
+			$markup = self::markup_snapshot_values( substr( $content, $at, min( $size, 2 * self::PANEL_SNAPSHOT_BYTES ) ), $at );
 			if ( null === $markup ) {
 				return null;
 			}
@@ -2639,9 +2693,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * Rewrite the link-bearing values of decoded snapshot JSON: name/value attribute
-	 * entries and keyed attributes that name a link, `url` keys, links in HTML under
-	 * `html`, and nested snapshots. Every other value stays as written.
+	 * Rewrite the links in decoded snapshot JSON: links in HTML under `html`, and
+	 * nested snapshots, as name/value entries or keyed. Every other value, such as a
+	 * keyed href or url that may be metadata, stays as written.
 	 *
 	 * @param mixed   $node Decoded JSON value.
 	 * @param Closure $resolve Link resolver.
@@ -2660,7 +2714,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return $node;
 		}
 		$entry = is_string( $node->name ?? null ) && is_string( $node->value ?? null );
-		if ( $entry ) {
+		if ( $entry && in_array( strtolower( $node->name ), self::PANEL_SNAPSHOTS, true ) ) {
 			$value = self::rewrite_attribute_value( $node->name, $node->value, $resolve, $failed );
 			if ( null !== $value ) {
 				$node->value = $value;
@@ -2675,8 +2729,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( is_string( $value ) ) {
 				if ( 'html' === $key ) {
 					$value = self::rewrite_tag_links( $value, $resolve, $failed );
+				} elseif ( in_array( strtolower( $key ), self::PANEL_SNAPSHOTS, true ) ) {
+					$value = self::rewrite_attribute_value( $key, $value, $resolve, $failed );
 				} else {
-					$value = self::rewrite_attribute_value( 0 === strcasecmp( $key, 'url' ) ? 'href' : $key, $value, $resolve, $failed );
+					continue;
 				}
 				if ( null !== $value ) {
 					$node->$key = $value;
@@ -2804,7 +2860,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! str_contains( $html, '<' ) ) {
 			return null;
 		}
-		if ( 1 === preg_match( self::LITERAL_TEXT_CONTEXT, $html ) ) {
+		if ( 1 === preg_match( self::LITERAL_PANEL_HTML, $html ) ) {
 			$failed = true;
 			return null;
 		}
