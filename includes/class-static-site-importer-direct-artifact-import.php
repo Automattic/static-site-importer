@@ -696,14 +696,35 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						if ( is_wp_error( $adopted ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
 						}
-						$stalled_ids = array();
+						$stalled_ids     = array();
+						$not_started_ids = array();
 						foreach ( is_array( $fanout ) ? ( $fanout['stalled_workers'] ?? array() ) : array() as $stalled ) {
 							foreach ( array_diff( $stalled['page_ids'], array_keys( $adopted ) ) as $page_id ) {
-								$stalled_ids[]                    = $page_id;
+								$stalled_ids[] = $page_id;
+								// A shard the deadline left unstarted is a plain deadline skip.
+								if ( ! empty( $stalled['not_started'] ) ) {
+									$not_started_ids[] = $page_id;
+									continue;
+								}
 								$run['stalled_pages'][ $page_id ] = $stalled;
 							}
 						}
 						$run['deadline_skipped_pages'] = array_values( array_unique( array_merge( $run['deadline_skipped_pages'] ?? array(), $stalled_ids ) ) );
+						if ( in_array( $entry_id, $not_started_ids, true ) ) {
+							return self::fail(
+								$workspace,
+								$run,
+								'compile_pages',
+								new WP_Error(
+									'static_site_importer_entrypoint_deadline_exhausted',
+									sprintf( 'The import deadline of %d seconds was exhausted before the entrypoint page could start compiling.', (int) $policy['import_deadline_seconds'] ),
+									array(
+										'source_path' => $entry_id,
+										'import_deadline_seconds' => $policy['import_deadline_seconds'],
+									)
+								)
+							);
+						}
 						if ( in_array( $entry_id, $stalled_ids, true ) ) {
 							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_omitted_entrypoint', 'The entrypoint compile worker stalled.', $run['stalled_pages'] ) );
 						}
