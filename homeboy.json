@@ -398,6 +398,7 @@
           "tests/smoke-product-page-binding-proof.php",
           "tests/smoke-woo-product-real-materialization.php",
           "tests/smoke-content-index-products.php",
+          "tests/smoke-woo-product-shared-media-attachments.php",
           "tests/smoke-woo-product-attributes.php",
           "tests/smoke-woo-long-product-attributes.php",
           "tests/smoke-woo-store-visibility.php",

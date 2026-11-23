@@ -877,6 +877,60 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		);
 	}
 
+	/**
+	 * Create (or reuse) the Media Library attachment for one plan image that a
+	 * runtime entity (a seeded product) consumes before pages materialize.
+	 *
+	 * Uses the exact identity, SVG admission and capture-record rules of
+	 * resolve_plan_assets(), so page content materialized later in the same
+	 * import binds this same attachment instead of creating a second one.
+	 *
+	 * @param string                   $theme_dir   Prepared theme directory (only its basename scopes identity).
+	 * @param string                   $target_path Plan asset target path.
+	 * @param string                   $bytes       Verified plan bytes for that path.
+	 * @param string                   $alt         Alt text for a new attachment.
+	 * @param array<string,mixed>|null $record      Capture record for the plan asset, if any.
+	 * @return array{id:int,created:bool} Attachment id (0 when refused) and whether this call created it.
+	 */
+	public static function plan_image_attachment( string $theme_dir, string $target_path, string $bytes, string $alt, ?array $record = null ): array {
+		$none = array(
+			'id'      => 0,
+			'created' => false,
+		);
+		if ( '' === $bytes || '' === $theme_dir || ! function_exists( 'wp_insert_attachment' ) ) {
+			return $none;
+		}
+		$root = get_temp_dir() . 'ssi-media-' . wp_generate_uuid4();
+		$dir  = $root . '/' . basename( $theme_dir );
+		$file = $dir . '/' . $target_path;
+		if ( ! wp_mkdir_p( dirname( $file ) ) || false === file_put_contents( $file, $bytes ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporary staging of verified plan bytes.
+			return $none;
+		}
+		$state = array( 'applied' => array( 'attachments' => array() ) );
+		if ( is_array( $record ) ) {
+			$state['staged_resource_records'][ $target_path ] = $record;
+		}
+		$attachments = array();
+		$by_hash     = array();
+		$error       = null;
+		try {
+			$id = self::attachment_from_source( $dir, $target_path, $alt, $state, $attachments, $by_hash, $error );
+		} finally {
+			wp_delete_file( $file );
+			$parent = dirname( $file );
+			while ( str_starts_with( $parent, $root ) && is_dir( $parent ) ) {
+				if ( ! @rmdir( $parent ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Remove only empty temporary staging directories.
+					break;
+				}
+				$parent = dirname( $parent );
+			}
+		}
+		return null === $error && $id > 0 ? array(
+			'id'      => $id,
+			'created' => in_array( $id, $state['applied']['attachments'], true ),
+		) : $none;
+	}
+
 	/** Create (or reuse) the attachment for one theme-relative image file. */
 	/** Reuse attachment creation for a queued capture file. */
 	public static function deferred_attachment( string $file, string $path, string $identity, array &$state, ?WP_Error &$error ): int {

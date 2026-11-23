@@ -287,6 +287,7 @@
     { "path": "tests/smoke-product-page-binding-proof.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-real-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-content-index-products.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-woo-product-shared-media-attachments.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-attributes.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-long-product-attributes.php", "environment": "standalone-php" },

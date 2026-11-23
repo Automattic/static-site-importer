@@ -398,7 +398,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 	 *
 	 * @param array<string,mixed> $lifecycle Runtime entity lifecycle.
 	 * @param array<string,mixed> $prepared  Prepared plan state (`plan`, `resolved`, `payload_reader`).
-	 * @return array<string,array{bytes:string,mime_type:string,target_path:string}> Resolved images keyed by their manifest `image` value.
+	 * @return array<string,array{bytes:string,mime_type:string,target_path:string,theme_dir:string,record:array|null}> Resolved images keyed by their manifest `image` value.
 	 */
 	private static function resolve_product_image_references( array $lifecycle, array $prepared ): array {
 		$plan     = isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array();
@@ -458,11 +458,17 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			}
 		}
 		$mime_type_by_target_path = array();
+		$record_by_target_path    = array();
+		$records                  = isset( $prepared['args']['image_asset_records'] ) && is_array( $prepared['args']['image_asset_records'] ) ? $prepared['args']['image_asset_records'] : array();
 		foreach ( isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array() as $asset ) {
 			if ( is_array( $asset ) && is_string( $asset['target_path'] ?? null ) && is_string( $asset['mime_type'] ?? null ) ) {
 				$mime_type_by_target_path[ $asset['target_path'] ] = $asset['mime_type'];
 			}
+			if ( is_array( $asset ) && is_string( $asset['target_path'] ?? null ) && is_array( $records[ $asset['source_path'] ?? '' ] ?? null ) ) {
+				$record_by_target_path[ $asset['target_path'] ] = $records[ $asset['source_path'] ];
+			}
 		}
+		$theme_dir = is_string( $prepared['theme_dir'] ?? null ) ? $prepared['theme_dir'] : '';
 
 		$resolved_images = array();
 		foreach ( array_keys( $sources ) as $source ) {
@@ -483,6 +489,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'bytes'       => $bytes,
 				'mime_type'   => (string) ( $mime_type_by_target_path[ $target_path ] ?? '' ),
 				'target_path' => $target_path,
+				// Products and page content share one attachment per source image.
+				'theme_dir'   => $theme_dir,
+				'record'      => $record_by_target_path[ $target_path ] ?? null,
 			);
 		}
 		return $resolved_images;
