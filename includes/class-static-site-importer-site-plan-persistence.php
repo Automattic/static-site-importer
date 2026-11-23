@@ -2127,7 +2127,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( array() !== $starts ) {
 			// Diagnostics come only from the snapshots that are written.
 			foreach ( $cache['accepted'] ?? array() as $value => $unused ) {
-				list( $value_unresolved, $value_fragments ) = $cache['diagnostics'][ $value ];
+				/** @var array{array<int,string>,array<int,mixed>} $diagnostics */
+				$diagnostics                                = $cache['diagnostics'][ $value ];
+				list( $value_unresolved, $value_fragments ) = $diagnostics;
 				if ( is_array( $unresolved ) ) {
 					array_push( $unresolved, ...$value_unresolved );
 				}
