@@ -12,14 +12,27 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
 require_once __DIR__ . '/class-static-site-importer-runtime-entity-binding-validation.php';
 require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
+require_once __DIR__ . '/class-static-site-importer-route-slug-reservation.php';
 
 final class Static_Site_Importer_Prepared_Plan_Application {
 	/**
 	 * Materialize runtime dependencies, entities, and the prepared plan as one transaction.
 	 *
+	 * Entity providers (product photos, event images) create attachments before
+	 * pages materialize. The planned route slugs stay reserved for the whole
+	 * transaction so no attachment takes a page's source route.
+	 *
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function materialize( array $prepared, array $lifecycle, $companion_payload, array $gutenberg_gaps, array $theme_materialization ) {
+		return Static_Site_Importer_Route_Slug_Reservation::during(
+			is_array( $prepared['resolved']['pages'] ?? null ) ? $prepared['resolved']['pages'] : array(),
+			static fn() => self::materialize_reserved( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization )
+		);
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private static function materialize_reserved( array $prepared, array $lifecycle, $companion_payload, array $gutenberg_gaps, array $theme_materialization ) {
 		$args      = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
 		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
 		if ( is_wp_error( $lifecycle ) ) {
