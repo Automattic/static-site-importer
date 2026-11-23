@@ -108,9 +108,12 @@ export async function editorPages(wpUrl, site, wpCli, report = () => {}, cells, 
         await frame.locator('[data-type="core/template-part"] .components-spinner').first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
         const front = await browser.newPage({ viewport: { width: 1440, height: 900 } });
         try {
-          await front.goto(url);
-          const a = await frame.locator('.editor-styles-wrapper, .is-root-container').first().evaluate(sampleCanvas);
-          const b = await front.locator('main, .wp-site-blocks').first().evaluate(sampleCanvas);
+          // The front page shares the editor's budget: on a loaded runner the
+          // default 30s locator wait timed out on a page that renders, and
+          // reported a working canvas as a blocker (replit-zach-s21 p8).
+          await front.goto(url, { waitUntil: 'load', timeout: 120_000 });
+          const a = await frame.locator('.editor-styles-wrapper, .is-root-container').first().evaluate(sampleCanvas, null, { timeout: 120_000 });
+          const b = await front.locator('main, .wp-site-blocks').first().evaluate(sampleCanvas, null, { timeout: 120_000 });
           const missing = canvasParityMismatches(a, b);
           if (missing.length) throw new Error(canvasParityEvidence(a, b, missing));
         } finally { await front.close(); }
