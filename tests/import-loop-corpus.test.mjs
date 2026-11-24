@@ -43,3 +43,44 @@ test('A pull request is replayed only when it changes a candidate path', async (
     [[{ path: 'includes-extra/x.php' }], false],
   ]) assert.equal(touchesCandidate(files, importer), replayed);
 });
+
+// SSI#3297: a fixture replay of corpusCheck with a recorded trunk baseline, the
+// runner answering each corpus.mjs call from a queue of replay reports.
+async function fixtureCheck(replays) {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { corpusCheck } = await import('../tools/import-loop/corpus-check.mjs');
+  const { corpusStatus } = await import('../tools/import-loop/corpus-pr.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-corpus-check-'));
+  const triage = { trunk: 't'.repeat(40), bases: { 'static-site-importer': 'v1.0.0' }, transformer: '/trunk/php-transformer', reimport: { ssi_zip: '', bare_wp: '' } };
+  const baseline = path.join(root, '.baselines', `${'t'.repeat(12)}-v1.0.0`);
+  fs.mkdirSync(baseline, { recursive: true });
+  for (const site of ['agency', 'sdnunca']) fs.writeFileSync(path.join(baseline, `${site}.json`), '{}');
+  fs.writeFileSync(path.join(baseline, '.recorded.json'), JSON.stringify({ unmeasured: [] }));
+  const calls = [];
+  const runCorpus = (mode, args) => { calls.push({ mode, blocksEngine: args[args.indexOf('--blocks-engine') + 1], sites: args[args.indexOf('--sites') + 1] }); return replays.shift(); };
+  const verdict = { failing: [], reasons: [] };
+  try {
+    const { summary } = corpusCheck({ corpus: root, triage, here: '/x', log: () => {}, runCorpus, heads: [{ verdict, key: 'pr', transformer: '/head/php-transformer' }] });
+    return { status: corpusStatus(verdict, summary.sites), calls };
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+const report = (regressions) => ({ sites: [{ site: 'agency', regressions: [] }, { site: 'sdnunca', regressions }] });
+
+test('a cell that regresses once and not on recheck is flaky, and the head passes', async () => {
+  const { status, calls } = await fixtureCheck([report(['/@390']), { sites: [{ site: 'sdnunca', regressions: [] }] }, { sites: [{ site: 'sdnunca', regressions: [] }] }]);
+  assert.deepEqual(status, { state: 'success', description: 'no regression on 2 corpus sites (1 flaky: sdnunca)' });
+  // The recheck re-measures only the regressed site, on the head and on trunk.
+  assert.deepEqual(calls.slice(1), [{ mode: 'replay', blocksEngine: '/head/php-transformer', sites: 'sdnunca' }, { mode: 'replay', blocksEngine: '/trunk/php-transformer', sites: 'sdnunca' }]);
+});
+
+test('a regression the head repeats while trunk stays put fails the head', async () => {
+  const { status } = await fixtureCheck([report(['/@390']), { sites: [{ site: 'sdnunca', regressions: ['/@390'] }] }, { sites: [{ site: 'sdnunca', regressions: [] }] }]);
+  assert.deepEqual(status, { state: 'failure', description: 'worse on sdnunca (1)' });
+});
+
+test('a regression trunk also shows on recheck is flicker in the baseline', async () => {
+  const { status } = await fixtureCheck([report(['/@390', '/@768']), { sites: [{ site: 'sdnunca', regressions: ['/@390', '/@768'] }] }, { sites: [{ site: 'sdnunca', regressions: ['/@768'] }] }]);
+  assert.deepEqual(status, { state: 'failure', description: 'worse on sdnunca (1) (1 flaky: sdnunca)' });
+});
