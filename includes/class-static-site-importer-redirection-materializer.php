@@ -328,6 +328,39 @@ final class Static_Site_Importer_Redirection_Materializer {
 		return class_exists( 'Red_Item_Sanitize' ) ? ( new Red_Item_Sanitize() )->sanitize_url( $route, false ) : $route;
 	}
 
+	/**
+	 * The form a destination is stored in: own-site targets lose their origin,
+	 * so a rule keeps working when the site moves to another domain.
+	 */
+	public static function stored_target( string $target ): string {
+		$origin = self::origin( home_url( '/' ) );
+		if ( '' === $origin || self::origin( $target ) !== $origin ) {
+			return $target;
+		}
+		$path = preg_replace( '~^[a-z][a-z0-9+.-]*://[^/?#]*~i', '', $target );
+		// A path starting with two slashes would be read as another host.
+		if ( ! is_string( $path ) || ! str_starts_with( $path, '/' ) || str_starts_with( $path, '//' ) ) {
+			return $target;
+		}
+		return $path;
+	}
+
+	/** The current site's URL for a stored destination, whichever form it is in. */
+	public static function resolved_target( string $target ): string {
+		if ( ! str_starts_with( $target, '/' ) || str_starts_with( $target, '//' ) ) {
+			return $target;
+		}
+		preg_match( '~^[a-z][a-z0-9+.-]*://[^/?#]*~i', home_url( '/' ), $origin );
+		return ( $origin[0] ?? '' ) . $target;
+	}
+
+	/** Host and port, ignoring the scheme: http and https address the same site. */
+	private static function origin( string $url ): string {
+		$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		$port = (string) wp_parse_url( $url, PHP_URL_PORT );
+		return '' === $host ? '' : $host . ( '' === $port ? '' : ':' . $port );
+	}
+
 	/** Apply the same canonical source and collision checks to every native entity. */
 	private static function add_route( array &$routes, string $from, string $target, string $home_path, int $post_id = 0 ) {
 		$from         = '/' . ltrim( self::canonical_source_route( $from ), '/' );
@@ -599,6 +632,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				);
 			}
 			foreach ( $routes as $from => $target ) {
+				$target = self::stored_target( $target );
 				$params = array(
 					'url'         => $from,
 					'group_id'    => $next['group_id'],
@@ -851,8 +885,9 @@ final class Static_Site_Importer_Redirection_Materializer {
 			if ( ! empty( $item['regex'] ) || 'url' !== ( $item['match_type'] ?? '' ) || 'url' !== ( $item['action_type'] ?? '' ) || 301 !== (int) ( $item['action_code'] ?? 0 ) || ! is_string( $item['action_data']['url'] ?? null ) || ( $item['match_data'] ?? null ) !== ( $row['config']['match_data'] ?? null ) ) {
 				return new WP_Error( 'static_site_importer_redirect_export_unproven', 'An owner-edited native rule no longer fits the portable exact-path contract.' );
 			}
-			$target_id = url_to_postid( $item['action_data']['url'] );
-			if ( $target_id <= 0 || get_permalink( $target_id ) !== $item['action_data']['url'] ) {
+			$target    = self::resolved_target( $item['action_data']['url'] );
+			$target_id = url_to_postid( $target );
+			if ( $target_id <= 0 || get_permalink( $target_id ) !== $target ) {
 				return new WP_Error( 'static_site_importer_redirect_export_unproven', 'A native target does not exactly match its portable document permalink.' );
 			}
 			if ( ! isset( $documents[ $target_id ] ) ) {

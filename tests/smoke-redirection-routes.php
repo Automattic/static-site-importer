@@ -201,4 +201,21 @@ $assert( array( 'website/index.html', 'website/x.html' ) === array_column( $extr
 $twin_files[1]['metadata']['route_path'] = '/different';
 $extracted = Static_Site_Importer_Redirects_Manifest::extract( array( 'files' => array_slice( $twin_files, 0, 3 ) ) );
 $assert( 3 === count( $extracted['artifact']['files'] ) && array() === $extracted['aliases'], 'Explicit producer routes are not collapsed as inferred twins.' );
+// Rules store own-site targets without their origin, so they survive a domain
+// change; other hosts stay absolute and older absolute rules still resolve.
+$GLOBALS['home'] = 'https://native.test';
+$stored          = array( Static_Site_Importer_Redirection_Materializer::class, 'stored_target' );
+$resolved        = array( Static_Site_Importer_Redirection_Materializer::class, 'resolved_target' );
+$assert( '/about/' === $stored( 'https://native.test/about/' ) && '/' === $stored( 'https://native.test/' ), 'Own-site targets are stored root-relative.' );
+$assert( '/about/' === $stored( 'http://NATIVE.test/about/' ), 'Scheme and host case do not make a target foreign.' );
+$assert( '/?cat=3&paged=$1' === $stored( 'https://native.test/?cat=3&paged=$1' ) && '/tag/a/page/$1/' === $stored( 'https://native.test/tag/a/page/$1/' ), 'Queries and pagination captures survive.' );
+foreach ( array( 'https://other.test/about/', 'https://native.test:8080/about/', 'https://native.test', 'https://native.test//other.test/', 'mailto:a@native.test', '/about/' ) as $unchanged ) {
+	$assert( $unchanged === $stored( $unchanged ), 'Stays as it is: ' . $unchanged );
+}
+$assert( 'https://native.test/about/' === $resolved( '/about/' ) && 'https://native.test/about/' === $resolved( 'https://native.test/about/' ) && '//other.test/' === $resolved( '//other.test/' ), 'Relative and older absolute targets resolve to the same URL.' );
+$GLOBALS['home'] = 'https://live.test';
+$assert( 'https://live.test/about/' === $resolved( '/about/' ), 'A stored target follows the site to its new domain.' );
+$GLOBALS['home'] = 'http://localhost:8881/blog';
+$assert( '/blog/about/' === $stored( 'http://localhost:8881/blog/about/' ) && 'http://localhost:8881/blog/about/' === $resolved( '/blog/about/' ), 'A subdirectory path and port round trip.' );
+$GLOBALS['home'] = null;
 echo "Redirection source route contract passed.\n";
