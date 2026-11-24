@@ -15,17 +15,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { corpusCheck } from './corpus-check.mjs';
+import { metricSummary } from './corpus-metrics.mjs';
 import { mergedHead, repoClone } from './lib.mjs';
 
 export const CONTEXT = 'import-loop/corpus';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 // The status a replay verdict posts: GitHub caps descriptions at 140 characters.
-export function corpusStatus({ failing, reasons }, sites) {
+// Structure and weight that moved against the trunk baseline follow the cell verdict.
+export function corpusStatus({ failing, reasons, structure = [] }, sites) {
   const regressed = failing.flatMap((f) => f.corpus || []);
-  if (regressed.length) return { state: 'failure', description: `worse on ${regressed.map((r) => `${r.site} (${r.cells.length})`).join(', ')}`.slice(0, 140) };
+  const moved = structure.length ? `; ${metricSummary(structure)}` : '';
+  if (regressed.length) return { state: 'failure', description: `worse on ${regressed.map((r) => `${r.site} (${r.cells.length})`).join(', ')}${moved}`.slice(0, 140) };
   if (reasons.length) return { state: 'error', description: reasons[0].slice(0, 140) };
-  return { state: 'success', description: `no regression on ${sites.length} corpus sites` };
+  return { state: 'success', description: `no regression on ${sites.length} corpus sites${moved}`.slice(0, 140) };
 }
 
 // Whether a pull request's changed files reach the candidate the corpus imports with.
@@ -34,11 +37,11 @@ export const touchesCandidate = (files, paths) => (files || []).some(({ path: fi
 const gh = (...a) => execFileSync('gh', a, { encoding: 'utf8', maxBuffer: 64 << 20 });
 const log = (...a) => console.error(`[corpus-pr] ${a.join(' ')}`);
 
-function main() {
-  const { values: args } = parseArgs({ options: { corpus: { type: 'string' }, runs: { type: 'string' }, sites: { type: 'string' }, max: { type: 'string' }, 'dry-run': { type: 'boolean' } } });
-  if (!args.corpus || !args.runs) throw new Error('usage: corpus-pr.mjs --corpus <dir> --runs <dir> [--sites a,b] [--max N] [--dry-run]');
+// Blocks Engine trunk tip, the latest importer release and a bare WordPress,
+// as both corpus cadences (this one and corpus-trunk.mjs) measure them.
+export function trunkSetup(runsDir, workName = 'corpus-pr') {
   const repos = JSON.parse(fs.readFileSync(path.join(here, 'repos.json'), 'utf8'));
-  const runs = path.resolve(args.runs), work = path.join(runs, 'corpus-pr');
+  const runs = path.resolve(runsDir), work = path.join(runs, workName);
   fs.mkdirSync(work, { recursive: true });
   // Clones are fetched once per run; trunk is the transformer every importer head runs on.
   const clone = (name) => repoClone(repos[name].github, runs);
@@ -51,6 +54,13 @@ function main() {
   const bare = process.env.BARE_WP ? path.resolve(process.env.BARE_WP) : path.join(work, 'bare-wp');
   execFileSync('bash', [path.join(here, 'gates', 'bare-wp.sh'), bare], { stdio: ['ignore', 'ignore', 'inherit'] });
   const triage = { trunk, bases: { 'static-site-importer': release }, transformer: path.join(trunkDir, be.candidate.paths[0]), reimport: { ssi_zip: zip, bare_wp: bare } };
+  return { repos, work, clone, tip, trunk, release, triage };
+}
+
+function main() {
+  const { values: args } = parseArgs({ options: { corpus: { type: 'string' }, runs: { type: 'string' }, sites: { type: 'string' }, max: { type: 'string' }, 'dry-run': { type: 'boolean' } } });
+  if (!args.corpus || !args.runs) throw new Error('usage: corpus-pr.mjs --corpus <dir> --runs <dir> [--sites a,b] [--max N] [--dry-run]');
+  const { repos, work, clone, tip, trunk, release, triage } = trunkSetup(args.runs);
 
   // Heads not yet measured, most recently updated first, at most --max per run.
   const pending = [];
@@ -91,6 +101,6 @@ function main() {
     if (!args['dry-run']) gh('api', `repos/${head.repo.github}/statuses/${head.pr.headRefOid}`, '-f', `state=${status.state}`, '-f', `context=${CONTEXT}`, '-f', `description=${status.description}`);
     fs.rmSync(head.dir, { recursive: true, force: true });
   }
-  console.log(JSON.stringify({ trunk, release, pending: pending.length, measured: heads.map((h) => ({ pr: h.key, ...corpusStatus(h.verdict, summary.sites || []) })), corpus: summary }));
+  console.log(JSON.stringify({ trunk, release, pending: pending.length, measured: heads.map((h) => ({ pr: h.key, ...corpusStatus(h.verdict, summary.sites || []), structure: h.verdict.structure || [] })), corpus: summary }));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

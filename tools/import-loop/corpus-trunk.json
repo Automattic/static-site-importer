@@ -1,0 +1,56 @@
+{
+  "schema": "homeboy/workflow/v1",
+  "id": "import-corpus-trunk",
+  "inputs": {
+    "tools": {
+      "required": true
+    },
+    "corpus": {
+      "required": true
+    },
+    "runs_dir": {
+      "required": true
+    },
+    "sites": {
+      "default": ""
+    },
+    "repeat": {
+      "default": "2"
+    }
+  },
+  "env": {
+    "public": [
+      "PATH",
+      "HOME",
+      "BARE_WP"
+    ]
+  },
+  "every": {
+    "interval": "24h",
+    "overlap": "skip"
+  },
+  "budget": {
+    "max_step_runs": 1,
+    "deadline": "12h"
+  },
+  "steps": [
+    {
+      "id": "scoreboard",
+      "timeout": "10h",
+      "exec": {
+        "program": "node",
+        "args": [
+          "{{inputs.tools}}/tools/import-loop/corpus-trunk.mjs",
+          "--corpus",
+          "{{inputs.corpus}}",
+          "--runs",
+          "{{inputs.runs_dir}}",
+          "--sites",
+          "{{inputs.sites}}",
+          "--repeat",
+          "{{inputs.repeat}}"
+        ]
+      }
+    }
+  ]
+}

@@ -72,6 +72,19 @@ it never counts as passing, and candidate-side failures are not exempt. Do not o
 baselines to hide a flapping class: investigate identical-transformer disagreements
 and retain the evidence before adopting any explicit instability exception.
 
+Each site result also carries `metrics`, measured from the import by WordPress
+itself (`structure.php` through `wp eval-file`: `parse_blocks` over published
+pages, templates and template parts): `groups`, `single_child_groups`
+(`core/group` with exactly one non-null inner block), `max_depth`, and theme CSS
+bytes per captured route (`css.max_route`, `css.max_route_bytes`,
+`css.total_bytes` over routes; theme stylesheet files and non-core inline styles,
+as `theme_css_weight` counts them). Record stores them in each baseline beside
+`cells`; replay reports the baseline's as `baseline_metrics`. A failure to
+measure them is `metrics_error`, never a lost cell verdict. The `measure` mode
+replays without recording or comparing. `--repeat N` (record and measure)
+replays each site N times: a cell passes only when every replay passes it, and
+measured cells the replays disagree on count as `flaky_cells`.
+
 ### Corpus no-regression checks
 
 Two consumers hold every change to the corpus (`corpus-check.mjs`). Each records
@@ -94,6 +107,26 @@ BARE_WP=<bare-wp> homeboy workflow run tools/import-loop/corpus-pr.json \
 
 Each head is measured once, most recently updated first, up to `max` per run.
 A head that conflicts with its base is skipped.
+Each head's structure and weight that moved against the trunk baseline follow
+its cell verdict in the status (`squarespace-bedford 1-child 576→540`), and the
+step output lists every site's `metrics` before and after.
+
+### Daily trunk scoreboard
+
+`corpus-trunk.mjs` replays all 8 sites (`sites.json`) at Blocks Engine trunk tip
+with the latest importer release, twice (`--repeat 2`, the noise floor), and
+appends one row per site to the append-only `<corpus>/.trend.jsonl`: `date`,
+`trunk`, `release`, `passing`, `verified`, `flaky_cells`, `groups`,
+`single_child_groups`, `max_depth`, `css_max_route(_bytes)`, `css_total_bytes`,
+and anything `unmeasured`. It prints today against each site's previous row,
+with changed values as `was→now*`; that table is the step output the
+notification carries. Run it daily on the corpus machine:
+
+```sh
+BARE_WP=<bare-wp> homeboy workflow run tools/import-loop/corpus-trunk.json \
+  --input tools=<checkout> --input corpus=<corpus> --input runs_dir=<runs> \
+  --notification-transport discord.run-completion
+```
 
 ## Run the loop
 

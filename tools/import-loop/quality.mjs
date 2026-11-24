@@ -19,8 +19,9 @@ export const QUALITY = { min_blocks: 25, groups_per_leaf: 1.1, depth: 10, litera
 // stylesheet file or a non-core inline <style> counts toward the theme's CSS.
 // Global Styles (theme.json), core block CSS and plugin stylesheets do not.
 const CORE_STYLE = /^(global-styles|core-|wp-|classic-theme|block-style-variation|admin-bar|dashicons)/;
+export const themeSheets = (sheets) => sheets.filter(({ href, id }) => (href ? href.includes('/wp-content/themes/') : !CORE_STYLE.test(id || '')));
 export function themeCss(sheets) {
-  const theme = sheets.filter(({ href, id }) => (href ? href.includes('/wp-content/themes/') : !CORE_STYLE.test(id || '')));
+  const theme = themeSheets(sheets);
   return { kb: +(theme.reduce((n, s) => n + s.bytes, 0) / 1024).toFixed(1), largest: theme.sort((a, b) => b.bytes - a.bytes).slice(0, 5).map(({ href, id, bytes }) => ({ source: href ? new URL(href).pathname : `<style id="${id || ''}">`, kb: +(bytes / 1024).toFixed(1) })) };
 }
 //
