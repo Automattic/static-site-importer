@@ -80,6 +80,15 @@ cat > "$site/.router.php" <<'PHP'
 <?php
 $file = __DIR__ . parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH );
 if ( is_file( $file ) ) return false;
+// A server error reaches a check only as its status (a nav link answering
+// 503). Log the response's head beside the request line in .server.log, so
+// the cause (the Maintenance screen, an SQLite error) survives the site.
+ob_start();
+register_shutdown_function( static function () {
+	$body = (string) ob_get_contents();
+	$status = http_response_code();
+	if ( $status >= 500 ) error_log( sprintf( 'gate-site %d %s: %s', $status, $_SERVER['REQUEST_URI'], substr( trim( preg_replace( '/\\s+/', ' ', strip_tags( preg_replace( '#<(style|script)\\b.*?</\\1>#is', '', $body ) ) ) ), 0, 400 ) ) );
+} );
 require __DIR__ . '/index.php';
 PHP
 # The block editor fires dozens of parallel requests; one worker serializes them.
