@@ -102,12 +102,15 @@ export function mergeRuns(runs) {
 export const TREND_FIELDS = ['passing', 'verified', 'flaky_cells', 'groups', 'single_child_groups', 'max_depth', 'css_max_route_bytes', 'css_total_bytes'];
 
 // One ledger row for a site's measurement.
+// A site the replay refused (its import failed, or it served the Maintenance
+// screen) measured no cell: its counts are unmeasured, not 0 verified.
 export function trendRow({ date, trunk, release }, site) {
   const m = site.metrics || {};
+  const cells = site.cells?.length ? site.cells : null;
   return {
     date, trunk, release, site: site.site,
-    passing: site.cells?.filter((c) => c.pass).length ?? null,
-    verified: site.cells?.filter((c) => c.verified).length ?? null,
+    passing: cells?.filter((c) => c.pass).length ?? null,
+    verified: cells?.filter((c) => c.verified).length ?? null,
     flaky_cells: site.flaky_cells ?? null,
     groups: m.groups ?? null,
     single_child_groups: m.single_child_groups ?? null,

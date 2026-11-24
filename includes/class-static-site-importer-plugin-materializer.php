@@ -63,7 +63,13 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( is_wp_error( $deps ) ) {
 				return self::failed_report( $report, $deps );
 			}
-			$install = self::install_wp_org_plugin( $slug );
+			$install = self::install_wp_org_plugin_outside_maintenance( $slug );
+			if ( is_wp_error( $install ) && 'static_site_importer_plugin_install_left_maintenance_mode' === $install->get_error_code() ) {
+				// An upgrader that left the site in maintenance mode never finished
+				// its run: whatever it wrote is not a reconcilable install.
+				$report['maintenance_cleared'] = true;
+				return self::failed_report( $report, $install );
+			}
 			if ( is_wp_error( $install ) ) {
 				// Upgraders can persist the entrypoint before reporting a terminal
 				// failure. The filesystem is the install oracle for a safe retry.
@@ -876,6 +882,47 @@ class Static_Site_Importer_Plugin_Materializer {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Install a WordPress.org plugin without leaving the site in maintenance mode.
+	 *
+	 * WordPress upgraders write `<ABSPATH>/.maintenance` and only remove it on
+	 * their own success path; an upgrader run that is interrupted, times out, or
+	 * fails between `maintenance_mode( true )` and `maintenance_mode( false )`
+	 * leaves every page of the site serving the Maintenance screen. The marker is
+	 * cleared on every exit path of the install, and an install that left it
+	 * behind is reported as a failed install.
+	 *
+	 * @param string $slug WordPress.org plugin slug.
+	 * @return true|WP_Error
+	 */
+	private static function install_wp_org_plugin_outside_maintenance( string $slug ) {
+		$marker      = self::maintenance_marker_path();
+		$preexisting = '' !== $marker && file_exists( $marker );
+		$left        = false;
+		try {
+			$result = self::install_wp_org_plugin( $slug );
+		} finally {
+			if ( '' !== $marker && ! $preexisting && file_exists( $marker ) ) {
+				$left = true;
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- The upgrader wrote this marker directly; WP_Filesystem may be unavailable here.
+				@unlink( $marker );
+			}
+		}
+		if ( $left ) {
+			$detail = is_wp_error( $result ) ? ' ' . $result->get_error_message() : '';
+			return new WP_Error(
+				'static_site_importer_plugin_install_left_maintenance_mode',
+				sprintf( 'Installing plugin %s left the site in maintenance mode (%s); SSI cleared it and treats the install as failed.%s', $slug, $marker, $detail )
+			);
+		}
+		return $result;
+	}
+
+	/** The maintenance marker WordPress upgraders write: `<ABSPATH>/.maintenance`. */
+	private static function maintenance_marker_path(): string {
+		return defined( 'ABSPATH' ) ? trailingslashit( (string) ABSPATH ) . '.maintenance' : '';
 	}
 
 	/**

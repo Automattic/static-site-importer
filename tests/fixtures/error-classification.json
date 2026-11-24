@@ -485,6 +485,7 @@
     "static_site_importer_plugin_activation_unavailable": { "class": "operational", "owning_layer": "wordpress" },
     "static_site_importer_plugin_download_missing": { "class": "operational", "owning_layer": "wordpress" },
     "static_site_importer_plugin_install_failed": { "class": "operational", "owning_layer": "wordpress" },
+    "static_site_importer_plugin_install_left_maintenance_mode": { "class": "operational", "owning_layer": "wordpress" },
     "static_site_importer_plugin_runtime_preparation_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_plugin_upgrader_unavailable": { "class": "operational", "owning_layer": "wordpress" },
     "static_site_importer_previous_manifest_read_failed": { "class": "operational", "owning_layer": "static-site-importer" },
