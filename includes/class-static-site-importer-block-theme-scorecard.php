@@ -330,6 +330,11 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	 * them itself (button, image) are not text links. Block style count is
 	 * reported, not required: no source evidence implies a per-block style.
 	 *
+	 * The editor's appearance controls (margin, padding, border, line height,
+	 * link color, position) are required: without `settings.appearanceTools`
+	 * core hides them, however well the theme is styled. Layout sizes are
+	 * reported, not required: a source need not have one content width.
+	 *
 	 * @param array<string,mixed>    $json            Parsed theme.json.
 	 * @param array<array-key,mixed> ...$block_groups Parsed templates, parts and routes, each keyed by file or route.
 	 * @return array<string,mixed>
@@ -362,17 +367,23 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 				'styled' => array() !== array_filter( array_intersect_key( $styles, array_flip( $keys ) ) ),
 			);
 		}
+		$layout   = $json['settings']['layout'] ?? array();
+		$controls = true === ( $json['settings']['appearanceTools'] ?? null );
 		$unstyled = array_keys( array_filter( $elements, static fn( array $element ): bool => $element['used'] && ! $element['styled'] ) );
 		return self::check(
 			array(
 				'elements'          => $elements,
 				'unstyled_used'     => $unstyled,
 				'block_style_count' => count( $json['styles']['blocks'] ?? array() ),
+				'appearance_tools'  => $controls,
+				'content_size'      => $layout['contentSize'] ?? null,
+				'wide_size'         => $layout['wideSize'] ?? null,
 			),
 			array(
-				'unstyled_used' => 0,
+				'unstyled_used'    => 0,
+				'appearance_tools' => true,
 			),
-			array() === $unstyled
+			array() === $unstyled && $controls
 		);
 	}
 

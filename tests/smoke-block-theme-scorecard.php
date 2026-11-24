@@ -24,7 +24,7 @@ try {
 		file_put_contents( $dir . '/parts/header.html', $header ); file_put_contents( $dir . '/parts/footer.html', $footer );
 		file_put_contents( $dir . '/style.css', "/*\nTheme Name: Good\nDescription: Test\nRequires at least: 6.0\nTested up to: 6.8\nRequires PHP: 8.0\nLicense: GPL-2.0-or-later\n*/\n" );
 		file_put_contents( $dir . '/functions.php', '<?php' ); file_put_contents( $dir . '/screenshot.png', base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' ) );
-		file_put_contents( $dir . '/theme.json', json_encode( array( 'version' => 3, 'settings' => array( 'color' => array( 'palette' => array( array( 'slug' => 'black', 'color' => '#000' ) ) ), 'typography' => array( 'fontFamilies' => array( array( 'slug' => 'sans', 'fontFamily' => 'sans-serif' ) ), 'fontSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ), 'spacing' => array( 'spacingSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ) ), 'styles' => array( 'elements' => array( 'link' => array( 'color' => array( 'text' => '#000' ) ), 'button' => array( 'border' => array( 'radius' => '2px' ) ), 'heading' => array( 'typography' => array( 'fontWeight' => '700' ) ) ), 'blocks' => array( 'core/paragraph' => array( 'spacing' => array( 'margin' => array( 'bottom' => '1rem' ) ) ) ) ) ) ) );
+		file_put_contents( $dir . '/theme.json', json_encode( array( 'version' => 3, 'settings' => array( 'appearanceTools' => true, 'layout' => array( 'contentSize' => '720px' ), 'color' => array( 'palette' => array( array( 'slug' => 'black', 'color' => '#000' ) ) ), 'typography' => array( 'fontFamilies' => array( array( 'slug' => 'sans', 'fontFamily' => 'sans-serif' ) ), 'fontSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ), 'spacing' => array( 'spacingSizes' => array( array( 'slug' => 'small', 'size' => '1rem' ) ) ) ), 'styles' => array( 'elements' => array( 'link' => array( 'color' => array( 'text' => '#000' ) ), 'button' => array( 'border' => array( 'radius' => '2px' ) ), 'heading' => array( 'typography' => array( 'fontWeight' => '700' ) ) ), 'blocks' => array( 'core/paragraph' => array( 'spacing' => array( 'margin' => array( 'bottom' => '1rem' ) ) ) ) ) ) ) );
 	}
 	foreach ( array(
 		'footer-only referenced' => array( false, true, 'pass', array(), array() ),
@@ -113,13 +113,23 @@ try {
 	// per-level heading styles style headings. Block styles are not required.
 	$levels = $root . '/levels'; mkdir( $levels . '/templates', 0777, true ); mkdir( $levels . '/parts' );
 	foreach ( array( 'templates/index.html', 'parts/header.html', 'parts/footer.html' ) as $file ) { copy( $root . '/good/' . $file, $levels . '/' . $file ); }
-	file_put_contents( $levels . '/theme.json', json_encode( array( 'version' => 3, 'styles' => array( 'elements' => array( 'h2' => array( 'typography' => array( 'fontWeight' => '400' ) ) ) ) ) ) );
+	file_put_contents( $levels . '/theme.json', json_encode( array( 'version' => 3, 'settings' => array( 'appearanceTools' => true ), 'styles' => array( 'elements' => array( 'h2' => array( 'typography' => array( 'fontWeight' => '400' ) ) ) ) ) ) );
 	$heading = '<!-- wp:heading --><h2 class="wp-block-heading">Title</h2><!-- /wp:heading -->';
 	$link    = '<!-- wp:paragraph --><p>Read <a href="/more">more</a></p><!-- /wp:paragraph -->';
 	$button  = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="/go">Go</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 	foreach ( array( array( $heading, array() ), array( $heading . $link . $button, array( 'link', 'button' ) ) ) as list( $content, $unstyled ) ) {
 		$theme_json = Static_Site_Importer_Block_Theme_Scorecard::measure( $levels, array( array( 'route' => '/', 'post_content' => $content ) ), $context )['checks']['theme_json'];
 		scorecard_assert( $unstyled === $theme_json['measured']['unstyled_used'] && ( array() === $unstyled ? 'pass' : 'fail' ) === $theme_json['status'] && 0 === $theme_json['measured']['block_style_count'], 'theme_json expects styles for rendered elements: ' . json_encode( $unstyled ) );
+	}
+	// A theme that leaves the editor's appearance controls off fails, however
+	// well its elements are styled. Layout sizes are reported either way.
+	$controls_theme = json_decode( file_get_contents( $root . '/good/theme.json' ), true );
+	foreach ( array( array( true, 'pass' ), array( false, 'fail' ), array( null, 'fail' ) ) as list( $tools, $status ) ) {
+		$controls_theme['settings']['appearanceTools'] = $tools;
+		file_put_contents( $levels . '/theme.json', json_encode( $controls_theme ) );
+		$theme_json = Static_Site_Importer_Block_Theme_Scorecard::measure( $levels, array( array( 'route' => '/', 'post_content' => $heading . $link . $button ) ), $context )['checks']['theme_json'];
+		scorecard_assert( $status === $theme_json['status'] && array() === $theme_json['measured']['unstyled_used'], 'theme_json requires appearance controls: ' . json_encode( $tools ) );
+		scorecard_assert( true === $theme_json['pass_threshold']['appearance_tools'] && '720px' === $theme_json['measured']['content_size'] && null === $theme_json['measured']['wide_size'], 'Layout sizes are reported: ' . json_encode( $tools ) );
 	}
 	foreach ( array(
 		'source and theme names' => array( 'eyebrow good-hero is-style-outline', 'pass', 0, 0, 1 ),
