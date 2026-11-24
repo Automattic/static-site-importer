@@ -1262,6 +1262,8 @@ final class Static_Site_Importer_Quality_Gates {
 
 		// Compiler diagnostics have codes, not fallback types. Join references to
 		// the same plan rows used for admission; never admit a diagnostic echo.
+		// A finding a provider resolved left the fallback counts during
+		// reconciliation, so it is not cited as a remaining fallback either.
 		foreach ( array( 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count' ) as $key ) {
 			$refs[ $key ] = array();
 		}
@@ -1272,6 +1274,9 @@ final class Static_Site_Importer_Quality_Gates {
 			}
 			$split = self::is_accepted_preserved_runtime_island( $fallback ) ? 'accepted_preserved_runtime_island_count' : 'unsupported_fallback_count';
 			foreach ( $diagnostics as $diagnostic ) {
+				if ( 'resolved_by_provider' === ( $diagnostic['fallback_resolution']['state'] ?? '' ) ) {
+					continue;
+				}
 				if ( ( $diagnostic['fallback_identity'] ?? $diagnostic['id'] ?? '' ) === $identity && ! empty( $diagnostic['id'] ) ) {
 					$refs['fallback_count'][] = (string) $diagnostic['id'];
 					$refs[ $split ][]         = (string) $diagnostic['id'];
