@@ -6,7 +6,8 @@
 // that check, so this script gives each open transformer or importer pull
 // request's head the same replay and posts the verdict as the commit status
 // `import-loop/corpus`. Run it on a cadence (corpus-pr.json) on the machine
-// that holds the corpus; each head is measured once.
+// that holds the corpus; each head is measured once, and a regressed cell is
+// rechecked on the head and its trunk baseline so flicker is reported as flaky.
 //
 // Usage: node corpus-pr.mjs --corpus <dir> --runs <dir> [--sites a,b] [--max N] [--dry-run]
 import { execFileSync } from 'node:child_process';
@@ -23,12 +24,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 // The status a replay verdict posts: GitHub caps descriptions at 140 characters.
 // Structure and weight that moved against the trunk baseline follow the cell verdict.
-export function corpusStatus({ failing, reasons, structure = [] }, sites) {
+// Cells that flipped between runs (corpus-check.mjs) are counted as flaky, never failing.
+export function corpusStatus({ failing, reasons, structure = [], flaky = [] }, sites) {
   const regressed = failing.flatMap((f) => f.corpus || []);
   const moved = structure.length ? `; ${metricSummary(structure)}` : '';
-  if (regressed.length) return { state: 'failure', description: `worse on ${regressed.map((r) => `${r.site} (${r.cells.length})`).join(', ')}${moved}`.slice(0, 140) };
+  const flickered = flaky.length ? ` (${flaky.reduce((n, f) => n + f.cells.length, 0)} flaky: ${flaky.map((f) => f.site).join(', ')})` : '';
+  if (regressed.length) return { state: 'failure', description: `worse on ${regressed.map((r) => `${r.site} (${r.cells.length})`).join(', ')}${flickered}${moved}`.slice(0, 140) };
   if (reasons.length) return { state: 'error', description: reasons[0].slice(0, 140) };
-  return { state: 'success', description: `no regression on ${sites.length} corpus sites${moved}`.slice(0, 140) };
+  return { state: 'success', description: `no regression on ${sites.length} corpus sites${flickered}${moved}`.slice(0, 140) };
 }
 
 // Whether a pull request's changed files reach the candidate the corpus imports with.

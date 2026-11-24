@@ -3,7 +3,9 @@
 // A head that passes on the site under repair must also leave every frozen
 // corpus site no worse than the pass's trunk transformer and importer release.
 // The baseline for that trunk and release is recorded once, under a lock, since
-// per-Cook confirms run at once; each head then replays against it. Regressions
+// per-Cook confirms run at once; each head then replays against it. A regressed
+// cell is rechecked on the head and on trunk (recheckRegressions): one that
+// flips between runs on either side is flaky, never a regression. Regressions
 // refute the head, and confirm records them on its pull request (CORPUS_NOTE),
 // where the next triage reads them to rework it. A head the corpus could not
 // measure stays unconfirmed.
@@ -48,6 +50,25 @@ export const corpusNote = (head, regressed, baseline) => [
   'A fix must leave every corpus site no worse. The next pass reworks this head on its branch.',
 ].join('\n');
 
+// Cell keys per site, from [{site, cells}].
+const cellsOf = (list, site) => list.find((r) => r.site === site)?.cells || [];
+
+// Separates a regression from flicker. A regressed cell stands only when the
+// head's recheck repeats it and the trunk baseline, replayed again against its
+// own recording, stays put on it; any other first-run regression flipped
+// between runs on one side and is flaky, reported but never failing a head.
+export function recheckRegressions(first, headAgain, trunkAgain) {
+  const regressed = [], flaky = [];
+  for (const { site, cells } of first) {
+    const repeated = cellsOf(headAgain, site), moved = cellsOf(trunkAgain, site);
+    const stands = cells.filter((c) => repeated.includes(c) && !moved.includes(c));
+    const flickered = cells.filter((c) => !stands.includes(c));
+    if (stands.length) regressed.push({ site, cells: stands });
+    if (flickered.length) flaky.push({ site, cells: flickered });
+  }
+  return { regressed, flaky };
+}
+
 const parsed = (run) => {
   try { return JSON.parse(String(run.stdout || '').trim().split('\n').at(-1)); } catch { return { sites: [], unmeasured: [`corpus.mjs exit ${run.status}: ${String(run.stderr || run.stdout || '').trim().slice(-300)}`] }; }
 };
@@ -73,11 +94,12 @@ function withLock(lock, fn) {
 }
 
 // heads: [{verdict, key, transformer, importer?} | {verdict, key, skip}]
-export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
+// runCorpus(mode, args) runs corpus.mjs and returns its parsed report; tests replay fixtures through it.
+export function corpusCheck({ corpus, sites, triage, here, log, heads, runCorpus }) {
   if (!corpus) return { summary: { status: 'not_configured' } };
   const root = path.resolve(corpus);
   const env = { ...process.env, SSI_ZIP: triage.reimport.ssi_zip, BARE_WP: triage.reimport.bare_wp };
-  const corpusRun = (mode, extra) => parsed(spawnSync('node', [path.join(here, 'corpus.mjs'), mode, '--corpus', root, ...extra], { env, encoding: 'utf8', maxBuffer: 256 << 20 }));
+  const corpusRun = (mode, extra) => (runCorpus ? runCorpus(mode, extra) : parsed(spawnSync('node', [path.join(here, 'corpus.mjs'), mode, '--corpus', root, ...extra], { env, encoding: 'utf8', maxBuffer: 256 << 20 })));
   const measured = heads.filter((h) => !h.skip);
   const summary = { status: 'checked', heads: heads.filter((h) => h.skip).map((h) => ({ pr: h.key, skipped: h.skip })) };
   if (!measured.length) return { summary };
@@ -96,23 +118,35 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
   // Sites trunk itself cannot measure have no baseline: reported, never dropped silently.
   const baselined = !fs.existsSync(recorded) ? [] : fs.readdirSync(baseline).filter((f) => f.endsWith('.json') && !f.startsWith('.')).map((f) => f.slice(0, -5)).filter((s) => !sites || sites.split(',').includes(s));
   Object.assign(summary, { baseline, sites: baselined, unbaselined: fs.existsSync(recorded) ? JSON.parse(fs.readFileSync(recorded, 'utf8')).unmeasured : ['no site measured at trunk'] });
+  // The trunk baseline's own recheck, once per site across every head.
+  const trunkRechecked = new Map();
+  const trunkRecheck = (on) => {
+    const missing = on.filter((s) => !trunkRechecked.has(s));
+    if (missing.length) {
+      const again = corpusOutcome(corpusRun('replay', ['--blocks-engine', triage.transformer, '--baseline', baseline, '--sites', missing.join(',')]));
+      for (const s of missing) trunkRechecked.set(s, cellsOf(again.regressed, s));
+    }
+    return on.map((site) => ({ site, cells: trunkRechecked.get(site) })).filter((r) => r.cells.length);
+  };
   for (const head of measured) {
     if (!baselined.length) { head.verdict.reasons.push(`the corpus has no measured baseline at ${path.basename(baseline)}`); continue; }
     const start = Date.now();
     const replay = (on) => corpusOutcome(corpusRun('replay', ['--blocks-engine', head.transformer, '--baseline', baseline, '--sites', on.join(','), ...(head.importer ? ['--importer-source', head.importer] : [])]));
     const outcome = replay(baselined);
     // A cell can fail one replay on a loaded machine; a regression stands only
-    // when a second replay of its sites repeats it.
+    // when a second replay of its sites repeats it and trunk stays put there.
+    outcome.flaky = [];
     if (outcome.regressed.length) {
       const sites = outcome.regressed.map((r) => r.site);
       const again = replay(sites);
-      outcome.regressed = outcome.regressed.map((r) => ({ site: r.site, cells: r.cells.filter((c) => again.regressed.find((a) => a.site === r.site)?.cells.includes(c)) })).filter((r) => r.cells.length);
+      Object.assign(outcome, recheckRegressions(outcome.regressed, again.regressed, trunkRecheck(sites)));
       outcome.unmeasured = [...outcome.unmeasured.filter((u) => !sites.some((site) => u.startsWith(`${site}: `))), ...again.unmeasured];
     }
     const seconds = (Date.now() - start) / 1000;
-    log(head.key, `corpus: ${outcome.regressed.length} regressed, ${outcome.improved.length} improved, ${outcome.unmeasured.length} unmeasured in ${seconds}s`);
+    log(head.key, `corpus: ${outcome.regressed.length} regressed, ${outcome.flaky.length} flaky, ${outcome.improved.length} improved, ${outcome.unmeasured.length} unmeasured in ${seconds}s`);
     summary.heads.push({ pr: head.key, seconds, ...outcome });
     head.verdict.structure = outcome.structure;
+    head.verdict.flaky = outcome.flaky;
     if (outcome.regressed.length) head.verdict.failing.push({ corpus: outcome.regressed, baseline });
     else if (outcome.unmeasured.length) head.verdict.reasons.push(`corpus replay could not measure: ${outcome.unmeasured.join('; ').slice(0, 500)}`);
   }
