@@ -4,6 +4,9 @@
 # `wp static-site-importer import`, with its bundled transformer replaced by a
 # candidate checkout. Serves the imported site and prints its URL; the server
 # stops when the caller kills the process group or removes the site.
+# A site left in maintenance mode (<site>/.maintenance, or a home URL answering
+# 503 with Retry-After) is refused: exit 1 with the receipt tail and a final
+# `site_not_serving: <reason>` line on stderr.
 #
 # Usage: reimport.sh <php-transformer dir> <capture root> <site dir>
 # Env: BARE_WP (template from bare-wp.sh), SSI_ZIP (Static Site Importer release zip),
@@ -19,6 +22,10 @@ wp="php $BARE_WP/wp-cli.phar --path=$site"
 url="http://127.0.0.1:$port"
 $wp option update home "$url" --quiet; $wp option update siteurl "$url" --quiet
 $wp rewrite structure '/%postname%/' --quiet
+# A served gate site must not upgrade itself: a background (cron) upgrade
+# writes <site>/.maintenance and leaves it when interrupted, and every page then
+# serves the Maintenance screen.
+$wp config set AUTOMATIC_UPDATER_DISABLED true --raw --quiet
 
 # The release, with the candidate transformer in its vendor slot. PSR-4 then
 # resolves every transformer class from the candidate: drop the classmap
@@ -58,6 +65,17 @@ jq -n --arg name "$name" --arg source "$capture" '{
   || grep -q '"code":"static_site_importer_quality_failed"' "$site/.studio-import/receipt.log" \
   || { tail -c 2000 "$site/.studio-import/receipt.log" >&2; exit 1; }
 
+# A site left in maintenance mode imports "successfully" but serves only the
+# Maintenance screen: refuse it, so nothing measures that screen as the import.
+# `wp_maintenance()` answers 503 with Retry-After while <site>/.maintenance exists.
+refuse() {
+  tail -c 2000 "$site/.studio-import/receipt.log" >&2 || true
+  if [ -f "$site/.server.pid" ]; then kill -- "-$(cat "$site/.server.pid")" 2>/dev/null || true; fi
+  echo "site_not_serving: $1 {\"code\":\"site_in_maintenance_mode\"}" >&2
+  exit 1
+}
+[ -e "$site/.maintenance" ] && refuse "$site/.maintenance exists after import; every page would serve the Maintenance screen"
+
 cat > "$site/.router.php" <<'PHP'
 <?php
 $file = __DIR__ . parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH );
@@ -79,4 +97,9 @@ for _ in \$(seq 50); do curl -fs -o /dev/null "$url/" && exit 0; sleep 0.2; done
 echo "site_unreachable: $url did not answer after serving $site" >&2; exit 1
 SERVE
 bash "$site/.serve.sh" > /dev/null 2>&1 || true
+[ -e "$site/.maintenance" ] && refuse "$site/.maintenance appeared once the site was served"
+headers=$(curl -s -m 60 -o /dev/null -D - "$url/" 2>/dev/null | tr -d '\r' || true)
+if [[ ${headers%%$'\n'*} =~ ^HTTP/[0-9.]+\ 503 ]] && grep -qi '^retry-after:' <<< "$headers"; then
+  refuse "$url/ answers 503 with Retry-After (the WordPress Maintenance screen)"
+fi
 echo "$url"

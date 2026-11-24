@@ -44,6 +44,14 @@ class WP_CLI {
 		}
 		mkdir( WP_PLUGIN_DIR . '/absent-plugin', 0777, true );
 		file_put_contents( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php', "<?php\n" );
+		if ( 'install_leaves_maintenance' === $GLOBALS['ssi_install_outcome'] ) {
+			// The child upgrader entered maintenance mode and never left it.
+			if ( ! is_dir( ABSPATH ) ) {
+				mkdir( ABSPATH, 0777, true );
+			}
+			file_put_contents( ABSPATH . '.maintenance', '<?php $upgrading = ' . time() . '; ?>' );
+			return 0;
+		}
 		if ( 'install_reconcile' === $GLOBALS['ssi_install_outcome'] ) {
 			// Upgraders can persist the entrypoint before reporting a terminal failure.
 			return 1;
@@ -369,6 +377,34 @@ $install_failure_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_or
 	static fn (): bool => false
 );
 $assert( 'failed' === ( $install_failure_report['status'] ?? '' ) && 'absent-plugin' === ( $install_failure_report['slug'] ?? '' ) && in_array( 'install', $install_failure_report['attempted_actions'] ?? array(), true ) && 'static_site_importer_plugin_install_failed' === ( $install_failure_report['error']['code'] ?? '' ), 'installation-failure-evidence' );
+
+// An install that leaves `.maintenance` behind is cleared and fails the dependency.
+$GLOBALS['ssi_install_outcome'] = 'install_leaves_maintenance';
+$GLOBALS['ssi_plugin_active']   = false;
+$maintenance_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'absent-plugin',
+	'absent-plugin/absent-plugin.php',
+	static fn (): bool => false
+);
+$assert( ! file_exists( ABSPATH . '.maintenance' ), 'install-maintenance-marker-cleared' );
+$assert( 'failed' === ( $maintenance_report['status'] ?? '' ) && 'static_site_importer_plugin_install_left_maintenance_mode' === ( $maintenance_report['error']['code'] ?? '' ) && true === ( $maintenance_report['maintenance_cleared'] ?? false ), 'install-leaving-maintenance-fails' );
+$assert( false === ( $maintenance_report['installed'] ?? true ), 'install-leaving-maintenance-is-not-reconciled' );
+
+unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
+rmdir( WP_PLUGIN_DIR . '/absent-plugin' );
+// A marker the install did not write is left to its owner.
+file_put_contents( ABSPATH . '.maintenance', '<?php $upgrading = 1; ?>' );
+$GLOBALS['ssi_install_outcome'] = 'success';
+$preexisting_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'absent-plugin',
+	'absent-plugin/absent-plugin.php',
+	static fn (): bool => $GLOBALS['ssi_plugin_active']
+);
+$assert( file_exists( ABSPATH . '.maintenance' ) && 'failed' !== ( $preexisting_report['status'] ?? '' ), 'preexisting-maintenance-marker-untouched' );
+unlink( ABSPATH . '.maintenance' );
+rmdir( ABSPATH );
+unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
+rmdir( WP_PLUGIN_DIR . '/absent-plugin' );
 
 rmdir( WP_PLUGIN_DIR );
 rmdir( $tmp );

@@ -13,6 +13,14 @@ import { mergeRuns, routeCss, siteStructure } from './corpus-metrics.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const save = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+// Why reimport.sh refused a site. A site it would not serve (left in
+// maintenance mode) is named by that reason, so the replay records the site as
+// unmeasured rather than scoring the Maintenance screen as failed cells.
+export function importFailure(stderr, log) {
+  const refusal = String(stderr).split('\n').reverse().find((line) => line.startsWith('site_not_serving: '));
+  return refusal ? `import refused (${log}): ${refusal}` : `import failed (${log}): ${String(stderr).trim().slice(-500)}`;
+}
+
 export function compareCells(before, after) {
   const regressions = [], improvements = [], unmeasured = [];
   const key = c => `${c.route}@${c.width}`;
@@ -118,7 +126,7 @@ async function main() {
       const env = { ...process.env, BARE_WP: bare, SSI_ZIP: zip, SSI_SOURCE: args['importer-source'] ? path.resolve(args['importer-source']) : '' };
       const imported = await run('bash', [path.join(here, 'gates/reimport.sh'), transformer, input, wp], env);
       fs.writeFileSync(path.join(dir, 'reimport.log'), imported.stdout + imported.stderr);
-      if (imported.status !== 0) throw new Error(`import failed (${path.join(dir, 'reimport.log')}): ${imported.stderr.trim().slice(-500)}`);
+      if (imported.status !== 0) throw new Error(importFailure(imported.stderr, path.join(dir, 'reimport.log')));
       const url = imported.stdout.trim().split('\n').at(-1);
       // Structure and weight of the import; a failure to measure them never hides the cells.
       try {
