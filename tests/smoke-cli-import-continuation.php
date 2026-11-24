@@ -748,7 +748,7 @@ $oversized_redirects = fopen( $named_bundle_dir . '/_redirects', 'w' );
 ftruncate( $oversized_redirects, Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES + 1 );
 fclose( $oversized_redirects );
 $oversized_rejection = $admit_bundle( $named_bundle_dir );
-$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-oversized-redirects-manifest-fails-closed' );
+$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_redirects_manifest_too_large' === $oversized_rejection->get_error_code(), 'request-bundle-oversized-redirects-manifest-fails-closed' );
 $assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && 'website/_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ) && 'redirects_manifest_too_large' === ( $oversized_rejection->get_error_data()['reason_code'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
 unlink( $named_bundle_dir . '/_redirects' );
 unlink( $named_bundle_dir . '/index.html' );

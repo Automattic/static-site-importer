@@ -67,8 +67,13 @@ final class Static_Site_Importer_Content_Policy {
 	/** Assets that a compiler may carry into a generated companion plugin. */
 	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'cur', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
 
-	/** Root-level Netlify `_redirects` manifests are bounded import metadata, not pages. */
-	public const REDIRECTS_MANIFEST_MAX_BYTES = 65536;
+	/**
+	 * Root-level Netlify `_redirects` manifests are bounded import metadata, not pages.
+	 *
+	 * Rules are parsed and validated one line at a time, so the bound only caps
+	 * memory: 2 MiB holds tens of thousands of rules (a 3000-tag blog is ~350 KB).
+	 */
+	public const REDIRECTS_MANIFEST_MAX_BYTES = 2097152;
 
 	/** Portable extensions for downloaded assets whose URL paths carry no filename extension. */
 	private const PORTABLE_CONTENT_TYPE_EXTENSIONS = array(
@@ -312,7 +317,16 @@ final class Static_Site_Importer_Content_Policy {
 		if ( $redirects ) {
 			$bytes = self::declared_bytes( $file );
 			if ( null !== $bytes && $bytes > self::REDIRECTS_MANIFEST_MAX_BYTES ) {
-				return 'redirects_manifest_too_large';
+				return new WP_Error(
+					'static_site_importer_redirects_manifest_too_large',
+					sprintf( 'Redirects manifest %1$s is %2$d bytes, exceeding the maximum of %3$d bytes.', $path, $bytes, self::REDIRECTS_MANIFEST_MAX_BYTES ),
+					array(
+						'path'        => $path,
+						'reason_code' => 'redirects_manifest_too_large',
+						'bytes'       => $bytes,
+						'max_bytes'   => self::REDIRECTS_MANIFEST_MAX_BYTES,
+					)
+				);
 			}
 		}
 		if ( ! self::is_textual_path( $path ) ) {
