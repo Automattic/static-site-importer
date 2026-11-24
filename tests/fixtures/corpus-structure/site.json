@@ -1,0 +1,6 @@
+{
+  "page:1": "<!-- wp:group --><div class=\"wp-block-group\"><!-- wp:group --><div class=\"wp-block-group\"><!-- wp:paragraph --><p>One</p><!-- /wp:paragraph --></div><!-- /wp:group --></div><!-- /wp:group -->",
+  "page:2": "<!-- wp:group --><div class=\"wp-block-group\"><!-- wp:heading --><h2>Two</h2><!-- /wp:heading -->\n\n<!-- wp:paragraph --><p>Children</p><!-- /wp:paragraph --></div><!-- /wp:group -->",
+  "wp_template:index": "<!-- wp:template-part {\"slug\":\"header\"} /-->\n<!-- wp:group {\"tagName\":\"main\"} --><main class=\"wp-block-group\"><!-- wp:columns --><div class=\"wp-block-columns\"><!-- wp:column --><div class=\"wp-block-column\"><!-- wp:group --><div class=\"wp-block-group\"><!-- wp:image --><figure class=\"wp-block-image\"><img src=\"a.png\" alt=\"\"/></figure><!-- /wp:image --></div><!-- /wp:group --></div><!-- /wp:column --></div><!-- /wp:columns --></main><!-- /wp:group -->",
+  "wp_template_part:header": "<!-- wp:group --><div class=\"wp-block-group\"></div><!-- /wp:group -->"
+}

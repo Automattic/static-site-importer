@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { captureRoutes } from './checks.mjs';
 import { compareInvocation, visualCells } from './visual.mjs';
 import { classCounts, visualScoreRegressed } from './progress.mjs';
+import { mergeRuns, routeCss, siteStructure } from './corpus-metrics.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -59,10 +60,16 @@ function removeTrees(dir) {
   }
 }
 async function main() {
-  const { values: args, positionals } = parseArgs({ allowPositionals: true, options: Object.fromEntries(['corpus', 'blocks-engine', 'importer-source', 'sites', 'jobs', 'out', 'variant', 'ssi-zip', 'baseline'].map(k => [k, { type: 'string' }])) });
+  const { values: args, positionals } = parseArgs({ allowPositionals: true, options: Object.fromEntries(['corpus', 'blocks-engine', 'importer-source', 'sites', 'jobs', 'out', 'variant', 'ssi-zip', 'baseline', 'repeat'].map(k => [k, { type: 'string' }])) });
   const mode = positionals[0];
-  if (!['record', 'replay'].includes(mode) || !args.corpus || !args['blocks-engine']) throw new Error('usage: corpus.mjs record|replay --corpus <dir> --blocks-engine <dir> [--importer-source <dir>] [--sites a,b] [--jobs N] [--out <dir>] [--ssi-zip <zip>] [--baseline <dir>] [--variant no-box-tree]');
+  // measure: cells and structure only, with no expected result to record or compare.
+  if (!['record', 'replay', 'measure'].includes(mode) || !args.corpus || !args['blocks-engine']) throw new Error('usage: corpus.mjs record|replay|measure --corpus <dir> --blocks-engine <dir> [--importer-source <dir>] [--sites a,b] [--jobs N] [--out <dir>] [--ssi-zip <zip>] [--baseline <dir>] [--repeat N] [--variant no-box-tree]');
+  // --repeat N replays each site N times; a cell passes only when every replay passes it (mergeRuns).
+  const repeat = Number(args.repeat || 1);
+  if (!Number.isInteger(repeat) || repeat < 1) throw new Error('repeat must be a positive integer');
   if (args.variant && (args.variant !== 'no-box-tree' || mode === 'record')) throw new Error('variant is replay-only: no-box-tree');
+  // A replay compares each run with the baseline: corpus-check.mjs repeats regressed sites itself.
+  if (repeat > 1 && mode === 'replay') throw new Error('repeat is for record and measure');
   const corpus = path.resolve(args.corpus), be = path.resolve(args['blocks-engine']);
   // Expected results live with each capture, or under --baseline as <site>.json:
   // one directory per measured transformer and release, so captures stay shared.
@@ -92,9 +99,9 @@ async function main() {
   const sha = ['', 'php-transformer/'].includes(prefix) && commit ? commit : `VERSION ${fs.readFileSync(path.join(transformer, 'VERSION'), 'utf8').trim()}`;
   let index = 0;
   const results = new Array(sites.length);
-  async function measure(site) {
-    const start = Date.now(), dir = path.join(work, site), wp = path.join(dir, 'site');
-    const result = { site, cells: [], regressions: [], improvements: [], unmeasured: [] };
+  async function replaySite(site, replay) {
+    const start = Date.now(), dir = path.join(work, replay ? `${site}.${replay}` : site), wp = path.join(dir, 'site');
+    const result = { site, cells: [], regressions: [], improvements: [], unmeasured: [], metrics: null };
     fs.mkdirSync(dir);
     try {
       const capture = path.join(dir, 'capture');
@@ -113,6 +120,13 @@ async function main() {
       fs.writeFileSync(path.join(dir, 'reimport.log'), imported.stdout + imported.stderr);
       if (imported.status !== 0) throw new Error(`import failed (${path.join(dir, 'reimport.log')}): ${imported.stderr.trim().slice(-500)}`);
       const url = imported.stdout.trim().split('\n').at(-1);
+      // Structure and weight of the import; a failure to measure them never hides the cells.
+      try {
+        const { stylesheet, ...structure } = await siteStructure(path.join(bare, 'wp-cli.phar'), wp);
+        result.metrics = { ...structure, stylesheet, css: await routeCss(url, captureRoutes(capture)) };
+      } catch (error) {
+        result.metrics_error = `metrics: ${error.message}`;
+      }
       const { command, reportPath } = compareInvocation(capture, url, client);
       fs.rmSync(reportPath, { force: true });
       const compared = await run('npx', command);
@@ -126,12 +140,14 @@ async function main() {
       const reference = json(path.join(capture, 'fidelity-reference.json'));
       const frozenUnready = result.cells.filter(c => !c.verified && !c.scores.length && c.pending.length > 0 && c.pending.every(p => String(p.reason).includes('Source evidence unready:')) && reference.entries?.some(e => e.route === c.route && e.viewport === c.width && e.readiness?.ready === false));
       result.frozen_unmeasured = frozenUnready.map(c => ({ route: c.route, width: c.width, evidence: reference.entries.filter(e => e.route === c.route && e.viewport === c.width) }));
-      if (mode === 'record') {
+      if (mode !== 'replay') {
         result.unmeasured = result.cells.filter(c => !c.verified).map(c => `${c.route}@${c.width}`);
-        if (result.unmeasured.length === frozenUnready.length) save(expectedPath(site), { blocks_engine_sha: sha, ssi_release: release, client_package: client, frozen_unmeasured: result.frozen_unmeasured, cells: result.cells });
+        // A recording is saved once every replay measured all it can (measure below).
+        if (mode === 'record') result.recordable = { client, complete: result.unmeasured.length === frozenUnready.length };
       } else {
         const expected = json(expectedPath(site));
         Object.assign(result, compareCells(expected.cells, result.cells));
+        result.baseline_metrics = expected.metrics ?? null;
         result.frozen_unmeasured = result.frozen_unmeasured.filter(c => expected.frozen_unmeasured?.some(e => e.route === c.route && e.width === c.width));
       }
       result.unmeasured = result.unmeasured.filter(key => !result.frozen_unmeasured.some(c => key === `${c.route}@${c.width}`));
@@ -149,12 +165,19 @@ async function main() {
     }
     return result;
   }
+  async function measure(site) {
+    const runs = [];
+    for (let i = 0; i < repeat; i++) runs.push(await replaySite(site, repeat > 1 ? i + 1 : 0));
+    const { recordable, ...merged } = mergeRuns(runs);
+    if (mode === 'record' && runs.every(r => r.recordable?.complete)) save(expectedPath(site), { blocks_engine_sha: sha, ssi_release: release, client_package: recordable.client, frozen_unmeasured: merged.frozen_unmeasured, cells: merged.cells, metrics: merged.metrics });
+    return merged;
+  }
   await Promise.all(Array.from({ length: Math.min(jobs, sites.length) }, async () => {
     while (index < sites.length) { const i = index++; results[i] = await measure(sites[i]); }
   }));
   if (!args.out) fs.rmSync(out, { recursive: true, force: true });
   const regressed = results.some(s => s.regressions.length > 0);
-  console.log(JSON.stringify({ sites: results, regressed }));
+  console.log(JSON.stringify({ blocks_engine_sha: sha, ssi_release: release, sites: results, regressed }));
   process.exitCode = regressed || results.some(s => s.unmeasured.length) ? 1 : 0;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => {

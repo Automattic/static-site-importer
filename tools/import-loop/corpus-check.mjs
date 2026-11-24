@@ -10,11 +10,13 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { metricChanges } from './corpus-metrics.mjs';
 
 export const CORPUS_NOTE = '<!-- import-loop:corpus-refuted ';
 
-// One replay's verdict: regressed and improved cells per site, and anything
-// the replay could not measure.
+// One replay's verdict: regressed and improved cells per site, anything the
+// replay could not measure, and each site's structure and weight against the
+// baseline's (`metrics`), with the values that moved (`structure`).
 export function corpusOutcome(replay) {
   const sites = replay.sites || [];
   const per = (field) => sites.filter((s) => s[field]?.length).map((s) => ({ site: s.site, cells: s[field] }));
@@ -22,6 +24,8 @@ export function corpusOutcome(replay) {
     regressed: per('regressions'),
     improved: per('improvements'),
     unmeasured: [...(replay.unmeasured || []), ...sites.filter((s) => s.unmeasured?.length).map((s) => `${s.site}: ${s.unmeasured.join('; ')}`)],
+    metrics: sites.map((s) => ({ site: s.site, before: s.baseline_metrics ?? null, after: s.metrics ?? null })),
+    structure: metricChanges(sites.map((s) => ({ site: s.site, before: s.baseline_metrics, after: s.metrics }))),
   };
 }
 
@@ -108,6 +112,7 @@ export function corpusCheck({ corpus, sites, triage, here, log, heads }) {
     const seconds = (Date.now() - start) / 1000;
     log(head.key, `corpus: ${outcome.regressed.length} regressed, ${outcome.improved.length} improved, ${outcome.unmeasured.length} unmeasured in ${seconds}s`);
     summary.heads.push({ pr: head.key, seconds, ...outcome });
+    head.verdict.structure = outcome.structure;
     if (outcome.regressed.length) head.verdict.failing.push({ corpus: outcome.regressed, baseline });
     else if (outcome.unmeasured.length) head.verdict.reasons.push(`corpus replay could not measure: ${outcome.unmeasured.join('; ').slice(0, 500)}`);
   }
