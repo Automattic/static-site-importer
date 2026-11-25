@@ -340,6 +340,37 @@ try {
 }
 $assert( ! empty( $partial['success'] ) && 2 === count( $partial['result']['pages'] ?? array() ), 'partial shard: already published receipts survive worker termination' );
 
+// A shard the run deadline left unstarted is deadline exhaustion, not a stalled worker.
+$expired_fanout = static function ( string $import_id, array $shards, ?int $workers, array $bounds, bool $compile_entry ) {
+	foreach ( $compile_entry ? $shards : array() as $index => $page_ids ) {
+		if ( in_array( 'website/index.html', $page_ids, true ) ) {
+			Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+			unset( $shards[ $index ] );
+		}
+	}
+	return static_site_importer_cli_compile_artifact_pages_fanout( $import_id, $shards, $workers, array( 'deadline' => microtime( true ) - 1 ) );
+};
+foreach ( array( true, false ) as $compile_entry ) {
+	$use_policy( array(
+		'compile_shard_pages'     => 1,
+		'compile_fanout_pages'    => 4,
+		'compile_workers'         => 3,
+		'import_deadline_seconds' => 60,
+		'compile_fanout'          => static fn ( string $import_id, array $shards, ?int $workers = null, array $bounds = array() ) => $expired_fanout( $import_id, $shards, $workers, $bounds, $compile_entry ),
+	) );
+	$expired          = $drive( $input() );
+	$expired_evidence = (string) wp_json_encode( $expired );
+	$assert( ! str_contains( $expired_evidence, 'compile_worker_stalled' ) && ! str_contains( $expired_evidence, 'worker stalled' ), 'expired deadline (' . ( $compile_entry ? 'entry compiled' : 'entry unstarted' ) . '): unstarted shards are not reported as stalled workers' );
+	if ( $compile_entry ) {
+		$assert( ! empty( $expired['success'] ) && 1 === count( $expired['result']['pages'] ?? array() ) && str_contains( $expired_evidence, '"reason_code":"deadline"' ), 'expired deadline: unstarted non-entry pages carry the deadline reason' );
+	} else {
+		$assert( empty( $expired['success'] ) && 'static_site_importer_entrypoint_deadline_exhausted' === ( $expired['error']['code'] ?? '' ), 'expired deadline: an unstarted entrypoint fails with the deadline code' );
+		$assert( str_contains( (string) ( $expired['error']['message'] ?? '' ), 'deadline' ) && str_contains( (string) ( $expired['error']['message'] ?? '' ), '60' ), 'expired deadline: the entrypoint failure names the exhausted deadline budget' );
+		$owners = array_column( $expired['fixture_diagnostics']['diagnostics'] ?? array(), 'parser_owner' );
+		$assert( ! in_array( 'blocks-engine', $owners, true ) && ! in_array( 'native_conversion', array_column( $expired['fixture_diagnostics']['diagnostics'] ?? array(), 'loss_class' ), true ), 'expired deadline: the entrypoint failure is not routed to blocks-engine as a conversion bug' );
+	}
+}
+
 // An entrypoint that cannot be represented fails the import before any persistence.
 $imports_before = count( $GLOBALS['ssi_omitted_imports'] );
 $throw_on( 'website/index.html' );

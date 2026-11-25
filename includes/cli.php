@@ -288,11 +288,14 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 				$page_ids = $queue[ $index ];
 				unset( $queue[ $index ] );
 				if ( null !== ( $bounds['deadline'] ?? null ) && microtime( true ) >= $bounds['deadline'] ) {
+					// Never started: the deadline was exhausted before dispatch, which is
+					// not a worker that hung.
 					$stalled_workers[] = array(
 						'page_ids'          => $page_ids,
 						'elapsed_seconds'   => 0.0,
 						'stderr'            => '',
 						'peak_memory_bytes' => null,
+						'not_started'       => true,
 					);
 					continue;
 				}

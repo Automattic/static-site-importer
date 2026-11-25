@@ -1148,6 +1148,11 @@ class Static_Site_Importer_Diagnostic_Contract {
 			return 'static-site-importer';
 		}
 
+		// An exhausted import deadline is the importer's own budget, not a conversion.
+		if ( str_ends_with( self::first_scalar( $row, array( 'code', 'reason_code' ), '' ), '_deadline_exhausted' ) ) {
+			return 'static-site-importer';
+		}
+
 		// The fallback bucket means unclassified, which is not evidence of ownership.
 		if ( 'dropped_images' === $repair_bucket || 'document_metadata_routed' === $type || str_contains( $type, 'asset' ) || str_contains( $type, 'image' ) ) {
 			return 'static-site-importer';

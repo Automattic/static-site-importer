@@ -390,6 +390,7 @@
     "static_site_importer_empty_file": { "class": "representability", "unit": "page", "owning_layer": "static-site-importer", "tracker": "Automattic/static-site-importer#2054" },
     "static_site_importer_entity_rollback_exception": { "class": "propagated", "owning_layer": "static-site-importer" },
     "static_site_importer_entity_rollback_unavailable": { "class": "operational", "owning_layer": "static-site-importer" },
+    "static_site_importer_entrypoint_deadline_exhausted": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_executable_source_rejected": { "class": "representability", "unit": "asset", "owning_layer": "static-site-importer", "tracker": "Automattic/static-site-importer#2054" },
     "static_site_importer_export_external_metric_binding_unresolved": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_external_metric_refresh_unresolved": { "class": "representability", "unit": "block", "owning_layer": "blocks-engine", "tracker": "Automattic/static-site-importer#2054" },
