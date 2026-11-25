@@ -116,16 +116,19 @@ test('static front page served through front-page does not set the column author
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     let recorded;
+    const created = [];
     await page.route('http://parity.test/**', async route => {
       const request = route.request();
       if (request.method() === 'POST') {
-        const { operation, evidence } = JSON.parse(request.postData());
+        const { operation, evidence, sibling } = JSON.parse(request.postData());
         if (operation === 'record') recorded = evidence;
+        if (operation === 'create') created.push(sibling.id);
         const values = {
-          // The front page has the lowest ID, so it lists first.
+          // The served template is authoritative; older endpoints do not
+          // expose page_on_front. Do not create a normal-page probe for Home.
           list: { posts: [
-            { id: 1, type: 'page', url: 'http://parity.test/', title: 'Home', front: true },
-            { id: 2, type: 'page', url: 'http://parity.test/about', title: 'About', front: false },
+            { id: 1, type: 'page', url: 'http://parity.test/', title: 'Home' },
+            { id: 2, type: 'page', url: 'http://parity.test/about', title: 'About' },
           ], terms: [] },
           create: { url: 'http://parity.test/probe', title: 'Authoring parity probe' },
         };
@@ -143,6 +146,7 @@ test('static front page served through front-page does not set the column author
     });
     await page.goto('http://parity.test/endpoint');
     await page.evaluate(authoringParityExpression('http://parity.test/endpoint'));
+    assert.deepEqual(created, [2]);
     assert.deepEqual(recorded.map(row => [row.cluster, row.pass]), [['page × theme//page', true]]);
     assert.equal(authoringParityPasses(recorded), true);
     await page.close();

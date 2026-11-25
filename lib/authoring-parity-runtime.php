@@ -48,7 +48,6 @@ function ssi_authoring_item( $post ) {
 		'type'  => $post->post_type,
 		'url'   => get_permalink( $post ),
 		'title' => get_the_title( $post ),
-		'front' => 'page' === get_option( 'show_on_front' ) && (int) get_option( 'page_on_front' ) === $post->ID,
 	);
 }
 try {
