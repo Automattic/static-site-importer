@@ -270,6 +270,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				'terms'      => array(),
 			),
 		);
+
 		$currencies = array();
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
@@ -329,20 +330,31 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	private static function seed_store_currency( array $currencies ): array {
 		$currencies = array_values( array_unique( $currencies ) );
 		if ( empty( $currencies ) ) {
-			return array( 'status' => 'kept', 'reason' => 'no_currency' );
+			return self::currency_kept( 'no_currency' );
 		}
 		if ( count( $currencies ) > 1 ) {
-			return array( 'status' => 'kept', 'reason' => 'conflicting_currencies', 'currencies' => $currencies );
+			return self::currency_kept( 'conflicting_currencies', array( 'currencies' => $currencies ) );
 		}
 		$currency = $currencies[0];
 		if ( ! function_exists( 'get_woocommerce_currencies' ) || ! isset( get_woocommerce_currencies()[ $currency ] ) ) {
-			return array( 'status' => 'kept', 'reason' => 'unknown_currency', 'currency' => $currency );
+			return self::currency_kept( 'unknown_currency', array( 'currency' => $currency ) );
 		}
 		if ( 'USD' !== get_option( 'woocommerce_currency', 'USD' ) ) {
-			return array( 'status' => 'kept', 'reason' => 'configured_currency' );
+			return self::currency_kept( 'configured_currency' );
 		}
 		update_option( 'woocommerce_currency', $currency );
-		return array( 'status' => 'set', 'currency' => $currency );
+		return array(
+			'status'   => 'set',
+			'currency' => $currency,
+		);
+	}
+
+	/** A kept-currency report with its reason. */
+	private static function currency_kept( string $reason, array $extra = array() ): array {
+		return array(
+			'status' => 'kept',
+			'reason' => $reason,
+		) + $extra;
 	}
 
 	/** Only consume a producer-authorized document for this exact product row. */
