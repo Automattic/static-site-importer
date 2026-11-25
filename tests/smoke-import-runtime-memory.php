@@ -141,9 +141,13 @@ foreach ( array_slice( $steps, -2 ) as $index => $step ) {
 	$assert( $step['growth'] <= $apply_bounds[ $index ] * $source_bytes, sprintf( 'apply step %d grew the heap by %.2f x the source bytes, above the %.1f x bound', $index + 1, $step['growth'] / $source_bytes, $apply_bounds[ $index ] ) );
 }
 // Compilation and composition dominate: 9.17 x measured with engine code preloaded
-// (22.56 x when engine v0.45.589 code loaded inside the step). This catches a runaway.
-$worst = max( array_column( $steps, 'growth' ) );
-$assert( $worst <= 11.0 * $source_bytes, sprintf( 'the worst step grew the heap by %.2f x the source bytes, above the 11.0 x bound', $worst / $source_bytes ) );
+// (22.56 x when engine v0.45.589 code loaded inside the step). Engine v0.52.0
+// (Automattic/blocks-engine#7442) builds the site selector-pruner index once during
+// composition and ships it to page workers: 10.07 x -> 11.02 x on PHP 8.4, 11.22 x
+// on CI. This catches a runaway.
+$worst_bound = 12.5;
+$worst       = max( array_column( $steps, 'growth' ) );
+$assert( $worst <= $worst_bound * $source_bytes, sprintf( 'the worst step grew the heap by %.2f x the source bytes, above the %.1f x bound', $worst / $source_bytes, $worst_bound ) );
 
 ssi_harness_cleanup();
 
