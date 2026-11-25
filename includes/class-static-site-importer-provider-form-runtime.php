@@ -92,6 +92,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_choice_values' ), 30 );
 		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_form_container_scope' ) );
+		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_source_submit_controls' ) );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_button_accessible_name' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
@@ -121,6 +122,17 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$html,
 			1
 		) ?? $html );
+	}
+
+	/** Remove only Jetpack's legacy fallback button from explicitly buttonless source forms. */
+	public static function project_source_submit_controls( string $html ): string {
+		if ( ! preg_match( '/\bclass=([\"\'])[^\"\']*\bssi-source-no-submit\b[^\"\']*\1/', $html ) ) {
+			return $html;
+		}
+		// Keep the error wrapper and hidden submission/nonce inputs, but not
+		// the legacy paragraph's margins (a buttonless form has no such box).
+		$html = (string) preg_replace( '/<button\b(?=[^>]*\btype=([\"\'])submit\1)[^>]*>.*?<\/button>/is', '', $html );
+		return (string) preg_replace( '/<p\b[^>]*\bclass=([\"\'])contact-submit\1[^>]*>(.*?)<\/p>/is', '$2', $html );
 	}
 
 	/** Carry source choices in className, referencing durable non-autoloaded data for large lists. */
