@@ -110,7 +110,7 @@ function wp_set_object_terms( int $id, array $terms, string $taxonomy = 'product
 	}
 	return $terms; }
 function get_option( string $name, mixed $fallback = false ): mixed {
-	return $fallback; }
+	return $GLOBALS['woo_test_options'][ $name ] ?? $fallback; }
 function add_option(): bool {
 	return true; }
 function delete_option(): bool {
