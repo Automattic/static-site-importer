@@ -149,7 +149,7 @@ if ( in_array( 'post-slugs', $args ?? array(), true ) ) {
 				'headers'     => array( 'Host' => $host ),
 			)
 		);
-		$assert( 301 === wp_remote_retrieve_response_code( $probe ) && get_permalink( $id ) === wp_remote_retrieve_header( $probe, 'location' ), 'Collision source reaches the committed object without a self-loop.' );
+		$assert( 301 === wp_remote_retrieve_response_code( $probe ) && get_permalink( $id ) === Static_Site_Importer_Redirection_Materializer::resolved_target( (string) wp_remote_retrieve_header( $probe, 'location' ) ), 'Collision source reaches the committed object without a self-loop.' );
 	}
 	Static_Site_Importer_Redirection_Materializer::rollback( $collision_report );
 	// Keep the following ordinary-import installation scenario independent.
@@ -198,7 +198,7 @@ if ( in_array( 'home-path', $args ?? array(), true ) ) {
 	}
 	ksort( $rules );
 	echo 'Path-scoped rule inventory: ' . wp_json_encode( $rules ) . "\n";
-	$assert( array( '/scope:acceptance/about.html' => home_url( '/about/' ) ) === $rules, 'Only the HTML alias remains, expressed as a full request path for Redirection.' );
+	$assert( array( '/scope:acceptance/about.html' => '/scope:acceptance/about/' ) === $rules, 'Only the HTML alias remains, expressed as a full request path for Redirection.' );
 	$origin = getenv( 'SSI_REDIRECTION_HTTP_ORIGIN' );
 	$host   = wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT );
 	foreach ( array(
@@ -216,7 +216,7 @@ if ( in_array( 'home-path', $args ?? array(), true ) ) {
 		);
 		$assert( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === $expected_status, 'Path-scoped HTTP status for ' . $source_route );
 		if ( 301 === $expected_status ) {
-			$assert( home_url( '/about/' ) === wp_remote_retrieve_header( $response, 'location' ), 'Alias and slash canonicalization reach the native page.' );
+			$assert( home_url( '/about/' ) === Static_Site_Importer_Redirection_Materializer::resolved_target( (string) wp_remote_retrieve_header( $response, 'location' ) ), 'Alias and slash canonicalization reach the native page.' );
 		}
 	}
 	echo "Path-scoped home acceptance: passed\n";
@@ -296,7 +296,7 @@ $entity_probe = wp_remote_get(
 		'headers'     => array( 'Host' => wp_parse_url( home_url(), PHP_URL_HOST ) . ':' . wp_parse_url( home_url(), PHP_URL_PORT ) ),
 	)
 );
-$assert( 301 === wp_remote_retrieve_response_code( $entity_probe ) && get_permalink( $destination->ID ) === wp_remote_retrieve_header( $entity_probe, 'location' ), 'The entity source in Redirection canonical request form reaches the committed page permalink.' );
+$assert( 301 === wp_remote_retrieve_response_code( $entity_probe ) && get_permalink( $destination->ID ) === Static_Site_Importer_Redirection_Materializer::resolved_target( (string) wp_remote_retrieve_header( $entity_probe, 'location' ) ), 'The entity source in Redirection canonical request form reaches the committed page permalink.' );
 $receipt = array(
 	'theme'     => array( 'slug' => $scope_name ),
 	'plan'      => array(
@@ -522,7 +522,7 @@ $check_routes = static function () use ( $assert, $scope_name ): void {
 					'headers'     => array( 'Host' => $host . ( $port ? ':' . $port : '' ) ),
 				)
 			);
-			$assert( ! is_wp_error( $response ) && 301 === wp_remote_retrieve_response_code( $response ) && wp_remote_retrieve_header( $response, 'location' ) === $target, $method . ' reaches the native destination for ' . $from );
+			$assert( ! is_wp_error( $response ) && 301 === wp_remote_retrieve_response_code( $response ) && wp_remote_retrieve_header( $response, 'location' ) === $target && str_starts_with( (string) $target, '/' ), $method . ' reaches the native destination for ' . $from );
 		}
 	}
 };
