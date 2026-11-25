@@ -270,6 +270,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				'terms'      => array(),
 			),
 		);
+		$currencies = array();
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
 			if ( $existing instanceof WP_Post && 'product' !== $existing->post_type ) {
@@ -307,6 +308,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			}
 
 			$status = $row['status'] ?? 'error';
+			if ( in_array( $status, array( 'created', 'updated' ), true ) && isset( $product['currency'] ) ) {
+				$currencies[] = self::string_value( $product, 'currency' );
+			}
 			if ( isset( $report['counts'][ $status ] ) ) {
 				++$report['counts'][ $status ];
 			} else {
@@ -315,9 +319,30 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 		if ( $report['counts']['created'] + $report['counts']['updated'] > 0 ) {
 			$report['store_visibility'] = self::publish_fresh_store();
+			$report['store_currency']   = self::seed_store_currency( $currencies );
 		}
 
 		return $report;
+	}
+
+	/** Adopt an agreed, Woo-supported currency only while the store uses its USD default. */
+	private static function seed_store_currency( array $currencies ): array {
+		$currencies = array_values( array_unique( $currencies ) );
+		if ( empty( $currencies ) ) {
+			return array( 'status' => 'kept', 'reason' => 'no_currency' );
+		}
+		if ( count( $currencies ) > 1 ) {
+			return array( 'status' => 'kept', 'reason' => 'conflicting_currencies', 'currencies' => $currencies );
+		}
+		$currency = $currencies[0];
+		if ( ! function_exists( 'get_woocommerce_currencies' ) || ! isset( get_woocommerce_currencies()[ $currency ] ) ) {
+			return array( 'status' => 'kept', 'reason' => 'unknown_currency', 'currency' => $currency );
+		}
+		if ( 'USD' !== get_option( 'woocommerce_currency', 'USD' ) ) {
+			return array( 'status' => 'kept', 'reason' => 'configured_currency' );
+		}
+		update_option( 'woocommerce_currency', $currency );
+		return array( 'status' => 'set', 'currency' => $currency );
 	}
 
 	/** Only consume a producer-authorized document for this exact product row. */

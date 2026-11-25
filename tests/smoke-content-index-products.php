@@ -9,6 +9,10 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-pla
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
+function get_woocommerce_currencies(): array { return array( 'USD' => 'US dollar', 'PEN' => 'Sol' ); }
+function get_woocommerce_currency(): string { return get_option( 'woocommerce_currency', 'USD' ); }
+function update_option( string $name, mixed $value ): bool { $GLOBALS['woo_test_options'][ $name ] = $value; return true; }
+
 $reset();
 $GLOBALS['saved_products'] = array();
 $catalog = array(
@@ -19,6 +23,8 @@ $catalog = array(
 	) ),
 	array( 'name' => 'Photo', 'slug' => 'photo', 'regular_price' => '30.00', 'image' => 'media/photo.png', 'images' => array( array( 'src' => 'media/photo.png', 'alt' => 'Catalog photo' ) ) ),
 );
+foreach ( $catalog as &$row ) { $row['currency'] = 'PEN'; }
+unset( $row );
 $artifact = array( 'entrypoint' => 'index.html', 'files' => array(
 	array( 'path' => 'index.html', 'content' => '<main><h1>Store</h1></main>' ),
 	array( 'path' => 'products/captured/index.html', 'content' => '<main><h1>Captured</h1><script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Captured","offers":{"@type":"Offer","price":"12.00","priceCurrency":"USD"}}</script></main>' ),
@@ -42,6 +48,7 @@ $resolver = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application
 $images = $resolver->invoke( null, $lifecycle, array( 'plan' => $plan, 'resolved' => $resolved ) );
 $result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, array( 'resolved_product_images' => $images ) );
 $assert( null === $result['error'], 'Catalog materializes.' );
+$assert( 'PEN' === get_woocommerce_currency(), 'Catalog currency persists as PEN.' );
 $parents = array_filter( $GLOBALS['saved_products'], static fn( $product ) => ! ( $product instanceof WC_Product_Variation ) );
 $by_slug = array();
 foreach ( $parents as $product ) { $by_slug[$product->data['set_slug']] = $product; }

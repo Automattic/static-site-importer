@@ -591,6 +591,10 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 			);
 		}
 
+		if ( array_key_exists( 'currency', $product ) ) {
+			$row['currency'] = $product['currency'];
+		}
+
 		$sale_price = isset( $product['sale_price'] ) && is_scalar( $product['sale_price'] ) ? trim( (string) $product['sale_price'] ) : '';
 		$sale_price = 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $sale_price ) ? $sale_price : '';
 		if ( '' !== $sale_price ) {
