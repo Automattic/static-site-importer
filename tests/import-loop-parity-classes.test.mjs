@@ -111,3 +111,15 @@ test('fixing the title class moves only its own count (sdnunca / shape)', () => 
   assert.deepEqual([stuck.pass, stuck.own], [false, { before: 3, after: 3 }]);
   assert.equal(occurrences(after.find((f) => f.signature === motion)), 3);
 });
+
+test('pixel regions regress by tile area, not by the block each is labelled with (base44-imb /booking/school-catering/@390)', () => {
+  const region = (tiles, block) => `pixel region 0,0 48x48 (${tiles} tiles) in ${block}`;
+  const before = [failures.pageHeight, failures.textPosition, region(150, 'core/group'), region(27, 'core/group'), region(5, 'core/paragraph')];
+  const regressed = (after) => compareImports({ findings: [], visual: [cell([score(before)])] }, { findings: [], visual: [cell([score(after)])] }).visual_regressions.length > 0;
+  for (const [after, expected] of [
+    // The page reaches its source height: the bottom regions now fall below every block.
+    [[region(114, 'core/group'), region(62, 'page')], false],
+    [[region(130, 'core/group'), region(62, 'page')], true],
+    [[failures.pageHeight, failures.pageHeight, region(10, 'core/group')], true],
+  ]) assert.equal(regressed(after), expected, JSON.stringify(after));
+});

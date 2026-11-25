@@ -52,8 +52,16 @@ export const parityFailureClass = (failure) => {
 // varies between captures of the same frozen route, and a fix that halves a
 // mismatch still reads as a different string.
 export const classCounts = (failures) => (failures || []).map((f) => parityFailureClass(f).subject).reduce((m, cls) => m.set(cls, (m.get(cls) || 0) + 1), new Map());
-// One state/profile score got worse: a failure class appeared or grew.
-export const visualScoreRegressed = (before, after) => [...classCounts(after.failures)].some(([cls, n]) => n > (classCounts(before.failures).get(cls) || 0));
+// A cell's pixel regions as one measure: their total tile area. Each region is
+// labelled by the block drawn under it, and that label moves when a fix moves
+// layout (the page grows to its source height and the bottom regions now fall
+// below every block, `in page`), so per-label counts read a relabel as a new
+// defect. The area does not move with the label.
+const pixelTiles = (failures) => (failures || []).filter((f) => parityFailureClass(f).subject.startsWith('pixel_region')).reduce((sum, f) => sum + Number(String(f).match(/\((\d+) tiles?\)/)?.[1] || 1), 0);
+// One state/profile score got worse: a non-pixel failure class appeared or
+// grew, or the pixel regions cover more tiles.
+export const visualScoreRegressed = (before, after) => pixelTiles(after.failures) > pixelTiles(before.failures)
+  || [...classCounts(after.failures)].some(([cls, n]) => !cls.startsWith('pixel_region') && n > (classCounts(before.failures).get(cls) || 0));
 
 // A check that could not run: its findings are missing, not fixed.
 export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
