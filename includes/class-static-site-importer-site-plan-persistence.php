@@ -1639,6 +1639,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$post['meta_input'] = wp_slash( $fields );
 		}
+		// The plan owns the template assignment, including the absence of one.
+		// Explicitly pass page_template as well as meta_input so core cannot
+		// carry a previous theme's assignment into this update. journal_post()
+		// already snapshots this owned meta for receipt rollback.
+		$post['meta_input']['_wp_page_template'] ??= 'default';
+		$post['page_template']                     = $post['meta_input']['_wp_page_template'];
 		// A captured document was already public, so a detected date after this
 		// import is not its publication date (e.g. an event's date in its URL).
 		// Persisting it would make WordPress schedule the post instead of
