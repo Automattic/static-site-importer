@@ -374,6 +374,11 @@ function acceptanceGate(item, repo) {
       // A staged merge (MERGE_HEAD, e.g. trunk merged to resolve a conflict) ships as a merge.
       'parents=(-p HEAD); while read -r merged; do parents+=(-p "$merged"); done < <(cat "$(git rev-parse --git-path MERGE_HEAD)" 2>/dev/null)',
       'candidate=$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$(GIT_INDEX_FILE="$index" git write-tree)" "${parents[@]}" -m candidate) || exit 1',
+      // A candidate that ships the pass's trunk unchanged (Cook's repro check of
+      // its base) is the import the pass already evaluated (IMPORT_LOOP_BASE):
+      // acceptance compares it with itself and cannot pass. That verdict needs
+      // no re-import, which costs every Cook about a quarter hour.
+      `if git diff --quiet ${quote(bases[item.repo])} "$candidate" -- ${repo.candidate.paths.map(quote).join(' ')}; then echo "import-loop-gate: the candidate ships trunk ${bases[item.repo].slice(0, 8)} unchanged; its acceptance is this pass's evaluation of trunk, which still has the finding"; phase trunk_unchanged; exit 1; fi`,
       `bash "$tools/gates/merge-onto.sh" . ${quote(bases[item.repo])} "$candidate" "$scratch/merged" ${repo.candidate.paths.map(quote).join(' ')} || exit 1; phase merge_onto_base`,
       client
         ? `url=$(SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/client-candidate.sh" "$scratch/merged" ${quote(result.url)} "$scratch/capture" "$IMPORT_LOOP_TRANSFORMER/php-transformer" "$site") || exit 1; url=$(tail -n1 <<<"$url"); phase capture_reimport`
