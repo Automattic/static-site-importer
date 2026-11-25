@@ -64,7 +64,7 @@ export const visualScoreRegressed = (before, after) => pixelTiles(after.failures
   || [...classCounts(after.failures)].some(([cls, n]) => !cls.startsWith('pixel_region') && n > (classCounts(before.failures).get(cls) || 0));
 
 // A check that could not run: its findings are missing, not fixed.
-export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing']);
+export const UNCHECKED = new Set(['editor_unreachable', 'theme_checks_unverified', 'visual_parity_unverified', 'import_report_missing', 'capture_route_unexported']);
 
 // Blockers are compared on the routes both imports measured. A candidate that
 // changes the capture's scope (a capture client that keeps routes the release

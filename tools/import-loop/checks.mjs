@@ -59,6 +59,16 @@ export const captureRoutes = (captureRoot) => {
   return [...new Set(routes)].sort();
 };
 
+// Routes the compare declares (its capture's reference) that the capture's
+// portable site does not hold. Those pages were never imported, so scoring the
+// import would silently shrink the site instead of measuring it.
+const routeKey = (route, url) => new URL(route, url).pathname.replace(/(.)\/$/, '$1');
+export const unexportedRoutes = (held, parity, url) => {
+  const keys = new Set(held.map((route) => routeKey(route, url)));
+  const declared = [...(parity?.scores || []), ...(parity?.pending || [])].map((s) => s.route);
+  return [...new Set(declared.filter((route) => !keys.has(routeKey(route, url))))].sort();
+};
+
 // Routes whose source serves phones a different document than desktops
 // (`responsiveVariants`). A route that ships both documents (`variants > 1`)
 // holds two copies of its content, so editing one leaves the other stale: a
@@ -162,6 +172,8 @@ export async function checkImport(args) {
   } catch (error) {
     report({ stage: 'materialization', check: 'visual_parity_unverified', owner_repo: compareClient.owner_repo, subject: 'compare', evidence: { command: ['npx', ...command], status: run.status, error: error.message } });
   }
+  const unexported = unexportedRoutes(captureRoutes(captureRoot), parity, args.url);
+  if (unexported.length) report({ stage: 'capture', check: 'capture_route_unexported', owner_repo: compareClient.owner_repo, subject: 'portable_site', evidence: { routes: unexported, held: captureRoutes(captureRoot).length } });
   // A capture freezes reference evidence for a sample of its routes (the
   // capture's --reference-sample; default 1, the homepage). An unsampled route
   // is uncompared scope by the capture's contract, not a parity failure. A

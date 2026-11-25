@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { captureRoutes, foldedRoutes, sourceDeviceDocuments } from '../tools/import-loop/checks.mjs';
+import { captureRoutes, foldedRoutes, sourceDeviceDocuments, unexportedRoutes } from '../tools/import-loop/checks.mjs';
 import { routeDocument } from '../tools/import-loop/lib.mjs';
 
 test('routes come from the capture receipt for directory and file sites', () => {
@@ -65,4 +65,11 @@ test('source device documents: a dual-document route blocks, a diverged one advi
 
   fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ routes: [{ path: 'website/index.html' }] }));
   assert.deepEqual(sourceDeviceDocuments(root), []);
+});
+
+test('a route the compare declares but the portable site lost is unexported', () => {
+  const url = 'https://site.example/';
+  const parity = { scores: [{ route: '/' }, { route: '/about/' }], pending: [{ route: 'https://site.example/menu', reason: 'Declared source route has no portable capture or frozen boundary' }, { route: 'https://site.example/about' }] };
+  assert.deepEqual(unexportedRoutes(['/', '/about/'], parity, url), ['https://site.example/menu']);
+  assert.deepEqual(unexportedRoutes(['/', '/about/', '/menu/'], parity, url), []);
 });
