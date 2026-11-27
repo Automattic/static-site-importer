@@ -1607,6 +1607,13 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 				$destination['selector'] = $destination['checked'];
 			}
 			$emit_styles = $styles;
+			// The provider field shell now occupies the source control's flex
+			// slot. Auto width on its non-flex-item child would instead use the
+			// native control's intrinsic width; let that child fill the slot.
+			$grow = $styles['flex_grow'] ?? ( preg_match( '/^([0-9]+(?:\.[0-9]+)?)(?:\s|$)/', $styles['flex'] ?? '', $flex ) ? $flex[1] : '0' );
+			if ( ! $is_submit && 'control' === $role && 'auto' === ( $styles['width'] ?? null ) && (float) $grow > 0 && in_array( 'width', $destination['properties'], true ) && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
+				$emit_styles['width'] = '100%';
+			}
 			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
 				$emit_styles = array_diff_key( $styles, array_flip( array( 'position', 'inset', 'top', 'right', 'bottom', 'left' ) ) );
 				// The link is the source button's inner box, so its display is the
