@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { collateralResult, cookHistory, fixesIssue, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
+import { collateralResult, cookHistory, nearMiss, fixesIssue, designScope, ownIssue, rerouteScope, COOK_NOTE, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from '../tools/import-loop/lib.mjs';
 
 test('Cook history counts failures and design rounds since guidance', () => {
   const note = { body: `${COOK_NOTE}wf-x -->\n### Cook stopped without a pull request` };
@@ -76,4 +76,17 @@ test('Only a closing link or an issue branch makes a pull request the issue\'s f
     [{ headRefName: 'fix/rework-acceptance-as-verify', body: 'Both rework Cooks for SSI#3265 stopped', closingIssuesReferences: [] }, false],
     [{ headRefName: 'fix/issue-32650-x', closingIssuesReferences: [{ number: 32650 }] }, false],
   ]) assert.equal(fixesIssue(pr, 3265), fixes);
+});
+
+test('a head refuted only by collateral while its own finding improves is a near miss', () => {
+  // base44-imb s10 pass 8: blocks-engine#7508, refuted by one visual cell.
+  const verdict = (own) => [`{"pass":false,"own":${JSON.stringify(own)},"blockers_added":[],"visual_regressions":["/booking/school-catering/@390"]}\n`, ''];
+  const collateral = { pr: 'pr', head: 'h', cells: [], collateral: verdict({ before: 113, after: 33 }) };
+  for (const [refuted, own] of [
+    [collateral, { before: 113, after: 33 }],
+    [{ ...collateral, collateral: verdict({ before: 113, after: 113 }) }, null],
+    [{ ...collateral, ci: [{ name: 'test' }] }, null],
+    [{ ...collateral, cells: [{ exit: 'import_failed' }] }, null],
+    [{ pr: 'pr', head: 'h', cells: [], conflicting: true }, null],
+  ]) assert.deepEqual(nearMiss(refuted), own);
 });
