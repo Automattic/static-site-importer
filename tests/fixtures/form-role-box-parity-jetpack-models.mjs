@@ -450,6 +450,7 @@ export function editorBlockHtml( block, parent = null ) {
 		// block list classes and the block type merged onto it.
 		case 'core/heading':
 		case 'core/paragraph':
+		case 'core/image':
 			return block.innerHTML.trim().replace( /^<([a-z0-9]+)((?:\s[^>]*)?)>/i, ( tag, element, rest ) => {
 				const saved = /\sclass="([^"]*)"/.exec( rest )?.[1] ?? '';
 				return `<${ element }${ rest.replace( /\sclass="[^"]*"/, '' ) } class="${ escapeAttr( classes( 'block-editor-block-list__block wp-block', saved ) ) }" data-type="${ escapeAttr( name ) }">`;

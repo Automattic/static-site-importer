@@ -17,6 +17,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
 
+	/** Marks a source group framing one provider control and its decoration. */
+	public const CONTROL_FRAME_CLASS = 'ssi-control-frame';
+
 	/** Admit only the portable subset also enforced by Blocks Engine's SourceDom. */
 	public static function valid_inline_svg( string $markup ): bool {
 		if ( '' === trim( $markup ) || str_contains( $markup, '<?' ) || preg_match( '/<!\s*(?:doctype|entity)\b/i', $markup ) || preg_match( '/&(?!(?:amp|lt|gt|quot|apos);)/i', $markup ) ) {
@@ -92,9 +95,116 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_choice_values' ), 30 );
 		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_form_container_scope' ) );
+		add_filter( 'jetpack_contact_form_html', array( __CLASS__, 'project_control_frames' ) );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_button_accessible_name' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
+	}
+
+	/**
+	 * Move each marked control frame around its rendered provider control.
+	 *
+	 * A source frame that held one control and its decoration (a leading
+	 * icon) stays a group in the saved form, holding the decoration and the
+	 * provider field; the field renders the caption and the control together.
+	 * The frame belongs around the control alone, as in the source: the field
+	 * keeps its caption, and the frame (its element and its decoration) takes
+	 * the control's place inside the field, so the decoration centres against
+	 * the control and paints above it. The field wrapper generates no box of
+	 * its own (`display:contents`), so its caption and the frame stand in the
+	 * frame's former parent arrangement, as the source caption and frame did.
+	 * Jetpack's conditional hiding stays `!important` and still applies.
+	 * A frame without exactly one field holding one bare control keeps its
+	 * place; only its marker is dropped.
+	 *
+	 * @param string $html Jetpack's rendered contact form HTML.
+	 * @return string
+	 */
+	public static function project_control_frames( string $html ): string {
+		if ( ! str_contains( $html, self::CONTROL_FRAME_CLASS ) || strlen( $html ) > 1048576 ) {
+			return $html;
+		}
+		$marker = '/<div\b[^>]*\bclass=("|\')(?:[^"\']*\s)?' . self::CONTROL_FRAME_CLASS . '(?:\s[^"\']*)?\1[^>]*>/i';
+		$offset = 0;
+		while ( preg_match( $marker, $html, $match, PREG_OFFSET_CAPTURE, $offset ) ) {
+			$start = $match[0][1];
+			$open  = self::without_class_token( $match[0][0], self::CONTROL_FRAME_CLASS );
+			$end   = self::element_end( $html, $start );
+			if ( null === $end ) {
+				return $html;
+			}
+			$inner = substr( $html, $start + strlen( $match[0][0] ), $end - $start - strlen( $match[0][0] ) - strlen( '</div>' ) );
+			$moved = self::framed_field( $open, $inner );
+			$frame = $moved ?? $open . $inner . '</div>';
+			$html  = substr( $html, 0, $start ) . $frame . substr( $html, $end );
+			$offset = $start + strlen( $frame );
+		}
+		return $html;
+	}
+
+	/**
+	 * The provider field of a frame's content, with the frame around its control.
+	 *
+	 * @param string $open  The frame's opening tag, marker removed.
+	 * @param string $inner The frame's content: decoration and one field.
+	 * @return string|null
+	 */
+	private static function framed_field( string $open, string $inner ): ?string {
+		if ( ! preg_match_all( '/<div\b[^>]*\bclass=("|\')(?:[^"\']*\s)?grunion-field-wrap(?:\s[^"\']*)?\1[^>]*>/i', $inner, $fields, PREG_OFFSET_CAPTURE ) || 1 !== count( $fields[0] ) ) {
+			return null;
+		}
+		$field_start = $fields[0][0][1];
+		$field_end   = self::element_end( $inner, $field_start );
+		if ( null === $field_end ) {
+			return null;
+		}
+		$field    = substr( $inner, $field_start, $field_end - $field_start );
+		$controls = preg_match_all( '/<input\b(?![^>]*\btype\s*=\s*("|\')(?:checkbox|radio|hidden|file|submit|button|image|reset)\1)[^>]*>|<textarea\b[^>]*>.*?<\/textarea>/is', $field, $found, PREG_OFFSET_CAPTURE );
+		if ( 1 !== $controls ) {
+			return null;
+		}
+		$control = $found[0][0][0];
+		$at      = $found[0][0][1];
+		$before  = substr( $inner, 0, $field_start );
+		$after   = substr( $inner, $field_end );
+		$field   = substr( $field, 0, $at ) . $open . $before . $control . $after . '</div>' . substr( $field, $at + strlen( $control ) );
+		$opening = strpos( $field, '>' );
+		if ( false === $opening ) {
+			return null;
+		}
+		$tag = substr( $field, 0, $opening + 1 );
+		if ( preg_match( '/\sstyle=("|\')(.*?)\1/is', $tag, $style, PREG_OFFSET_CAPTURE ) ) {
+			$value = trim( $style[2][0] );
+			$value = 'display:contents' . ( '' === $value ? '' : ';' . $value );
+			$tag   = substr( $tag, 0, $style[2][1] ) . $value . substr( $tag, $style[2][1] + strlen( $style[2][0] ) );
+		} else {
+			$tag = substr( $tag, 0, 4 ) . ' style="display:contents"' . substr( $tag, 4 );
+		}
+		return $tag . substr( $field, $opening + 1 );
+	}
+
+	/** The offset just past the `</div>` closing the div opened at `$start`. */
+	private static function element_end( string $html, int $start ): ?int {
+		$depth = 0;
+		if ( preg_match_all( '/<(\/?)div\b[^>]*>/i', $html, $tags, PREG_OFFSET_CAPTURE | PREG_SET_ORDER, $start ) ) {
+			foreach ( $tags as $tag ) {
+				$depth += '' === $tag[1][0] ? 1 : -1;
+				if ( 0 === $depth ) {
+					return $tag[0][1] + strlen( $tag[0][0] );
+				}
+			}
+		}
+		return null;
+	}
+
+	/** An opening tag without one class token. */
+	private static function without_class_token( string $tag, string $token ): string {
+		return (string) ( preg_replace_callback(
+			'/\bclass=("|\')(.*?)\1/s',
+			static fn( array $matches ): string => 'class=' . $matches[1] . implode( ' ', array_diff( preg_split( '/\s+/', trim( $matches[2] ) ) ?: array(), array( $token ) ) ) . $matches[1],
+			$tag,
+			1
+		) ?? $tag );
 	}
 
 	/**

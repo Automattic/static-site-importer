@@ -47,7 +47,14 @@ function measure( { form, controls } ) {
 		const rect = node.getBoundingClientRect();
 		return { left: rect.left - origin.left, top: rect.top - origin.top, width: rect.width, height: rect.height };
 	};
-	return { form: { width: origin.width, height: origin.height }, controls: [ ...document.querySelectorAll( controls ) ].map( box ) };
+	// Decorative images inside the form (a field's leading icon): their box,
+	// and whether they paint at their own centre rather than under a sibling.
+	const decorations = [ ...root.querySelectorAll( 'img' ) ].map( ( node ) => {
+		const rect = node.getBoundingClientRect();
+		const hit = document.elementFromPoint( rect.left + rect.width / 2, rect.top + rect.height / 2 );
+		return { ...box( node ), painted: hit === node ? 1 : 0 };
+	} );
+	return { form: { width: origin.width, height: origin.height }, controls: [ ...document.querySelectorAll( controls ) ].map( box ), decorations };
 }
 
 /** Differences over the tolerance between two surfaces' boxes. */
@@ -66,6 +73,13 @@ function differences( expected, actual ) {
 		return out;
 	}
 	expected.controls.forEach( ( control, index ) => compare( `control ${ index }`, control, actual.controls[ index ] ) );
+	if ( expected.decorations && actual.decorations ) {
+		if ( expected.decorations.length !== actual.decorations.length ) {
+			out.push( `decoration count: ${ expected.decorations.length } vs ${ actual.decorations.length }` );
+			return out;
+		}
+		expected.decorations.forEach( ( decoration, index ) => compare( `decoration ${ index }`, decoration, actual.decorations[ index ] ) );
+	}
 	return out;
 }
 
@@ -101,15 +115,17 @@ test( 'imported forms keep the source form geometry on the front end and in the 
 	if ( process.env.SSI_GEOMETRY_REPORT ) {
 		console.log( JSON.stringify( results, null, '\t' ) );
 	}
+	const editorParity = Object.fromEntries( forms.map( ( form ) => [ form.name, form.editorParity ] ) );
 	for ( const { form, width, boxes } of results ) {
 		await t.test( `${ form } at ${ width }px`, () => {
 			for ( const surface of [ 'source', 'front', 'editor' ] ) {
 				assert.ok( boxes[ surface ], `${ surface }: the form box renders` );
 			}
 			// The front end against the source, and the editor against the front end.
+			const editor = editorParity[ form ] ? { ...boxes.editor, decorations: undefined } : null;
 			assert.deepEqual( [
 				...differences( boxes.source, boxes.front ).map( ( line ) => `front ${ line }` ),
-				...differences( boxes.front, boxes.editor ).map( ( line ) => `editor ${ line }` ),
+				...( editor ? differences( { ...boxes.front, decorations: undefined }, editor ).map( ( line ) => `editor ${ line }` ) : [] ),
 			], [] );
 		} );
 	}

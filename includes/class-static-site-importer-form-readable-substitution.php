@@ -859,6 +859,9 @@ class Static_Site_Importer_Form_Readable_Substitution {
 	 * @return array<string,mixed>|null
 	 */
 	private static function group_field( array $block, Static_Site_Importer_Form_Plan_State $state ): ?array {
+		if ( self::is_decorated_control_frame( $block, $state ) ) {
+			$block = self::with_control_frame_marker( $block );
+		}
 		$children = array();
 		$slots    = array();
 		$index    = 0;
@@ -902,6 +905,91 @@ class Static_Site_Importer_Form_Readable_Substitution {
 		}
 		$block['innerBlocks']  = $children;
 		$block['innerContent'] = $slots;
+		return $block;
+	}
+
+	/**
+	 * Whether a group frames one control together with content-free decoration
+	 * (a leading icon), while the control's caption sits outside the group.
+	 *
+	 * The producer splits a control's own box only from wrappers holding the
+	 * control alone, so this frame stays an ordinary group, and the provider
+	 * field (caption and control together) takes the control's slot inside
+	 * it. The source frame held only the control: its decoration centres and
+	 * paints against the control, not against caption and control. The group
+	 * is marked for the runtime, which moves it around the rendered control
+	 * (Static_Site_Importer_Provider_Form_Runtime_V1::project_control_frames()).
+	 * Only a field that renders one bare input or textarea qualifies.
+	 *
+	 * @param array<string,mixed>                  $block Readable block.
+	 * @param Static_Site_Importer_Form_Plan_State $state Plan state.
+	 */
+	private static function is_decorated_control_frame( array $block, Static_Site_Importer_Form_Plan_State $state ): bool {
+		if ( 'core/group' !== ( $block['blockName'] ?? '' ) || ! is_string( $block['innerContent'][0] ?? null ) ) {
+			return false;
+		}
+		$control    = null;
+		$decoration = 0;
+		foreach ( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() as $child ) {
+			if ( is_int( $child['form_control_index'] ?? null ) ) {
+				if ( null !== $control ) {
+					return false;
+				}
+				$control = $child['form_control_index'];
+				continue;
+			}
+			if ( ! self::is_content_free_decoration( $child ) ) {
+				return false;
+			}
+			++$decoration;
+		}
+		if ( null === $control || 0 === $decoration || isset( $state->suppressed_controls[ $control ] ) || ! isset( $state->field_blocks[ $control ] )
+			|| Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $state->form, $control ) ) {
+			return false;
+		}
+		$field = $state->field_blocks[ $control ];
+		foreach ( $field['innerBlocks'] ?? array() as $inner ) {
+			if ( 'jetpack/input' === ( $inner['name'] ?? null ) ) {
+				return 'dropdown' !== strtolower( trim( (string) ( $inner['attrs']['type'] ?? '' ) ) );
+			}
+			// A telephone field renders a bare tel input unless it shows a country selector.
+			if ( 'jetpack/phone-input' === ( $inner['name'] ?? null ) ) {
+				return empty( $field['attrs']['showCountrySelector'] );
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a readable block renders no copy and no interaction: an image
+	 * with neither link nor caption, as a lowered inline icon arrives.
+	 *
+	 * @param array<string,mixed> $block Readable block.
+	 */
+	private static function is_content_free_decoration( array $block ): bool {
+		if ( 'core/image' !== ( $block['blockName'] ?? '' ) || ! empty( $block['innerBlocks'] ) ) {
+			return false;
+		}
+		$html = (string) ( $block['innerHTML'] ?? '' );
+		return '' === trim( (string) ( $block['attrs']['href'] ?? '' ) ) && ! preg_match( '/<(?:a|figcaption)\b/i', $html );
+	}
+
+	/**
+	 * Mark a decorated control frame on its saved class list, in both the
+	 * block's className and its opening fragment, so the saved markup stays
+	 * what core/group saves for that className.
+	 *
+	 * @param array<string,mixed> $block Readable group block.
+	 * @return array<string,mixed>
+	 */
+	private static function with_control_frame_marker( array $block ): array {
+		$tag = new WP_HTML_Tag_Processor( (string) $block['innerContent'][0] );
+		if ( ! $tag->next_tag() ) {
+			return $block;
+		}
+		$tag->add_class( Static_Site_Importer_Provider_Form_Runtime_V1::CONTROL_FRAME_CLASS );
+		$block['innerContent'][0]   = $tag->get_updated_html();
+		$block['attrs']['className'] = trim( (string) ( $block['attrs']['className'] ?? '' ) . ' ' . Static_Site_Importer_Provider_Form_Runtime_V1::CONTROL_FRAME_CLASS );
 		return $block;
 	}
 
