@@ -2887,21 +2887,17 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	/** Derive the map keys exactly as ThemeBootstrap::functionsPhp(): the asset tokens its documents reference. */
+	/**
+	 * The keys of the theme's runtime asset map in functions.php.
+	 *
+	 * Blocks Engine derives that map, so ask it: it also covers assets only a
+	 * fallback's readable blocks reference (a form provider renders them in a
+	 * template spliced from the page).
+	 */
 	public static function template_asset_tokens( array $plan ): array {
-		$referenced = array();
-		foreach ( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() ) as $document ) {
-			if ( preg_match_all( '/\{\{wordpress-site-plan:asset:([^}]+)\}\}/', (string) ( $document['canonical_block_markup'] ?? '' ), $matches ) ) {
-				$referenced += array_fill_keys( $matches[1], true );
-			}
-		}
-		$covered = array();
-		foreach ( $plan['reference_tokens'] ?? array() as $token ) {
-			if ( is_string( $token['token'] ?? null ) && isset( $referenced[ $token['token'] ] ) && is_string( $token['target_path'] ?? null ) ) {
-				$covered[ '{{wordpress-site-plan:asset:' . $token['token'] . '}}' ] = true;
-			}
-		}
-		return $covered;
+		$documents = array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array(), $plan['pages'] ?? array() );
+		$covered   = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\ThemeBootstrap::templateAssetTokens( $plan['reference_tokens'] ?? array(), $documents, $plan['quality']['fallbacks'] ?? array() );
+		return array_fill_keys( array_keys( $covered ), true );
 	}
 
 	/** Reject references with no runtime resolver; posts never receive a covered set. */
