@@ -16,6 +16,7 @@ function update_option( string $name, mixed $value ): bool { $GLOBALS['woo_test_
 $reset();
 $GLOBALS['saved_products'] = array();
 $catalog = array(
+	array( 'name' => 'Unicode heater', 'slug' => 'miniestufа-electrica-portatil-redondo', 'regular_price' => '15.00' ),
 	array( 'name' => 'Captured', 'slug' => 'captured', 'regular_price' => '12.00' ),
 	array( 'name' => 'Shirt', 'slug' => 'shirt', 'regular_price' => '20.00', 'variants' => array(
 		array( 'sku' => 'S', 'regular_price' => '20.00', 'stock_status' => 'instock', 'attributes' => array( $size( 's' ) ) ),
@@ -37,7 +38,7 @@ $unchanged = Static_Site_Importer_Content_Index::extract( $without_products );
 $assert( ! isset( $unchanged['artifact']['metadata'] ) && empty( $unchanged['findings'] ), 'Index without products adds no runtime metadata or findings.' );
 $extracted = Static_Site_Importer_Content_Index::extract( $artifact );
 $declarations = $extracted['artifact']['metadata']['runtime_declarations'];
-$assert( 1 === count( $declarations ) && 3 === count( $declarations[0]['payload']['entities'] ), 'One canonical declaration carries all catalog rows.' );
+$assert( 1 === count( $declarations ) && 4 === count( $declarations[0]['payload']['entities'] ), 'One canonical declaration carries all catalog rows.' );
 $plan = ( new ArtifactCompiler() )->compile( $extracted['artifact'] )->toArray()['source_reports']['wordpress_site_plan'];
 $resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => 'https://example.test/theme', 'runtime_capabilities' => array( 'products' ) ) );
 $lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $plan, array( 'runtime_lifecycle_phase' => 'prepare' ) );
@@ -52,8 +53,9 @@ $assert( 'PEN' === get_woocommerce_currency(), 'Catalog currency persists as PEN
 $parents = array_filter( $GLOBALS['saved_products'], static fn( $product ) => ! ( $product instanceof WC_Product_Variation ) );
 $by_slug = array();
 foreach ( $parents as $product ) { $by_slug[$product->data['set_slug']] = $product; }
-$assert( 3 === count( $by_slug ), 'All three products seed, including the two without HTML.' );
-foreach ( $catalog as $row ) { $assert( $row['regular_price'] === $by_slug[$row['slug']]->data['set_regular_price'], 'Catalog price persists.' ); }
+$assert( isset( $by_slug[ sanitize_title( 'miniestufа-electrica-portatil-redondo' ) ] ), 'Unicode slug seeds as a product.' );
+$assert( 4 === count( $by_slug ), 'All four products seed, including those without HTML.' );
+foreach ( $catalog as $row ) { $assert( $row['regular_price'] === $by_slug[sanitize_title( $row['slug'] )]->data['set_regular_price'], 'Catalog price persists.' ); }
 $assert( $by_slug['shirt'] instanceof WC_Product_Variable, 'Variable parent persists.' );
 $variations = array_values( array_filter( $GLOBALS['saved_products'], static fn( $product ) => $product instanceof WC_Product_Variation ) );
 $assert( 2 === count( $variations ) && '25.00' === $variations[1]->data['set_regular_price'], 'Two priced variants persist.' );
@@ -65,7 +67,7 @@ foreach ( array( 'bad', array( array( 'name' => 'Invalid' ) ), array_merge( $cat
 	$bad['files'][3]['content'] = json_encode( array( 'schema' => 'capture/content-index/v1', 'products' => $products ) );
 	$check = Static_Site_Importer_Content_Index::extract( $bad );
 	$assert( is_array( $check ) && ! empty( $check['findings'] ), 'Invalid products degrade to findings.' );
-	$assert( ( is_array( $products ) && count( $products ) > 1 ? 3 : 0 ) === count( $check['artifact']['metadata']['runtime_declarations'][0]['payload']['entities'] ?? array() ), 'Only accepted rows declared.' );
+	$assert( ( is_array( $products ) && count( $products ) > 1 ? 4 : 0 ) === count( $check['artifact']['metadata']['runtime_declarations'][0]['payload']['entities'] ?? array() ), 'Only accepted rows declared.' );
 }
 $with_existing = $artifact;
 $with_existing['metadata']['runtime_declarations'] = array( array( 'kind' => 'dependency', 'capability' => 'redirects', 'source_path' => 'index.html' ) );

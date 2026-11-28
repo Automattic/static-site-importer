@@ -500,10 +500,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array(), array &$created_attributes = array(), array &$created_variations = array() ): array {
-		$slug = sanitize_title( self::string_value( $manifest_product, 'slug' ) );
-		$name = self::string_value( $manifest_product, 'name' );
+		// Keep the producer identity in results so Unicode evidence still matches.
+		$slug      = self::string_value( $manifest_product, 'slug' );
+		$post_slug = sanitize_title( $slug );
+		$name      = self::string_value( $manifest_product, 'name' );
 
-		if ( '' === $slug || '' === $name ) {
+		if ( '' === $post_slug || '' === $name ) {
 			return array(
 				'slug'   => $slug,
 				'name'   => $name,
@@ -512,7 +514,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			);
 		}
 
-		$existing = get_page_by_path( $slug, OBJECT, 'product' );
+		$existing = get_page_by_path( $post_slug, OBJECT, 'product' );
 		if ( $existing instanceof WP_Post && 'product' !== $existing->post_type ) {
 			$existing = null;
 		}
@@ -543,7 +545,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		try {
 			self::apply_sku( $product, $manifest_product, $losses );
 			$product->set_name( $name );
-			$product->set_slug( $slug );
+			$product->set_slug( $post_slug );
 			$product->set_status( self::post_status( $manifest_product ) );
 			$product->set_description( wp_kses_post( self::string_value( $manifest_product, 'description' ) ) );
 			$product->set_short_description( wp_kses_post( self::string_value( $manifest_product, 'short_description' ) ) );

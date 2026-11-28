@@ -26,16 +26,22 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  * Registers import-time entity validators, dependency requirements, and writers.
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
-	/**
-	 * Product slug grammar; underscores are valid WordPress post slugs.
-	 */
-	public const PRODUCT_SLUG_PATTERN = '/^[a-z0-9_]+(?:-[a-z0-9_]+)*$/';
-
-
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
 	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET        = 10;
 	private const RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES = 10485760;
+
+	/**
+	 * Check a producer slug without changing its identity for evidence matching.
+	 *
+	 * @param mixed $slug Producer slug.
+	 * @return bool
+	 */
+	public static function is_product_slug( mixed $slug ): bool {
+		return is_string( $slug ) && '' !== $slug
+			&& 0 === preg_match( '~[/\\\\?#%\s]~u', $slug )
+			&& '' !== sanitize_title( $slug );
+	}
 
 	/**
 	 * Per-capability provider selection contract.
@@ -2487,10 +2493,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'name is required and must be a non-empty string.',
 				);
 			}
-			if ( '' === $slug || ! preg_match( self::PRODUCT_SLUG_PATTERN, $slug ) ) {
+			if ( ! self::is_product_slug( $product['slug'] ?? null ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.slug',
-					'message' => 'slug is required and must be a lowercase URL slug.',
+					'message' => 'slug must sanitize to a non-empty WordPress slug and contain no separators, percent signs or whitespace.',
 				);
 			}
 			if ( '' !== $slug && isset( $seen_slugs[ $slug ] ) ) {
