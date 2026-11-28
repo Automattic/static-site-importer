@@ -309,6 +309,7 @@
           "tests/smoke-existing-theme-css.php",
           "tests/smoke-import-destination.php",
           "tests/smoke-import-diagnostic-contract.php",
+          "tests/smoke-provider-resolved-fallback-gate-refs.php",
           "tests/smoke-import-permission-filter.php",
           "tests/smoke-import-report-loss-ledger.php",
           "tests/smoke-import-report-size.php",
