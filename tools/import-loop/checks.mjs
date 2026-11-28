@@ -182,7 +182,12 @@ export async function checkImport(args) {
   };
   for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: compareClient.owner_repo, subject: 'route_folded', evidence: folded, route: folded.route });
   for (const { route, severity, subject, evidence } of sourceDeviceDocuments(captureRoot)) report({ stage: 'capture', check: 'source_device_documents', owner_repo: compareClient.owner_repo, subject, evidence, route, severity });
-  for (const { route, width, evidence } of referenceDrift(captureRoot, args.url)) report({ stage: 'capture', check: 'capture_reference_drift', owner_repo: compareClient.owner_repo, subject: 'form_controls', evidence, route, width });
+  // A cell whose frozen reference drifted from the exported page compares the
+  // import with a page it was not given: its pixel scores measure the capture,
+  // which this drift finding owns, not the materializer.
+  const drift = referenceDrift(captureRoot, args.url);
+  const drifted = new Set(drift.map(({ route, width }) => `${route}@${width}`));
+  for (const { route, width, evidence } of drift) report({ stage: 'capture', check: 'capture_reference_drift', owner_repo: compareClient.owner_repo, subject: 'form_controls', evidence, route, width });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.
@@ -228,6 +233,7 @@ export async function checkImport(args) {
     if (scopedCell(route, width)) report({ stage: 'materialization', check: 'visual_parity_unsampled', owner_repo: 'static-site-importer', subject: 'reference_sample', evidence: { route, width, reference_sample: measured.reference.scope.referenceSample }, route, width });
   }
   for (const cell of visual) {
+    if (drifted.has(`${cell.route}@${cell.width}`)) continue;
     for (const partial of parityCellReports(cell)) report({ stage: 'materialization', check: 'visual_parity', ...partial, route: cell.route, width: cell.width });
   }
 
