@@ -40,6 +40,12 @@ test('a cell unmeasured on both sides is reported, not a regression; nothing mea
   assert.deepEqual([v.pass, v.visual_regressions, v.visual_unmeasured], [true, [], ['/about/@1440']]);
   assert.equal(compareImports({ findings: [finding('a', 7)], visual: [blind] }, { findings: [finding('a', 5)], visual: [blind] }, 'a').pass, false);
 });
+test('a cell whose capture reference drifted from the export is unmeasured, not a regression', () => {
+  const regressed = [{ ...visual[0], scores: [{ state: 'baseline', failures: ['pixel region 0,0 48x48 (9 tiles) in core/group'] }] }];
+  const drift = { signature: 'd', severity: 'blocker', check: 'capture_reference_drift', occurrences: [{ route: '/', width: 1440 }] };
+  const v = compareImports({ findings: [finding('a', 7), drift], visual: [...visual, { ...visual[0], route: '/x/' }] }, { findings: [finding('a', 5), drift], visual: [...regressed, { ...visual[0], route: '/x/' }] }, 'a');
+  assert.deepEqual([v.pass, v.visual_regressions, v.visual_unmeasured], [true, [], ['/@1440']]);
+});
 test('counts block instances rather than just cells', () => assert.equal(occurrences(finding('a', 7)), 7));
 test('a threshold blocker passes on less excess at the same count, and fails on more', () => {
   const measured = (signature, value) => ({ signature, severity: 'blocker', occurrences: [{ route: '/', evidence: { measure: { value, limit: 90 } } }] });

@@ -87,13 +87,17 @@ export function compareImports(before, after, signature, cells) {
   }
   const regressions = [], unmeasured = [];
   const current = new Map((after.visual || []).map((v) => [`${v.route}@${v.width}`, v]));
+  // A cell whose capture reference and export disagree (checks.mjs
+  // referenceDrift) measures the copy against a page it was never given: its
+  // scores cannot show a regression. The drift stays a tracked blocker.
+  const drifted = new Set([...before.findings, ...after.findings].filter((f) => f.check === 'capture_reference_drift').flatMap((f) => f.occurrences.map((o) => `${o.route}@${o.width}`)));
   for (const v of before.visual || []) {
     const key = `${v.route}@${v.width}`, next = current.get(key);
     // Compare each state/profile, not just route-wide pass/fail. A newly
     // unmeasured cell is a regression, never an improvement. A cell the
     // compare could not measure on either side (e.g. no frozen reference for
     // that route) has nothing to regress from: it is reported, not failed.
-    if (!v.verified && !next?.verified) { unmeasured.push(key); continue; }
+    if ((!v.verified && !next?.verified) || drifted.has(key)) { unmeasured.push(key); continue; }
     if (!next?.verified || !v.verified) { regressions.push(key); continue; }
     for (const score of v.scores) {
       const n = next.scores.find((s) => s.state === score.state && s.profile === score.profile);
