@@ -292,6 +292,8 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			'presentation_targets' => array_column( $validated_map['presentation_targets'] ?? array(), null, 'index' ),
 			'rules'                => array(),
 			'chrome'               => array(),
+			// Base flex growth per control index, which responsive patches inherit.
+			'control_flex_grow'    => array(),
 			'operations'           => $operations,
 			// Receipt contract: every pass records the context fallback losses once
 			// per context artifact the overlay carries (front end and editor).
@@ -502,7 +504,23 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function present( array &$pass, array $destinations, array $styles, int $index, string $role, ?array $condition, bool $emit_resets = true ): void {
-		self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $pass['declared']['prefix'], $pass['rules'], $pass['operations'], $pass['losses'], $emit_resets );
+		$grow = self::flex_grow( $styles );
+		if ( 'control' === $role && null === $condition ) {
+			$pass['control_flex_grow'][ $index ] = $grow ?? 0.0;
+		}
+		$grow ??= 'control' === $role ? ( $pass['control_flex_grow'][ $index ] ?? 0.0 ) : 0.0;
+		self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $pass['declared']['prefix'], $pass['rules'], $pass['operations'], $pass['losses'], $emit_resets, $grow );
+	}
+
+	/** The flex grow factor styles state, or null when they leave it to the cascade. */
+	private static function flex_grow( array $styles ): ?float {
+		if ( isset( $styles['flex_grow'] ) && is_numeric( $styles['flex_grow'] ) ) {
+			return (float) $styles['flex_grow'];
+		}
+		if ( ! is_string( $styles['flex'] ?? null ) ) {
+			return null;
+		}
+		return preg_match( '/^([0-9]+(?:\.[0-9]+)?)(?:\s|$)/', $styles['flex'], $flex ) ? (float) $flex[1] : 0.0;
 	}
 
 	/**
@@ -1580,7 +1598,7 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 	}
 
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
-	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
+	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true, float $grow = 0.0 ): void {
 		$represented = array();
 		$state       = 'state' === ( $condition['kind'] ?? null );
 		$is_submit   = (bool) array_filter( $destinations, static fn( array $destination ): bool => str_contains( $destination['selector'], 'wp-block-button__link' ) || str_ends_with( $destination['selector'], ' .rich-text' ) );
@@ -1609,9 +1627,9 @@ class Static_Site_Importer_Form_Presentation_Overlay {
 			$emit_styles = $styles;
 			// The provider field shell now occupies the source control's flex
 			// slot. Auto width on its non-flex-item child would instead use the
-			// native control's intrinsic width; let that child fill the slot.
-			$grow = $styles['flex_grow'] ?? ( preg_match( '/^([0-9]+(?:\.[0-9]+)?)(?:\s|$)/', $styles['flex'] ?? '', $flex ) ? $flex[1] : '0' );
-			if ( ! $is_submit && 'control' === $role && 'auto' === ( $styles['width'] ?? null ) && (float) $grow > 0 && in_array( 'width', $destination['properties'], true ) && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
+			// native control's intrinsic width; let that child fill the slot. A
+			// responsive patch restating `width:auto` grows by the base factor.
+			if ( ! $is_submit && 'control' === $role && 'auto' === ( $styles['width'] ?? null ) && $grow > 0 && in_array( 'width', $destination['properties'], true ) && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
 				$emit_styles['width'] = '100%';
 			}
 			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
