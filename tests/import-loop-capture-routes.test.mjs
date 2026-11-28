@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { captureRoutes, foldedRoutes, sourceDeviceDocuments, unexportedRoutes } from '../tools/import-loop/checks.mjs';
+import { captureRoutes, foldedRoutes, referenceDrift, sourceDeviceDocuments, unexportedRoutes } from '../tools/import-loop/checks.mjs';
 import { routeDocument } from '../tools/import-loop/lib.mjs';
 
 test('routes come from the capture receipt for directory and file sites', () => {
@@ -72,4 +72,24 @@ test('a route the compare declares but the portable site lost is unexported', ()
   const parity = { scores: [{ route: '/' }, { route: '/about/' }], pending: [{ route: 'https://site.example/menu', reason: 'Declared source route has no portable capture or frozen boundary' }, { route: 'https://site.example/about' }] };
   assert.deepEqual(unexportedRoutes(['/', '/about/'], parity, url), ['https://site.example/menu']);
   assert.deepEqual(unexportedRoutes(['/', '/about/', '/menu/'], parity, url), []);
+});
+
+test('a reference whose form controls differ from the exported page is drift; renumbered ids are not', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-drift-'));
+  const form = (...fields) => `<form>${fields.join('')}<input type="hidden" name="t"></form><script>"<select>"</script>`;
+  const pages = {
+    booking: [form('<input id="name">', '<select id="combo"></select>'), form('<input id="n4">')],
+    contact: [form('<input id="email" type="email">'), form('<input id="n9" type="email">')],
+  };
+  fs.mkdirSync(path.join(root, 'reference'));
+  const entries = [];
+  for (const [route, [reference, exported]] of Object.entries(pages)) {
+    fs.mkdirSync(path.join(root, 'website', route), { recursive: true });
+    fs.writeFileSync(path.join(root, 'website', route, 'index.html'), exported);
+    fs.writeFileSync(path.join(root, 'reference', `${route}.html`), reference);
+    entries.push({ route: `/${route}/`, viewport: 390, document: { path: `reference/${route}.html` } });
+  }
+  fs.writeFileSync(path.join(root, 'fidelity-reference.json'), JSON.stringify({ entries }));
+  fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ routes: Object.keys(pages).map((route) => ({ path: `website/${route}/index.html` })) }));
+  assert.deepEqual(referenceDrift(root, 'https://spa.example/'), [{ route: '/booking/', width: 390, evidence: { reference: 'reference/booking.html', missing: { select: 1 }, extra: {} } }]);
 });

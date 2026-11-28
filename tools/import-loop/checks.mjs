@@ -9,6 +9,7 @@ import { blockShape, blockSubject } from './shape.mjs';
 import { coreHtmlFindings } from './core-html.mjs';
 import { compareImports, excess, parityFailureClass, UNCHECKED } from './progress.mjs';
 import { wrapperWeight, repeatedStructures, QUALITY } from './quality.mjs';
+import { routeDocument } from './lib.mjs';
 
 import { WIDTHS, compareInvocation, visualCells } from './visual.mjs';
 export { WIDTHS } from './visual.mjs';
@@ -72,6 +73,43 @@ export const unexportedRoutes = (held, parity, url) => {
   const keys = new Set(held.map((route) => routeKey(route, url)));
   const declared = [...(parity?.scores || []), ...(parity?.pending || [])].map((s) => s.route);
   return [...new Set(declared.filter((route) => !keys.has(routeKey(route, url))))].sort();
+};
+
+// Form controls a page renders, counted by tag and type: the exported page
+// renumbers ids, but a field the source rendered is a control either way.
+const formControls = (html) => {
+  const counts = new Map();
+  for (const [, tag, attrs] of html.replace(/<(script|style|template|noscript)\b[\s\S]*?<\/\1>/gi, ' ').matchAll(/<(input|select|textarea)\b([^>]*)>/gi)) {
+    const type = (attrs.match(/\btype\s*=\s*["']?([\w-]+)/i)?.[1] || '').toLowerCase();
+    if (type === 'hidden') continue;
+    const key = `${tag.toLowerCase()}${type ? `[type=${type}]` : ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+};
+
+// Reference cells whose frozen document and the exported page disagree on the
+// form controls they render. Compare scores the import of the export against
+// the reference screenshot, so on such a cell the copy is measured against a
+// page it was never given: an import that moves closer to the export can score
+// worse. The capture owns the disagreement (one render for the reference,
+// another for the export, e.g. a field an async load renders late).
+export const referenceDrift = (captureRoot, url) => {
+  const file = path.join(captureRoot, 'fidelity-reference.json');
+  if (!fs.existsSync(file)) return [];
+  const held = new Map(captureRoutes(captureRoot).map((route) => [routeKey(route, url), route]));
+  const found = [];
+  for (const entry of JSON.parse(fs.readFileSync(file, 'utf8')).entries || []) {
+    const route = held.get(routeKey(entry.route || '/', url));
+    const reference = entry.document?.path && path.join(captureRoot, entry.document.path);
+    const exported = route && routeDocument(path.join(captureRoot, 'website'), route);
+    if (!reference || !exported || !fs.existsSync(reference) || !fs.existsSync(exported)) continue;
+    const want = formControls(fs.readFileSync(reference, 'utf8')), have = formControls(fs.readFileSync(exported, 'utf8'));
+    const diff = (a, b) => Object.fromEntries([...a].filter(([key, n]) => n > (b.get(key) || 0)).map(([key, n]) => [key, n - (b.get(key) || 0)]));
+    const missing = diff(want, have), extra = diff(have, want);
+    if (Object.keys(missing).length || Object.keys(extra).length) found.push({ route, width: entry.viewport, evidence: { reference: entry.document.path, missing, extra } });
+  }
+  return found;
 };
 
 // Routes whose source serves phones a different document than desktops
@@ -144,6 +182,7 @@ export async function checkImport(args) {
   };
   for (const folded of foldedRoutes(captureRoot)) report({ stage: 'capture', check: 'route_folded', owner_repo: compareClient.owner_repo, subject: 'route_folded', evidence: folded, route: folded.route });
   for (const { route, severity, subject, evidence } of sourceDeviceDocuments(captureRoot)) report({ stage: 'capture', check: 'source_device_documents', owner_repo: compareClient.owner_repo, subject, evidence, route, severity });
+  for (const { route, width, evidence } of referenceDrift(captureRoot, args.url)) report({ stage: 'capture', check: 'capture_reference_drift', owner_repo: compareClient.owner_repo, subject: 'form_controls', evidence, route, width });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.
