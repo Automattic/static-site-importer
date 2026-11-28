@@ -169,7 +169,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'runtime_entity_bindings'
 			);
 		}
-		$prepared['args']['runtime_entity_bindings'] = $classic ? array() : $bindings;
+		$prepared['args']['runtime_entity_bindings'] = $classic ? array() : self::resolve_binding_asset_references( $bindings, $prepared['plan'] ?? array(), $prepared['resolved'] ?? array() );
 		if ( $classic ) {
 			$classic_bindings = Static_Site_Importer_Entity_Materializer_Registry::classic_bindings( $lifecycle, $entities );
 			if ( is_wp_error( $classic_bindings ) ) {
@@ -376,6 +376,42 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		}
 
 		return $payload;
+	}
+
+	/**
+	 * Resolve plan asset tokens in provider fragments to the theme URLs the
+	 * resolved documents they patch already carry.
+	 *
+	 * A form provider builds its fragment from the form's readable blocks,
+	 * which are canonical plan markup: an inline icon kept as an image asset
+	 * stays a token. Bindings patch resolved markup, so without this the
+	 * page's post content kept that token whenever no Media Library rebind
+	 * resolved the fragments later.
+	 *
+	 * @param array<int,array<string,mixed>> $bindings Runtime entity bindings.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function resolve_binding_asset_references( array $bindings, array $plan, array $resolved ): array {
+		$tokens    = isset( $plan['reference_tokens'] ) && is_array( $plan['reference_tokens'] ) ? $plan['reference_tokens'] : array();
+		$theme_uri = isset( $resolved['resolution']['theme_uri'] ) && is_string( $resolved['resolution']['theme_uri'] ) ? $resolved['resolution']['theme_uri'] : '';
+		if ( empty( $tokens ) || '' === $theme_uri ) {
+			return $bindings;
+		}
+		$references = WordPressSitePlanResolver::references( $tokens, $theme_uri );
+		foreach ( $bindings as $index => $binding ) {
+			$changed = false;
+			foreach ( array( 'search_block_markup', 'replacement_block_markup', 'archive_replacement_block_markup' ) as $key ) {
+				if ( is_string( $binding[ $key ] ?? null ) && str_contains( $binding[ $key ], WordPressSitePlan::TOKEN_PREFIX ) ) {
+					$bindings[ $index ][ $key ] = WordPressSitePlanResolver::resolveMarkup( $binding[ $key ], $references );
+					$changed                    = true;
+				}
+			}
+			// The resolved fragment is the materialized block; its proof hash follows it.
+			if ( $changed && '' !== (string) ( $binding['materialized_block_hash'] ?? '' ) && is_string( $bindings[ $index ]['replacement_block_markup'] ?? null ) ) {
+				$bindings[ $index ]['materialized_block_hash'] = hash( 'sha256', $bindings[ $index ]['replacement_block_markup'] );
+			}
+		}
+		return $bindings;
 	}
 
 	/** Resolve the compiled plan's entrypoint page source path, used to root artifact-relative asset references. */
