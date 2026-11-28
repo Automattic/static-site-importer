@@ -378,7 +378,10 @@ function acceptanceGate(item, repo) {
   fs.writeFileSync(gate, [
     '#!/usr/bin/env bash',
     'tools="${IMPORT_LOOP_TOOLS:?}/tools/import-loop"; failed=0; scratch=$(mktemp -d); bare="$scratch/wp"; site="$scratch/site"',
-    `trap 'kill -- -$(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; rm -rf "$scratch"' EXIT`,
+    // Hydrated inputs arrive read-only and the site copies them with their modes:
+    // cleanup makes the scratch writable first, so its errors never bury the
+    // acceptance verdict at the end of the gate output (or leak the scratch).
+    `trap 'kill -- -$(cat "$site/.server.pid" 2>/dev/null) 2>/dev/null; chmod -R u+w "$scratch" 2>/dev/null; rm -rf "$scratch"' EXIT`,
     // One line per phase, so a gate report shows where its time went.
     'phase() { echo "import-loop-gate phase=$1 seconds=$((SECONDS - mark))"; mark=$SECONDS; }; mark=$SECONDS',
     ...(checked || contracts ? ['bash "$tools/gates/bare-wp.sh" "$bare" "$IMPORT_LOOP_BARE_WP" >/dev/null || exit 1; phase bare_wp'] : []),
