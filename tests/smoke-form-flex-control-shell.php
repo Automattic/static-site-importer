@@ -1,5 +1,5 @@
 <?php
-/** A growing source flex control fills its provider field shell. */
+/** A growing source flex control fills its provider field shell, including in responsive patches. */
 // phpcs:ignoreFile -- Standalone CLI regression.
 require_once __DIR__ . '/fixtures/core-html-api.php';
 $wp_root = require __DIR__ . '/fixtures/wordpress-core-root.php';
@@ -10,7 +10,7 @@ require_once __DIR__ . '/fixtures/form-jetpack-render.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 
-$html = '<!doctype html><html><head><style>.row{display:flex;width:360px}.row .field{flex:1;width:auto}</style></head><body><form><div class="row" style="display:flex"><input class="field" type="email" name="email"><button>Go</button></div></form></body></html>';
+$html = '<!doctype html><html><head><style>.row{display:flex;width:360px}.row .field{flex:1;width:auto}@media (min-width:1261px){.row .field{width:auto}}</style></head><body><form><div class="row" style="display:flex"><input class="field" type="email" name="email"><button>Go</button></div></form></body></html>';
 $result = ( new ArtifactCompiler() )->compile( array(
 	'entrypoint' => 'index.html',
 	'files'      => array( 'index.html' => $html ),
@@ -27,11 +27,14 @@ $hook = end( $hooks[0] ) ?: '';
 $rule = static fn( string $selector ): string => implode( ';', preg_match_all( '/(?:(?<=\})|^)[^{}]*\.' . preg_quote( $selector, '/' ) . '(?=[,{])[^{}]*\{([^}]*)\}/', $row['provider_layout_overlay_css']['css'] ?? '', $found ) ? $found[1] : array() );
 $control = $rule( $hook );
 preg_match_all( '/(?:^|;)width:([^;]+)/', $control, $widths );
+preg_match_all( '/\.' . preg_quote( $hook, '/' ) . '\{([^}]*)\}/', $row['provider_layout_overlay_css']['css'] ?? '', $hook_rules );
+preg_match_all( '/(?:^|;)width:([^;]+)/', implode( ';', $hook_rules[1] ), $every_width );
 $checks = array(
 	'form maps without losses' => 'mapped' === $row['status'] && empty( $row['mapping_decision']['losses'] ),
 	'provider shell wraps the control' => '' !== $hook && str_contains( $rendered, $hook . '-wrap' ),
 	'shell carries source field class for flex growth' => str_contains( $rendered, 'field-wrap' ) && str_contains( $control, 'flex:1' ),
 	'control fills the shell instead of intrinsic width' => '100%' === end( $widths[1] ),
+	'responsive patch keeps the control filling the shell' => count( $every_width[1] ) > 1 && array( '100%' ) === array_values( array_unique( $every_width[1] ) ),
 	'overlay is admitted' => null !== Static_Site_Importer_Form_Presentation_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ),
 );
 $failures = array_keys( array_filter( $checks, static fn( bool $ok ): bool => ! $ok ) );
