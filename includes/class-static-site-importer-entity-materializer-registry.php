@@ -829,20 +829,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 					if ( '' !== $entity_key ) {
-						$resolved_by_key[ $entity_key ] = $entity;
+						$resolved_by_key[ $entity_key ][] = $entity;
 					}
 				}
+				// Equal entities can share a key (a header's desktop and mobile
+				// copies of one cart link). The resolver keeps entity order, so
+				// each copy pairs with the resolved entity of the same ordinal.
+				$ordinals = array();
 				foreach ( $canonical_entities as $index => $entity ) {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
+					$entity_key              = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
+					$ordinal                 = $ordinals[ $entity_key ] ?? 0;
+					$ordinals[ $entity_key ] = $ordinal + 1;
+					$resolved_entity         = $resolved_by_key[ $entity_key ][ $ordinal ] ?? array();
 					// The resolver projects destination references into the markup a
 					// provider renders in place of page content: binding anchors, and
 					// a collection's item template card and per-item slot values.
 					foreach ( array( 'bindings', 'item_template', 'items' ) as $resolved_field ) {
-						if ( isset( $resolved_by_key[ $entity_key ][ $resolved_field ] ) && is_array( $resolved_by_key[ $entity_key ][ $resolved_field ] ) ) {
-							$prepared['manifest'][ $key ][ $index ][ $resolved_field ] = $resolved_by_key[ $entity_key ][ $resolved_field ];
+						if ( isset( $resolved_entity[ $resolved_field ] ) && is_array( $resolved_entity[ $resolved_field ] ) ) {
+							$prepared['manifest'][ $key ][ $index ][ $resolved_field ] = $resolved_entity[ $resolved_field ];
 						}
 					}
 				}

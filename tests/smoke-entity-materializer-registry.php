@@ -542,6 +542,42 @@ namespace {
 	$incomplete_entity_resolution = $manifest_resolved;
 	$incomplete_entity_resolution['runtime_entity_resolution'][0]['entities'][1]['controls'] = array();
 	$assert( is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $incomplete_entity_resolution ) ), 'resolver-expanded-manifest-rejects-incomplete-expanded-entity-data' );
+	// Equal inline entities (a header's desktop and mobile cart links) keep their own resolved bindings.
+	$cart_id      = str_repeat( 'c', 64 );
+	$cart_binding = static fn( int $occurrence, string $href ): array => array(
+		'schema'              => 'generic/block-binding/v1',
+		'role'                => 'commerce_cart_link',
+		'source_path'         => 'wordpress-site-plan/shared/header#header',
+		'search_block_markup' => '<!-- wp:paragraph --><p><a href="' . $href . '">Cart</a></p><!-- /wp:paragraph -->',
+		'occurrence'          => $occurrence,
+	);
+	$cart_entity  = static fn( int $occurrence, string $href ): array => array(
+		'source_path' => 'wordpress-site-plan/shared/header#header',
+		'selector'    => 'header li.cart > a',
+		'bindings'    => array( $cart_binding( $occurrence, $href ) ),
+	);
+	$cart_lifecycle = array(
+		'entities' => array(
+			$cart_id => array(
+				'adapter'     => array( 'entity_collection' => 'cart_links' ),
+				'manifest'    => array( 'cart_links' => array( $cart_entity( 1, '{{token}}' ), $cart_entity( 2, '{{token}}' ) ) ),
+				'declaration' => array(),
+			),
+		),
+	);
+	$cart_resolved  = array(
+		'runtime_declarations' => array(
+			array(
+				'reconciliation_identity' => $cart_id,
+				'kind'                    => 'entity_collection',
+				'type'                    => 'cart_links',
+				'payload'                 => array( 'entities' => array( $cart_entity( 1, '/cart/' ), $cart_entity( 2, '/cart/' ) ) ),
+			),
+		),
+	);
+	$cart_expanded  = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $cart_lifecycle, $cart_resolved );
+	$cart_rows      = is_wp_error( $cart_expanded ) ? array() : $cart_expanded['entities'][ $cart_id ]['manifest']['cart_links'];
+	$assert( array( 1, 2 ) === array_map( static fn( array $row ): int => $row['bindings'][0]['occurrence'], $cart_rows ) && str_contains( $cart_rows[0]['bindings'][0]['search_block_markup'], '/cart/' ), 'resolved-equal-inline-entities-keep-their-own-bindings' );
 	// --- Entity validators report per row, so the lifecycle keeps the valid rows -
 	$mixed_id         = str_repeat( 'c', 64 );
 	$mappable_control = array(
