@@ -44,6 +44,11 @@ export const parityCellReports = (cell) => {
   // unmeasured parity cell for the materializer.
   const missing = (cell.pending || []).filter((p) => /\bHTTP 404\b/.test(String(p.reason || '')));
   if (!classes.size && missing.length) return [{ owner_repo: 'static-site-importer', subject: 'route_missing', evidence: { route: cell.route, reasons: [...new Set(missing.map((p) => p.reason))] } }];
+  // A cell whose source side was never frozen (the capture's reference holds
+  // no single observation for it) is unmeasured on the source, which the
+  // capture owns; the materializer cannot prove a cell against nothing.
+  const unobserved = (cell.pending || []).filter((p) => /\bSource observation missing or ambiguous\b/.test(String(p.reason || '')));
+  if (!classes.size && unobserved.length) return [{ owner_repo: compareClient.owner_repo, subject: 'source_unobserved', evidence: { route: cell.route, reasons: [...new Set(unobserved.map((p) => p.reason))] } }];
   if (!classes.size && (!cell.verified || cell.scores.some((s) => !s.pass))) return [{ owner_repo: 'blocks-engine', subject: 'unverified', evidence: cell }];
   return [...classes.values()].map(({ owner_repo, subject, failures }) => ({ owner_repo, subject, evidence: { count: failures.length, failures } }));
 };
