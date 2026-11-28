@@ -3637,8 +3637,8 @@ $assert( 'home' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? nul
 $assert( 'about' === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_parent'] ?? null ), 'nested index page slug matches its top-level canonical route' );
 $assert( 'team' === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_name'] ?? null ) && $about_id === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? null ), 'deeper nested index page preserves canonical slug and WordPress parent identity' );
 
-// A synthetic hierarchy parent no source document backs materializes as a
-// draft; reimport keeps it, and never demotes a parent the owner took over.
+// A synthetic hierarchy parent no source document backs is not materialized:
+// its captured child becomes top-level and keeps its exact source route.
 $GLOBALS['ssi_plan_posts'] = array();
 $GLOBALS['ssi_plan_meta']  = array();
 $synthetic_parent_source   = 'wordpress-site-plan/routes/parent.html';
@@ -3652,29 +3652,10 @@ $synthetic_parent_plan     = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
 $synthetic_parent_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$synthetic_parent_id       = (int) ( $synthetic_parent_receipt['completed']['pages'][ $synthetic_parent_source ] ?? 0 );
 $synthetic_child_id        = (int) ( $synthetic_parent_receipt['completed']['pages']['website/parent/child/index.html'] ?? 0 );
-$synthetic_parent_rows     = array_values( array_filter( $synthetic_parent_receipt['wordpress'] ?? array(), static fn( $row ) => 'synthetic_hierarchy_parent' === ( $row['route_ownership'] ?? '' ) ) );
-$assert( 'completed' === $synthetic_parent_receipt['status'] && 'draft' === ( $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] ?? null ), 'a synthetic parent without a source document materializes as a draft' );
-$assert( 'publish' === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_status'] ?? null ) && $synthetic_parent_id === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_parent'] ?? null ), 'the published child keeps the draft synthetic parent as its native parent' );
-$assert( 1 === count( $synthetic_parent_rows ) && 'draft' === $synthetic_parent_rows[0]['post_status'] && ! isset( $synthetic_parent_rows[0]['alias_target_source_path'] ), 'the receipt records the alias-free synthetic hierarchy parent draft' );
-$synthetic_parent_repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$assert( 'completed' === $synthetic_parent_repeat['status'] && $synthetic_parent_id === (int) ( $synthetic_parent_repeat['completed']['pages'][ $synthetic_parent_source ] ?? 0 ) && 'draft' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] && 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_status'], 'reimport keeps the synthetic parent a draft and the child published' );
-$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] = 'publish';
-Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'reimport never demotes a synthetic parent the owner published' );
-Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'an owner-published synthetic parent stays published across repeated reimports' );
-$synthetic_legacy_provenance = json_decode( (string) $GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'], true );
-unset( $synthetic_legacy_provenance['synthetic_parent_status'] );
-$GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'] = json_encode( $synthetic_legacy_provenance );
-Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$assert( 'draft' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'an unedited parent an earlier import published becomes a draft on reimport' );
-$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status']  = 'publish';
-$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_content'] = 'Owner hub content';
-$GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'] = json_encode( $synthetic_legacy_provenance );
-Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
-$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'reimport never demotes a published synthetic parent the owner edited' );
+$assert( 'completed' === $synthetic_parent_receipt['status'] && ! isset( $synthetic_parent_receipt['completed']['pages'][ $synthetic_parent_source ] ), 'a synthetic parent without a source document is not materialized' );
+$assert( 'publish' === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_status'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_parent'] ?? null ), 'the published child is a top-level page' );
+$assert( '/parent/child' === ( get_option( 'static_site_importer_post_routes' )[ $synthetic_child_id ] ?? null ), 'the flattened child keeps its exact source route' );
 
 $GLOBALS['ssi_plan_posts'] = array();
 $GLOBALS['ssi_plan_meta']  = array();

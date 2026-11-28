@@ -61,7 +61,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		// Routing is a runtime dependency even when the import declares no blocks.
 		$serves_routes = ! empty( $prepared['plan']['date_archives'] );
 		foreach ( $prepared['resolved']['pages'] ?? array() as $page ) {
-			$serves_routes = $serves_routes || ( 'post' === ( $page['post_type'] ?? '' ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) );
+			$serves_routes = $serves_routes || ( ( 'post' === ( $page['post_type'] ?? '' ) || ! empty( $page['serve_source_route'] ) ) && ! empty( $page['source_path'] ) && empty( $page['skip_materialization'] ) );
 		}
 		if ( $serves_routes ) {
 			$runtime_payload                       = is_array( $runtime_payload ) ? $runtime_payload : self::runtime_payload( (string) $prepared['theme']['slug'], (string) $prepared['theme']['name'], $args );
