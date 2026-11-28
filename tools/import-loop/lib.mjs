@@ -267,11 +267,11 @@ export function mergedHead(item, pr, { clone, candidate, base, work }) {
 }
 // A transformer candidate replaces the release's transformer; an importer
 // candidate runs on the pass's trunk transformer (`at.transformer`). A client
-// candidate (the capture and compare client) re-captures the source with
-// itself and imports that capture on the trunk transformer
+// candidate (the capture and compare client) re-exports the pass's frozen
+// capture with itself and imports it on the trunk transformer
 // (gates/client-candidate.sh); it compares with itself too (`compareRun`).
 const servedRun = (dir, { candidate, transformer, reimport, url }) => candidate.slot === 'client'
-  ? [new URL('./gates/client-candidate.sh', import.meta.url).pathname, dir, url, `${dir}-capture`, transformer, `${dir}-site`, { env: { ...process.env, SSI_ZIP: reimport.ssi_zip, BARE_WP: reimport.bare_wp } }]
+  ? [new URL('./gates/client-candidate.sh', import.meta.url).pathname, dir, url, reimport.capture, `${dir}-capture`, transformer, `${dir}-site`, { env: { ...process.env, SSI_ZIP: reimport.ssi_zip, BARE_WP: reimport.bare_wp } }]
   : candidate.slot === 'transformer'
     ? reimportRun(`${dir}/${candidate.paths[0]}`, reimport, `${dir}-site`, '')
     : reimportRun(transformer, reimport, `${dir}-site`, dir);

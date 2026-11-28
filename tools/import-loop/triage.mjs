@@ -404,7 +404,7 @@ function acceptanceGate(item, repo) {
       `if git diff --quiet ${quote(bases[item.repo])} "$candidate" -- ${repo.candidate.paths.map(quote).join(' ')}; then echo "import-loop-gate: the candidate ships trunk ${bases[item.repo].slice(0, 8)} unchanged; its acceptance is this pass's evaluation of trunk, which still has the finding"; phase trunk_unchanged; exit 1; fi`,
       `bash "$tools/gates/merge-onto.sh" . ${quote(bases[item.repo])} "$candidate" "$scratch/merged" ${repo.candidate.paths.map(quote).join(' ')} || exit 1; phase merge_onto_base`,
       client
-        ? `url=$(SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/client-candidate.sh" "$scratch/merged" ${quote(result.url)} "$scratch/capture" "$IMPORT_LOOP_TRANSFORMER/php-transformer" "$site") || exit 1; url=$(tail -n1 <<<"$url"); phase capture_reimport`
+        ? `url=$(SSI_ZIP="$IMPORT_LOOP_SSI_ZIP" BARE_WP="$bare" bash "$tools/gates/client-candidate.sh" "$scratch/merged" ${quote(result.url)} "$IMPORT_LOOP_CAPTURE" "$scratch/capture" "$IMPORT_LOOP_TRANSFORMER/php-transformer" "$site") || exit 1; url=$(tail -n1 <<<"$url"); phase capture_reimport`
         : importer
           ? `url=$(SSI_SOURCE="$scratch/merged" ${reimportLine('"$IMPORT_LOOP_TRANSFORMER/php-transformer"', '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`
           : `url=$(${reimportLine(`"$scratch/merged/${repo.candidate.paths[0]}"`, '"$site"')}) || exit 1; url=$(tail -n1 <<<"$url"); phase reimport`,

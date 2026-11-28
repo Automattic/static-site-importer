@@ -8,7 +8,7 @@
 // regression. Each head is merged onto the commit the pass measured for its
 // repository (triage's `bases`) and enters the re-import as repos.json's
 // `candidate` says: the transformer, the importer, or the capture client
-// (which captures the source again). Fixes in a repository with no
+// (which re-exports the pass's capture). Fixes in a repository with no
 // `candidate` are unconfirmed.
 //
 // Usage: node confirm.mjs --triage <triage.json> --blocks-engine <clone> --work <dir>

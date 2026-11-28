@@ -14,8 +14,8 @@ site and fixes what the import gets wrong, one pass at a time. Each pass:
 5. **confirms** each fix PR by re-measuring its exact head merged onto what
    the pass measured: a Blocks Engine head as the transformer, a Static Site
    Importer head as the importer, and a Data Liberation Agent head as the
-   capture client, which captures the source again and compares with itself
-   (`gates/client-candidate.sh`), and
+   capture client, which re-exports the pass's frozen capture and compares with
+   itself (`gates/client-candidate.sh`), and
 6. **merges** it once it is green, at that head. Each Cook's fix is confirmed
    and merged as soon as that Cook settles (a `per_item` step), and open fixes
    no Cook works this pass are confirmed alongside the Cooks;
