@@ -91,5 +91,20 @@ test('a reference whose form controls differ from the exported page is drift; re
   }
   fs.writeFileSync(path.join(root, 'fidelity-reference.json'), JSON.stringify({ entries }));
   fs.writeFileSync(path.join(root, 'capture-receipt.json'), JSON.stringify({ routes: Object.keys(pages).map((route) => ({ path: `website/${route}/index.html` })) }));
-  assert.deepEqual(referenceDrift(root, 'https://spa.example/'), [{ route: '/booking/', width: 390, evidence: { reference: 'reference/booking.html', missing: { select: 1 }, extra: {} } }]);
+  assert.deepEqual(referenceDrift(root, 'https://spa.example/'), [{ route: '/booking/', width: 390, subject: 'form_controls', evidence: { reference: 'reference/booking.html', missing: { select: 1 }, extra: {} } }]);
+});
+
+test('a reference image painted from a rendition the export does not reference is drift', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-renditions-'));
+  const write = (file, body) => { fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true }); fs.writeFileSync(path.join(root, file), body); };
+  const cdn = (w) => `https://cdn.example/photo.jpg/fill/w_${w}/photo.webp`;
+  write('resources/w348.webp', 'small'); write('resources/w379.webp', 'large');
+  write('website/media/photo-4.webp', 'large');
+  write('website/manifest.json', JSON.stringify({ resources: { [cdn(348)]: { path: 'resources/w348.webp' }, [cdn(379)]: { path: 'resources/w379.webp' } } }));
+  write('website/booking/index.html', '<img src="/media/photo-4.webp" srcset="/media/photo-4.webp 1x">');
+  write('reference/390.html', `<img src="${cdn(348)}">`);
+  write('reference/1440.html', `<img src="${cdn(379)}">`);
+  write('fidelity-reference.json', JSON.stringify({ entries: [390, 1440].map((viewport) => ({ route: '/booking/', viewport, document: { path: `reference/${viewport}.html` } })) }));
+  write('capture-receipt.json', JSON.stringify({ routes: [{ path: 'website/booking/index.html' }] }));
+  assert.deepEqual(referenceDrift(root, 'https://spa.example/'), [{ route: '/booking/', width: 390, subject: 'image_renditions', evidence: { reference: 'reference/390.html', missing: [cdn(348)] } }]);
 });
