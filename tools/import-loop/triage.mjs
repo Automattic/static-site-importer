@@ -347,6 +347,28 @@ function evidenceFile(source, id) {
   return archives.get(id);
 }
 
+// What a Cook needs to see a pixel finding: the pass's own compare artifacts for
+// each of the finding's cells (the reference screenshot, the import's, and their
+// diff) with the route's exported source page. The whole capture is usually
+// over the evidence limit, which left Cooks with region coordinates alone.
+function pixelEvidence(item) {
+  const report = path.join(path.dirname(path.resolve(args.findings)), 'parity-capture', 'compare', 'materialization', 'report.json');
+  if (!item.cells.length || !fs.existsSync(report)) return null;
+  const dir = path.join(args.work, 'pixel-evidence', item.signature);
+  fs.rmSync(dir, { recursive: true, force: true });
+  for (const score of JSON.parse(fs.readFileSync(report, 'utf8')).scores || []) {
+    if (!item.cells.some((cell) => cell.route === score.route && (cell.width == null || cell.width === score.viewport))) continue;
+    const diff = (score.notes || []).map((note) => String(note).match(/pixel evidence → (\S+)/)?.[1]).find((file) => file && fs.existsSync(file));
+    if (!diff) continue;
+    const cell = path.join(dir, `${score.route.replace(/^\/|\/$/g, '').replace(/\//g, '-') || 'home'}@${score.viewport}`, `${score.profile}-${score.state}`);
+    fs.mkdirSync(cell, { recursive: true });
+    for (const file of ['source.png', 'liberated.png', 'diff.png']) if (fs.existsSync(path.join(path.dirname(diff), file))) fs.copyFileSync(path.join(path.dirname(diff), file), path.join(cell, file));
+    const page = routeDocument(path.join(reimport.capture, 'website'), score.route);
+    if (fs.existsSync(page)) fs.copyFileSync(page, path.join(path.dirname(cell), 'source.html'));
+  }
+  return fs.existsSync(dir) ? dir : null;
+}
+
 function acceptanceGate(item, repo) {
   const gate = path.join(args.work, `${item.signature}.accept.sh`);
   const checked = repo.candidate && item.cells.length;
@@ -408,8 +430,9 @@ function acceptanceGate(item, repo) {
   // under the same ids, so it can run the whole-site check itself. An input
   // over Cook's evidence limit (bare WordPress, a capture with every route's
   // reference) reaches the gate only: the gate's verdict stands without it.
-  const evidence = inputs.filter((input) => input.id !== 'bare-wp')
-    .map(({ id, source }) => ({ id, source: evidenceFile(source, id) }))
+  const pixels = checked ? pixelEvidence(item) : null;
+  const evidence = [...inputs.filter((input) => input.id !== 'bare-wp'), ...(pixels ? [{ id: 'pixel-evidence', source: pixels }] : [])]
+    .map(({ id, source }) => ({ id, source: evidenceFile(source, id === 'pixel-evidence' ? `pixel-evidence-${item.signature}` : id) }))
     .filter(({ source }) => fs.statSync(source).size <= EVIDENCE_LIMIT);
   return {
     // The gate is whole-site acceptance alone. The repository's own suite is
@@ -425,6 +448,7 @@ function acceptanceGate(item, repo) {
     gate_inputs: inputs.map((input) => JSON.stringify(input)),
     provider_evidence: evidence.map((input) => JSON.stringify(input)),
     omitted: inputs.filter((input) => input.id !== 'bare-wp' && !evidence.some((e) => e.id === input.id)).map((input) => input.id),
+    pixel_evidence: evidence.some((e) => e.id === 'pixel-evidence'),
   };
 }
 
@@ -548,6 +572,7 @@ for (const item of cookOrder) {
           : 'It merges your worktree onto trunk `' + trunk + '` (a conflict fails it), re-imports the capture through the Static Site Importer release with that transformer, serves it,') + ' and compares it with this pass\'s evaluation of trunk. Cook runs it from your worktree root with the capture, the route pages, the importer zip, and the loop tools as gate inputs (`IMPORT_LOOP_*`), so it is the gate\'s verdict, not a local run, that decides.',
         '- Put every clone, re-import and scratch file under `$TMPDIR`, which is yours for this attempt and removed when it ends. `/tmp` is shared with every other Cook on the runner.',
         '- Trunk is already measured: provider evidence `base` is this pass\'s whole-site evaluation of trunk, and the check compares your change against it. Read the finding\'s trunk occurrences there; there is no need to reproduce them. Run the whole-site check yourself on your change before you finish: it takes a few minutes, and when Cook\'s run of it fails, the fix waits for a whole new attempt. Its inputs are the declared provider evidence under the same ids. A directory input arrives as a `.tgz` archive: extract it into a scratch directory (`mkdir -p "$d" && tar -xzf <evidence path> -C "$d"`) and use that directory. From your worktree root, set each variable to its file or extracted directory: `IMPORT_LOOP_GATE` (acceptance-gate), `IMPORT_LOOP_TOOLS` (import-loop-tools), `IMPORT_LOOP_CAPTURE` (capture), `IMPORT_LOOP_PAGES` (pages), `IMPORT_LOOP_SSI_ZIP` (ssi-zip) and `IMPORT_LOOP_BASE` (base, this pass\'s trunk evaluation). Leave `IMPORT_LOOP_BARE_WP` unset so the gate installs WordPress, set `IMPORT_LOOP_OUT` to a scratch directory to keep its findings, and run `bash "$IMPORT_LOOP_GATE"`. It prints `{"pass":…,"own":{"before":…,"after":…}}`. The base findings and `$IMPORT_LOOP_OUT/after` show each occurrence\'s evidence, which is the reproduction of a whole-site finding. Cook runs the same gate before publication, and its verdict decides.',
+        ...(gate.pixel_evidence ? ['- Provider evidence `pixel-evidence` shows each cell of this finding as the pass measured it: one directory per `<route>@<width>`, with the route\'s exported `source.html` (the page the import was given) and, per profile and state, `source.png` (the frozen reference the import is compared against), `liberated.png` (the import) and `diff.png` (their difference). Extract it like any directory input and look at the regions the cells below name before deciding on a cause.'] : []),
         ...(gate.omitted.length ? [`- Provider evidence ${gate.omitted.map((id) => `\`${id}\``).join(', ')} is over Cook's evidence size limit and is not attached, so you cannot run the gate yourself. Cook's gate receives it in full and its verdict decides; the issue and \`base\` carry the occurrences.`] : []),
         '- Declare the review form complete when your change fixes the root cause, your regression test and the tests nearest your change pass, and ' + (gate.omitted.length ? 'you have reasoned through the whole-site measure below' : 'your own run of the gate prints `"pass":true`; when it does not, read `$IMPORT_LOOP_OUT/after`, fix, and run it again') + '. Run those tests, not the whole repository suite: CI runs it on the pull request and the loop sends any failure back to the next Cook, and every Cook on the runner shares its CPU. Acceptance is the gate\'s verdict: Cook runs it on the pass\'s exact WordPress, and confirm re-measures the head before anything merges. A local run installs WordPress fresh and can differ from the pass, for example by serving a route the pass\'s import answers with 404, so a regression only your local run shows is evidence to report, not a reason to declare the task incomplete.',
         '- The finding must improve in its recorded cells on a whole candidate re-import: fewer occurrences, or as many with less excess past their limits. That is the gate\'s measure of progress, and a change that meets it is done even when occurrences remain. The shared evaluate checks run on the base and candidate, including release Data Liberation parity and browser editor/theme checks. Missing evidence fails closed.',
@@ -577,7 +602,7 @@ for (const item of cookOrder) {
     // Acceptance then passes on the base and cannot be the repro: Cook stops
     // before dispatch with `repro_passes_on_base`. A rework's candidate must
     // still pass acceptance, as a verify gate.
-    const { omitted, repro, ...cook } = gate;
+    const { omitted, repro, pixel_evidence, ...cook } = gate;
     cook_items.push({ signature: item.signature, repo: item.repo, issue_url: item.issue_url, task_url: item.refuted ? pr.url : item.issue_url, prompt: `@${prompt}`, ...cook, repro: item.refuted ? [] : [repro], verify: item.refuted ? [repro] : [] });
   }
 }
