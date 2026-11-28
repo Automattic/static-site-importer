@@ -110,3 +110,45 @@ for (const [name, changes, missing, presence = [], base = {}] of [
     assert.deepEqual(compareAuthoringLandmarks({ ...landmarks, date: 9, ...base }, { ...landmarks, date: 9, ...changes }, { presence }), { pass: !missing.length, differences: missing });
   });
 }
+
+test('static front page served through front-page does not set the column authored pages must match', async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    let recorded;
+    const created = [];
+    await page.route('http://parity.test/**', async route => {
+      const request = route.request();
+      if (request.method() === 'POST') {
+        const { operation, evidence, sibling } = JSON.parse(request.postData());
+        if (operation === 'record') recorded = evidence;
+        if (operation === 'create') created.push(sibling.id);
+        const values = {
+          // The served template is authoritative; older endpoints do not
+          // expose page_on_front. Do not create a normal-page probe for Home.
+          list: { posts: [
+            { id: 1, type: 'page', url: 'http://parity.test/', title: 'Home' },
+            { id: 2, type: 'page', url: 'http://parity.test/about', title: 'About' },
+          ], terms: [] },
+          create: { url: 'http://parity.test/probe', title: 'Authoring parity probe' },
+        };
+        return route.fulfill({ json: values[operation] ?? true });
+      }
+      const path = new URL(request.url()).pathname;
+      const served = {
+        '/': ['Home', 'theme//front-page', 'margin:0 auto;width:672px'],
+        '/about': ['About', 'theme//page', 'margin-left:120px;width:576px'],
+        '/probe': ['Authoring parity probe', 'theme//authored-page', 'margin-left:120px;width:576px'],
+      }[path];
+      if (!served) return route.fulfill({ status: 404, body: '' });
+      const [title, template, column] = served;
+      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><meta name="ssi-authoring-template" content="${template}"><body style="margin:0"><main><h1>${title}</h1><p style="${column}">Body</p></main>` });
+    });
+    await page.goto('http://parity.test/endpoint');
+    await page.evaluate(authoringParityExpression('http://parity.test/endpoint'));
+    assert.deepEqual(created, [2]);
+    assert.deepEqual(recorded.map(row => [row.cluster, row.pass]), [['page × theme//page', true]]);
+    assert.equal(authoringParityPasses(recorded), true);
+    await page.close();
+  } finally { await browser.close(); }
+});
