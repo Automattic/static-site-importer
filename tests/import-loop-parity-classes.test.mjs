@@ -77,6 +77,12 @@ test('a route the imported site answers with 404 is the importer\'s route_missin
   assert.deepEqual(reports, [{ owner_repo: 'static-site-importer', subject: 'route_missing', evidence: { route: '/privacy-policy/', reasons: [reason] } }]);
 });
 
+test('a cell the capture never observed on the source is the capture\'s source_unobserved finding', () => {
+  const reason = 'Error: Source observation missing or ambiguous';
+  const reports = parityCellReports(cell([], { route: '/menu/', pending: [{ state: 'baseline', reason }] }));
+  assert.deepEqual(reports, [{ owner_repo: 'data-liberation-agent', subject: 'source_unobserved', evidence: { route: '/menu/', reasons: [reason] } }]);
+});
+
 test('per-class signatures are distinct, so each class is measured on its own', () => {
   const signature = (subject, owner) => createHash('sha1').update(JSON.stringify(['materialization', 'visual_parity', owner, subject])).digest('hex').slice(0, 12);
   const subjects = parityCellReports(cell([score([failures.title, failures.link, failures.motion, failures.textPosition])]));
