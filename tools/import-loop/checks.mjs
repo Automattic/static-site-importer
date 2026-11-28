@@ -89,11 +89,30 @@ const formControls = (html) => {
 };
 
 // Reference cells whose frozen document and the exported page disagree on the
-// form controls they render. Compare scores the import of the export against
+// form controls they render, or whose images the source painted from a file
+// the export does not reference (a per-viewport server rendition it dropped). Compare scores the import of the export against
 // the reference screenshot, so on such a cell the copy is measured against a
 // page it was never given: an import that moves closer to the export can score
 // worse. The capture owns the disagreement (one render for the reference,
 // another for the export, e.g. a field an async load renders late).
+const imageFiles = (html) => [...html.matchAll(/<img\b[^>]*>/gi)].flatMap(([tag]) => [tag.match(/\ssrc="([^"]+)"/)?.[1], ...(tag.match(/\ssrcset="([^"]+)"/)?.[1] || '').split(',').map((c) => c.trim().split(/\s+/)[0])]).filter(Boolean).map((u) => u.replace(/&amp;/g, '&'));
+const fileHash = (file) => createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+// Reference images whose captured bytes (through the export's resource
+// manifest) match no image file the exported page references.
+const missingRenditions = (captureRoot, referenceHtml, exportedHtml) => {
+  const manifest = path.join(captureRoot, 'website', 'manifest.json');
+  if (!fs.existsSync(manifest)) return [];
+  const resources = JSON.parse(fs.readFileSync(manifest, 'utf8')).resources || {};
+  const local = (u) => u.startsWith('/') && path.join(captureRoot, 'website', decodeURIComponent(u.split(/[?#]/)[0]));
+  const have = new Set(imageFiles(exportedHtml).map(local).filter((f) => f && fs.existsSync(f)).map(fileHash));
+  const missing = [];
+  for (const [tag] of referenceHtml.matchAll(/<img\b[^>]*>/gi)) {
+    const src = tag.match(/\ssrc="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&');
+    const captured = src && resources[src]?.path && path.join(captureRoot, resources[src].path);
+    if (captured && fs.existsSync(captured) && !have.has(fileHash(captured)) && !missing.includes(src)) missing.push(src);
+  }
+  return missing;
+};
 export const referenceDrift = (captureRoot, url) => {
   const file = path.join(captureRoot, 'fidelity-reference.json');
   if (!fs.existsSync(file)) return [];
@@ -104,10 +123,13 @@ export const referenceDrift = (captureRoot, url) => {
     const reference = entry.document?.path && path.join(captureRoot, entry.document.path);
     const exported = route && routeDocument(path.join(captureRoot, 'website'), route);
     if (!reference || !exported || !fs.existsSync(reference) || !fs.existsSync(exported)) continue;
-    const want = formControls(fs.readFileSync(reference, 'utf8')), have = formControls(fs.readFileSync(exported, 'utf8'));
+    const referenceHtml = fs.readFileSync(reference, 'utf8'), exportedHtml = fs.readFileSync(exported, 'utf8');
+    const want = formControls(referenceHtml), have = formControls(exportedHtml);
     const diff = (a, b) => Object.fromEntries([...a].filter(([key, n]) => n > (b.get(key) || 0)).map(([key, n]) => [key, n - (b.get(key) || 0)]));
     const missing = diff(want, have), extra = diff(have, want);
-    if (Object.keys(missing).length || Object.keys(extra).length) found.push({ route, width: entry.viewport, evidence: { reference: entry.document.path, missing, extra } });
+    if (Object.keys(missing).length || Object.keys(extra).length) found.push({ route, width: entry.viewport, subject: 'form_controls', evidence: { reference: entry.document.path, missing, extra } });
+    const renditions = missingRenditions(captureRoot, referenceHtml, exportedHtml);
+    if (renditions.length) found.push({ route, width: entry.viewport, subject: 'image_renditions', evidence: { reference: entry.document.path, missing: renditions } });
   }
   return found;
 };
@@ -187,7 +209,7 @@ export async function checkImport(args) {
   // which this drift finding owns, not the materializer.
   const drift = referenceDrift(captureRoot, args.url);
   const drifted = new Set(drift.map(({ route, width }) => `${route}@${width}`));
-  for (const { route, width, evidence } of drift) report({ stage: 'capture', check: 'capture_reference_drift', owner_repo: compareClient.owner_repo, subject: 'form_controls', evidence, route, width });
+  for (const { route, width, subject, evidence } of drift) report({ stage: 'capture', check: 'capture_reference_drift', owner_repo: compareClient.owner_repo, subject, evidence, route, width });
 
   // Compare writes artifacts into the capture: never mutate a gate input or
   // reuse stale evidence from another run. The same pinned release checks both.
