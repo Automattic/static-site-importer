@@ -321,6 +321,19 @@ class Static_Site_Importer_Form_Seeder {
 					// The field-box shell carries the wrapping label's classes.
 					unset( $control['label_class'] );
 				}
+				// A block caption or marker creates a text boundary in the source.
+				// The provider nests the marker inline, so carry that boundary as space.
+				foreach ( $state->form['presentation_graph']['controls'] ?? array() as $presentation ) {
+					$presentation_index = $presentation['index'] ?? null;
+					if ( $presentation_index !== $control_index || empty( $control['required_text'] ) ) {
+						continue;
+					}
+					foreach ( array( 'label', 'required_marker' ) as $role ) {
+						if ( in_array( $presentation[ $role ]['styles']['display'] ?? '', array( 'block', 'flex', 'grid', 'table' ), true ) ) {
+							$control['label'] = rtrim( (string) ( $control['label'] ?? '' ) ) . ' ';
+						}
+					}
+				}
 				self::map_control( $state, $control_index, $control );
 			}
 		}
@@ -338,8 +351,18 @@ class Static_Site_Importer_Form_Seeder {
 		$root                    = self::form_root_as_group( Static_Site_Importer_Form_Readable_Substitution::substitute( $state->form['readable_blocks'][0], $state ) );
 		$form_attrs              = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope );
 		$form_attrs['className'] = $state->scope;
-		$state->recipient        = self::form_recipient( $form_attrs, $state );
-		$block                   = array(
+		// Jetpack otherwise constructs a legacy Submit button for a buttonless form.
+		$has_submit = false;
+		foreach ( $state->field_blocks as $field ) {
+			$has_submit = $has_submit || ( 'core/button' === $field['name'] && 'submit' === ( $field['attrs']['type'] ?? '' ) );
+		}
+		if ( ! $has_submit ) {
+			$form_attrs['className'] .= ' ssi-source-no-submit';
+			// The HTML hook runs before block wrapper classes are applied.
+			$root['attrs']['className'] = trim( (string) ( $root['attrs']['className'] ?? '' ) . ' ssi-source-no-submit' );
+		}
+		$state->recipient = self::form_recipient( $form_attrs, $state );
+		$block            = array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
 			'innerBlocks' => array( $root ),

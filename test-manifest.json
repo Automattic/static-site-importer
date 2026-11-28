@@ -95,6 +95,7 @@
     { "path": "tests/smoke-form-context-spacing.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-scope-shared-across-routes.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-marker-and-button-icon.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-source-boundaries.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-button-visible-caption.php", "environment": "standalone-php" },
     { "path": "tests/form-context-spacing.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-native-select.php", "environment": "standalone-php" },
