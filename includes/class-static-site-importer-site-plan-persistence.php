@@ -2017,7 +2017,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return null;
 		};
 		$replace       = static function ( array $matches ) use ( $resolve_route ): string {
-			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$/i', $matches[1] );
+			// A JSON string value, or markup embedded in one (`href=\"` / `href=\u0022`), is JSON-escaped:
+			// `--` arrives as `\u002d\u002d`, `&` as `\u0026`.
+			$is_json = (bool) preg_match( '/^"(?:url|href|action)"\s*:\s*"$|(?:\\\\"|\\\\u0022)$/i', $matches[1] );
 			$value   = $is_json ? json_decode( '"' . $matches[2] . '"' ) : str_replace( '\\/', '/', (string) $matches[2] );
 			if ( ! is_string( $value ) ) {
 				return $matches[0];

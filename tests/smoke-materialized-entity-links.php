@@ -356,11 +356,13 @@ $panel_attr  = static fn( string $state ): string => $panel_key . '="' . htmlspe
 $decoy  = $panel_block( 'button', array( 'sourceAttributes' => array( array( 'name' => 'title', 'value' => 'Example: href=' ), array( 'name' => 'href', 'value' => '/second/index.html' ) ) ), '<a title="Example: href=" href="/second/index.html">Second</a>' );
 $copies = $panel_copies( Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $decoy, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS ) );
 $assert( $copies['href']['block comment'] === $copies['href']['saved markup'] && 'Example: href=' === $copies['title']['block comment'], 'A block without a snapshot keeps matching href copies.' );
-// When a route pattern match runs from outside a snapshot into it, the document
-// keeps the route patterns' output whole.
+// A route pattern match cannot run from a JSON value into a neighboring snapshot:
+// the span is not a JSON string, so the label stays as written and the panel's
+// own link is rewritten in both copies.
 $labelled_input = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => 'title', 'value' => 'href="/search?other=' ), array( 'name' => $panel_key, 'value' => $panel_state ) ), 'text' => 'Menu "label"' ), '<button title="href=&quot;/search?other=" ' . $panel_attr( $panel_state ) . '>Menu "label"</button>' );
 $labelled       = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $labelled_input, $panel_routes, $unresolved, 'https://source.example/', array(), '/index.html', panel_blocks: EXAMPLE_PANEL_BLOCKS );
-$assert( $route_patterns( $labelled_input, $panel_routes ) === $labelled, 'A pattern match that crosses into a snapshot keeps the route patterns.' );
+$copies         = $panel_copies( $labelled );
+$assert( 'href="/search?other=' === $copies['title']['block comment'] && 'href="/search?other=' === $copies['title']['saved markup'] && $copies[ $panel_key ]['block comment'] === $copies[ $panel_key ]['saved markup'] && str_contains( (string) $copies[ $panel_key ]['saved markup']['html'], 'href="/second-page/"' ), 'A label that reads like a link does not swallow a neighboring snapshot.' );
 $labelled_input = $panel_block( 'authored-button', array( 'sourceAttributes' => array( array( 'name' => $panel_key, 'value' => $panel_state ), array( 'name' => 'title', 'value' => 'Find "more"' ) ), 'text' => 'Menu "label"' ), '<button ' . $panel_attr( $panel_state ) . ' title="Find &quot;more&quot;">Menu "label"</button>' );
 $labelled       = $shape_case( 'A title with quotes', $labelled_input, array( $panel_key => $panel_after, 'title' => 'Find "more"' ) );
 $labelled_blocks = new WP_Block_Processor( $labelled );
@@ -665,4 +667,17 @@ Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references(
 	$fragment_targets
 );
 $assert( array() === $missing_routes && 2 === count( $fragment_targets ) && 'team' === $fragment_targets[0]['fragment'], 'Fragment validation checks the target page, skips resolved and special anchors, and retains observations for distinct-target aggregation.' );
+// Markup inside block-attribute JSON escapes `--` and `&`; the anchor and query are matched decoded.
+$fragment_targets = array();
+$embedded         = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references(
+	'{"html":"\u003cuse href=\u0022#icon-x\u002d\u002dmobile\u0022/\u003e\u003ca href=\u0022/shop?a=1\u0026b=2\u0022\u003e"}',
+	array( '/' => '/?page_id=1', '/shop' => '/?page_id=3' ),
+	$missing_routes,
+	'',
+	array(),
+	'/index.html',
+	array( '/?page_id=1' => array( 'route' => '/', 'ids' => array( 'icon-x--mobile' => true ) ) ),
+	$fragment_targets
+);
+$assert( array() === $fragment_targets && str_contains( $embedded, 'href=\u0022/?page_id=3\u0026a=1\u0026b=2\u0022' ), 'Links in block-attribute JSON resolve decoded anchors and stay JSON-escaped.' );
 echo "Materialized entity links smoke passed.\n";
