@@ -410,6 +410,7 @@
           "tests/source-content-decision.php",
           "tests/source-local-post-date.php",
           "tests/smoke-block-theme-scorecard.php",
+          "tests/smoke-block-theme-scorecard-linear.php",
           "tests/smoke-wordpress-site-plan-materializer.php",
           "tests/smoke-comment-entities.php",
           "tests/smoke-direct-artifact-recompose.php",

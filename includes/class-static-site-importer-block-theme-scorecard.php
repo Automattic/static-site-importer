@@ -340,14 +340,14 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	 * @return array<string,mixed>
 	 */
 	private static function theme_json( array $json, array ...$block_groups ): array {
-		$used   = array();
-		$blocks = array();
+		$used  = array();
+		$lists = array();
 		foreach ( $block_groups as $group ) {
 			foreach ( $group as $parsed ) {
-				$blocks = array_merge( $blocks, self::flatten( $parsed ) );
+				$lists[] = self::flatten( $parsed );
 			}
 		}
-		foreach ( $blocks as $block ) {
+		foreach ( array_merge( array(), ...$lists ) as $block ) {
 			$html = (string) ( $block['innerHTML'] ?? '' );
 			if ( 'core/button' === $block['blockName'] ) {
 				$used['button'] = true;
@@ -617,17 +617,18 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	 * @param array  ...$block_groups Parsed block trees keyed by template, part or route.
 	 */
 	private static function class_naming( string $theme_slug, array ...$block_groups ): array {
-		$tokens = array();
+		$parts = array();
 		foreach ( $block_groups as $group ) {
 			foreach ( $group as $blocks ) {
 				foreach ( self::flatten( $blocks ) as $block ) {
 					$split = preg_split( '/\s+/', trim( (string) ( $block['attrs']['className'] ?? '' ) ), -1, PREG_SPLIT_NO_EMPTY );
 					if ( is_array( $split ) ) {
-						$tokens = array_merge( $tokens, $split );
+						$parts[] = $split;
 					}
 				}
 			}
 		}
+		$tokens     = array_merge( array(), ...$parts );
 		$engine     = array_values( array_filter( $tokens, static fn( string $token ): bool => (bool) preg_match( '/^(?:be|blocks-engine)-/', $token ) ) );
 		$opaque     = array_values( array_filter( $tokens, static fn( string $token ): bool => (bool) preg_match( '/(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{8,}/', $token ) ) );
 		$namespaced = '' === $theme_slug ? array() : array_filter( $tokens, static fn( string $token ): bool => str_starts_with( $token, $theme_slug . '-' ) );
@@ -688,14 +689,19 @@ final class Static_Site_Importer_Block_Theme_Scorecard {
 	/** Flatten named blocks in traversal order. */
 	private static function flatten( array $blocks ): array {
 		$result = array();
+		self::flatten_into( $blocks, $result );
+		return $result;
+	}
+
+	/** Append named blocks to a shared list in traversal order. */
+	private static function flatten_into( array $blocks, array &$result ): void {
 		foreach ( $blocks as $block ) {
 			if ( empty( $block['blockName'] ) ) {
 				continue;
 			}
 			$result[] = $block;
-			$result   = array_merge( $result, self::flatten( $block['innerBlocks'] ?? array() ) );
+			self::flatten_into( $block['innerBlocks'] ?? array(), $result );
 		}
-		return $result;
 	}
 
 	/** Fingerprint block structure without content or IDs. */
