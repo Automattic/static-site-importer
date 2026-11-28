@@ -156,6 +156,17 @@ export const ownIssue = (hits, signature, site, repoNames) => {
 export const REWORK_NOTE = '<!-- import-loop:rework -->';
 export const CAP_NOTICE = '<!-- import-loop:cook-cap -->';
 export const DESIGN_NOTICE = '<!-- import-loop:design -->';
+export const NEAR_MISS = '<!-- import-loop:near-miss -->';
+// A refuted head is a near miss when only collateral refuted it (no failing
+// cell, CI job, conflict or corpus regression) and its own finding improved on
+// the whole re-import: returns that own count, else null.
+export const nearMiss = (refuted) => {
+  if (!refuted?.collateral || refuted.cells?.length || refuted.ci || refuted.conflicting || refuted.corpus) return null;
+  for (const line of String(refuted.collateral[0] || '').trim().split('\n').reverse()) {
+    try { const v = JSON.parse(line); if (v && 'own' in v) return v.own && v.own.after < v.own.before ? v.own : null; } catch {}
+  }
+  return null;
+};
 export const designScope = (scope) => `<!-- import-loop:design-scope ${JSON.stringify(scope)} -->`;
 const cookKey = (body) => body.slice(COOK_NOTE.length).split(' ')[0];
 const designOf = (body) => { const scope = body.match(/<!-- import-loop:design-scope (\{.*?\}) -->/)?.[1]; return scope ? JSON.parse(scope) : null; };

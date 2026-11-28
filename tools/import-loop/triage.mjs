@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, stageGateTools as stageGateToolsInto, ownIssue, rerouteScope, CAP_NOTICE, DESIGN_NOTICE, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
+import { args, cellsAtHead, checkHeads, gh, repoClone, linkedPullRequests, prHealth, predicateEnv, predicateExit, reimportSite, collateralAtHead, routeDocument, cookHistory, designScope, evidenceArchive, stageGateTools as stageGateToolsInto, ownIssue, rerouteScope, nearMiss, CAP_NOTICE, DESIGN_NOTICE, NEAR_MISS, REROUTE_NOTICE, REWORK_NOTE } from './lib.mjs';
 
 import { reportRegression } from './bisect-report.mjs';
 import { corpusRefutation } from './corpus-check.mjs';
@@ -618,15 +618,28 @@ for (const repo of Object.values(repos)) {
     if (!issue || trackedIssues.has(issue) || working.has(pr.url) || closed_drafts.includes(pr.url)) continue;
     if (Date.now() - Date.parse(pr.updatedAt) < ABANDON_HOURS * 3600e3) continue;
     if (!JSON.parse(gh('issue', 'view', issue, '--json', 'body')).body?.includes('Loop signature: `')) continue;
+    // A near miss waits for the next chain on its site, however long that is.
+    if (prComments(pr.url).some((c) => c.body.startsWith(NEAR_MISS))) continue;
     closeDraft(pr.url, `no Cook has worked it for ${ABANDON_HOURS}h and this pass does not track ${issue}`);
     closed_drafts.push(pr.url);
   }
 }
 
 // An excepted finding's refuted pull request has nothing left to land: close
-// it, unless it is still the open fix for a finding the loop keeps cooking.
+// it, unless it is still the open fix for a finding the loop keeps cooking, or
+// it is a near miss: a head refuted only by collateral that improves its own
+// finding on the whole re-import. A near miss stays open, and every pass that
+// tracks the finding re-measures it, so it lands once trunk or the measure
+// changes (base44-imb: a fix closed hours before a measure fix would have
+// accepted it).
 for (const item of tracked.filter((t) => t.excepted && t.refuted)) {
   if (args['dry-run'] || tracked.some((t) => !t.excepted && t.open_pr === item.refuted.pr)) continue;
+  if (nearMiss(item.refuted)) {
+    if (!prComments(item.refuted.pr).some((c) => c.body.startsWith(NEAR_MISS))) gh('pr', 'comment', item.refuted.pr, '--body', `${NEAR_MISS}\nKept open as a near miss: the import loop excepted ${item.issue_url} (${item.excepted.reason}), but on a whole re-import this head \`${item.refuted.head.slice(0, 8)}\` improves its finding (${nearMiss(item.refuted).before} → ${nearMiss(item.refuted).after}) and is refuted only by collateral. Each pass that tracks the finding re-measures it and merges it once it passes.\n\n${disclosure}`);
+    item.near_miss = item.refuted.pr;
+    log(`kept ${item.refuted.pr}: near miss for excepted ${item.issue_url}`);
+    continue;
+  }
   gh('pr', 'close', item.refuted.pr, '--comment', `Closing: the import loop excepted ${item.issue_url} (${item.excepted.reason}) and this head \`${item.refuted.head.slice(0, 8)}\` does not fix it on a whole re-import. The issue's comments hold every attempt; a comment there with guidance re-arms the loop.\n\n${disclosure}`);
   item.closed_pr = item.refuted.pr;
   log(`closed ${item.refuted.pr}: ${item.issue_url} excepted`);
@@ -651,7 +664,7 @@ const output = {
   cook_count: cook_items.length,
   closed_drafts,
   deferred,
-  excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted }) => ({ issue_url, ...excepted })),
+  excepted: tracked.filter((item) => item.excepted).map(({ issue_url, excepted, near_miss }) => ({ issue_url, ...excepted, ...(near_miss ? { near_miss } : {}) })),
   design: tracked.filter((item) => item.design).map(({ issue_url, design }) => ({ issue_url, round: design })),
   rerouted: tracked.filter((item) => item.rerouted_from).map(({ issue_url, rerouted_from }) => ({ issue_url, from: rerouted_from })),
   // The next pass re-imports once this pass's fixes ship; Homeboy's next_pass
